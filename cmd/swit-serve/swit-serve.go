@@ -21,8 +21,17 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/innovationmech/swit/cmd"
+import (
+	"os"
+
+	"github.com/innovationmech/swit/internal/swit-serve/cmd"
+	"github.com/innovationmech/swit/internal/swit-serve/logger"
+)
 
 func main() {
-	cmd.Execute()
+	logger.Init()
+	command := cmd.NewRootServeCmdCommand()
+	if err := command.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
