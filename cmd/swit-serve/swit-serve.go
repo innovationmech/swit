@@ -25,11 +25,9 @@ import (
 	"os"
 
 	"github.com/innovationmech/swit/internal/swit-serve/cmd"
-	"github.com/innovationmech/swit/internal/swit-serve/logger"
 )
 
 func main() {
-	logger.Init()
 	command := cmd.NewRootServeCmdCommand()
 	if err := command.Execute(); err != nil {
 		os.Exit(1)
