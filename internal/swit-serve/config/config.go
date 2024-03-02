@@ -24,7 +24,7 @@ var (
 
 func GetConfig() *Config {
 	once.Do(func() {
-		viper.SetConfigName("myapp")
+		viper.SetConfigName("swit")
 		viper.AddConfigPath(".")
 		err := viper.ReadInConfig()
 		if err != nil {
