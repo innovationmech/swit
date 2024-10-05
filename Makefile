@@ -1,10 +1,16 @@
 .DEFAULT_GOAL := all
 
-GO:=go
-BIN_NAME=swit-serve
-MAIN_DIR=cmd/swit-serve
-MAIN_FILE=swit-serve.go
-OUTPUTDIR=_output
+GO := go
+SERVE_BIN_NAME := swit-serve
+SERVE_MAIN_DIR := cmd/swit-serve
+SERVE_MAIN_FILE := swit-serve.go
+CTL_BIN_NAME := switctl
+CTL_MAIN_DIR := cmd/switctl
+CTL_MAIN_FILE := switctl.go
+OUTPUTDIR := _output
+DOCKER := docker
+DOCKER_IMAGE_NAME := swit-serve
+DOCKER_IMAGE_TAG := $(shell git rev-parse --abbrev-ref HEAD)
 
 .PHONY: all
 all: tidy build
@@ -13,24 +19,36 @@ define USAGE_OPTIONS
 
 Options:
   TIDY             Format the code.
-  BUILD            Build the binary, output binary is in _output directory.
-  CLEAN            Delete the output binary.
- endef
- export USAGE_OPTIONS
+  BUILD            Build the binaries, output binaries are in _output/{application_name}/ directory.
+  CLEAN            Delete the output binaries.
+  TEST             Run the tests.
+  DOCKER-BUILD     Build Docker image for swit-serve.
+endef
+export USAGE_OPTIONS
 
 .PHONY: tidy
 tidy:
-	@echo "go mod tidy"
+	@echo "Running go mod tidy"
 	@$(GO) mod tidy
 
 .PHONY: build
-build:
-	@echo "build go program: swit-serve"
-	@$(GO) build -o $(OUTPUTDIR)/$(BIN_NAME) $(MAIN_DIR)/$(MAIN_FILE)
+build: build-serve build-ctl
+
+.PHONY: build-serve
+build-serve:
+	@echo "Building go program: swit-serve"
+	@mkdir -p $(OUTPUTDIR)/$(SERVE_BIN_NAME)
+	@$(GO) build -o $(OUTPUTDIR)/$(SERVE_BIN_NAME)/$(SERVE_BIN_NAME) $(SERVE_MAIN_DIR)/$(SERVE_MAIN_FILE)
+
+.PHONY: build-ctl
+build-ctl:
+	@echo "Building go program: switctl"
+	@mkdir -p $(OUTPUTDIR)/$(CTL_BIN_NAME)
+	@$(GO) build -o $(OUTPUTDIR)/$(CTL_BIN_NAME)/$(CTL_BIN_NAME) $(CTL_MAIN_DIR)/$(CTL_MAIN_FILE)
 
 .PHONY: clean
 clean:
-	@echo "clean go program"
+	@echo "Cleaning go programs"
 	@$(RM) -rf $(OUTPUTDIR)/
 
 .PHONY: help
@@ -39,4 +57,9 @@ help:
 
 .PHONY: test
 test:
-	@echo $(shell pwd)
+	@$(GO) test -v ./internal/...
+
+.PHONY: image-serve
+image-serve:
+	@echo "Building Docker image for swit-serve"
+	@$(DOCKER) build -f build/docker/swit-serve/Dockerfile -t $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG) .
