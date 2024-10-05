@@ -52,6 +52,7 @@ Swit provides the following commands:
 For more details, run:
 ```
 ./_output/swit-serve --help
+```
 
 ## API Endpoints
 
