@@ -16,6 +16,8 @@ COPY ./swit.yaml /root/swit.yaml
 
 EXPOSE 8080
 
+LABEL org.opencontainers.image.source=https://github.com/innovationmech/swit
+
 ENTRYPOINT ["./swit-serve"]
 
 CMD ["serve"]
