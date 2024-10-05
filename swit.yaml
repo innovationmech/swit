@@ -4,3 +4,5 @@ database:
   username: root
   password: root
   dbname: demo
+server:
+  port: 9000

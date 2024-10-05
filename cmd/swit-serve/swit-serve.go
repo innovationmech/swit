@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"github.com/innovationmech/swit/internal/swit-serve/cmd"
+	"github.com/innovationmech/swit/internal/swit-serve/config"
 )
 
 func main() {
@@ -32,4 +33,5 @@ func main() {
 	if err := command.Execute(); err != nil {
 		os.Exit(1)
 	}
+	defer config.Logger.Sync()
 }

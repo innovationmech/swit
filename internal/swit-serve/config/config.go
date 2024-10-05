@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 type Config struct {
@@ -15,11 +16,15 @@ type Config struct {
 		Port     string `json:"port"`
 		DBName   string `json:"dbname"`
 	} `json:"database"`
+	Server struct {
+		Port string `json:"port"`
+	} `json:"server"`
 }
 
 var (
-	cfg  *Config
-	once sync.Once
+	cfg    *Config
+	once   sync.Once
+	Logger *zap.Logger
 )
 
 func GetConfig() *Config {
@@ -38,4 +43,12 @@ func GetConfig() *Config {
 		}
 	})
 	return cfg
+}
+
+func InitLogger() {
+	var err error
+	Logger, err = zap.NewProduction()
+	if err != nil {
+		panic(fmt.Errorf("FATAL ERROR LOGGER: %s", err))
+	}
 }

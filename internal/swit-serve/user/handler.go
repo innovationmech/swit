@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/swit-serve/logger"
+	"github.com/innovationmech/swit/internal/swit-serve/config"
 	"go.uber.org/zap"
 )
 
@@ -22,7 +22,6 @@ func GetUserHandler(c *gin.Context) {
 	name := c.Param("name")
 
 	user := getUserByName(name)
-
-	logger.Log.Info("get user", zap.String("name", user.Name), zap.String("email", user.Email))
+	config.Logger.Info("get user", zap.String("name", user.Name), zap.String("email", user.Email))
 	c.JSON(http.StatusOK, user)
 }
