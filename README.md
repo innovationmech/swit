@@ -20,7 +20,7 @@ Swit is designed to be a robust and scalable backend service, suitable for vario
 
 ### Prerequisites
 
-- Go 1.20 or higher
+- Go 1.22 or higher
 - MySQL database
 
 ### Installation
