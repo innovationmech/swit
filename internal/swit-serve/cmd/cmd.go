@@ -10,7 +10,7 @@ func NewRootServeCmdCommand() *cobra.Command {
 	cmds := &cobra.Command{
 		Use:     "swit",
 		Short:   "swit server application",
-		Version: "0.0.1",
+		Version: "0.0.2",
 	}
 	cmds.AddCommand(serve.NewServeCmd())
 	cmds.AddCommand(version.NewVersionCommand())

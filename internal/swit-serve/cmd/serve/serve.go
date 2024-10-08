@@ -11,7 +11,7 @@ var cfg *config.Config
 func NewServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the HTTP server",
+		Short: "Start the SWIT server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srv := server.NewServer()
 			srv.SetupRoutes()
