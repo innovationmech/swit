@@ -12,8 +12,10 @@ DOCKER := docker
 DOCKER_IMAGE_NAME := swit-serve
 DOCKER_IMAGE_TAG := $(shell git rev-parse --abbrev-ref HEAD)
 
+include scripts/make-rules/copyright.mk
+
 .PHONY: all
-all: tidy build
+all: tidy copyright build
 
 define USAGE_OPTIONS
 
