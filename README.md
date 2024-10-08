@@ -1,14 +1,20 @@
 # Swit
 
-Swit is a command-line tool designed to serve as a backend application. It is built using Go and utilizes the Gin web framework for handling HTTP requests. The project includes features such as health checks and user management, with data persistence handled through a database using GORM.
+Swit is a command-line tool designed to serve as a backend application and control system. It is built using Go and utilizes the Gin web framework for handling HTTP requests. The project includes features such as health checks, user management, and server control, with data persistence handled through a MySQL database using GORM.
 
 ## Key features:
 - Health check endpoint for monitoring application status
 - User registration and retrieval functionality
+- Server control (start, stop, health check) via CLI
 - GitHub Actions workflow for automated building and testing
 - Makefile for easy project management and building
 
-Swit is designed to be a robust and scalable backend service, suitable for various applications requiring user management and health monitoring capabilities.
+Swit is designed to be a robust and scalable backend service, suitable for various applications requiring user management, health monitoring, and remote control capabilities.
+
+## Components
+
+1. swit-serve: The main server application
+2. switctl: Command-line tool for controlling the server
 
 ## Getting Started
 
@@ -30,7 +36,7 @@ Swit is designed to be a robust and scalable backend service, suitable for vario
 
 ### Building
 
-To build the application, run:
+To build both the server and CLI applications, run:
 ```
 make
 ```
@@ -40,7 +46,7 @@ The binary will be created in the `_output` directory.
 
 To start the server:
 ```
-./_output/swit-serve serve
+./_output/swit-serve/swit-serve serve
 ```
 ## Usage
 
@@ -51,7 +57,7 @@ Swit provides the following commands:
 
 For more details, run:
 ```
-./_output/swit-serve --help
+./_output/swit-serve/swit-serve --help
 ```
 
 ## API Endpoints

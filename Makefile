@@ -22,7 +22,7 @@ Options:
   BUILD            Build the binaries, output binaries are in _output/{application_name}/ directory.
   CLEAN            Delete the output binaries.
   TEST             Run the tests.
-  DOCKER-BUILD     Build Docker image for swit-serve.
+  IMAGE-SERVE      Build Docker image for swit-serve.
 endef
 export USAGE_OPTIONS
 
