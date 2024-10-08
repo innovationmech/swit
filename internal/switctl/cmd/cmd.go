@@ -5,6 +5,7 @@ import (
 	"github.com/innovationmech/swit/internal/switctl/cmd/stop"
 	"github.com/innovationmech/swit/internal/switctl/cmd/version"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -26,6 +27,9 @@ func NewRootSwitCtlCommand() *cobra.Command {
 	rootCmd.AddCommand(stop.NewStopCmd())
 	rootCmd.AddCommand(version.NewSwitctlVersionCmd())
 	rootCmd.AddCommand(health.NewHealthCmd())
+
+	viper.BindPFlag("address", rootCmd.PersistentFlags().Lookup("address"))
+	viper.BindPFlag("port", rootCmd.PersistentFlags().Lookup("port"))
 
 	return rootCmd
 }
