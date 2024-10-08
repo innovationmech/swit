@@ -24,13 +24,14 @@ package main
 import (
 	"os"
 
+	"github.com/innovationmech/swit/internal/component-base/cli"
 	"github.com/innovationmech/swit/internal/swit-serve/cmd"
 	"github.com/innovationmech/swit/internal/swit-serve/config"
 )
 
 func main() {
 	command := cmd.NewRootServeCmdCommand()
-	if err := command.Execute(); err != nil {
+	if err := cli.Run(command); err != nil {
 		os.Exit(1)
 	}
 	defer config.Logger.Sync()
