@@ -19,21 +19,40 @@
 // THE SOFTWARE.
 // 
 
-package cmd
+package user
 
 import (
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/serve"
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/version"
-	"github.com/spf13/cobra"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
-func NewRootServeCmdCommand() *cobra.Command {
-	cmds := &cobra.Command{
-		Use:     "swit",
-		Short:   "swit server application",
-		Version: "0.0.2",
+func (uc *UserController) UpdateUser(c *gin.Context) {
+	id := c.Param("id")
+
+	// Create a map to store fields that need to be updated
+	updates := make(map[string]interface{})
+
+	// Check and add fields that need to be updated
+	if username := c.PostForm("username"); username != "" {
+		updates["username"] = username
 	}
-	cmds.AddCommand(serve.NewServeCmd())
-	cmds.AddCommand(version.NewVersionCommand())
-	return cmds
+	if email := c.PostForm("email"); email != "" {
+		updates["email"] = email
+	}
+
+	// If there are no fields to update, return an error
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields provided for update"})
+		return
+	}
+
+	// Call the UpdateUser method of the service layer
+	err := uc.userSrv.UpdateUser(id, updates)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User information updated successfully"})
 }

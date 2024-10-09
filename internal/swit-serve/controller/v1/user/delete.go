@@ -19,21 +19,19 @@
 // THE SOFTWARE.
 // 
 
-package cmd
+package user
 
 import (
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/serve"
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/version"
-	"github.com/spf13/cobra"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
-func NewRootServeCmdCommand() *cobra.Command {
-	cmds := &cobra.Command{
-		Use:     "swit",
-		Short:   "swit server application",
-		Version: "0.0.2",
+func (uc *UserController) DeleteUser(c *gin.Context) {
+	id := c.Param("id")
+	err := uc.userSrv.DeleteUser(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	cmds.AddCommand(serve.NewServeCmd())
-	cmds.AddCommand(version.NewVersionCommand())
-	return cmds
 }

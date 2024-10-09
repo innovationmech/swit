@@ -19,21 +19,16 @@
 // THE SOFTWARE.
 // 
 
-package cmd
+package server
 
 import (
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/serve"
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/version"
-	"github.com/spf13/cobra"
+	"github.com/innovationmech/swit/internal/swit-serve/controller/v1/user"
+	"github.com/innovationmech/swit/internal/swit-serve/health"
+	"github.com/innovationmech/swit/internal/swit-serve/stop"
 )
 
-func NewRootServeCmdCommand() *cobra.Command {
-	cmds := &cobra.Command{
-		Use:     "swit",
-		Short:   "swit server application",
-		Version: "0.0.2",
-	}
-	cmds.AddCommand(serve.NewServeCmd())
-	cmds.AddCommand(version.NewVersionCommand())
-	return cmds
+func (s *Server) SetupRoutes() {
+	user.RegisterMiddleware(s.router)
+	health.RegisterRoutes(s.router)
+	stop.RegisterRoutes(s.router, s.Shutdown)
 }
