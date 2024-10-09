@@ -111,7 +111,7 @@ make image-serve
 
 To run the Docker container:
 ```
-docker run -p 9000:9000 swit-serve:latest
+docker run -d -p 9000:9000 -v ./swit.yaml:/root/swit.yaml swit-serve:master
 ```
 
 ## License
