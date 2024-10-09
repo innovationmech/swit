@@ -19,21 +19,40 @@
 // THE SOFTWARE.
 // 
 
-package cmd
+package user
 
 import (
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/serve"
-	"github.com/innovationmech/swit/internal/swit-serve/cmd/version"
-	"github.com/spf13/cobra"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
-func NewRootServeCmdCommand() *cobra.Command {
-	cmds := &cobra.Command{
-		Use:     "swit",
-		Short:   "swit server application",
-		Version: "0.0.2",
+func (uc *UserController) GetUserByID(c *gin.Context) {
+	id := c.Param("id")
+	user, err := uc.userSrv.GetUserByID(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	cmds.AddCommand(serve.NewServeCmd())
-	cmds.AddCommand(version.NewVersionCommand())
-	return cmds
+	c.JSON(http.StatusOK, user)
+}
+
+func (uc *UserController) GetUserByUsername(c *gin.Context) {
+	username := c.Param("username")
+	user, err := uc.userSrv.GetUserByUsername(username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+
+func (uc *UserController) GetUserByEmail(c *gin.Context) {
+	email := c.Param("email")
+	user, err := uc.userSrv.GetUserByEmail(email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, user)
 }

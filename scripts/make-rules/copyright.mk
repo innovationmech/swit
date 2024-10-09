@@ -17,8 +17,8 @@ copyright-add:
 	@echo "Adding copyright statements to Go files"
 	@for file in $(MISSING_COPYRIGHT); do \
 		echo "Adding copyright statement to $$file"; \
-		awk 'NR==1{print "/*"}1' $(BOILERPLATE_FILE) > temp_boilerplate.txt; \
-		echo "*/" >> temp_boilerplate.txt; \
+		sed 's/^/\/\/ /' $(BOILERPLATE_FILE) > temp_boilerplate.txt; \
+		echo "" >> temp_boilerplate.txt; \
 		cat temp_boilerplate.txt $$file > $$file.tmp && mv $$file.tmp $$file; \
 		rm temp_boilerplate.txt; \
 	done
