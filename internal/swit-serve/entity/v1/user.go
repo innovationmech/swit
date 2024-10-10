@@ -23,6 +23,7 @@ package v1
 
 import "gorm.io/gorm"
 
+// User is the user entity.
 type User struct {
 	gorm.Model
 	Username string `json:"username" gorm:"not null"`

@@ -25,7 +25,7 @@ import (
 	"github.com/innovationmech/swit/internal/pkg/middleware"
 )
 
-// RegisterGlobalMiddleware 注册全局中间件
+// RegisterGlobalMiddleware registers global middleware
 func (s *Server) RegisterGlobalMiddleware() {
 	s.router.Use(middleware.Logger())
 }

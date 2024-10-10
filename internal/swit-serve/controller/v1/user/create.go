@@ -28,6 +28,7 @@ import (
 	v1 "github.com/innovationmech/swit/internal/swit-serve/entity/v1"
 )
 
+// CreateUser creates a new user.
 func (uc *UserController) CreateUser(c *gin.Context) {
 	var user v1.User
 	if err := c.ShouldBindJSON(&user); err != nil {

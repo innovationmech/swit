@@ -31,17 +31,20 @@ import (
 	"go.uber.org/zap"
 )
 
+// Server is the server for the application.
 type Server struct {
 	router *gin.Engine
 	srv    *http.Server
 }
 
+// NewServer creates a new server for the application.
 func NewServer() *Server {
 	return &Server{
 		router: gin.Default(),
 	}
 }
 
+// Run runs the server on the given address.
 func (s *Server) Run(addr string) error {
 	s.srv = &http.Server{
 		Addr:    addr,
@@ -50,6 +53,7 @@ func (s *Server) Run(addr string) error {
 	return s.srv.ListenAndServe()
 }
 
+// Shutdown shuts down the server.
 func (s *Server) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

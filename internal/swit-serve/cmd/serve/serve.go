@@ -28,8 +28,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// cfg is the global configuration for the application.
 var cfg *config.Config
 
+// NewServeCmd creates a new serve command.
 func NewServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -47,6 +49,7 @@ func NewServeCmd() *cobra.Command {
 	return cmd
 }
 
+// initConfig initializes the global configuration for the application.
 func initConfig() {
 	logger.InitLogger()
 	cfg = config.GetConfig()
