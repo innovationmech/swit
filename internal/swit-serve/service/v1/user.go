@@ -55,8 +55,13 @@ func (s *userService) CreateUser(user *v1.User) error {
 		return errors.New("username and email cannot be empty")
 	}
 
+	err := s.db.AutoMigrate(user)
+	if err != nil {
+		return err
+	}
+
 	// Attempt to create the user directly, letting the database handle uniqueness constraints
-	err := s.db.Create(user).Error
+	err = s.db.Create(user).Error
 	if err != nil {
 		// Check if it's a uniqueness constraint error
 		if strings.Contains(err.Error(), "Duplicate entry") {
