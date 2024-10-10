@@ -28,6 +28,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Config is the global configuration for the application.
 type Config struct {
 	Database struct {
 		Username string `json:"username"`
@@ -42,10 +43,13 @@ type Config struct {
 }
 
 var (
-	cfg  *Config
+	// cfg is the global configuration for the application.
+	cfg *Config
+	// once is used to ensure that the configuration is only initialized once.
 	once sync.Once
 )
 
+// GetConfig returns the global configuration for the application.
 func GetConfig() *Config {
 	once.Do(func() {
 		viper.SetConfigName("swit")

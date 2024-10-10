@@ -23,6 +23,7 @@ package user
 
 import "github.com/gin-gonic/gin"
 
+// RegisterMiddleware registers the middleware for the user controller.
 func RegisterMiddleware(router *gin.Engine) {
 	uc := NewUserController()
 	userGroup := router.Group("/users")

@@ -30,6 +30,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// UserSrv is the service for the user entity.
 type UserSrv interface {
 	CreateUser(user *v1.User) error
 	GetUserByID(id string) (*v1.User, error)
@@ -39,16 +40,19 @@ type UserSrv interface {
 	DeleteUser(id string) error
 }
 
+// userService is the implementation of the UserSrv interface.
 type userService struct {
 	db *gorm.DB
 }
 
+// NewUserSrv creates a new user service.
 func NewUserSrv() UserSrv {
 	return &userService{
 		db: db.GetDB(),
 	}
 }
 
+// CreateUser creates a new user.
 func (s *userService) CreateUser(user *v1.User) error {
 	// Add validation
 	if user.Username == "" || user.Email == "" {
@@ -73,24 +77,28 @@ func (s *userService) CreateUser(user *v1.User) error {
 	return nil
 }
 
+// GetUserByID gets a user by ID.
 func (s *userService) GetUserByID(id string) (*v1.User, error) {
 	var user v1.User
 	err := s.db.First(&user, "id = ?", id).Error
 	return &user, err
 }
 
+// GetUserByUsername gets a user by username.
 func (s *userService) GetUserByUsername(username string) (*v1.User, error) {
 	var user v1.User
 	err := s.db.First(&user, "username = ?", username).Error
 	return &user, err
 }
 
+// GetUserByEmail gets a user by email.
 func (s *userService) GetUserByEmail(email string) (*v1.User, error) {
 	var user v1.User
 	err := s.db.First(&user, "email = ?", email).Error
 	return &user, err
 }
 
+// UpdateUser updates a user by ID.
 func (s *userService) UpdateUser(id string, updates map[string]interface{}) error {
 	// First, find the user
 	var user v1.User
@@ -102,6 +110,7 @@ func (s *userService) UpdateUser(id string, updates map[string]interface{}) erro
 	return s.db.Model(&user).Updates(updates).Error
 }
 
+// DeleteUser deletes a user by ID.
 func (s *userService) DeleteUser(id string) error {
 	return s.db.Delete(&v1.User{}, "id = ?", id).Error
 }

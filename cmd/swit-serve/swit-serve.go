@@ -30,6 +30,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// main is the entry point of the application.
 func main() {
 	command := cmd.NewRootServeCmdCommand()
 	if err := cli.Run(command); err != nil {
