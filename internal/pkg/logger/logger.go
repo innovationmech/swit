@@ -19,47 +19,16 @@
 // THE SOFTWARE.
 //
 
-package config
+package logger
 
-import (
-	"fmt"
-	"sync"
+import "go.uber.org/zap"
 
-	"github.com/spf13/viper"
-)
+var Logger *zap.Logger
 
-type Config struct {
-	Database struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Host     string `json:"host"`
-		Port     string `json:"port"`
-		DBName   string `json:"dbname"`
-	} `json:"database"`
-	Server struct {
-		Port string `json:"port"`
-	} `json:"server"`
-}
-
-var (
-	cfg  *Config
-	once sync.Once
-)
-
-func GetConfig() *Config {
-	once.Do(func() {
-		viper.SetConfigName("swit")
-		viper.AddConfigPath(".")
-		err := viper.ReadInConfig()
-		if err != nil {
-			panic(fmt.Errorf("FATAL ERROR CONFIG FILE: %s", err))
-		}
-
-		cfg = &Config{}
-		err = viper.Unmarshal(cfg)
-		if err != nil {
-			panic(fmt.Errorf("UNABLE TO DECODE INTO STRUCT, %v", err))
-		}
-	})
-	return cfg
+func InitLogger() {
+	var err error
+	Logger, err = zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
 }

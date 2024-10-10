@@ -19,47 +19,48 @@
 // THE SOFTWARE.
 //
 
-package config
+package middleware
 
 import (
-	"fmt"
-	"sync"
+	"time"
 
-	"github.com/spf13/viper"
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/pkg/logger"
+	"go.uber.org/zap"
 )
 
-type Config struct {
-	Database struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Host     string `json:"host"`
-		Port     string `json:"port"`
-		DBName   string `json:"dbname"`
-	} `json:"database"`
-	Server struct {
-		Port string `json:"port"`
-	} `json:"server"`
-}
+// Logger is a middleware function for logging HTTP requests
+func Logger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Start time
+		start := time.Now()
+		path := c.Request.URL.Path
+		raw := c.Request.URL.RawQuery
 
-var (
-	cfg  *Config
-	once sync.Once
-)
+		// Process request
+		c.Next()
 
-func GetConfig() *Config {
-	once.Do(func() {
-		viper.SetConfigName("swit")
-		viper.AddConfigPath(".")
-		err := viper.ReadInConfig()
-		if err != nil {
-			panic(fmt.Errorf("FATAL ERROR CONFIG FILE: %s", err))
+		// End time
+		end := time.Now()
+		latency := end.Sub(start)
+
+		clientIP := c.ClientIP()
+		method := c.Request.Method
+		statusCode := c.Writer.Status()
+
+		if raw != "" {
+			path = path + "?" + raw
 		}
 
-		cfg = &Config{}
-		err = viper.Unmarshal(cfg)
-		if err != nil {
-			panic(fmt.Errorf("UNABLE TO DECODE INTO STRUCT, %v", err))
-		}
-	})
-	return cfg
+		// Use logger.Logger to record logs
+		logger.Logger.Info("HTTP Request Log",
+			zap.String("ClientIP", clientIP),
+			zap.String("Host", c.Request.Host),
+			zap.String("Time", end.Format("02/Jan/2006:15:04:05 -0700")),
+			zap.String("Method", method),
+			zap.String("Path", path),
+			zap.Int("StatusCode", statusCode),
+			zap.Duration("Latency", latency),
+		)
+	}
 }
