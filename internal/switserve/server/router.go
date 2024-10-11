@@ -22,13 +22,17 @@
 package server
 
 import (
+	comMiddleware "github.com/innovationmech/swit/internal/pkg/middleware"
 	"github.com/innovationmech/swit/internal/switserve/controller/health"
 	"github.com/innovationmech/swit/internal/switserve/controller/stop"
 	"github.com/innovationmech/swit/internal/switserve/controller/v1/user"
+	"github.com/innovationmech/swit/internal/switserve/middleware"
 )
 
 // SetupRoutes sets up the routes for the application.
 func (s *Server) SetupRoutes() {
+	s.router.Use(comMiddleware.Logger(), middleware.AuthMiddleware())
+
 	user.RegisterMiddleware(s.router)
 	health.RegisterRoutes(s.router)
 	stop.RegisterRoutes(s.router, s.Shutdown)

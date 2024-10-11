@@ -38,7 +38,6 @@ func NewServeCmd() *cobra.Command {
 		Short: "Start the SWIT server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srv := server.NewServer()
-			srv.RegisterGlobalMiddleware()
 			srv.SetupRoutes()
 			return srv.Run(":" + cfg.Server.Port)
 		},

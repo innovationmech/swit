@@ -28,7 +28,7 @@ func RegisterMiddleware(router *gin.Engine) {
 	uc := NewUserController()
 	userGroup := router.Group("/users")
 	{
-		userGroup.POST("/", uc.CreateUser)
+		userGroup.POST("/create", uc.CreateUser)
 		userGroup.GET("/username/:username", uc.GetUserByUsername)
 		userGroup.GET("/email/:email", uc.GetUserByEmail)
 		userGroup.DELETE("/:id", uc.DeleteUser)
