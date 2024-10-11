@@ -19,25 +19,26 @@
 // THE SOFTWARE.
 //
 
-package main
+package model
 
 import (
-	"os"
-
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"time"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+// User is the user model.
+type User struct {
+	ID           uuid.UUID `gorm:"type:uuid;primary_key;" json:"id"`
+	Username     string    `gorm:"unique;not null" json:"username"`
+	Email        string    `gorm:"unique;not null" json:"email"`
+	PasswordHash string    `gorm:"not null" json:"-"`
+	Role         string    `gorm:"default:'user'" json:"role"`
+	IsActive     bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (user *User) BeforeCreated(db *gorm.DB) {
+	user.ID = uuid.New()
 }

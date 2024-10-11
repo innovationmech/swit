@@ -19,25 +19,33 @@
 // THE SOFTWARE.
 //
 
-package main
+package user
 
 import (
-	"os"
+	"github.com/innovationmech/swit/internal/switserve/model"
+	"net/http"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/gin-gonic/gin"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
+// CreateUser creates a new user.
+func (uc *UserController) CreateUser(c *gin.Context) {
+	var user model.User
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+		return
 	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
+
+	// Add additional validation
+	if user.Username == "" || user.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Username and email cannot be empty"})
+		return
 	}
+
+	err := uc.userSrv.CreateUser(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "User created successfully", "user": user})
 }

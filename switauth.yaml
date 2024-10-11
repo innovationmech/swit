@@ -6,4 +6,3 @@ database:
   dbname: demo
 server:
   port: 9000
-auth_server: http://localhost:9001/auth/

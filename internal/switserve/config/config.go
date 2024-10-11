@@ -19,25 +19,52 @@
 // THE SOFTWARE.
 //
 
-package main
+package config
 
 import (
-	"os"
+	"fmt"
+	"sync"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/spf13/viper"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+// ServeConfig is the global configuration for the application.
+type ServeConfig struct {
+	Database struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Host     string `json:"host"`
+		Port     string `json:"port"`
+		DBName   string `json:"dbname"`
+	} `json:"database"`
+	Server struct {
+		Port string `json:"port"`
+	} `json:"server"`
+	AuthServer string `json:"auth_server"`
+}
+
+var (
+	// cfg is the global configuration for the application.
+	cfg *ServeConfig
+	// once is used to ensure that the configuration is only initialized once.
+	once sync.Once
+)
+
+// GetConfig returns the global configuration for the application.
+func GetConfig() *ServeConfig {
+	once.Do(func() {
+		viper.SetConfigName("swit")
+		viper.AddConfigPath(".")
+		err := viper.ReadInConfig()
+		if err != nil {
+			panic(fmt.Errorf("FATAL ERROR CONFIG FILE: %s", err))
+		}
+
+		cfg = &ServeConfig{}
+		err = viper.Unmarshal(cfg)
+		if err != nil {
+			panic(fmt.Errorf("UNABLE TO DECODE INTO STRUCT, %v", err))
+		}
+	})
+	return cfg
 }

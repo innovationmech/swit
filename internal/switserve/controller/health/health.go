@@ -19,25 +19,18 @@
 // THE SOFTWARE.
 //
 
-package main
+package health
 
-import (
-	"os"
+import "github.com/gin-gonic/gin"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
-)
+// HealthHandler is the handler for the health check endpoint.
+func HealthHandler(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"message": "pong",
+	})
+}
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+// RegisterRoutes registers the routes for the health check endpoint.
+func RegisterRoutes(router *gin.Engine) {
+	router.GET("/health", HealthHandler)
 }

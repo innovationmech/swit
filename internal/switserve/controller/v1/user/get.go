@@ -19,25 +19,32 @@
 // THE SOFTWARE.
 //
 
-package main
+package user
 
 import (
-	"os"
+	"net/http"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/gin-gonic/gin"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
+// GetUserByUsername gets a user by username.
+func (uc *UserController) GetUserByUsername(c *gin.Context) {
+	username := c.Param("username")
+	user, err := uc.userSrv.GetUserByUsername(username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
+	c.JSON(http.StatusOK, user)
+}
+
+// GetUserByEmail gets a user by email.
+func (uc *UserController) GetUserByEmail(c *gin.Context) {
+	email := c.Param("email")
+	user, err := uc.userSrv.GetUserByEmail(email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
+	c.JSON(http.StatusOK, user)
 }

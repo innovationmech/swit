@@ -19,25 +19,18 @@
 // THE SOFTWARE.
 //
 
-package main
+package user
 
-import (
-	"os"
+import "github.com/gin-gonic/gin"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
-)
-
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
+// RegisterMiddleware registers the middleware for the user controller.
+func RegisterMiddleware(router *gin.Engine) {
+	uc := NewUserController()
+	userGroup := router.Group("/users")
+	{
+		userGroup.POST("/", uc.CreateUser)
+		userGroup.GET("/username/:username", uc.GetUserByUsername)
+		userGroup.GET("/email/:email", uc.GetUserByEmail)
+		userGroup.DELETE("/:id", uc.DeleteUser)
 	}
 }

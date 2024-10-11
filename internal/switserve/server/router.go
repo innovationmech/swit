@@ -19,25 +19,17 @@
 // THE SOFTWARE.
 //
 
-package main
+package server
 
 import (
-	"os"
-
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/innovationmech/swit/internal/switserve/controller/health"
+	"github.com/innovationmech/swit/internal/switserve/controller/stop"
+	"github.com/innovationmech/swit/internal/switserve/controller/v1/user"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+// SetupRoutes sets up the routes for the application.
+func (s *Server) SetupRoutes() {
+	user.RegisterMiddleware(s.router)
+	health.RegisterRoutes(s.router)
+	stop.RegisterRoutes(s.router, s.Shutdown)
 }

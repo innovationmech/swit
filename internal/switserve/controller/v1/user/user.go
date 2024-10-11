@@ -19,25 +19,21 @@
 // THE SOFTWARE.
 //
 
-package main
+package user
 
 import (
-	"os"
-
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/innovationmech/swit/internal/switserve/db"
+	"github.com/innovationmech/swit/internal/switserve/repository"
+	v1 "github.com/innovationmech/swit/internal/switserve/service/v1"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
+type UserController struct {
+	userSrv v1.UserSrv
+}
+
+// NewUserController creates a new user controller.
+func NewUserController() *UserController {
+	return &UserController{
+		userSrv: v1.NewUserSrv(repository.NewUserRepository(db.GetDB())),
 	}
 }
