@@ -19,25 +19,22 @@
 // THE SOFTWARE.
 //
 
-package main
+package cmd
 
 import (
-	"os"
-
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/innovationmech/swit/internal/switserve/cmd/serve"
+	"github.com/innovationmech/swit/internal/switserve/cmd/version"
+	"github.com/spf13/cobra"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
+// NewRootServeCmdCommand creates a new root serve command.
+func NewRootServeCmdCommand() *cobra.Command {
+	cmds := &cobra.Command{
+		Use:     "swit",
+		Short:   "swit server application",
+		Version: "0.0.2",
 	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+	cmds.AddCommand(serve.NewServeCmd())
+	cmds.AddCommand(version.NewVersionCommand())
+	return cmds
 }

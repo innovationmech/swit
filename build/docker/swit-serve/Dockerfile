@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o swit-serve ./cmd/swit-serve
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o switserve ./cmd/switserve
 
 FROM alpine:latest  
 

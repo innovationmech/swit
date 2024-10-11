@@ -19,25 +19,35 @@
 // THE SOFTWARE.
 //
 
-package main
+package db
 
 import (
-	"os"
+	"fmt"
+	"sync"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/innovationmech/swit/internal/switserve/config"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+var (
+	// dbConn is the global database connection for the application.
+	dbConn *gorm.DB
+	// once is used to ensure that the database connection is only initialized once.
+	once sync.Once
+)
+
+// GetDB returns the global database connection for the application.
+func GetDB() *gorm.DB {
+	once.Do(func() {
+		cfg := config.GetConfig()
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
+			cfg.Database.Username, cfg.Database.Password, cfg.Database.Host, cfg.Database.Port, cfg.Database.DBName)
+		db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		if err != nil {
+			panic("fail to connect database")
+		}
+		dbConn = db
+	})
+	return dbConn
 }

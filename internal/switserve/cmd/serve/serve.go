@@ -19,25 +19,38 @@
 // THE SOFTWARE.
 //
 
-package main
+package serve
 
 import (
-	"os"
-
-	"github.com/innovationmech/swit/internal/component-base/cli"
 	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/cmd"
-	"go.uber.org/zap"
+	"github.com/innovationmech/swit/internal/switserve/config"
+	"github.com/innovationmech/swit/internal/switserve/server"
+	"github.com/spf13/cobra"
 )
 
-// main is the entry point of the application.
-func main() {
-	command := cmd.NewRootServeCmdCommand()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
+// cfg is the global configuration for the application.
+var cfg *config.ServeConfig
+
+// NewServeCmd creates a new serve command.
+func NewServeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the SWIT server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srv := server.NewServer()
+			srv.RegisterGlobalMiddleware()
+			srv.SetupRoutes()
+			return srv.Run(":" + cfg.Server.Port)
+		},
 	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+
+	cobra.OnInitialize(initConfig)
+
+	return cmd
+}
+
+// initConfig initializes the global configuration for the application.
+func initConfig() {
+	logger.InitLogger()
+	cfg = config.GetConfig()
 }
