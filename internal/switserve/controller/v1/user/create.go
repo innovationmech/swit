@@ -22,30 +22,31 @@
 package user
 
 import (
-	"github.com/innovationmech/swit/internal/switserve/model"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/model"
 )
 
 // CreateUser creates a new user.
 func (uc *UserController) CreateUser(c *gin.Context) {
-	var user model.User
-	if err := c.ShouldBindJSON(&user); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+	var req model.CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Add additional validation
-	if user.Username == "" || user.Email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Username and email cannot be empty"})
-		return
+	user := &model.User{
+		Username:     req.Username,
+		Email:        req.Email,
+		PasswordHash: req.Password, // 注意: 这里假设您的CreateUser方法会处理密码哈希
 	}
 
-	err := uc.userSrv.CreateUser(&user)
+	err := uc.userSrv.CreateUser(user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "User created successfully", "user": user})
+
+	c.JSON(http.StatusCreated, gin.H{"message": "User created successfully", "user": user})
 }

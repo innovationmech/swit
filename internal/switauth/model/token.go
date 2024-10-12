@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type Token struct {
@@ -39,7 +40,15 @@ type Token struct {
 	UpdatedAt        time.Time `json:"updated_at" gorm:"type:timestamp;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
-// TableName 指定数据库表名
+// TableName specifies the database table name
 func (Token) TableName() string {
 	return "tokens"
+}
+
+// BeforeCreate is a GORM hook, called before creating a record
+func (token *Token) BeforeCreate(tx *gorm.DB) (err error) {
+	if token.ID == uuid.Nil {
+		token.ID = uuid.New()
+	}
+	return
 }

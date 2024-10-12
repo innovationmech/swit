@@ -30,7 +30,7 @@ import (
 )
 
 func GenerateAccessToken(userID string) (string, time.Time, error) {
-	expiresAt := time.Now().Add(time.Minute * 15) // 访问令牌有效期15分钟
+	expiresAt := time.Now().Add(time.Minute * 15)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": userID,
 		"exp":     expiresAt.Unix(),
@@ -42,7 +42,7 @@ func GenerateAccessToken(userID string) (string, time.Time, error) {
 }
 
 func GenerateRefreshToken(userID string) (string, time.Time, error) {
-	expiresAt := time.Now().Add(time.Hour * 72) // 刷新令牌有效期72小时
+	expiresAt := time.Now().Add(time.Hour * 72)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": userID,
 		"exp":     expiresAt.Unix(),
@@ -72,11 +72,11 @@ func validateToken(tokenString, tokenType string) (jwt.MapClaims, error) {
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, errors.New("Invalid token claims")
+		return nil, errors.New("invalid token claims")
 	}
 
 	if claims["type"] != tokenType {
-		return nil, errors.New("Invalid token type")
+		return nil, errors.New("invalid token type")
 	}
 
 	return claims, nil

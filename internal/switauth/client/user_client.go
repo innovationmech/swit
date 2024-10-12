@@ -22,36 +22,50 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
 
-	"github.com/innovationmech/swit/internal/switserve/model"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
 type UserClient interface {
-	GetUserByUsername(username string) (*model.User, error)
+	ValidateUserCredentials(username, password string) (*model.User, error)
 }
 
 type userClient struct {
-	baseUrl string
+	baseURL string
 }
 
-func NewUserClient(baseUrl string) UserClient {
-	return &userClient{
-		baseUrl: baseUrl,
+func NewUserClient(baseURL string) UserClient {
+	return &userClient{baseURL: baseURL}
+}
+
+func (c *userClient) ValidateUserCredentials(username, password string) (*model.User, error) {
+	url := fmt.Sprintf("%s/internal/validate-user", c.baseURL)
+
+	credentials := struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}{
+		Username: username,
+		Password: password,
 	}
-}
 
-func (c *userClient) GetUserByUsername(username string) (*model.User, error) {
-	resp, err := http.Get(c.baseUrl + "/v1/users/username/" + username)
+	jsonData, err := json.Marshal(credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("failed to get user by username")
+		return nil, fmt.Errorf("user credentials validation failed: %s", resp.Status)
 	}
 
 	var user model.User

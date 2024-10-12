@@ -44,16 +44,12 @@ type authService struct {
 }
 
 func (s *authService) Login(username, password string) (string, string, error) {
-	// Validate user logic
-	user, err := s.userClient.GetUserByUsername(username)
+	user, err := s.userClient.ValidateUserCredentials(username, password)
 	if err != nil {
 		return "", "", err
 	}
 	if !user.IsActive {
 		return "", "", errors.New("user is not active")
-	}
-	if !utils.CheckPasswordHash(password, user.PasswordHash) {
-		return "", "", errors.New("invalid password")
 	}
 
 	// Generate access token and refresh token
@@ -67,7 +63,6 @@ func (s *authService) Login(username, password string) (string, string, error) {
 		return "", "", err
 	}
 
-	// Create Token instance
 	token := &model.Token{
 		UserID:           user.ID,
 		AccessToken:      accessToken,
@@ -77,7 +72,6 @@ func (s *authService) Login(username, password string) (string, string, error) {
 		IsValid:          true,
 	}
 
-	// Save token using TokenRepository
 	if err := s.tokenRepo.Create(token); err != nil {
 		return "", "", err
 	}

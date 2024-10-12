@@ -23,11 +23,14 @@ package switauth
 
 import (
 	"github.com/gin-gonic/gin"
+	comMiddleware "github.com/innovationmech/swit/internal/pkg/middleware"
 	"github.com/innovationmech/swit/internal/switauth/controller"
 )
 
 func RegisterRoutes(authController *controller.AuthController) *gin.Engine {
 	r := gin.Default()
+
+	r.Use(comMiddleware.CORSMiddleware())
 
 	authGroup := r.Group("/auth")
 	{

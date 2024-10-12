@@ -15,5 +15,4 @@ CREATE TABLE IF NOT EXISTS tokens (
     is_valid BOOLEAN NOT NULL DEFAULT TRUE,  -- Whether the token is valid
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- Record creation time
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,  -- Record update time
-    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES user_service_db.users(id)  -- Foreign key constraint
 );

@@ -22,6 +22,9 @@
 package switauth
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/config"
@@ -46,7 +49,7 @@ func NewServer() (*Server, error) {
 
 	initConfig()
 
-	userServiceUrl := cfg.BaseUrl
+	userServiceUrl := cfg.Url
 	userClient := client.NewUserClient(userServiceUrl)
 	tokenRepo := repository.NewTokenRepository(store.GetDB())
 	authService := service.NewAuthService(userClient, tokenRepo)
@@ -58,7 +61,8 @@ func NewServer() (*Server, error) {
 
 // Run starts the server
 func (s *Server) Run() error {
-	return s.router.Run(cfg.Server.Port)
+	port, _ := strconv.Atoi(cfg.Server.Port)
+	return s.router.Run(fmt.Sprintf(":%d", port))
 }
 
 func initConfig() {

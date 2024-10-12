@@ -22,9 +22,10 @@
 package model
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"time"
 )
 
 // User is the user model.
@@ -39,6 +40,15 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-func (user *User) BeforeCreated(db *gorm.DB) {
-	user.ID = uuid.New()
+func (user *User) BeforeCreate(tx *gorm.DB) (err error) {
+	if user.ID == uuid.Nil {
+		user.ID = uuid.New()
+	}
+	return
+}
+
+type CreateUserRequest struct {
+	Username string `json:"username" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
 }

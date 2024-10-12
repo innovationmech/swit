@@ -23,6 +23,8 @@ package repository
 
 import (
 	"errors"
+
+	"github.com/google/uuid"
 	"github.com/innovationmech/swit/internal/switauth/model"
 	"gorm.io/gorm"
 )
@@ -40,6 +42,9 @@ type tokenRepository struct {
 }
 
 func (r *tokenRepository) Create(token *model.Token) error {
+	if token.ID == uuid.Nil {
+		token.ID = uuid.New()
+	}
 	return r.db.Create(token).Error
 }
 

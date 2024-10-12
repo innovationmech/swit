@@ -22,17 +22,31 @@
 package controller
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 func (c *AuthController) ValidateToken(ctx *gin.Context) {
-	tokenString := ctx.GetHeader("Authorization")
-	if tokenString == "" {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is missing"})
+	// Get Authorization header
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
 		return
 	}
 
+	// Split the Bearer token
+	parts := strings.SplitN(authHeader, " ", 2)
+	if !(len(parts) == 2 && parts[0] == "Bearer") {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
+		return
+	}
+
+	// Extract the actual token
+	tokenString := parts[1]
+
+	// Validate token
 	token, err := c.authService.ValidateToken(tokenString)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})

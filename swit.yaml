@@ -3,7 +3,7 @@ database:
   port: 3306
   username: root
   password: root
-  dbname: demo
+  dbname: user_service_db
 server:
   port: 9000
-auth_server: http://localhost:9001/auth/
+url: http://localhost:9001/auth

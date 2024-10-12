@@ -22,6 +22,7 @@
 package repository
 
 import (
+	"github.com/google/uuid"
 	"github.com/innovationmech/swit/internal/switserve/model"
 	"gorm.io/gorm"
 )
@@ -47,6 +48,10 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 
 // CreateUser creates a new user.
 func (u userRepository) CreateUser(user *model.User) error {
+	// 确保 UUID 被设置
+	if user.ID == uuid.Nil {
+		user.ID = uuid.New()
+	}
 	result := u.db.Create(user)
 	return result.Error
 }

@@ -23,22 +23,20 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switserve/config"
 )
 
-// 创建一个白名单路径切片
 var whiteList = []string{
 	"/users/create",
 	"/health",
 	"/stop",
 }
 
-// 修改 AuthMiddleware 函数
 func AuthMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		// 检查当前路径是否在白名单中
 		for _, path := range whiteList {
 			if ctx.Request.URL.Path == path {
 				ctx.Next()
@@ -46,18 +44,41 @@ func AuthMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// 如果不在白名单中，进行认证
 		tokenString := ctx.GetHeader("Authorization")
 		if tokenString == "" {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "需要认证头"})
 			return
 		}
+
+		tokenParts := strings.Split(tokenString, " ")
+		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "无效的认证头格式"})
+			return
+		}
+		token := tokenParts[1]
+
 		cfg := config.GetConfig()
-		resp, err := http.Get(cfg.AuthServer + "/validate")
-		if err != nil || resp.StatusCode != http.StatusOK {
+		client := &http.Client{}
+		req, err := http.NewRequest("GET", cfg.Url+"/validate", nil)
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "创建验证请求失败"})
+			return
+		}
+
+		req.Header.Add("Authorization", "Bearer "+token)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "验证请求失败"})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "无效的令牌"})
 			return
 		}
+
 		ctx.Next()
 	}
 }
