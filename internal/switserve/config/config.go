@@ -40,7 +40,7 @@ type ServeConfig struct {
 	Server struct {
 		Port string `json:"port"`
 	} `json:"server"`
-	AuthServer string `json:"auth_server"`
+	Url string `json:"url"`
 }
 
 var (

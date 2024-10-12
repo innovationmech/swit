@@ -1,3 +1,24 @@
+// Copyright © 2023 jackelyj <dreamerlyj@gmail.com>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
 package utils
 
 import (
@@ -9,7 +30,7 @@ import (
 )
 
 func GenerateAccessToken(userID string) (string, time.Time, error) {
-	expiresAt := time.Now().Add(time.Minute * 15) // 访问令牌有效期15分钟
+	expiresAt := time.Now().Add(time.Minute * 15)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": userID,
 		"exp":     expiresAt.Unix(),
@@ -21,7 +42,7 @@ func GenerateAccessToken(userID string) (string, time.Time, error) {
 }
 
 func GenerateRefreshToken(userID string) (string, time.Time, error) {
-	expiresAt := time.Now().Add(time.Hour * 72) // 刷新令牌有效期72小时
+	expiresAt := time.Now().Add(time.Hour * 72)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": userID,
 		"exp":     expiresAt.Unix(),
@@ -51,11 +72,11 @@ func validateToken(tokenString, tokenType string) (jwt.MapClaims, error) {
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, errors.New("Invalid token claims")
+		return nil, errors.New("invalid token claims")
 	}
 
 	if claims["type"] != tokenType {
-		return nil, errors.New("Invalid token type")
+		return nil, errors.New("invalid token type")
 	}
 
 	return claims, nil

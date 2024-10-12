@@ -7,6 +7,9 @@ SERVE_MAIN_FILE := swit-serve.go
 CTL_BIN_NAME := switctl
 CTL_MAIN_DIR := cmd/switctl
 CTL_MAIN_FILE := switctl.go
+AUTH_BIN_NAME := swit-auth
+AUTH_MAIN_DIR := cmd/swit-auth
+AUTH_MAIN_FILE := swit-auth.go
 OUTPUTDIR := _output
 DOCKER := docker
 DOCKER_IMAGE_NAME := swit-serve
@@ -34,7 +37,7 @@ tidy:
 	@$(GO) mod tidy
 
 .PHONY: build
-build: build-serve build-ctl
+build: build-serve build-ctl build-auth
 
 .PHONY: build-serve
 build-serve:
@@ -47,6 +50,12 @@ build-ctl:
 	@echo "Building go program: switctl"
 	@mkdir -p $(OUTPUTDIR)/$(CTL_BIN_NAME)
 	@$(GO) build -o $(OUTPUTDIR)/$(CTL_BIN_NAME)/$(CTL_BIN_NAME) $(CTL_MAIN_DIR)/$(CTL_MAIN_FILE)
+
+.PHONY: build-auth
+build-auth:
+	@echo "Building go program: swit-auth"
+	@mkdir -p $(OUTPUTDIR)/$(AUTH_BIN_NAME)
+	@$(GO) build -o $(OUTPUTDIR)/$(AUTH_BIN_NAME)/$(AUTH_BIN_NAME) $(AUTH_MAIN_DIR)/$(AUTH_MAIN_FILE)
 
 .PHONY: clean
 clean:
