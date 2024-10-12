@@ -26,6 +26,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/pkg/discovery"
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/controller"
@@ -39,6 +40,7 @@ var cfg *config.AuthConfig
 // Server is the server for SWIT authentication service.
 type Server struct {
 	router *gin.Engine
+	sd     *discovery.ServiceDiscovery
 }
 
 // NewServer creates a new Server instance
@@ -49,8 +51,14 @@ func NewServer() (*Server, error) {
 
 	initConfig()
 
-	userServiceUrl := cfg.Url
-	userClient := client.NewUserClient(userServiceUrl)
+	// Using GetServiceDiscovery function to get service discovery instance
+	sd, err := config.GetServiceDiscovery()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service discovery client: %v", err)
+	}
+	s.sd = sd
+
+	userClient := client.NewUserClient(sd)
 	tokenRepo := repository.NewTokenRepository(store.GetDB())
 	authService := service.NewAuthService(userClient, tokenRepo)
 	authController := controller.NewAuthController(authService)
@@ -61,8 +69,21 @@ func NewServer() (*Server, error) {
 
 // Run starts the server
 func (s *Server) Run() error {
+	if s.sd == nil {
+		return fmt.Errorf("service discovery instance not initialized")
+	}
+
 	port, _ := strconv.Atoi(cfg.Server.Port)
-	return s.router.Run(fmt.Sprintf(":%d", port))
+	address := fmt.Sprintf(":%d", port)
+
+	// Register service
+	err := s.sd.RegisterService("switauth", "http://localhost", port)
+	if err != nil {
+		return fmt.Errorf("failed to register service: %v", err)
+	}
+	defer s.sd.DeregisterService("switauth", "http://localhost", port)
+
+	return s.router.Run(address)
 }
 
 func initConfig() {

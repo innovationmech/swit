@@ -23,29 +23,53 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/pkg/discovery"
 	"github.com/innovationmech/swit/internal/pkg/logger"
+	"github.com/innovationmech/swit/internal/switserve/config"
 	"go.uber.org/zap"
 )
 
 // Server is the server for the application.
 type Server struct {
 	router *gin.Engine
+	sd     *discovery.ServiceDiscovery
 	srv    *http.Server
 }
 
 // NewServer creates a new server for the application.
-func NewServer() *Server {
-	return &Server{
+func NewServer() (*Server, error) {
+	s := &Server{
 		router: gin.Default(),
 	}
+
+	// Get service discovery address from configuration
+	sdAddress := config.GetConfig().ServiceDiscovery.Address
+	sd, err := discovery.NewServiceDiscovery(sdAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service discovery client: %v", err)
+	}
+	s.sd = sd
+
+	s.SetupRoutes()
+	return s, nil
 }
 
 // Run runs the server on the given address.
 func (s *Server) Run(addr string) error {
+	// Register service
+	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
+	err := s.sd.RegisterService("swit-serve", "http://localhost", port)
+	if err != nil {
+		return fmt.Errorf("failed to register service: %v", err)
+	}
+	defer s.sd.DeregisterService("swit-serve", "http://localhost", port)
+
 	s.srv = &http.Server{
 		Addr:    addr,
 		Handler: s.router,
@@ -53,11 +77,15 @@ func (s *Server) Run(addr string) error {
 	return s.srv.ListenAndServe()
 }
 
-// Shutdown shuts down the server.
+// Shutdown shuts down the server and deregisters it from the service discovery.
 func (s *Server) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.srv.Shutdown(ctx); err != nil {
 		logger.Logger.Error("Shutdown error", zap.Error(err))
+	}
+	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
+	if err := s.sd.DeregisterService("swit-serve", "http://localhost", port); err != nil {
+		logger.Logger.Error("Deregister service error", zap.Error(err))
 	}
 }

@@ -6,4 +6,5 @@ database:
   dbname: user_service_db
 server:
   port: 9000
-url: http://localhost:9001/auth
+serviceDiscovery:
+  address: "localhost:8500"

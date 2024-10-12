@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/innovationmech/swit/internal/pkg/discovery"
 	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
@@ -35,15 +36,20 @@ type UserClient interface {
 }
 
 type userClient struct {
-	baseURL string
+	sd *discovery.ServiceDiscovery
 }
 
-func NewUserClient(baseURL string) UserClient {
-	return &userClient{baseURL: baseURL}
+func NewUserClient(sd *discovery.ServiceDiscovery) UserClient {
+	return &userClient{sd: sd}
 }
 
 func (c *userClient) ValidateUserCredentials(username, password string) (*model.User, error) {
-	url := fmt.Sprintf("%s/internal/validate-user", c.baseURL)
+	serviceURL, err := c.sd.DiscoverService("swit-serve")
+	if err != nil {
+		return nil, fmt.Errorf("unable to discover swit-serve service: %v", err)
+	}
+
+	url := fmt.Sprintf("%s/internal/validate-user", serviceURL)
 
 	credentials := struct {
 		Username string `json:"username"`
@@ -65,7 +71,7 @@ func (c *userClient) ValidateUserCredentials(username, password string) (*model.
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("user credentials validation failed: %s", resp.Status)
+		return nil, fmt.Errorf("user credential validation failed: %s", resp.Status)
 	}
 
 	var user model.User
