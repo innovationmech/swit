@@ -44,7 +44,9 @@ type AuthConfig struct {
 	Server struct {
 		Port string `json:"port" yaml:"port"`
 	} `json:"server" yaml:"server"`
-	Url string `json:"url" yaml:"url"`
+	ServiceDiscovery struct {
+		Address string `json:"address" yaml:"address"`
+	} `json:"serviceDiscovery" yaml:"serviceDiscovery"`
 }
 
 func GetConfig() *AuthConfig {

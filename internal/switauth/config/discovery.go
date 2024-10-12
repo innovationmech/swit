@@ -19,39 +19,28 @@
 // THE SOFTWARE.
 //
 
-package serve
+package config
 
 import (
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/config"
-	"github.com/innovationmech/swit/internal/switserve/server"
-	"github.com/spf13/cobra"
+	"sync"
+
+	"github.com/innovationmech/swit/internal/pkg/discovery"
 )
 
-// cfg is the global configuration for the application.
-var cfg *config.ServeConfig
+var (
+	sd     *discovery.ServiceDiscovery
+	sdOnce sync.Once
+)
 
-// NewServeCmd creates a new serve command.
-func NewServeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "serve",
-		Short: "Start the SWIT server",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			srv, err := server.NewServer()
-			if err != nil {
-				return err
-			}
-			return srv.Run(":" + cfg.Server.Port)
-		},
+// GetServiceDiscovery returns a service discovery instance, creating a new one if not already created
+func GetServiceDiscovery() (*discovery.ServiceDiscovery, error) {
+	var err error
+	sdOnce.Do(func() {
+		cfg := GetConfig()
+		sd, err = discovery.NewServiceDiscovery(cfg.ServiceDiscovery.Address)
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	cobra.OnInitialize(initConfig)
-
-	return cmd
-}
-
-// initConfig initializes the global configuration for the application.
-func initConfig() {
-	logger.InitLogger()
-	cfg = config.GetConfig()
+	return sd, nil
 }

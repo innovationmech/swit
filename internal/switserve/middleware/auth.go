@@ -22,6 +22,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -46,22 +47,33 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		tokenString := ctx.GetHeader("Authorization")
 		if tokenString == "" {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "需要认证头"})
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authentication header required"})
 			return
 		}
 
 		tokenParts := strings.Split(tokenString, " ")
 		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "无效的认证头格式"})
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid authentication header format"})
 			return
 		}
 		token := tokenParts[1]
 
-		cfg := config.GetConfig()
-		client := &http.Client{}
-		req, err := http.NewRequest("GET", cfg.Url+"/validate", nil)
+		sd, err := config.GetServiceDiscovery()
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "创建验证请求失败"})
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize service discovery"})
+			return
+		}
+
+		serviceURL, err := sd.DiscoverService("switauth")
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to discover swit-auth service"})
+			return
+		}
+
+		client := &http.Client{}
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s/auth/validate", serviceURL), nil)
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to create validation request"})
 			return
 		}
 
@@ -69,13 +81,13 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		resp, err := client.Do(req)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "验证请求失败"})
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Validation request failed"})
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "无效的令牌"})
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			return
 		}
 

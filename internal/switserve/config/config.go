@@ -40,7 +40,10 @@ type ServeConfig struct {
 	Server struct {
 		Port string `json:"port"`
 	} `json:"server"`
-	Url string `json:"url"`
+	Url              string `json:"url"`
+	ServiceDiscovery struct {
+		Address string `json:"address"`
+	} `json:"serviceDiscovery"`
 }
 
 var (
