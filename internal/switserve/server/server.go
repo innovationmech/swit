@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,19 +34,22 @@ import (
 	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 // Server is the server for the application.
 type Server struct {
-	router *gin.Engine
-	sd     *discovery.ServiceDiscovery
-	srv    *http.Server
+	router     *gin.Engine
+	sd         *discovery.ServiceDiscovery
+	srv        *http.Server
+	grpcServer *grpc.Server
 }
 
 // NewServer creates a new server for the application.
 func NewServer() (*Server, error) {
 	s := &Server{
-		router: gin.Default(),
+		router:     gin.Default(),
+		grpcServer: grpc.NewServer(),
 	}
 
 	// Get service discovery address from configuration
@@ -70,11 +74,12 @@ func (s *Server) Run(addr string) error {
 	}
 	defer s.sd.DeregisterService("swit-serve", "http://localhost", port)
 
-	s.srv = &http.Server{
-		Addr:    addr,
-		Handler: s.router,
-	}
-	return s.srv.ListenAndServe()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go s.runGinServer(addr, &wg)
+	go s.runGRPCServer(&wg)
+	wg.Wait()
+	return nil
 }
 
 // Shutdown shuts down the server and deregisters it from the service discovery.
