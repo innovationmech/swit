@@ -1,0 +1,13 @@
+server:
+  port: 8080
+store:
+  db:
+    host: 127.0.0.1
+    port: 3306
+    user: root
+    password: 123456
+    dbname: switblog
+grpc:
+  port: 50051
+serviceDiscovery:
+  address: http://127.0.0.1:8500
