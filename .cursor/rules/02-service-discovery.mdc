@@ -1,0 +1,46 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 服务发现机制
+
+本项目使用Consul作为服务发现和注册中心。服务发现的核心实现位于[internal/pkg/discovery/consul.go](mdc:internal/pkg/discovery/consul.go)。
+
+## 主要功能
+
+服务发现组件（`ServiceDiscovery`）提供以下主要功能：
+
+1. **创建客户端**: 通过`NewServiceDiscovery`函数创建与Consul的连接。
+   ```go
+   discovery, err := discovery.NewServiceDiscovery("localhost:8500")
+   ```
+
+2. **服务注册**: 使用`RegisterService`方法将服务注册到Consul。
+   ```go
+   err := discovery.RegisterService("service-name", "服务地址", 端口号)
+   ```
+
+3. **服务注销**: 使用`DeregisterService`方法从Consul注销服务。
+   ```go
+   err := discovery.DeregisterService("service-name", "服务地址", 端口号)
+   ```
+
+4. **服务发现**: 使用`DiscoverService`方法查找已注册的服务。
+   ```go
+   address, err := discovery.DiscoverService("service-name")
+   ```
+
+## 配置方式
+
+各服务的配置文件中需要包含服务发现地址：
+```yaml
+serviceDiscovery:
+  address: "localhost:8500"
+```
+
+## 使用流程
+
+1. 服务启动时，通过创建`ServiceDiscovery`实例并调用`RegisterService`注册自身
+2. 服务运行期间，可以通过`DiscoverService`发现其他服务
+3. 服务关闭时，应调用`DeregisterService`注销自身
