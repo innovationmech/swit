@@ -66,18 +66,23 @@ func NewServer() (*Server, error) {
 
 // Run runs the server on the given address.
 func (s *Server) Run(addr string) error {
+	var wg sync.WaitGroup
+	readyGin := make(chan struct{})
+	wg.Add(2)
+
+	go s.runGinServer(addr, &wg, readyGin)
+	go s.runGRPCServer(&wg)
+
+	<-readyGin
+
 	// Register service
 	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
-	err := s.sd.RegisterService("swit-serve", "http://localhost", port)
+	err := s.sd.RegisterService("swit-serve", "localhost", port)
 	if err != nil {
-		return fmt.Errorf("failed to register service: %v", err)
+		logger.Logger.Error("failed to register swit-serve service", zap.Error(err))
+		return err
 	}
-	defer s.sd.DeregisterService("swit-serve", "http://localhost", port)
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go s.runGinServer(addr, &wg)
-	go s.runGRPCServer(&wg)
 	wg.Wait()
 	return nil
 }
@@ -90,7 +95,7 @@ func (s *Server) Shutdown() {
 		logger.Logger.Error("Shutdown error", zap.Error(err))
 	}
 	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
-	if err := s.sd.DeregisterService("swit-serve", "http://localhost", port); err != nil {
+	if err := s.sd.DeregisterService("swit-serve", "localhost", port); err != nil {
 		logger.Logger.Error("Deregister service error", zap.Error(err))
 	}
 }

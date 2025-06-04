@@ -64,7 +64,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		serviceURL, err := sd.DiscoverService("switauth")
+		serviceURL, err := sd.GetInstanceRoundRobin("switauth")
 		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to discover swit-auth service"})
 			return
