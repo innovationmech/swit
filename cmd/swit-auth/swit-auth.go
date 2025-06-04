@@ -24,7 +24,7 @@ package main
 import (
 	"log"
 
-	switauth "github.com/innovationmech/swit/internal/switauth"
+	"github.com/innovationmech/swit/internal/switauth"
 )
 
 func main() {

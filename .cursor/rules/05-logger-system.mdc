@@ -1,0 +1,62 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 日志系统
+
+swit项目使用Uber的zap库作为日志系统。日志系统实现在[internal/pkg/logger/logger.go](mdc:internal/pkg/logger/logger.go)中。
+
+## 全局日志实例
+
+项目定义了一个全局的日志实例：
+
+```go
+// Logger is the global logger for the application.
+var Logger *zap.Logger
+```
+
+## 初始化日志
+
+在应用启动时，应该调用`InitLogger`函数初始化日志系统：
+
+```go
+logger.InitLogger()
+```
+
+初始化后，全局变量`Logger`将被设置为一个生产环境的日志实例。
+
+## 使用日志
+
+在代码中可以这样使用日志：
+
+```go
+// 输出信息级别的日志
+logger.Logger.Info("这是一条信息", zap.String("key", "value"))
+
+// 输出错误级别的日志
+logger.Logger.Error("发生错误", zap.Error(err))
+
+// 输出调试级别的日志
+logger.Logger.Debug("调试信息", zap.Int("code", 200))
+
+// 输出警告级别的日志
+logger.Logger.Warn("警告信息", zap.Duration("latency", duration))
+```
+
+## zap日志的优势
+
+1. **高性能**：zap是一个高性能的日志库，比标准库的日志性能更好
+2. **结构化日志**：支持字段化的结构化日志，便于后期分析
+3. **多级别**：支持Debug、Info、Warn、Error、Fatal等多个日志级别
+4. **可配置**：可以配置输出格式、输出位置等
+
+## 在服务器组件中的应用
+
+当服务器关闭时，会使用日志记录错误：
+
+```go
+if err := s.srv.Shutdown(ctx); err != nil {
+    logger.Logger.Error("Shutdown error", zap.Error(err))
+}
+```

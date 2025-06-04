@@ -76,13 +76,6 @@ func (s *Server) Run() error {
 	port, _ := strconv.Atoi(cfg.Server.Port)
 	address := fmt.Sprintf(":%d", port)
 
-	// Register service
-	err := s.sd.RegisterService("switauth", "http://localhost", port)
-	if err != nil {
-		return fmt.Errorf("failed to register service: %v", err)
-	}
-	defer s.sd.DeregisterService("switauth", "http://localhost", port)
-
 	return s.router.Run(address)
 }
 

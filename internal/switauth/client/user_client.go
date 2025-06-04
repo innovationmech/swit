@@ -44,7 +44,7 @@ func NewUserClient(sd *discovery.ServiceDiscovery) UserClient {
 }
 
 func (c *userClient) ValidateUserCredentials(username, password string) (*model.User, error) {
-	serviceURL, err := c.sd.DiscoverService("swit-serve")
+	serviceURL, err := c.sd.GetInstanceRoundRobin("swit-serve")
 	if err != nil {
 		return nil, fmt.Errorf("unable to discover swit-serve service: %v", err)
 	}

@@ -1,0 +1,87 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 配置系统
+
+swit项目使用Viper库来管理配置。每个服务都有自己的配置实现，位于其各自的`config`包中。
+
+## 主要配置文件
+
+- 主服务配置: [internal/switserve/config/config.go](mdc:internal/switserve/config/config.go)
+- 认证服务配置: [internal/switauth/config/config.go](mdc:internal/switauth/config/config.go)
+- 博客服务配置: [internal/switblog/config/config.go](mdc:internal/switblog/config/config.go)
+
+## 配置结构
+
+每个服务都定义了自己的配置结构体，以主服务为例：
+
+```go
+type ServeConfig struct {
+    Database struct {
+        Username string `json:"username"`
+        Password string `json:"password"`
+        Host     string `json:"host"`
+        Port     string `json:"port"`
+        DBName   string `json:"dbname"`
+    } `json:"database"`
+    Server struct {
+        Port string `json:"port"`
+    } `json:"server"`
+    Url              string `json:"url"`
+    ServiceDiscovery struct {
+        Address string `json:"address"`
+    } `json:"serviceDiscovery"`
+}
+```
+
+## 配置加载机制
+
+配置使用单例模式通过`GetConfig`函数获取：
+
+```go
+cfg := config.GetConfig()
+```
+
+内部实现使用了`sync.Once`确保配置只被初始化一次：
+
+```go
+var (
+    cfg *ServeConfig
+    once sync.Once
+)
+
+func GetConfig() *ServeConfig {
+    once.Do(func() {
+        // 加载配置逻辑
+    })
+    return cfg
+}
+```
+
+## YAML配置文件
+
+配置从YAML文件加载，例如`swit.yaml`：
+
+```yaml
+database:
+  host: 127.0.0.1
+  port: 3306
+  username: root
+  password: root
+  dbname: user_service_db
+server:
+  port: 9000
+serviceDiscovery:
+  address: "localhost:8500"
+```
+
+## 配置使用
+
+在代码中可以这样使用配置值：
+
+```go
+port := config.GetConfig().Server.Port
+dbHost := config.GetConfig().Database.Host
+```

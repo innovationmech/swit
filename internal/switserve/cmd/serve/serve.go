@@ -26,6 +26,10 @@ import (
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/internal/switserve/server"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 // cfg is the global configuration for the application.
@@ -41,7 +45,19 @@ func NewServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return srv.Run(":" + cfg.Server.Port)
+			go func() {
+				if err := srv.Run(":" + cfg.Server.Port); err != nil {
+					logger.Logger.Error("Server exited", zap.Error(err))
+				}
+			}()
+
+			quit := make(chan os.Signal, 1)
+			signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+			<-quit
+
+			logger.Logger.Info("Shutting down server...")
+			srv.Shutdown()
+			return nil
 		},
 	}
 
