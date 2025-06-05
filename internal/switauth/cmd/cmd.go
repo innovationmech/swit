@@ -19,23 +19,20 @@
 // THE SOFTWARE.
 //
 
-package main
+package cmd
 
 import (
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switauth/cmd"
-	"go.uber.org/zap"
-	"os"
+	"github.com/innovationmech/swit/internal/switauth/cmd/start"
+	"github.com/spf13/cobra"
 )
 
-func main() {
-	command := cmd.NewSwitAuthCmd()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
+func NewSwitAuthCmd() *cobra.Command {
+	cmds := &cobra.Command{
+		Use:     "switauth",
+		Short:   "swit authentication service",
+		Version: "0.0.2",
 	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+	cmds.AddCommand(start.NewStartCmd())
+
+	return cmds
 }

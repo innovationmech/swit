@@ -97,5 +97,7 @@ func (s *Server) Shutdown() {
 	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
 	if err := s.sd.DeregisterService("swit-serve", "localhost", port); err != nil {
 		logger.Logger.Error("Deregister service error", zap.Error(err))
+	} else {
+		logger.Logger.Info("Service deregistered successfully", zap.String("service", "swit-serve"))
 	}
 }

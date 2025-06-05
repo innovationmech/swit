@@ -19,23 +19,12 @@
 // THE SOFTWARE.
 //
 
-package main
+package controller
 
-import (
-	"github.com/innovationmech/swit/internal/component-base/cli"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switauth/cmd"
-	"go.uber.org/zap"
-	"os"
-)
+import "github.com/gin-gonic/gin"
 
-func main() {
-	command := cmd.NewSwitAuthCmd()
-	if err := cli.Run(command); err != nil {
-		logger.Logger.Error("Error occurred while running command", zap.Error(err))
-		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
-	}
+func HealthHandler(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"message": "pong",
+	})
 }
