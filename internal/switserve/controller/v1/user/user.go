@@ -22,9 +22,11 @@
 package user
 
 import (
+	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/innovationmech/swit/internal/switserve/db"
 	"github.com/innovationmech/swit/internal/switserve/repository"
 	v1 "github.com/innovationmech/swit/internal/switserve/service/v1"
+	"go.uber.org/zap"
 )
 
 type UserController struct {
@@ -33,7 +35,14 @@ type UserController struct {
 
 // NewUserController creates a new user controller.
 func NewUserController() *UserController {
+	userSrv, err := v1.NewUserSrv(
+		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
+	)
+	if err != nil {
+		logger.Logger.Error("failed to create user service", zap.Error(err))
+	}
+
 	return &UserController{
-		userSrv: v1.NewUserSrv(repository.NewUserRepository(db.GetDB())),
+		userSrv: userSrv,
 	}
 }
