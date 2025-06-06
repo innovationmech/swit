@@ -23,6 +23,7 @@ package middleware
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -84,7 +85,12 @@ func AuthMiddleware() gin.HandlerFunc {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Validation request failed"})
 			return
 		}
-		defer resp.Body.Close()
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+
+			}
+		}(resp.Body)
 
 		if resp.StatusCode != http.StatusOK {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})

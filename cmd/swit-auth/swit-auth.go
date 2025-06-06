@@ -22,18 +22,20 @@
 package main
 
 import (
-	"log"
-
-	"github.com/innovationmech/swit/internal/switauth"
+	"github.com/innovationmech/swit/internal/component-base/cli"
+	"github.com/innovationmech/swit/internal/pkg/logger"
+	"github.com/innovationmech/swit/internal/switauth/cmd"
+	"go.uber.org/zap"
+	"os"
 )
 
 func main() {
-	server, err := switauth.NewServer()
-	if err != nil {
-		log.Fatalf("无法创建服务器: %v", err)
+	command := cmd.NewSwitAuthCmd()
+	if err := cli.Run(command); err != nil {
+		logger.Logger.Error("Error occurred while running command", zap.Error(err))
+		os.Exit(1)
 	}
-
-	if err := server.Run(); err != nil {
-		log.Fatalf("服务器运行失败: %v", err)
+	if err := logger.Logger.Sync(); err != nil {
+		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
 	}
 }

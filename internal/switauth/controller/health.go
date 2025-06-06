@@ -19,30 +19,12 @@
 // THE SOFTWARE.
 //
 
-package user
+package controller
 
-import (
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"github.com/innovationmech/swit/internal/switserve/db"
-	"github.com/innovationmech/swit/internal/switserve/repository"
-	v1 "github.com/innovationmech/swit/internal/switserve/service/v1"
-	"go.uber.org/zap"
-)
+import "github.com/gin-gonic/gin"
 
-type UserController struct {
-	userSrv v1.UserSrv
-}
-
-// NewUserController creates a new user controller.
-func NewUserController() *UserController {
-	userSrv, err := v1.NewUserSrv(
-		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
-	)
-	if err != nil {
-		logger.Logger.Error("failed to create user service", zap.Error(err))
-	}
-
-	return &UserController{
-		userSrv: userSrv,
-	}
+func HealthHandler(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"message": "pong",
+	})
 }

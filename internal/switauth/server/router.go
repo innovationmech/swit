@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 //
 
-package switauth
+package server
 
 import (
 	"github.com/gin-gonic/gin"
@@ -39,6 +39,8 @@ func RegisterRoutes(authController *controller.AuthController) *gin.Engine {
 		authGroup.POST("/refresh", authController.RefreshToken)
 		authGroup.GET("/validate", authController.ValidateToken)
 	}
+
+	r.GET("/health", controller.HealthHandler)
 
 	return r
 }

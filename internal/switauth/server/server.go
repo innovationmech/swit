@@ -19,11 +19,19 @@
 // THE SOFTWARE.
 //
 
-package switauth
+package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"github.com/innovationmech/swit/internal/pkg/logger"
+	"go.uber.org/zap"
+	"net"
+	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/pkg/discovery"
@@ -41,6 +49,7 @@ var cfg *config.AuthConfig
 type Server struct {
 	router *gin.Engine
 	sd     *discovery.ServiceDiscovery
+	srv    *http.Server
 }
 
 // NewServer creates a new Server instance
@@ -68,15 +77,62 @@ func NewServer() (*Server, error) {
 }
 
 // Run starts the server
-func (s *Server) Run() error {
-	if s.sd == nil {
-		return fmt.Errorf("service discovery instance not initialized")
+func (s *Server) Run(addr string) error {
+	var wg sync.WaitGroup
+	readyGin := make(chan struct{})
+	wg.Add(1)
+
+	go s.runGinServer(addr, &wg, readyGin)
+
+	<-readyGin
+
+	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
+	// Register service with Consul
+	err := s.sd.RegisterService("swit-auth", "localhost", port)
+	if err != nil {
+		logger.Logger.Error("failed to register swit-auth service", zap.Error(err))
+		return err
+	}
+	wg.Wait()
+	return nil
+}
+
+// Shutdown gracefully shuts down the server
+func (s *Server) Shutdown() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.srv.Shutdown(ctx); err != nil {
+		logger.Logger.Error("Shutdown error", zap.Error(err))
+	}
+	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
+	// Deregister service from Consul
+	if err := s.sd.DeregisterService("swit-auth", "localhost", port); err != nil {
+		logger.Logger.Error("Deregister service error", zap.Error(err))
+	} else {
+		logger.Logger.Info("Service deregistered successfully")
+	}
+}
+
+// runGinServer starts the Gin server on the specified address
+func (s *Server) runGinServer(addr string, wg *sync.WaitGroup, ch chan struct{}) {
+	defer wg.Done()
+	s.srv = &http.Server{
+		Addr:    addr,
+		Handler: s.router,
 	}
 
-	port, _ := strconv.Atoi(cfg.Server.Port)
-	address := fmt.Sprintf(":%d", port)
+	ln, err := net.Listen("tcp", s.srv.Addr)
+	if err != nil {
+		fmt.Printf("listen gin server error: %v\n", err)
+		return
+	}
 
-	return s.router.Run(address)
+	close(ch)
+
+	if err := s.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fmt.Printf("listen gin server error: %v\n", err)
+		return
+	}
 }
 
 func initConfig() {
