@@ -23,7 +23,7 @@ package server
 
 import (
 	"errors"
-	"github.com/innovationmech/swit/internal/pkg/logger"
+	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 	"net"
 	"net/http"

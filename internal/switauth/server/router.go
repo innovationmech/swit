@@ -23,8 +23,8 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
-	comMiddleware "github.com/innovationmech/swit/internal/pkg/middleware"
 	"github.com/innovationmech/swit/internal/switauth/controller"
+	comMiddleware "github.com/innovationmech/swit/pkg/middleware"
 )
 
 func RegisterRoutes(authController *controller.AuthController) *gin.Engine {

@@ -21,10 +21,10 @@
 package server
 
 import (
+	"github.com/innovationmech/swit/pkg/logger"
 	"sort"
 
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/pkg/logger"
 	"go.uber.org/zap"
 )
 

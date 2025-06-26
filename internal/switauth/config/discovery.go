@@ -22,9 +22,8 @@
 package config
 
 import (
+	"github.com/innovationmech/swit/pkg/discovery"
 	"sync"
-
-	"github.com/innovationmech/swit/internal/pkg/discovery"
 )
 
 var (

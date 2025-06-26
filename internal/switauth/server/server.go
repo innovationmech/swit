@@ -25,7 +25,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/innovationmech/swit/internal/pkg/logger"
+	"github.com/innovationmech/swit/pkg/discovery"
+	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 	"net"
 	"net/http"
@@ -34,7 +35,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/pkg/discovery"
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/controller"

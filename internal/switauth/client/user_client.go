@@ -25,9 +25,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/innovationmech/swit/pkg/discovery"
 	"net/http"
 
-	"github.com/innovationmech/swit/internal/pkg/discovery"
 	"github.com/innovationmech/swit/internal/switauth/model"
 )
 

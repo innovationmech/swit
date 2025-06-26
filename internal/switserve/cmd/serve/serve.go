@@ -22,9 +22,9 @@
 package serve
 
 import (
-	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/internal/switserve/server"
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"os"
