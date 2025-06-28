@@ -22,9 +22,9 @@
 package start
 
 import (
-	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/server"
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"os"

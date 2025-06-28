@@ -22,45 +22,17 @@
 package middleware
 
 import (
-	"time"
-
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/pkg/logger"
-	"go.uber.org/zap"
 )
 
-// Logger is a middleware function for logging HTTP requests
-func Logger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Start time
-		start := time.Now()
-		path := c.Request.URL.Path
-		raw := c.Request.URL.RawQuery
+// CORSMiddleware returns a CORS middleware
+func CORSMiddleware() gin.HandlerFunc {
+	config := cors.DefaultConfig()
+	config.AllowOrigins = []string{"http://localhost:3000"} // Allowed frontend domain
+	config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	config.AllowCredentials = true
 
-		// Process request
-		c.Next()
-
-		// End time
-		end := time.Now()
-		latency := end.Sub(start)
-
-		clientIP := c.ClientIP()
-		method := c.Request.Method
-		statusCode := c.Writer.Status()
-
-		if raw != "" {
-			path = path + "?" + raw
-		}
-
-		// Use logger.Logger to record logs
-		logger.Logger.Info("HTTP Request Log",
-			zap.String("ClientIP", clientIP),
-			zap.String("Host", c.Request.Host),
-			zap.String("Time", end.Format("02/Jan/2006:15:04:05 -0700")),
-			zap.String("Method", method),
-			zap.String("Path", path),
-			zap.Int("StatusCode", statusCode),
-			zap.Duration("Latency", latency),
-		)
-	}
+	return cors.New(config)
 }

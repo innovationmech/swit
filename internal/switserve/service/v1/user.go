@@ -23,9 +23,8 @@ package v1
 
 import (
 	"errors"
+	"github.com/innovationmech/swit/pkg/utils"
 	"strings"
-
-	"github.com/innovationmech/swit/internal/pkg/utils"
 
 	"github.com/innovationmech/swit/internal/switserve/model"
 	"github.com/innovationmech/swit/internal/switserve/repository"

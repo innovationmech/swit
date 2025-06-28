@@ -23,12 +23,12 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/innovationmech/swit/internal/switserve/controller/debug"
 	"github.com/innovationmech/swit/internal/switserve/controller/health"
 	"github.com/innovationmech/swit/internal/switserve/controller/stop"
 	"github.com/innovationmech/swit/internal/switserve/controller/v1/user"
 	"github.com/innovationmech/swit/internal/switserve/middleware"
+	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 )
 

@@ -24,14 +24,14 @@ package server
 import (
 	"context"
 	"fmt"
+	"github.com/innovationmech/swit/pkg/discovery"
+	"github.com/innovationmech/swit/pkg/logger"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/pkg/discovery"
-	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"

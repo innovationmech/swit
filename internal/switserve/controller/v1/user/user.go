@@ -22,10 +22,10 @@
 package user
 
 import (
-	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/innovationmech/swit/internal/switserve/db"
 	"github.com/innovationmech/swit/internal/switserve/repository"
 	v1 "github.com/innovationmech/swit/internal/switserve/service/v1"
+	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 )
 

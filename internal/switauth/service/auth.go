@@ -23,9 +23,9 @@ package service
 
 import (
 	"errors"
+	"github.com/innovationmech/swit/pkg/utils"
 	"time"
 
-	"github.com/innovationmech/swit/internal/pkg/utils"
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/model"
 	"github.com/innovationmech/swit/internal/switauth/repository"

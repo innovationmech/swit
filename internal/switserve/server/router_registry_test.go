@@ -21,11 +21,11 @@
 package server
 
 import (
+	"github.com/innovationmech/swit/pkg/logger"
 	"net/http"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
@@ -99,20 +99,20 @@ func init() {
 
 func TestRouteRegistry_RegisterRoute(t *testing.T) {
 	registry := NewRouteRegistry()
-	
+
 	registrar := NewTestRouteRegistrar("test-api", "v1", "")
 	registry.RegisterRoute(registrar)
-	
+
 	assert.Len(t, registry.routeRegistrars, 1)
 	assert.Equal(t, "test-api", registry.routeRegistrars[0].GetName())
 }
 
 func TestRouteRegistry_RegisterMiddleware(t *testing.T) {
 	registry := NewRouteRegistry()
-	
+
 	registrar := NewTestMiddlewareRegistrar("test-middleware", 10)
 	registry.RegisterMiddleware(registrar)
-	
+
 	assert.Len(t, registry.middlewareRegistrars, 1)
 	assert.Equal(t, "test-middleware", registry.middlewareRegistrars[0].GetName())
 }
@@ -121,13 +121,13 @@ func TestRouteRegistry_Setup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	registry := NewRouteRegistry()
-	
+
 	// 注册中间件
 	middleware1 := NewTestMiddlewareRegistrar("middleware-1", 20)
 	middleware2 := NewTestMiddlewareRegistrar("middleware-2", 10)
 	registry.RegisterMiddleware(middleware1)
 	registry.RegisterMiddleware(middleware2)
-	
+
 	// 注册路由
 	route1 := NewTestRouteRegistrar("api-v1", "v1", "")
 	route2 := NewTestRouteRegistrar("api-v2", "v2", "")
@@ -135,40 +135,40 @@ func TestRouteRegistry_Setup(t *testing.T) {
 	registry.RegisterRoute(route1)
 	registry.RegisterRoute(route2)
 	registry.RegisterRoute(route3)
-	
+
 	err := registry.Setup(router)
 	assert.NoError(t, err)
-	
+
 	// 验证路由是否正确注册
 	routes := router.Routes()
 	assert.True(t, len(routes) > 0)
-	
+
 	// 验证路由路径
 	routePaths := make([]string, len(routes))
 	for i, route := range routes {
 		routePaths[i] = route.Path
 	}
-	
-	assert.Contains(t, routePaths, "/v1/test")  // v1版本路由
-	assert.Contains(t, routePaths, "/v2/test")  // v2版本路由
-	assert.Contains(t, routePaths, "/test")     // root版本路由
+
+	assert.Contains(t, routePaths, "/v1/test") // v1版本路由
+	assert.Contains(t, routePaths, "/v2/test") // v2版本路由
+	assert.Contains(t, routePaths, "/test")    // root版本路由
 }
 
 func TestRouteRegistry_GetRegisteredRoutes(t *testing.T) {
 	registry := NewRouteRegistry()
-	
+
 	registrar1 := NewTestRouteRegistrar("api-1", "v1", "prefix1")
 	registrar2 := NewTestRouteRegistrar("api-2", "v2", "prefix2")
 	registry.RegisterRoute(registrar1)
 	registry.RegisterRoute(registrar2)
-	
+
 	routes := registry.GetRegisteredRoutes()
 	assert.Len(t, routes, 2)
-	
+
 	assert.Equal(t, "api-1", routes[0]["name"])
 	assert.Equal(t, "v1", routes[0]["version"])
 	assert.Equal(t, "prefix1", routes[0]["prefix"])
-	
+
 	assert.Equal(t, "api-2", routes[1]["name"])
 	assert.Equal(t, "v2", routes[1]["version"])
 	assert.Equal(t, "prefix2", routes[1]["prefix"])
@@ -176,18 +176,18 @@ func TestRouteRegistry_GetRegisteredRoutes(t *testing.T) {
 
 func TestRouteRegistry_GetRegisteredMiddlewares(t *testing.T) {
 	registry := NewRouteRegistry()
-	
+
 	middleware1 := NewTestMiddlewareRegistrar("middleware-1", 10)
 	middleware2 := NewTestMiddlewareRegistrar("middleware-2", 20)
 	registry.RegisterMiddleware(middleware1)
 	registry.RegisterMiddleware(middleware2)
-	
+
 	middlewares := registry.GetRegisteredMiddlewares()
 	assert.Len(t, middlewares, 2)
-	
+
 	assert.Equal(t, "middleware-1", middlewares[0]["name"])
 	assert.Equal(t, 10, middlewares[0]["priority"])
-	
+
 	assert.Equal(t, "middleware-2", middlewares[1]["name"])
 	assert.Equal(t, 20, middlewares[1]["priority"])
 }
@@ -196,19 +196,19 @@ func TestMiddlewarePrioritySort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	registry := NewRouteRegistry()
-	
+
 	// 以错误的顺序注册中间件
 	middleware3 := NewTestMiddlewareRegistrar("middleware-3", 30)
 	middleware1 := NewTestMiddlewareRegistrar("middleware-1", 10)
 	middleware2 := NewTestMiddlewareRegistrar("middleware-2", 20)
-	
+
 	registry.RegisterMiddleware(middleware3)
 	registry.RegisterMiddleware(middleware1)
 	registry.RegisterMiddleware(middleware2)
-	
+
 	err := registry.Setup(router)
 	assert.NoError(t, err)
-	
+
 	// 验证中间件是否按优先级正确排序
 	middlewares := registry.GetRegisteredMiddlewares()
 	assert.Equal(t, "middleware-1", middlewares[0]["name"]) // 优先级10，应该第一

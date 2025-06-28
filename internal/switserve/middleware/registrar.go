@@ -22,7 +22,7 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	comMiddleware "github.com/innovationmech/swit/internal/pkg/middleware"
+	middleware2 "github.com/innovationmech/swit/pkg/middleware"
 )
 
 // GlobalMiddlewareRegistrar 全局中间件注册器
@@ -35,7 +35,7 @@ func NewGlobalMiddlewareRegistrar() *GlobalMiddlewareRegistrar {
 
 // RegisterMiddleware 实现 MiddlewareRegistrar 接口
 func (gmr *GlobalMiddlewareRegistrar) RegisterMiddleware(router *gin.Engine) error {
-	router.Use(comMiddleware.Logger(), comMiddleware.CORSMiddleware())
+	router.Use(middleware2.Logger(), middleware2.CORSMiddleware())
 	return nil
 }
 
