@@ -19,28 +19,12 @@
 // THE SOFTWARE.
 //
 
-package user
+package handler
 
-import (
-	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switserve/middleware"
-)
+import "github.com/gin-gonic/gin"
 
-// RegisterMiddleware registers the middleware for the user controller.
-func RegisterMiddleware(router *gin.Engine) {
-	uc := NewUserController()
-	userGroup := router.Group("/users")
-	userGroup.Use(middleware.AuthMiddleware())
-	{
-		userGroup.POST("/create", uc.CreateUser)
-		userGroup.GET("/username/:username", uc.GetUserByUsername)
-		userGroup.GET("/email/:email", uc.GetUserByEmail)
-		userGroup.DELETE("/:id", uc.DeleteUser)
-	}
-
-	// Internal API route group, does not require authentication middleware
-	internal := router.Group("/internal")
-	{
-		internal.POST("/validate-user", uc.ValidateUserCredentials)
-	}
+func HealthHandler(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"message": "pong",
+	})
 }

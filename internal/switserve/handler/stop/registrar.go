@@ -17,33 +17,41 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
 
-package controller
+package stop
 
-import (
-	"github.com/gin-gonic/gin"
-	"net/http"
-)
+import "github.com/gin-gonic/gin"
 
-func (c *AuthController) RefreshToken(ctx *gin.Context) {
-	var data struct {
-		RefreshToken string `json:"refresh_token"`
+// StopRouteRegistrar 停止服务路由注册器
+type StopRouteRegistrar struct {
+	shutdownFunc func()
+}
+
+// NewStopRouteRegistrar 创建停止服务路由注册器
+func NewStopRouteRegistrar(shutdownFunc func()) *StopRouteRegistrar {
+	return &StopRouteRegistrar{
+		shutdownFunc: shutdownFunc,
 	}
+}
 
-	if err := ctx.ShouldBindJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+// RegisterRoutes 实现 RouteRegistrar 接口
+func (srr *StopRouteRegistrar) RegisterRoutes(rg *gin.RouterGroup) error {
+	handler := NewStopHandler(srr.shutdownFunc)
+	rg.POST("/stop", handler.Stop)
+	return nil
+}
 
-	newAccessToken, newRefreshToken, err := c.authService.RefreshToken(data.RefreshToken)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
-	}
+// GetName 实现 RouteRegistrar 接口
+func (srr *StopRouteRegistrar) GetName() string {
+	return "stop-service"
+}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"access_token":  newAccessToken,
-		"refresh_token": newRefreshToken,
-	})
+// GetVersion 实现 RouteRegistrar 接口
+func (srr *StopRouteRegistrar) GetVersion() string {
+	return "root" // 停止服务不需要版本前缀
+}
+
+// GetPrefix 实现 RouteRegistrar 接口
+func (srr *StopRouteRegistrar) GetPrefix() string {
+	return ""
 }

@@ -66,7 +66,7 @@ type MiddlewareRegistrar interface {
 ### 1. 创建控制器
 
 ```go
-// internal/switserve/controller/v1/article/controller.go
+// internal/switserve/handler/v1/article/handler.go
 package article
 
 type ArticleController struct {
@@ -85,7 +85,7 @@ func (ac *ArticleController) GetArticles(c *gin.Context) {
 ### 2. 实现路由注册器
 
 ```go
-// internal/switserve/controller/v1/article/registrar.go
+// internal/switserve/handler/v1/article/registrar.go
 package article
 
 import "github.com/gin-gonic/gin"
@@ -127,7 +127,7 @@ func (arr *ArticleRouteRegistrar) GetPrefix() string {
 在 `internal/switserve/server/router.go` 中添加：
 
 ```go
-import "github.com/innovationmech/swit/internal/switserve/controller/v1/article"
+import "github.com/innovationmech/swit/internal/switserve/handler/v1/article"
 
 func (s *Server) SetupRoutes() {
     registry := NewRouteRegistry()

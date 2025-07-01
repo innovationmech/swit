@@ -17,30 +17,36 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
 
-package server
+package health
 
-import (
-	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switauth/handler"
-	comMiddleware "github.com/innovationmech/swit/pkg/middleware"
-)
+import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(authController *handler.AuthController) *gin.Engine {
-	r := gin.Default()
+// HealthRouteRegistrar 健康检查路由注册器
+type HealthRouteRegistrar struct{}
 
-	r.Use(comMiddleware.CORSMiddleware())
+// NewHealthRouteRegistrar 创建健康检查路由注册器
+func NewHealthRouteRegistrar() *HealthRouteRegistrar {
+	return &HealthRouteRegistrar{}
+}
 
-	authGroup := r.Group("/auth")
-	{
-		authGroup.POST("/login", authController.Login)
-		authGroup.POST("/logout", authController.Logout)
-		authGroup.POST("/refresh", authController.RefreshToken)
-		authGroup.GET("/validate", authController.ValidateToken)
-	}
+// RegisterRoutes 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) RegisterRoutes(rg *gin.RouterGroup) error {
+	rg.GET("/health", HealthHandler)
+	return nil
+}
 
-	r.GET("/health", handler.HealthHandler)
+// GetName 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetName() string {
+	return "health-check"
+}
 
-	return r
+// GetVersion 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetVersion() string {
+	return "root" // 健康检查不需要版本前缀
+}
+
+// GetPrefix 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetPrefix() string {
+	return ""
 }
