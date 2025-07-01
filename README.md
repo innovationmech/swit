@@ -1,119 +1,211 @@
 # Swit
 
-Swit is a command-line tool designed to serve as a backend application and control system. It is built using Go and utilizes the Gin web framework for handling HTTP requests. The project includes features such as health checks, user management, and server control, with data persistence handled through a MySQL database using GORM.
+Swit is a microservice-based backend system built with Go, featuring modular design for user management, authentication, and service discovery. The project uses the Gin framework for HTTP requests, GORM for data persistence, and supports gRPC protocol for inter-service communication.
 
-## Key Features:
-- Health check endpoint for monitoring application status
-- User registration and retrieval functionality
-- Server control (start, stop, health check) via CLI
-- GitHub Actions workflow for automated building and testing
-- Makefile for easy project management and building
-- Docker support for containerized deployment
+## Core Features
 
-Swit is designed to be a robust and scalable backend service, suitable for various applications requiring user management, health monitoring, and remote control capabilities.
+- **Microservice Architecture**: Modular design supporting independent deployment and scaling
+- **Authentication System**: Complete JWT-based authentication with token refresh support
+- **User Management**: Full CRUD operations and permission management for users
+- **Service Discovery**: Consul integration for service registration and discovery
+- **Database Support**: MySQL for data persistence
+- **Protocol Support**: Both HTTP REST API and gRPC protocol support
+- **Health Checks**: Built-in health check endpoints for service monitoring
+- **Docker Support**: Containerized deployment solutions
 
-## Components
+## System Architecture
 
-1. swit-serve: The main server application
-2. switctl: Command-line tool for controlling the server
+The project consists of the following main components:
 
-## Getting Started
+1. **swit-serve** - Main user service (port 9000)
+2. **swit-auth** - Authentication service (port 9001)
+3. **switctl** - Command-line control tool
+
+## Quick Start
 
 ### Prerequisites
 
 - Go 1.22 or higher
-- MySQL database
+- MySQL 5.7+ or 8.0+
+- Consul (optional, for service discovery)
 
 ### Installation
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/innovationmech/swit.git
    cd swit
    ```
 
-2. Configure the application:
-   Edit the `swit.yaml` file to set your database and server configurations.
+2. Initialize databases:
+   ```bash
+   # Execute database scripts
+   mysql -u root -p < scripts/sql/user_service_db.sql
+   mysql -u root -p < scripts/sql/auth_service_db.sql
+   ```
+
+3. Configure services:
+   - Edit `swit.yaml` to configure main service database and port
+   - Edit `switauth.yaml` to configure authentication service database and port
 
 ### Building
 
-To build both the server and CLI applications, run:
-```
-make
-```
-The binaries will be created in the `_output` directory.
-
-### Running
-
-To start the server:
-```
-./_output/swit-serve/swit-serve serve
+Build all services:
+```bash
+make build
 ```
 
-## Usage
-
-Swit provides the following commands:
-
-- `serve`: Start the HTTP server
-- `version`: Print the version information
-
-For more details, run:
+Or build individually:
+```bash
+make build-serve    # Build main service
+make build-auth     # Build auth service
+make build-ctl      # Build control tool
 ```
-./_output/swit-serve/swit-serve --help
-```
+
+Binaries will be generated in the `_output/` directory.
+
+### Running Services
+
+1. Start authentication service:
+   ```bash
+   ./_output/swit-auth/swit-auth start
+   ```
+
+2. Start main service:
+   ```bash
+   ./_output/swit-serve/swit-serve serve
+   ```
+
+3. Check service status with control tool:
+   ```bash
+   ./_output/switctl/switctl health
+   ```
 
 ## API Endpoints
 
-- `GET /health`: Health check endpoint
-- `POST /users`: Register a new user
-- `GET /users/:id`: Get user information
-- `POST /stop`: Stop the server
-- `GET /api/v1/users`: Get all users list
-- `POST /api/v1/users`: Create a new user
-- `GET /api/v1/users/:id`: Get specific user information
-- `PUT /api/v1/users/:id`: Update user information
-- `DELETE /api/v1/users/:id`: Delete a user
+### Authentication Service API (Port 9001)
 
-## Development
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/auth/login` | User login |
+| POST | `/auth/logout` | User logout |
+| POST | `/auth/refresh` | Refresh access token |
+| GET | `/auth/validate` | Validate token |
+| GET | `/health` | Health check |
+
+### User Service API (Port 9000)
+
+| Method | Path | Description | Auth Required |
+|--------|------|-------------|---------------|
+| POST | `/api/v1/users/create` | Create user | ✓ |
+| GET | `/api/v1/users/username/:username` | Get user by username | ✓ |
+| GET | `/api/v1/users/email/:email` | Get user by email | ✓ |
+| DELETE | `/api/v1/users/:id` | Delete user | ✓ |
+| POST | `/internal/validate-user` | Validate user credentials (internal) | ✗ |
+| GET | `/health` | Health check | ✗ |
+| POST | `/stop` | Stop service | ✗ |
+
+### gRPC Services
+
+The project also provides gRPC interfaces defined in `api/proto/greeter.proto`:
+- `SayHello`: Simple greeting service
+
+## Configuration
+
+### Main Service Configuration (swit.yaml)
+```yaml
+database:
+  host: 127.0.0.1
+  port: 3306
+  username: root
+  password: root
+  dbname: user_service_db
+server:
+  port: 9000
+serviceDiscovery:
+  address: "localhost:8500"
+```
+
+### Authentication Service Configuration (switauth.yaml)
+```yaml
+database:
+  host: 127.0.0.1
+  port: 3306
+  username: root
+  password: root
+  dbname: auth_service_db
+server:
+  port: 9001
+serviceDiscovery:
+  address: "localhost:8500"
+```
+
+## Development Guide
 
 ### Project Structure
 
-- `cmd/swit-serve/`: Main application entry point
-- `cmd/switctl/`: CLI tool entry point
-- `internal/swit-serve/`: Server internal packages
-  - `cmd/`: Command definitions
-  - `config/`: Configuration management
-  - `db/`: Database connection
-  - `health/`: Health check handlers
-  - `server/`: HTTP server setup
-  - `stop/`: Server stop handler
-  - `controller/`: API controllers
-  - `model/`: Data models
-  - `repository/`: Data access layer
-  - `service/`: Business logic layer
-- `internal/switctl/`: CLI tool internal packages
-  - `cmd/`: CLI command definitions
+```
+swit/
+├── cmd/                    # Application entry points
+│   ├── swit-serve/        # Main service
+│   ├── swit-auth/         # Authentication service
+│   └── switctl/           # Control tool
+├── internal/              # Internal packages
+│   ├── switserve/         # Main service internal logic
+│   ├── switauth/          # Auth service internal logic
+│   └── switctl/           # Control tool internal logic
+├── api/                   # API definitions
+│   └── proto/             # gRPC protocol definitions
+├── pkg/                   # Common packages
+├── scripts/               # Script files
+│   └── sql/               # Database scripts
+└── docs/                  # Documentation
+```
 
-### Makefile Commands
+### Available Make Commands
 
-- `make tidy`: Run go mod tidy
-- `make build`: Build the binaries
-- `make clean`: Remove the output binaries
+- `make tidy`: Tidy Go module dependencies
+- `make build`: Build all binaries
+- `make clean`: Clean output directory
 - `make test`: Run tests
-- `make image-serve`: Build Docker image for swit-serve
+- `make image-serve`: Build Docker image
 
 ### Docker Support
 
-To build the Docker image:
-```
+Build Docker image:
+```bash
 make image-serve
 ```
 
-To run the Docker container:
-```
+Run container:
+```bash
 docker run -d -p 9000:9000 -v ./swit.yaml:/root/swit.yaml swit-serve:master
 ```
+
+## Database Schema
+
+### Users Table (user_service_db.users)
+- `id`: UUID primary key
+- `username`: Username (unique)
+- `email`: Email address (unique)
+- `password_hash`: Encrypted password
+- `role`: User role
+- `is_active`: Whether user is active
+- `created_at`/`updated_at`: Timestamps
+
+### Tokens Table (auth_service_db.tokens)
+- `id`: UUID primary key
+- `user_id`: Associated user ID
+- `access_token`: Access token
+- `refresh_token`: Refresh token
+- `access_expires_at`: Access token expiration time
+- `refresh_expires_at`: Refresh token expiration time
+- `is_valid`: Whether token is valid
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+[中文文档](README-CN.md)
