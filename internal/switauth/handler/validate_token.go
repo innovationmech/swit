@@ -19,16 +19,39 @@
 // THE SOFTWARE.
 //
 
-package controller
+package handler
 
 import (
-	"github.com/innovationmech/swit/internal/switauth/service"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
-type AuthController struct {
-	authService service.AuthService
-}
+func (c *AuthController) ValidateToken(ctx *gin.Context) {
+	// Get Authorization header
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
+		return
+	}
 
-func NewAuthController(authService service.AuthService) *AuthController {
-	return &AuthController{authService: authService}
+	// Split the Bearer token
+	parts := strings.SplitN(authHeader, " ", 2)
+	if !(len(parts) == 2 && parts[0] == "Bearer") {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
+		return
+	}
+
+	// Extract the actual token
+	tokenString := parts[1]
+
+	// Validate token
+	token, err := c.authService.ValidateToken(tokenString)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Token is valid", "user_id": token.UserID})
 }

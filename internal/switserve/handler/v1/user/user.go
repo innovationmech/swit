@@ -19,39 +19,30 @@
 // THE SOFTWARE.
 //
 
-package controller
+package user
 
 import (
-	"net/http"
-	"strings"
-
-	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/db"
+	"github.com/innovationmech/swit/internal/switserve/repository"
+	v1 "github.com/innovationmech/swit/internal/switserve/service/v1"
+	"github.com/innovationmech/swit/pkg/logger"
+	"go.uber.org/zap"
 )
 
-func (c *AuthController) ValidateToken(ctx *gin.Context) {
-	// Get Authorization header
-	authHeader := ctx.GetHeader("Authorization")
-	if authHeader == "" {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
-		return
-	}
+type UserController struct {
+	userSrv v1.UserSrv
+}
 
-	// Split the Bearer token
-	parts := strings.SplitN(authHeader, " ", 2)
-	if !(len(parts) == 2 && parts[0] == "Bearer") {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
-		return
-	}
-
-	// Extract the actual token
-	tokenString := parts[1]
-
-	// Validate token
-	token, err := c.authService.ValidateToken(tokenString)
+// NewUserController creates a new user handler.
+func NewUserController() *UserController {
+	userSrv, err := v1.NewUserSrv(
+		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
+	)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
+		logger.Logger.Error("failed to create user service", zap.Error(err))
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "Token is valid", "user_id": token.UserID})
+	return &UserController{
+		userSrv: userSrv,
+	}
 }

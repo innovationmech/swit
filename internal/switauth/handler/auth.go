@@ -19,28 +19,16 @@
 // THE SOFTWARE.
 //
 
-package server
+package handler
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switauth/handler"
-	comMiddleware "github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/internal/switauth/service"
 )
 
-func RegisterRoutes(authController *handler.AuthController) *gin.Engine {
-	r := gin.Default()
+type AuthController struct {
+	authService service.AuthService
+}
 
-	r.Use(comMiddleware.CORSMiddleware())
-
-	authGroup := r.Group("/auth")
-	{
-		authGroup.POST("/login", authController.Login)
-		authGroup.POST("/logout", authController.Logout)
-		authGroup.POST("/refresh", authController.RefreshToken)
-		authGroup.GET("/validate", authController.ValidateToken)
-	}
-
-	r.GET("/health", handler.HealthHandler)
-
-	return r
+func NewAuthController(authService service.AuthService) *AuthController {
+	return &AuthController{authService: authService}
 }

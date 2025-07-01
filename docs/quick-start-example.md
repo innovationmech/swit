@@ -5,7 +5,7 @@
 ## 步骤 1: 创建产品控制器
 
 ```bash
-mkdir -p internal/switserve/controller/v1/product
+mkdir -p internal/switserve/handler/v1/product
 ```
 
 创建 `internal/switserve/controller/v1/product/controller.go`:
@@ -176,7 +176,7 @@ func (pprr *ProductPublicRouteRegistrar) GetPrefix() string {
 ```go
 import (
     // ... 其他导入 ...
-    "github.com/innovationmech/swit/internal/switserve/controller/v1/product"
+    "github.com/innovationmech/swit/internal/switserve/handler/v1/product"
 )
 
 func (s *Server) SetupRoutes() {

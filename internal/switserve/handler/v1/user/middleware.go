@@ -22,27 +22,25 @@
 package user
 
 import (
-	"github.com/innovationmech/swit/internal/switserve/db"
-	"github.com/innovationmech/swit/internal/switserve/repository"
-	v1 "github.com/innovationmech/swit/internal/switserve/service/v1"
-	"github.com/innovationmech/swit/pkg/logger"
-	"go.uber.org/zap"
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/middleware"
 )
 
-type UserController struct {
-	userSrv v1.UserSrv
-}
-
-// NewUserController creates a new user controller.
-func NewUserController() *UserController {
-	userSrv, err := v1.NewUserSrv(
-		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
-	)
-	if err != nil {
-		logger.Logger.Error("failed to create user service", zap.Error(err))
+// RegisterMiddleware registers the middleware for the user handler.
+func RegisterMiddleware(router *gin.Engine) {
+	uc := NewUserController()
+	userGroup := router.Group("/users")
+	userGroup.Use(middleware.AuthMiddleware())
+	{
+		userGroup.POST("/create", uc.CreateUser)
+		userGroup.GET("/username/:username", uc.GetUserByUsername)
+		userGroup.GET("/email/:email", uc.GetUserByEmail)
+		userGroup.DELETE("/:id", uc.DeleteUser)
 	}
 
-	return &UserController{
-		userSrv: userSrv,
+	// Internal API route group, does not require authentication middleware
+	internal := router.Group("/internal")
+	{
+		internal.POST("/validate-user", uc.ValidateUserCredentials)
 	}
 }
