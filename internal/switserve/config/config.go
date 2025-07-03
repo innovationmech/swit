@@ -38,7 +38,8 @@ type ServeConfig struct {
 		DBName   string `json:"dbname"`
 	} `json:"database"`
 	Server struct {
-		Port string `json:"port"`
+		Port     string `json:"port"`
+		GRPCPort string `json:"grpc_port"`
 	} `json:"server"`
 	Url              string `json:"url"`
 	ServiceDiscovery struct {

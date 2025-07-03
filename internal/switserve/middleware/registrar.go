@@ -21,6 +21,8 @@
 package middleware
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	middleware2 "github.com/innovationmech/swit/pkg/middleware"
 )
@@ -35,6 +37,13 @@ func NewGlobalMiddlewareRegistrar() *GlobalMiddlewareRegistrar {
 
 // RegisterMiddleware 实现 MiddlewareRegistrar 接口
 func (gmr *GlobalMiddlewareRegistrar) RegisterMiddleware(router *gin.Engine) error {
+	// Register timeout middleware first for request timeout control
+	timeoutConfig := DefaultTimeoutConfig()
+	timeoutConfig.Timeout = 30 * time.Second
+	timeoutConfig.SkipPaths = []string{"/health", "/metrics", "/debug", "/stop"}
+	router.Use(TimeoutWithConfig(timeoutConfig))
+
+	// Register other global middlewares
 	router.Use(middleware2.Logger(), middleware2.CORSMiddleware())
 	return nil
 }

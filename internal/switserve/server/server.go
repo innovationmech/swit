@@ -89,11 +89,21 @@ func (s *Server) Run(addr string) error {
 
 // Shutdown shuts down the server and deregisters it from the service discovery.
 func (s *Server) Shutdown() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownTimeout := 5 * time.Second
+
+	// Gracefully shutdown gRPC server
+	s.GracefulShutdownGRPC(shutdownTimeout)
+
+	// Shutdown HTTP server
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := s.srv.Shutdown(ctx); err != nil {
-		logger.Logger.Error("Shutdown error", zap.Error(err))
+		logger.Logger.Error("HTTP server shutdown error", zap.Error(err))
+	} else {
+		logger.Logger.Info("HTTP server shut down successfully")
 	}
+
+	// Deregister service from service discovery
 	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
 	if err := s.sd.DeregisterService("swit-serve", "localhost", port); err != nil {
 		logger.Logger.Error("Deregister service error", zap.Error(err))

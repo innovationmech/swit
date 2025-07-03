@@ -30,7 +30,7 @@ import (
 // GetUserByUsername gets a user by username.
 func (uc *UserController) GetUserByUsername(c *gin.Context) {
 	username := c.Param("username")
-	user, err := uc.userSrv.GetUserByUsername(username)
+	user, err := uc.userSrv.GetUserByUsername(c.Request.Context(), username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -41,7 +41,7 @@ func (uc *UserController) GetUserByUsername(c *gin.Context) {
 // GetUserByEmail gets a user by email.
 func (uc *UserController) GetUserByEmail(c *gin.Context) {
 	email := c.Param("email")
-	user, err := uc.userSrv.GetUserByEmail(email)
+	user, err := uc.userSrv.GetUserByEmail(c.Request.Context(), email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

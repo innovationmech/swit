@@ -22,6 +22,7 @@
 package repository
 
 import (
+	"context"
 	"github.com/google/uuid"
 	"github.com/innovationmech/swit/internal/switserve/model"
 	"gorm.io/gorm"
@@ -29,11 +30,11 @@ import (
 
 // UserRepository is the interface for the user repository.
 type UserRepository interface {
-	CreateUser(user *model.User) error
-	GetUserByUsername(username string) (*model.User, error)
-	GetUserByEmail(email string) (*model.User, error)
-	UpdateUser(user *model.User) error
-	DeleteUser(id string) error
+	CreateUser(ctx context.Context, user *model.User) error
+	GetUserByUsername(ctx context.Context, username string) (*model.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
+	UpdateUser(ctx context.Context, user *model.User) error
+	DeleteUser(ctx context.Context, id string) error
 }
 
 // userRepository is the implementation of the UserRepository interface.
@@ -47,19 +48,19 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 }
 
 // CreateUser creates a new user.
-func (u userRepository) CreateUser(user *model.User) error {
+func (u userRepository) CreateUser(ctx context.Context, user *model.User) error {
 	// 确保 UUID 被设置
 	if user.ID == uuid.Nil {
 		user.ID = uuid.New()
 	}
-	result := u.db.Create(user)
+	result := u.db.WithContext(ctx).Create(user)
 	return result.Error
 }
 
 // GetUserByUsername gets a user by username.
-func (u userRepository) GetUserByUsername(username string) (*model.User, error) {
+func (u userRepository) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
 	var user model.User
-	result := u.db.Where("username = ?", username).First(&user)
+	result := u.db.WithContext(ctx).Where("username = ?", username).First(&user)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -67,9 +68,9 @@ func (u userRepository) GetUserByUsername(username string) (*model.User, error) 
 }
 
 // GetUserByEmail gets a user by email.
-func (u userRepository) GetUserByEmail(email string) (*model.User, error) {
+func (u userRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
-	result := u.db.Where("email = ?", email).First(&user)
+	result := u.db.WithContext(ctx).Where("email = ?", email).First(&user)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -77,13 +78,13 @@ func (u userRepository) GetUserByEmail(email string) (*model.User, error) {
 }
 
 // UpdateUser updates a user.
-func (u userRepository) UpdateUser(user *model.User) error {
-	result := u.db.Save(user)
+func (u userRepository) UpdateUser(ctx context.Context, user *model.User) error {
+	result := u.db.WithContext(ctx).Save(user)
 	return result.Error
 }
 
 // DeleteUser deletes a user.
-func (u userRepository) DeleteUser(id string) error {
-	result := u.db.Delete(&model.User{}, id)
+func (u userRepository) DeleteUser(ctx context.Context, id string) error {
+	result := u.db.WithContext(ctx).Delete(&model.User{}, id)
 	return result.Error
 }

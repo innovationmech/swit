@@ -42,7 +42,7 @@ func (uc *UserController) CreateUser(c *gin.Context) {
 		PasswordHash: req.Password, // 注意: 这里假设您的CreateUser方法会处理密码哈希
 	}
 
-	err := uc.userSrv.CreateUser(user)
+	err := uc.userSrv.CreateUser(c.Request.Context(), user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

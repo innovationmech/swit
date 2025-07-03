@@ -30,7 +30,7 @@ import (
 // DeleteUser deletes a user by ID.
 func (uc *UserController) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
-	err := uc.userSrv.DeleteUser(id)
+	err := uc.userSrv.DeleteUser(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
