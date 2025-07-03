@@ -52,8 +52,8 @@ func (s *Server) runGRPCServer(wg *sync.WaitGroup) {
 		return
 	}
 
-	// Configure gRPC server with keepalive parameters
-	s.configureGRPCServer()
+	// Create gRPC server with optimized configuration
+	s.grpcServer = s.createConfiguredGRPCServer()
 
 	// Register services
 	pb.RegisterGreeterServer(s.grpcServer, &service.GreeterService{})
@@ -83,8 +83,8 @@ func (s *Server) getGRPCPort() string {
 	return "50051" // default gRPC port
 }
 
-// configureGRPCServer applies optimized configuration to the gRPC server
-func (s *Server) configureGRPCServer() {
+// createConfiguredGRPCServer creates a new gRPC server with optimized configuration
+func (s *Server) createConfiguredGRPCServer() *grpc.Server {
 	// Apply keepalive parameters for better connection management
 	keepAliveParams := keepalive.ServerParameters{
 		MaxConnectionIdle:     15 * time.Second, // Close idle connections after 15s
@@ -107,8 +107,8 @@ func (s *Server) configureGRPCServer() {
 		grpc.MaxSendMsgSize(4 * 1024 * 1024), // 4MB max send message size
 	}
 
-	// Replace the existing gRPC server with optimized one
-	s.grpcServer = grpc.NewServer(opts...)
+	// Return a new configured gRPC server
+	return grpc.NewServer(opts...)
 }
 
 // GracefulShutdown gracefully shuts down the gRPC server
