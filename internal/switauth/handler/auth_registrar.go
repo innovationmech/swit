@@ -17,27 +17,49 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
 
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
-// HealthHandler checks if the authentication service is healthy
-// @Summary Health check
-// @Description Check if the authentication service is healthy
-// @Tags health
-// @Accept json
-// @Produce json
-// @Success 200 {object} model.HealthResponse "Service is healthy"
-// @Router /health [get]
-func HealthHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, model.HealthResponse{
-		Message: "pong",
-	})
+// AuthRouteRegistrar 认证路由注册器
+type AuthRouteRegistrar struct {
+	controller *AuthController
+}
+
+// NewAuthRouteRegistrar 创建认证路由注册器
+func NewAuthRouteRegistrar(controller *AuthController) *AuthRouteRegistrar {
+	return &AuthRouteRegistrar{
+		controller: controller,
+	}
+}
+
+// RegisterRoutes 实现 RouteRegistrar 接口
+func (arr *AuthRouteRegistrar) RegisterRoutes(rg *gin.RouterGroup) error {
+	authGroup := rg.Group("/auth")
+	{
+		authGroup.POST("/login", arr.controller.Login)
+		authGroup.POST("/logout", arr.controller.Logout)
+		authGroup.POST("/refresh", arr.controller.RefreshToken)
+		authGroup.GET("/validate", arr.controller.ValidateToken)
+	}
+
+	return nil
+}
+
+// GetName 实现 RouteRegistrar 接口
+func (arr *AuthRouteRegistrar) GetName() string {
+	return "auth-api"
+}
+
+// GetVersion 实现 RouteRegistrar 接口
+func (arr *AuthRouteRegistrar) GetVersion() string {
+	return "root" // 认证API不需要版本前缀
+}
+
+// GetPrefix 实现 RouteRegistrar 接口
+func (arr *AuthRouteRegistrar) GetPrefix() string {
+	return ""
 }

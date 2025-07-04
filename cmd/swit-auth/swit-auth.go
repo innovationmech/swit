@@ -19,14 +19,40 @@
 // THE SOFTWARE.
 //
 
+// SWIT Auth API
+// @title SWIT Auth API
+// @version 1.0
+// @description This is the SWIT authentication service API documentation.
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8090
+// @BasePath /
+// @schemes http https
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
+
 package main
 
 import (
+	"os"
+
 	"github.com/innovationmech/swit/internal/component-base/cli"
 	"github.com/innovationmech/swit/internal/switauth/cmd"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
-	"os"
+
+	// Import docs for swagger generation
+	_ "github.com/innovationmech/swit/internal/switauth/docs"
 )
 
 func main() {

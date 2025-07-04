@@ -17,27 +17,36 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
 
 package handler
 
-import (
-	"net/http"
+import "github.com/gin-gonic/gin"
 
-	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switauth/model"
-)
+// HealthRouteRegistrar 健康检查路由注册器
+type HealthRouteRegistrar struct{}
 
-// HealthHandler checks if the authentication service is healthy
-// @Summary Health check
-// @Description Check if the authentication service is healthy
-// @Tags health
-// @Accept json
-// @Produce json
-// @Success 200 {object} model.HealthResponse "Service is healthy"
-// @Router /health [get]
-func HealthHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, model.HealthResponse{
-		Message: "pong",
-	})
+// NewHealthRouteRegistrar 创建健康检查路由注册器
+func NewHealthRouteRegistrar() *HealthRouteRegistrar {
+	return &HealthRouteRegistrar{}
+}
+
+// RegisterRoutes 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) RegisterRoutes(rg *gin.RouterGroup) error {
+	rg.GET("/health", HealthHandler)
+	return nil
+}
+
+// GetName 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetName() string {
+	return "health-check"
+}
+
+// GetVersion 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetVersion() string {
+	return "root" // 健康检查不需要版本前缀
+}
+
+// GetPrefix 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetPrefix() string {
+	return ""
 }

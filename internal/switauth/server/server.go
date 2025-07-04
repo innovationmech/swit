@@ -25,14 +25,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/innovationmech/swit/pkg/discovery"
-	"github.com/innovationmech/swit/pkg/logger"
-	"go.uber.org/zap"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/innovationmech/swit/pkg/discovery"
+	"github.com/innovationmech/swit/pkg/logger"
+	"go.uber.org/zap"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switauth/client"
@@ -72,7 +73,7 @@ func NewServer() (*Server, error) {
 	authService := service.NewAuthService(userClient, tokenRepo)
 	authController := handler.NewAuthController(authService)
 
-	s.router = RegisterRoutes(authController)
+	s.SetupRoutes(authController)
 	return s, nil
 }
 

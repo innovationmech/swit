@@ -22,21 +22,34 @@
 package handler
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
+// Logout invalidates the user's access token and logs them out
+// @Summary User logout
+// @Description Invalidate the user's access token and log them out
+// @Tags authentication
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.LogoutResponse "Logout successful"
+// @Failure 400 {object} model.ErrorResponse "Authorization header is missing"
+// @Failure 500 {object} model.ErrorResponse "Internal server error"
+// @Router /auth/logout [post]
 func (c *AuthController) Logout(ctx *gin.Context) {
 	tokenString := ctx.GetHeader("Authorization")
 	if tokenString == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Authorization header is missing"})
+		ctx.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "Authorization header is missing"})
 		return
 	}
 
-	if err := c.authService.Logout(tokenString); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := c.authService.Logout(ctx, tokenString); err != nil {
+		ctx.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+	ctx.JSON(http.StatusOK, model.LogoutResponse{Message: "Logged out successfully"})
 }

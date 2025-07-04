@@ -20,16 +20,16 @@ graph TB
 ## 可用服务
 
 ### 🔐 SwitAuth - 认证授权服务
-- **功能**: 用户登录、注册、Token管理、权限验证
-- **端口**: 8080
+- **功能**: 用户登录、Token管理、权限验证
+- **端口**: 8090
 - **文档**: [详细文档](./switauth/README.md)
-- **API**: http://localhost:8080/swagger/index.html
+- **API**: http://localhost:8090/swagger/index.html
 
 **主要端点**:
 - `POST /auth/login` - 用户登录
-- `POST /auth/register` - 用户注册
 - `POST /auth/refresh` - 刷新Token
-- `POST /auth/validate` - 验证Token
+- `GET /auth/validate` - 验证Token
+- `POST /auth/logout` - 用户登出
 
 ### 👥 SwitServe - 用户管理服务
 - **功能**: 用户CRUD操作、用户信息管理
@@ -72,11 +72,11 @@ make swagger
 ```bash
 # 健康检查
 curl http://localhost:9000/health
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 
 # 查看API版本
 curl http://localhost:9000/version
-curl http://localhost:8080/version
+curl http://localhost:8090/version
 ```
 
 ## 环境配置

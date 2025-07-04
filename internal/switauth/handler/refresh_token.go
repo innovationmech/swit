@@ -22,28 +22,39 @@
 package handler
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
+// RefreshToken generates new access and refresh tokens using a valid refresh token
+// @Summary Refresh access token
+// @Description Generate new access and refresh tokens using a valid refresh token
+// @Tags authentication
+// @Accept json
+// @Produce json
+// @Param refresh body model.RefreshTokenRequest true "Refresh token"
+// @Success 200 {object} model.RefreshTokenResponse "Token refresh successful"
+// @Failure 400 {object} model.ErrorResponse "Bad request"
+// @Failure 401 {object} model.ErrorResponse "Invalid or expired refresh token"
+// @Router /auth/refresh [post]
 func (c *AuthController) RefreshToken(ctx *gin.Context) {
-	var data struct {
-		RefreshToken string `json:"refresh_token"`
-	}
+	var data model.RefreshTokenRequest
 
 	if err := ctx.ShouldBindJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	newAccessToken, newRefreshToken, err := c.authService.RefreshToken(data.RefreshToken)
+	newAccessToken, newRefreshToken, err := c.authService.RefreshToken(ctx, data.RefreshToken)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"access_token":  newAccessToken,
-		"refresh_token": newRefreshToken,
+	ctx.JSON(http.StatusOK, model.RefreshTokenResponse{
+		AccessToken:  newAccessToken,
+		RefreshToken: newRefreshToken,
 	})
 }

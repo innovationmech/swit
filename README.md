@@ -19,7 +19,7 @@ Swit is a microservice-based backend system built with Go, featuring modular des
 The project consists of the following main components:
 
 1. **swit-serve** - Main user service (port 9000)
-2. **swit-auth** - Authentication service (port 9001)
+2. **swit-auth** - Authentication service (port 8090)
 3. **switctl** - Command-line control tool
 
 ## Quick Start
@@ -86,13 +86,12 @@ Binaries will be generated in the `_output/` directory.
 
 ### OpenAPI/Swagger Documentation
 
-The project integrates Swagger UI for interactive API documentation. After starting the service, you can access it at:
+The project integrates Swagger UI for interactive API documentation. After starting the services, you can access them at:
 
-```
-http://localhost:9000/swagger/index.html
-```
+- **SwitServe API**: http://localhost:9000/swagger/index.html
+- **SwitAuth API**: http://localhost:8090/swagger/index.html
 
-### Authentication Service API (Port 9001)
+### Authentication Service API (Port 8090)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -144,7 +143,7 @@ database:
   password: root
   dbname: auth_service_db
 server:
-  port: 9001
+  port: 8090
 serviceDiscovery:
   address: "localhost:8500"
 ```

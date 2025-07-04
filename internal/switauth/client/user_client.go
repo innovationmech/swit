@@ -23,16 +23,18 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/innovationmech/swit/pkg/discovery"
 	"net/http"
+
+	"github.com/innovationmech/swit/pkg/discovery"
 
 	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
 type UserClient interface {
-	ValidateUserCredentials(username, password string) (*model.User, error)
+	ValidateUserCredentials(ctx context.Context, username, password string) (*model.User, error)
 }
 
 type userClient struct {
@@ -43,7 +45,7 @@ func NewUserClient(sd *discovery.ServiceDiscovery) UserClient {
 	return &userClient{sd: sd}
 }
 
-func (c *userClient) ValidateUserCredentials(username, password string) (*model.User, error) {
+func (c *userClient) ValidateUserCredentials(ctx context.Context, username, password string) (*model.User, error) {
 	serviceURL, err := c.sd.GetInstanceRoundRobin("swit-serve")
 	if err != nil {
 		return nil, fmt.Errorf("unable to discover swit-serve service: %v", err)
@@ -64,7 +66,14 @@ func (c *userClient) ValidateUserCredentials(username, password string) (*model.
 		return nil, err
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
