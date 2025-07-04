@@ -65,19 +65,67 @@ func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 		}()
 
 		// 等待处理完成或超时
-		select {
-		case <-done:
-			// 正常完成
-			tw.mu.Lock()
-			defer tw.mu.Unlock()
+		var panicValue interface{}
+		var completed bool
 
-			if !tw.hasWritten && !tw.timedOut {
-				// 将缓存的headers写入真正的ResponseWriter
-				tw.writeHeaders()
-				tw.ResponseWriter.WriteHeader(tw.statusCode)
+		for !completed {
+			select {
+			case <-done:
+				// 检查是否有panic需要处理
+				select {
+				case p := <-panicChan:
+					panicValue = p
+				default:
+					// 没有panic，正常完成
+				}
+				completed = true
+
+			case p := <-panicChan:
+				// 收到panic，等待goroutine完成
+				panicValue = p
+				select {
+				case <-done:
+					// goroutine已完成
+					completed = true
+				case <-time.After(5 * time.Second):
+					// 等待goroutine完成超时，强制退出
+					completed = true
+				}
+
+			case <-ctx.Done():
+				// 超时处理
+				tw.mu.Lock()
+				if !tw.hasWritten {
+					tw.timedOut = true
+					// 直接写入超时响应
+					tw.ResponseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
+					tw.ResponseWriter.WriteHeader(http.StatusGatewayTimeout)
+					tw.ResponseWriter.Write([]byte(`{"error":"Request timeout"}`))
+					tw.hasWritten = true
+				}
+				tw.mu.Unlock()
+
+				// 等待handler完成，但设置超时避免goroutine泄露
+				select {
+				case <-done:
+					// goroutine正常完成
+				case <-time.After(5 * time.Second):
+					// 等待超时，可能存在goroutine泄露，但避免无限等待
+				}
+
+				// 检查是否有panic需要处理
+				select {
+				case p := <-panicChan:
+					panicValue = p
+				default:
+					// 没有panic
+				}
+				completed = true
 			}
+		}
 
-		case p := <-panicChan:
+		// 处理panic或正常完成
+		if panicValue != nil {
 			// 处理panic
 			tw.mu.Lock()
 			if !tw.hasWritten && !tw.timedOut {
@@ -91,23 +139,17 @@ func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 			} else {
 				tw.mu.Unlock()
 			}
-			panic(p)
-
-		case <-ctx.Done():
-			// 超时处理
+			panic(panicValue)
+		} else {
+			// 正常完成
 			tw.mu.Lock()
-			if !tw.hasWritten {
-				tw.timedOut = true
-				// 直接写入超时响应
-				tw.ResponseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
-				tw.ResponseWriter.WriteHeader(http.StatusGatewayTimeout)
-				tw.ResponseWriter.Write([]byte(`{"error":"Request timeout"}`))
-				tw.hasWritten = true
-			}
-			tw.mu.Unlock()
+			defer tw.mu.Unlock()
 
-			// 等待handler完成，避免goroutine泄露
-			<-done
+			if !tw.hasWritten && !tw.timedOut {
+				// 将缓存的headers写入真正的ResponseWriter
+				tw.writeHeaders()
+				tw.ResponseWriter.WriteHeader(tw.statusCode)
+			}
 		}
 	}
 }
