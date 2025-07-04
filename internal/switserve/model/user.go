@@ -29,7 +29,8 @@ import (
 )
 
 // User is the user model.
-// @Description User account information
+//
+//	@Description	User account information
 type User struct {
 	ID           uuid.UUID `gorm:"type:uuid;primary_key;" json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Username     string    `gorm:"unique;not null" json:"username" example:"john_doe"`
@@ -49,7 +50,8 @@ func (user *User) BeforeCreate(tx *gorm.DB) (err error) {
 }
 
 // CreateUserRequest represents the request body for creating a new user
-// @Description Request body for creating a new user
+//
+//	@Description	Request body for creating a new user
 type CreateUserRequest struct {
 	Username string `json:"username" binding:"required" example:"john_doe"`
 	Email    string `json:"email" binding:"required,email" example:"john@example.com"`

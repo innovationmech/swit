@@ -28,17 +28,18 @@ import (
 )
 
 // GetUserByUsername gets a user by username.
-// @Summary Get user by username
-// @Description Get user details by username
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param username path string true "Username"
-// @Success 200 {object} map[string]interface{} "User details"
-// @Failure 404 {object} map[string]interface{} "User not found"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Security BearerAuth
-// @Router /users/username/{username} [get]
+//
+//	@Summary		Get user by username
+//	@Description	Get user details by username
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			username	path		string					true	"Username"
+//	@Success		200			{object}	map[string]interface{}	"User details"
+//	@Failure		404			{object}	map[string]interface{}	"User not found"
+//	@Failure		500			{object}	map[string]interface{}	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/users/username/{username} [get]
 func (uc *UserController) GetUserByUsername(c *gin.Context) {
 	username := c.Param("username")
 	user, err := uc.userSrv.GetUserByUsername(c.Request.Context(), username)
@@ -51,17 +52,18 @@ func (uc *UserController) GetUserByUsername(c *gin.Context) {
 }
 
 // GetUserByEmail gets a user by email.
-// @Summary Get user by email
-// @Description Get user details by email address
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param email path string true "Email address"
-// @Success 200 {object} map[string]interface{} "User details"
-// @Failure 404 {object} map[string]interface{} "User not found"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Security BearerAuth
-// @Router /users/email/{email} [get]
+//
+//	@Summary		Get user by email
+//	@Description	Get user details by email address
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			email	path		string					true	"Email address"
+//	@Success		200		{object}	map[string]interface{}	"User details"
+//	@Failure		404		{object}	map[string]interface{}	"User not found"
+//	@Failure		500		{object}	map[string]interface{}	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/users/email/{email} [get]
 func (uc *UserController) GetUserByEmail(c *gin.Context) {
 	email := c.Param("email")
 	user, err := uc.userSrv.GetUserByEmail(c.Request.Context(), email)

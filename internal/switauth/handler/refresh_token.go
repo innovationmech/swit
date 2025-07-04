@@ -29,16 +29,17 @@ import (
 )
 
 // RefreshToken generates new access and refresh tokens using a valid refresh token
-// @Summary Refresh access token
-// @Description Generate new access and refresh tokens using a valid refresh token
-// @Tags authentication
-// @Accept json
-// @Produce json
-// @Param refresh body model.RefreshTokenRequest true "Refresh token"
-// @Success 200 {object} model.RefreshTokenResponse "Token refresh successful"
-// @Failure 400 {object} model.ErrorResponse "Bad request"
-// @Failure 401 {object} model.ErrorResponse "Invalid or expired refresh token"
-// @Router /auth/refresh [post]
+//
+//	@Summary		Refresh access token
+//	@Description	Generate new access and refresh tokens using a valid refresh token
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			refresh	body		model.RefreshTokenRequest	true	"Refresh token"
+//	@Success		200		{object}	model.RefreshTokenResponse	"Token refresh successful"
+//	@Failure		400		{object}	model.ErrorResponse			"Bad request"
+//	@Failure		401		{object}	model.ErrorResponse			"Invalid or expired refresh token"
+//	@Router			/auth/refresh [post]
 func (c *AuthController) RefreshToken(ctx *gin.Context) {
 	var data model.RefreshTokenRequest
 

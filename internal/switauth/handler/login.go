@@ -29,16 +29,17 @@ import (
 )
 
 // Login authenticates a user and returns access and refresh tokens
-// @Summary User login
-// @Description Authenticate a user with username and password, returns access and refresh tokens
-// @Tags authentication
-// @Accept json
-// @Produce json
-// @Param login body model.LoginRequest true "User login credentials"
-// @Success 200 {object} model.LoginResponse "Login successful"
-// @Failure 400 {object} model.ErrorResponse "Bad request"
-// @Failure 401 {object} model.ErrorResponse "Invalid credentials"
-// @Router /auth/login [post]
+//
+//	@Summary		User login
+//	@Description	Authenticate a user with username and password, returns access and refresh tokens
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			login	body		model.LoginRequest	true	"User login credentials"
+//	@Success		200		{object}	model.LoginResponse	"Login successful"
+//	@Failure		400		{object}	model.ErrorResponse	"Bad request"
+//	@Failure		401		{object}	model.ErrorResponse	"Invalid credentials"
+//	@Router			/auth/login [post]
 func (c *AuthController) Login(ctx *gin.Context) {
 	var loginData model.LoginRequest
 

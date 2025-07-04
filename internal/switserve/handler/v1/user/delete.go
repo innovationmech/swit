@@ -28,17 +28,18 @@ import (
 )
 
 // DeleteUser deletes a user.
-// @Summary Delete a user
-// @Description Delete a user by ID
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param id path string true "User ID"
-// @Success 200 {object} map[string]interface{} "User deleted successfully"
-// @Failure 400 {object} map[string]interface{} "Invalid user ID"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Security BearerAuth
-// @Router /users/{id} [delete]
+//
+//	@Summary		Delete a user
+//	@Description	Delete a user by ID
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path		string					true	"User ID"
+//	@Success		200	{object}	map[string]interface{}	"User deleted successfully"
+//	@Failure		400	{object}	map[string]interface{}	"Invalid user ID"
+//	@Failure		500	{object}	map[string]interface{}	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/users/{id} [delete]
 func (uc *UserController) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
 

@@ -29,16 +29,17 @@ import (
 )
 
 // CreateUser creates a new user.
-// @Summary Create a new user
-// @Description Create a new user with username, email and password
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param user body model.CreateUserRequest true "User information"
-// @Success 201 {object} map[string]interface{} "User created successfully"
-// @Failure 400 {object} map[string]interface{} "Bad request"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /users/create [post]
+//
+//	@Summary		Create a new user
+//	@Description	Create a new user with username, email and password
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			user	body		model.CreateUserRequest	true	"User information"
+//	@Success		201		{object}	map[string]interface{}	"User created successfully"
+//	@Failure		400		{object}	map[string]interface{}	"Bad request"
+//	@Failure		500		{object}	map[string]interface{}	"Internal server error"
+//	@Router			/users/create [post]
 func (uc *UserController) CreateUser(c *gin.Context) {
 	var req model.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

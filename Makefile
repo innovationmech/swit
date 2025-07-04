@@ -21,7 +21,7 @@ SWAG := swag
 include scripts/make-rules/copyright.mk
 
 .PHONY: all
-all: tidy copyright quality build
+all: tidy copyright build swagger
 
 define USAGE_OPTIONS
 
@@ -69,6 +69,7 @@ quality: format vet
 
 .PHONY: build
 build: quality build-serve build-ctl build-auth
+	@echo "All binaries built successfully"
 
 .PHONY: build-serve
 build-serve:
@@ -142,21 +143,21 @@ swagger-install:
 
 # Generate Swagger documentation for all services
 .PHONY: swagger
-swagger: swagger-switserve swagger-switauth
-	@echo "All Swagger documentation generated"
+swagger: swagger-fmt swagger-switserve swagger-switauth swagger-copy
+	@echo "All Swagger documentation generated and organized"
 
 # Generate Swagger documentation for switserve
 .PHONY: swagger-switserve
 swagger-switserve:
 	@echo "Generating Swagger documentation for switserve"
-	@$(SWAG) init -g cmd/swit-serve/swit-serve.go -o internal/switserve/docs --parseDependency --parseInternal
+	@$(SWAG) init -g cmd/swit-serve/swit-serve.go -o internal/switserve/docs --parseDependency --parseInternal --exclude internal/switauth
 	@echo "SwitServe Swagger documentation generated at: internal/switserve/docs/"
 
 # Generate Swagger documentation for switauth
 .PHONY: swagger-switauth
 swagger-switauth:
 	@echo "Generating Swagger documentation for switauth"
-	@$(SWAG) init -g cmd/swit-auth/swit-auth.go -o internal/switauth/docs --parseDependency --parseInternal
+	@$(SWAG) init -g cmd/swit-auth/swit-auth.go -o internal/switauth/docs --parseDependency --parseInternal --exclude internal/switserve
 	@echo "SwitAuth Swagger documentation generated at: internal/switauth/docs/"
 
 # Format Swagger annotations for all services
@@ -178,7 +179,7 @@ swagger-fmt-switauth:
 
 # Copy generated docs to unified location for easy access
 .PHONY: swagger-copy
-swagger-copy: swagger
+swagger-copy: swagger-switserve swagger-switauth
 	@echo "Creating unified documentation links"
 	@mkdir -p docs/generated/switserve
 	@mkdir -p docs/generated/switauth
@@ -203,3 +204,4 @@ swagger-copy: swagger
 	@echo "- YAML: [swagger.yaml](../../../internal/switauth/docs/swagger.yaml)" >> docs/generated/switauth/README.md
 	@echo "- Go Code: [docs.go](../../../internal/switauth/docs/docs.go)" >> docs/generated/switauth/README.md
 	@echo "Unified documentation access created"
+

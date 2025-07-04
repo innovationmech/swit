@@ -30,15 +30,16 @@ import (
 )
 
 // ValidateToken validates an access token and returns token information
-// @Summary Validate access token
-// @Description Validate an access token and return token information including user ID
-// @Tags authentication
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} model.ValidateTokenResponse "Token is valid"
-// @Failure 401 {object} model.ErrorResponse "Invalid or expired token"
-// @Router /auth/validate [get]
+//
+//	@Summary		Validate access token
+//	@Description	Validate an access token and return token information including user ID
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	model.ValidateTokenResponse	"Token is valid"
+//	@Failure		401	{object}	model.ErrorResponse			"Invalid or expired token"
+//	@Router			/auth/validate [get]
 func (c *AuthController) ValidateToken(ctx *gin.Context) {
 	// Get Authorization header
 	authHeader := ctx.GetHeader("Authorization")

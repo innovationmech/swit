@@ -30,17 +30,18 @@ import (
 )
 
 // ValidateUserCredentials is an internal API for validating user credentials
-// @Summary Validate user credentials (Internal API)
-// @Description Internal API for validating user credentials, used by authentication service
-// @Tags internal
-// @Accept json
-// @Produce json
-// @Param credentials body map[string]string true "User credentials" SchemaExample({"username": "john_doe", "password": "secret123"})
-// @Success 200 {object} map[string]interface{} "Validation successful"
-// @Failure 400 {object} map[string]interface{} "Bad request"
-// @Failure 401 {object} map[string]interface{} "Invalid credentials"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /internal/validate-user [post]
+//
+//	@Summary		Validate user credentials (Internal API)
+//	@Description	Internal API for validating user credentials, used by authentication service
+//	@Tags			internal
+//	@Accept			json
+//	@Produce		json
+//	@Param			credentials	body		map[string]string		true	"User credentials"	SchemaExample({"username": "john_doe", "password": "secret123"})
+//	@Success		200			{object}	map[string]interface{}	"Validation successful"
+//	@Failure		400			{object}	map[string]interface{}	"Bad request"
+//	@Failure		401			{object}	map[string]interface{}	"Invalid credentials"
+//	@Failure		500			{object}	map[string]interface{}	"Internal server error"
+//	@Router			/internal/validate-user [post]
 func (uc *UserController) ValidateUserCredentials(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`

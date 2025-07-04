@@ -29,16 +29,17 @@ import (
 )
 
 // Logout invalidates the user's access token and logs them out
-// @Summary User logout
-// @Description Invalidate the user's access token and log them out
-// @Tags authentication
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} model.LogoutResponse "Logout successful"
-// @Failure 400 {object} model.ErrorResponse "Authorization header is missing"
-// @Failure 500 {object} model.ErrorResponse "Internal server error"
-// @Router /auth/logout [post]
+//
+//	@Summary		User logout
+//	@Description	Invalidate the user's access token and log them out
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	model.LogoutResponse	"Logout successful"
+//	@Failure		400	{object}	model.ErrorResponse		"Authorization header is missing"
+//	@Failure		500	{object}	model.ErrorResponse		"Internal server error"
+//	@Router			/auth/logout [post]
 func (c *AuthController) Logout(ctx *gin.Context) {
 	tokenString := ctx.GetHeader("Authorization")
 	if tokenString == "" {
