@@ -24,6 +24,8 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,313 +33,248 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTimeoutMiddleware(t *testing.T) {
+func init() {
 	gin.SetMode(gin.TestMode)
-
-	tests := []struct {
-		name           string
-		timeout        time.Duration
-		handlerDelay   time.Duration
-		expectedStatus int
-		expectTimeout  bool
-	}{
-		{
-			name:           "request_completes_within_timeout",
-			timeout:        100 * time.Millisecond,
-			handlerDelay:   50 * time.Millisecond,
-			expectedStatus: http.StatusOK,
-			expectTimeout:  false,
-		},
-		{
-			name:           "request_exceeds_timeout",
-			timeout:        50 * time.Millisecond,
-			handlerDelay:   100 * time.Millisecond,
-			expectedStatus: http.StatusRequestTimeout,
-			expectTimeout:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			router := gin.New()
-			router.Use(TimeoutMiddleware(tt.timeout))
-			router.GET("/test", func(c *gin.Context) {
-				time.Sleep(tt.handlerDelay)
-				c.JSON(http.StatusOK, gin.H{"message": "success"})
-			})
-
-			req, _ := http.NewRequest("GET", "/test", nil)
-			w := httptest.NewRecorder()
-
-			router.ServeHTTP(w, req)
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			if tt.expectTimeout {
-				assert.Contains(t, w.Body.String(), "Request timeout")
-			} else {
-				assert.Contains(t, w.Body.String(), "success")
-			}
-		})
-	}
 }
 
-func TestContextTimeoutMiddleware(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	tests := []struct {
-		name           string
-		timeout        time.Duration
-		handlerDelay   time.Duration
-		expectedStatus int
-		expectTimeout  bool
-	}{
-		{
-			name:           "context_timeout_success",
-			timeout:        100 * time.Millisecond,
-			handlerDelay:   50 * time.Millisecond,
-			expectedStatus: http.StatusOK,
-			expectTimeout:  false,
-		},
-		{
-			name:           "context_timeout_exceeded",
-			timeout:        50 * time.Millisecond,
-			handlerDelay:   100 * time.Millisecond,
-			expectedStatus: http.StatusRequestTimeout,
-			expectTimeout:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			router := gin.New()
-			router.Use(ContextTimeoutMiddleware(tt.timeout))
-			router.GET("/test", func(c *gin.Context) {
-				// Check if context has timeout
-				ctx := c.Request.Context()
-				if deadline, ok := ctx.Deadline(); ok {
-					assert.True(t, deadline.After(time.Now()))
-				}
-
-				time.Sleep(tt.handlerDelay)
-				c.JSON(http.StatusOK, gin.H{"message": "success"})
-			})
-
-			req, _ := http.NewRequest("GET", "/test", nil)
-			w := httptest.NewRecorder()
-
-			router.ServeHTTP(w, req)
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			if tt.expectTimeout {
-				assert.Contains(t, w.Body.String(), "Request timeout")
-			} else {
-				assert.Contains(t, w.Body.String(), "success")
-			}
-		})
-	}
-}
-
-func TestTimeoutWithConfig(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	customHandler := func(c *gin.Context) {
-		c.JSON(http.StatusRequestTimeout, gin.H{
-			"error":   "Custom timeout",
-			"message": "Custom timeout message",
-		})
-	}
-
-	tests := []struct {
-		name           string
-		config         TimeoutConfig
-		requestPath    string
-		handlerDelay   time.Duration
-		expectedStatus int
-		expectTimeout  bool
-		expectedMsg    string
-	}{
-		{
-			name: "custom_timeout_config",
-			config: TimeoutConfig{
-				Timeout:      100 * time.Millisecond,
-				ErrorMessage: "Custom timeout",
-				Handler:      customHandler,
-				SkipPaths:    []string{"/health"},
-			},
-			requestPath:    "/test",
-			handlerDelay:   150 * time.Millisecond,
-			expectedStatus: http.StatusRequestTimeout,
-			expectTimeout:  true,
-			expectedMsg:    "Custom timeout",
-		},
-		{
-			name: "skip_path_no_timeout",
-			config: TimeoutConfig{
-				Timeout:      50 * time.Millisecond,
-				ErrorMessage: "Custom timeout",
-				Handler:      customHandler,
-				SkipPaths:    []string{"/health"},
-			},
-			requestPath:    "/health",
-			handlerDelay:   100 * time.Millisecond,
-			expectedStatus: http.StatusOK,
-			expectTimeout:  false,
-			expectedMsg:    "success",
-		},
-		{
-			name:   "default_config_used",
-			config: TimeoutConfig{
-				// Empty config should use defaults
-			},
-			requestPath:    "/test",
-			handlerDelay:   100 * time.Millisecond,
-			expectedStatus: http.StatusOK,
-			expectTimeout:  false,
-			expectedMsg:    "success",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			router := gin.New()
-			router.Use(TimeoutWithConfig(tt.config))
-
-			router.GET("/test", func(c *gin.Context) {
-				time.Sleep(tt.handlerDelay)
-				c.JSON(http.StatusOK, gin.H{"message": "success"})
-			})
-
-			router.GET("/health", func(c *gin.Context) {
-				time.Sleep(tt.handlerDelay)
-				c.JSON(http.StatusOK, gin.H{"message": "success"})
-			})
-
-			req, _ := http.NewRequest("GET", tt.requestPath, nil)
-			w := httptest.NewRecorder()
-
-			router.ServeHTTP(w, req)
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
-			assert.Contains(t, w.Body.String(), tt.expectedMsg)
-		})
-	}
-}
-
-func TestDefaultTimeoutConfig(t *testing.T) {
-	config := DefaultTimeoutConfig()
-
-	assert.Equal(t, 30*time.Second, config.Timeout)
-	assert.Equal(t, "Request timeout", config.ErrorMessage)
-	assert.NotNil(t, config.Handler)
-	assert.Contains(t, config.SkipPaths, "/health")
-	assert.Contains(t, config.SkipPaths, "/metrics")
-}
-
-func TestTimeoutRegistrar(t *testing.T) {
-	tests := []struct {
-		name     string
-		config   TimeoutConfig
-		expected TimeoutConfig
-	}{
-		{
-			name: "custom_config",
-			config: TimeoutConfig{
-				Timeout:      10 * time.Second,
-				ErrorMessage: "Custom message",
-			},
-			expected: TimeoutConfig{
-				Timeout:      10 * time.Second,
-				ErrorMessage: "Custom message",
-			},
-		},
-		{
-			name:     "empty_config_uses_default",
-			config:   TimeoutConfig{},
-			expected: DefaultTimeoutConfig(),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			registrar := NewTimeoutRegistrar(tt.config)
-
-			assert.Equal(t, "timeout-middleware", registrar.GetName())
-			assert.Equal(t, 10, registrar.GetPriority())
-
-			if tt.config.Timeout == 0 {
-				assert.Equal(t, tt.expected.Timeout, registrar.config.Timeout)
-				assert.Equal(t, tt.expected.ErrorMessage, registrar.config.ErrorMessage)
-			} else {
-				assert.Equal(t, tt.expected.Timeout, registrar.config.Timeout)
-				assert.Equal(t, tt.expected.ErrorMessage, registrar.config.ErrorMessage)
-			}
-
-			// Test RegisterMiddleware doesn't panic
-			router := gin.New()
-			err := registrar.RegisterMiddleware(router)
-			assert.NoError(t, err)
-		})
-	}
-}
-
-func TestTimeoutWithCustomHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	customHandler := func(c *gin.Context) {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Service temporarily unavailable",
-			"code":  503,
-		})
-	}
-
+// TestTimeoutMiddleware_Success 测试正常请求（未超时）
+func TestTimeoutMiddleware_Success(t *testing.T) {
 	router := gin.New()
-	router.Use(TimeoutWithCustomHandler(50*time.Millisecond, customHandler))
+	router.Use(TimeoutMiddleware(1 * time.Second))
+
 	router.GET("/test", func(c *gin.Context) {
 		time.Sleep(100 * time.Millisecond)
 		c.JSON(http.StatusOK, gin.H{"message": "success"})
 	})
 
-	req, _ := http.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
-
+	req, _ := http.NewRequest("GET", "/test", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-	assert.Contains(t, w.Body.String(), "Service temporarily unavailable")
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "success")
 }
 
-func BenchmarkTimeoutMiddleware(b *testing.B) {
-	gin.SetMode(gin.TestMode)
+// TestTimeoutMiddleware_Timeout 测试超时情况
+func TestTimeoutMiddleware_Timeout(t *testing.T) {
+	router := gin.New()
+	router.Use(TimeoutMiddleware(100 * time.Millisecond))
+
+	router.GET("/test", func(c *gin.Context) {
+		time.Sleep(200 * time.Millisecond)
+		c.JSON(http.StatusOK, gin.H{"message": "should not see this"})
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusGatewayTimeout, w.Code)
+	assert.Contains(t, w.Body.String(), "Request timeout")
+}
+
+// TestTimeoutMiddleware_ContextAware 测试处理器是否能感知context取消
+func TestTimeoutMiddleware_ContextAware(t *testing.T) {
+	router := gin.New()
+	router.Use(TimeoutMiddleware(200 * time.Millisecond))
+
+	handlerStarted := make(chan struct{})
+	handlerStopped := make(chan struct{})
+
+	router.GET("/test", func(c *gin.Context) {
+		close(handlerStarted)
+		ctx := c.Request.Context()
+
+		// 模拟一个可以响应context取消的长时间操作
+		select {
+		case <-time.After(1 * time.Second):
+			c.JSON(http.StatusOK, gin.H{"message": "completed"})
+		case <-ctx.Done():
+			// 正确响应了context取消
+			close(handlerStopped)
+			return
+		}
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	router.ServeHTTP(w, req)
+
+	// 等待确认handler已启动
+	<-handlerStarted
+
+	// 等待handler停止（最多等待500ms）
+	select {
+	case <-handlerStopped:
+		// 好，handler正确响应了context取消
+	case <-time.After(500 * time.Millisecond):
+		t.Error("Handler did not respond to context cancellation")
+	}
+
+	assert.Equal(t, http.StatusGatewayTimeout, w.Code)
+}
+
+// TestTimeoutMiddleware_Panic 测试panic处理
+func TestTimeoutMiddleware_Panic(t *testing.T) {
 	router := gin.New()
 	router.Use(TimeoutMiddleware(1 * time.Second))
+
 	router.GET("/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "success"})
+		panic("test panic")
 	})
 
+	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/test", nil)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-	}
+	// 捕获panic，避免测试崩溃
+	defer func() {
+		if r := recover(); r != nil {
+			// 预期会重新抛出panic
+			assert.Equal(t, "test panic", r)
+		}
+	}()
+
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
-func BenchmarkContextTimeoutMiddleware(b *testing.B) {
-	gin.SetMode(gin.TestMode)
+// TestTimeoutMiddleware_Concurrent 测试并发请求
+func TestTimeoutMiddleware_Concurrent(t *testing.T) {
 	router := gin.New()
-	router.Use(ContextTimeoutMiddleware(1 * time.Second))
-	router.GET("/test", func(c *gin.Context) {
+	router.Use(TimeoutMiddleware(500 * time.Millisecond))
+
+	requestCount := 100
+	successCount := 0
+	timeoutCount := 0
+	var mu sync.Mutex
+
+	router.GET("/test/:delay", func(c *gin.Context) {
+		delay := c.Param("delay")
+		if delay == "slow" {
+			time.Sleep(600 * time.Millisecond)
+		} else {
+			time.Sleep(100 * time.Millisecond)
+		}
 		c.JSON(http.StatusOK, gin.H{"message": "success"})
 	})
 
-	req, _ := http.NewRequest("GET", "/test", nil)
+	var wg sync.WaitGroup
+	wg.Add(requestCount)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
+	for i := 0; i < requestCount; i++ {
+		go func(index int) {
+			defer wg.Done()
+
+			w := httptest.NewRecorder()
+			path := "/test/fast"
+			if index%2 == 0 {
+				path = "/test/slow"
+			}
+
+			req, _ := http.NewRequest("GET", path, nil)
+			router.ServeHTTP(w, req)
+
+			mu.Lock()
+			if w.Code == http.StatusOK {
+				successCount++
+			} else if w.Code == http.StatusGatewayTimeout {
+				timeoutCount++
+			}
+			mu.Unlock()
+		}(i)
 	}
+
+	wg.Wait()
+
+	// 验证结果
+	assert.Equal(t, requestCount/2, successCount, "一半的快速请求应该成功")
+	assert.Equal(t, requestCount/2, timeoutCount, "一半的慢速请求应该超时")
+}
+
+// TestTimeoutMiddleware_WriteAfterTimeout 测试超时后的写入是否被忽略
+func TestTimeoutMiddleware_WriteAfterTimeout(t *testing.T) {
+	router := gin.New()
+	router.Use(TimeoutMiddleware(100 * time.Millisecond))
+
+	writeDone := make(chan struct{})
+
+	router.GET("/test", func(c *gin.Context) {
+		time.Sleep(200 * time.Millisecond)
+
+		// 尝试在超时后写入
+		c.JSON(http.StatusOK, gin.H{"message": "late response"})
+		close(writeDone)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	router.ServeHTTP(w, req)
+
+	// 等待handler完成写入尝试
+	<-writeDone
+
+	// 验证响应是超时错误，而不是handler的响应
+	assert.Equal(t, http.StatusGatewayTimeout, w.Code)
+	assert.Contains(t, w.Body.String(), "Request timeout")
+	assert.NotContains(t, w.Body.String(), "late response")
+}
+
+// TestTimeoutMiddleware_HeadersPreserved 测试headers是否正确保留
+func TestTimeoutMiddleware_HeadersPreserved(t *testing.T) {
+	router := gin.New()
+	router.Use(TimeoutMiddleware(1 * time.Second))
+
+	router.GET("/test", func(c *gin.Context) {
+		c.Header("X-Custom-Header", "test-value")
+		c.JSON(http.StatusOK, gin.H{"message": "success"})
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "test-value", w.Header().Get("X-Custom-Header"))
+	assert.Equal(t, "application/json; charset=utf-8", w.Header().Get("Content-Type"))
+}
+
+// TestTimeoutMiddleware_NoGoroutineLeak 测试是否有goroutine泄露
+func TestTimeoutMiddleware_NoGoroutineLeak(t *testing.T) {
+	router := gin.New()
+	router.Use(TimeoutMiddleware(100 * time.Millisecond))
+
+	router.GET("/test", func(c *gin.Context) {
+		// 模拟一个可以响应context取消的长时间操作
+		select {
+		case <-time.After(10 * time.Second):
+			c.JSON(http.StatusOK, gin.H{"message": "should not reach here"})
+		case <-c.Request.Context().Done():
+			// 正确响应了context取消
+			return
+		}
+	})
+
+	initialGoroutines := countGoroutines()
+
+	// 发送多个会超时的请求
+	for i := 0; i < 10; i++ {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/test", nil)
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusGatewayTimeout, w.Code)
+	}
+
+	// 等待一段时间让goroutine清理
+	time.Sleep(500 * time.Millisecond)
+
+	finalGoroutines := countGoroutines()
+
+	// 允许有少量波动，但不应该有明显的泄露
+	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+5,
+		"Goroutine count increased significantly, possible leak")
+}
+
+// 辅助函数：统计当前goroutine数量
+func countGoroutines() int {
+	return runtime.NumGoroutine()
 }

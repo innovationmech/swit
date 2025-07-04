@@ -30,218 +30,173 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// timeoutWriter wraps gin.ResponseWriter to capture response during timeout
+// TimeoutMiddleware 创建一个超时中间件
+// timeout: 超时时间
+func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 创建带超时的context
+		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
+		defer cancel()
+
+		// 创建响应包装器
+		tw := &timeoutWriter{
+			ResponseWriter: c.Writer,
+			headers:        make(http.Header),
+			statusCode:     http.StatusOK, // 默认状态码
+		}
+
+		// 用于同步的通道
+		done := make(chan struct{})
+		panicChan := make(chan interface{}, 1)
+
+		// 设置新的writer和request
+		c.Writer = tw
+		c.Request = c.Request.WithContext(ctx)
+
+		// 在新的goroutine中执行后续处理
+		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					panicChan <- p
+				}
+				close(done)
+			}()
+			c.Next()
+		}()
+
+		// 等待处理完成或超时
+		select {
+		case <-done:
+			// 正常完成
+			tw.mu.Lock()
+			defer tw.mu.Unlock()
+
+			if !tw.hasWritten && !tw.timedOut {
+				// 将缓存的headers写入真正的ResponseWriter
+				tw.writeHeaders()
+				tw.ResponseWriter.WriteHeader(tw.statusCode)
+			}
+
+		case p := <-panicChan:
+			// 处理panic
+			tw.mu.Lock()
+			if !tw.hasWritten && !tw.timedOut {
+				tw.timedOut = true
+				tw.mu.Unlock()
+
+				// 返回500错误
+				tw.ResponseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
+				tw.ResponseWriter.WriteHeader(http.StatusInternalServerError)
+				tw.ResponseWriter.Write([]byte(`{"error":"Internal server error"}`))
+			} else {
+				tw.mu.Unlock()
+			}
+			panic(p)
+
+		case <-ctx.Done():
+			// 超时处理
+			tw.mu.Lock()
+			if !tw.hasWritten {
+				tw.timedOut = true
+				// 直接写入超时响应
+				tw.ResponseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
+				tw.ResponseWriter.WriteHeader(http.StatusGatewayTimeout)
+				tw.ResponseWriter.Write([]byte(`{"error":"Request timeout"}`))
+				tw.hasWritten = true
+			}
+			tw.mu.Unlock()
+
+			// 等待handler完成，避免goroutine泄露
+			<-done
+		}
+	}
+}
+
+// timeoutWriter 包装gin.ResponseWriter以处理超时情况
 type timeoutWriter struct {
 	gin.ResponseWriter
-	h        http.Header
-	wbuf     []byte
-	code     int
-	mu       sync.Mutex
-	timedOut bool
+	headers    http.Header
+	statusCode int
+	hasWritten bool
+	timedOut   bool
+	mu         sync.Mutex
 }
 
+// Header 返回header map
 func (tw *timeoutWriter) Header() http.Header {
-	return tw.h
+	return tw.headers
 }
 
-func (tw *timeoutWriter) Write(p []byte) (int, error) {
+// Write 写入响应body
+func (tw *timeoutWriter) Write(data []byte) (int, error) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
 	if tw.timedOut {
-		return 0, http.ErrHandlerTimeout
+		// 已超时，忽略写入，返回写入的字节数以避免错误
+		return len(data), nil
 	}
 
-	tw.wbuf = append(tw.wbuf, p...)
-	return len(p), nil
+	if !tw.hasWritten {
+		// 第一次写入时，先写入headers和status
+		tw.writeHeaders()
+		tw.ResponseWriter.WriteHeader(tw.statusCode)
+		tw.hasWritten = true
+	}
+
+	return tw.ResponseWriter.Write(data)
 }
 
+// WriteHeader 写入状态码
 func (tw *timeoutWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 
-	if tw.timedOut {
+	if tw.timedOut || tw.hasWritten {
 		return
 	}
 
-	tw.code = code
+	// 缓存状态码，等到真正写入时再使用
+	tw.statusCode = code
 }
 
-// TimeoutMiddleware creates a middleware that sets a timeout for the entire request
-// Note: This implementation focuses on setting context timeouts. Handlers should
-// respect context cancellation for proper timeout behavior.
-func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
-	return TimeoutWithCustomHandler(timeout, func(c *gin.Context) {
-		c.JSON(http.StatusRequestTimeout, gin.H{
-			"error":   "Request timeout",
-			"message": "The request took too long to process",
-			"code":    http.StatusRequestTimeout,
-		})
-	})
+// WriteString 实现gin.ResponseWriter接口
+func (tw *timeoutWriter) WriteString(s string) (int, error) {
+	return tw.Write([]byte(s))
 }
 
-// timeoutHandler returns a handler that responds with a timeout error
-func timeoutHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusRequestTimeout, gin.H{
-			"error":   "Request timeout",
-			"message": "The request took too long to process",
-			"code":    http.StatusRequestTimeout,
-		})
+// writeHeaders 将缓存的headers写入真正的ResponseWriter
+func (tw *timeoutWriter) writeHeaders() {
+	for k, v := range tw.headers {
+		tw.ResponseWriter.Header()[k] = v
 	}
 }
 
-// TimeoutWithCustomHandler creates a middleware with a custom timeout handler
-func TimeoutWithCustomHandler(timeout time.Duration, handler gin.HandlerFunc) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Create a context with timeout
-		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
-		defer cancel()
+// Status 返回当前状态码
+func (tw *timeoutWriter) Status() int {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
 
-		// Replace the request context with the timeout context
-		c.Request = c.Request.WithContext(ctx)
-
-		// Use a buffered writer to capture the response
-		tw := &timeoutWriter{
-			ResponseWriter: c.Writer,
-			h:              make(http.Header),
-		}
-		c.Writer = tw
-
-		// Track timing
-		start := time.Now()
-
-		// Process the request normally
-		c.Next()
-
-		// Check if we exceeded the timeout
-		elapsed := time.Since(start)
-		if elapsed > timeout {
-			// Timeout occurred - discard response and send timeout
-			tw.mu.Lock()
-			tw.timedOut = true
-			tw.mu.Unlock()
-
-			// Reset writer and send timeout response
-			c.Writer = tw.ResponseWriter
-			c.Abort()
-			handler(c)
-		} else {
-			// Normal completion - copy buffered response
-			tw.mu.Lock()
-			defer tw.mu.Unlock()
-
-			if !tw.timedOut {
-				// Restore original writer
-				c.Writer = tw.ResponseWriter
-
-				// Copy headers
-				for k, v := range tw.h {
-					c.Writer.Header()[k] = v
-				}
-
-				// Write status code
-				if tw.code != 0 {
-					c.Writer.WriteHeader(tw.code)
-				}
-
-				// Write body
-				if len(tw.wbuf) > 0 {
-					c.Writer.Write(tw.wbuf)
-				}
-			}
-		}
+	if tw.hasWritten {
+		return tw.ResponseWriter.Status()
 	}
+	return tw.statusCode
 }
 
-// ContextTimeoutMiddleware creates a middleware that adds timeout to the request context
-// This is useful when you want to pass the timeout context to downstream services
-func ContextTimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
-	return TimeoutWithCustomHandler(timeout, func(c *gin.Context) {
-		c.JSON(http.StatusRequestTimeout, gin.H{
-			"error":   "Request timeout",
-			"message": "The request took too long to process",
-			"code":    http.StatusRequestTimeout,
-		})
-	})
-}
+// Size 返回已写入的字节数
+func (tw *timeoutWriter) Size() int {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
 
-// TimeoutConfig holds configuration for timeout middleware
-type TimeoutConfig struct {
-	// Timeout duration for the request
-	Timeout time.Duration
-	// ErrorMessage custom error message for timeout
-	ErrorMessage string
-	// Handler custom handler for timeout responses
-	Handler gin.HandlerFunc
-	// SkipPaths paths to skip timeout middleware
-	SkipPaths []string
-}
-
-// DefaultTimeoutConfig returns a default timeout configuration
-func DefaultTimeoutConfig() TimeoutConfig {
-	return TimeoutConfig{
-		Timeout:      30 * time.Second,
-		ErrorMessage: "Request timeout",
-		Handler:      timeoutHandler(),
-		SkipPaths:    []string{"/health", "/metrics"},
+	if tw.hasWritten {
+		return tw.ResponseWriter.Size()
 	}
+	return 0
 }
 
-// TimeoutWithConfig creates a timeout middleware with custom configuration
-func TimeoutWithConfig(config TimeoutConfig) gin.HandlerFunc {
-	// Use default config if not provided
-	if config.Timeout == 0 {
-		config.Timeout = 30 * time.Second
-	}
-	if config.ErrorMessage == "" {
-		config.ErrorMessage = "Request timeout"
-	}
-	if config.Handler == nil {
-		config.Handler = timeoutHandler()
-	}
-
-	return func(c *gin.Context) {
-		// Skip timeout for certain paths
-		for _, path := range config.SkipPaths {
-			if c.Request.URL.Path == path {
-				c.Next()
-				return
-			}
-		}
-
-		// Apply timeout using our custom timeout middleware
-		TimeoutWithCustomHandler(config.Timeout, config.Handler)(c)
-	}
-}
-
-// TimeoutRegistrar is a middleware registrar for timeout middleware
-type TimeoutRegistrar struct {
-	config TimeoutConfig
-}
-
-// NewTimeoutRegistrar creates a new timeout middleware registrar
-func NewTimeoutRegistrar(config TimeoutConfig) *TimeoutRegistrar {
-	if config.Timeout == 0 {
-		config = DefaultTimeoutConfig()
-	}
-	return &TimeoutRegistrar{
-		config: config,
-	}
-}
-
-// RegisterMiddleware implements the MiddlewareRegistrar interface
-func (tr *TimeoutRegistrar) RegisterMiddleware(router *gin.Engine) error {
-	router.Use(TimeoutWithConfig(tr.config))
-	return nil
-}
-
-// GetName implements the MiddlewareRegistrar interface
-func (tr *TimeoutRegistrar) GetName() string {
-	return "timeout-middleware"
-}
-
-// GetPriority implements the MiddlewareRegistrar interface
-func (tr *TimeoutRegistrar) GetPriority() int {
-	return 10 // High priority, should be applied early
+// Written 返回是否已写入
+func (tw *timeoutWriter) Written() bool {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	return tw.hasWritten
 }

@@ -38,10 +38,7 @@ func NewGlobalMiddlewareRegistrar() *GlobalMiddlewareRegistrar {
 // RegisterMiddleware 实现 MiddlewareRegistrar 接口
 func (gmr *GlobalMiddlewareRegistrar) RegisterMiddleware(router *gin.Engine) error {
 	// Register timeout middleware first for request timeout control
-	timeoutConfig := DefaultTimeoutConfig()
-	timeoutConfig.Timeout = 30 * time.Second
-	timeoutConfig.SkipPaths = []string{"/health", "/metrics", "/debug", "/stop"}
-	router.Use(TimeoutWithConfig(timeoutConfig))
+	router.Use(TimeoutMiddleware(30 * time.Second))
 
 	// Register other global middlewares
 	router.Use(middleware2.Logger(), middleware2.CORSMiddleware())
