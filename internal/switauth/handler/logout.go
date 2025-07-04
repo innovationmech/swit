@@ -47,7 +47,7 @@ func (c *AuthController) Logout(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.authService.Logout(ctx, tokenString); err != nil {
+	if err := c.authService.Logout(ctx.Request.Context(), tokenString); err != nil {
 		ctx.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: err.Error()})
 		return
 	}

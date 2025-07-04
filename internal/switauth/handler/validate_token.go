@@ -59,7 +59,7 @@ func (c *AuthController) ValidateToken(ctx *gin.Context) {
 	tokenString := parts[1]
 
 	// Validate token
-	token, err := c.authService.ValidateToken(ctx, tokenString)
+	token, err := c.authService.ValidateToken(ctx.Request.Context(), tokenString)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
 		return
