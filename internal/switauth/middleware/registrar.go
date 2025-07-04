@@ -124,8 +124,8 @@ type timeoutWriter struct {
 
 // Header 返回header map，允许直接修改
 func (tw *timeoutWriter) Header() http.Header {
-	// 直接返回原始headers以支持Gin的正常使用
-	// 在正常使用中，Context不应该被并发使用
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
 	return tw.headers
 }
 
