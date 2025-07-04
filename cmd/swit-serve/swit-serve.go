@@ -66,6 +66,12 @@ func main() {
 	command := cmd.NewRootServeCmdCommand()
 	if err := cli.Run(command); err != nil {
 		logger.Logger.Error("Error occurred while running command", zap.Error(err))
+		// Ensure logger sync happens before exit
+		if logger.Logger != nil {
+			if syncErr := logger.Logger.Sync(); syncErr != nil {
+				// Ignore errors on stderr sync - this is expected on some platforms
+			}
+		}
 		os.Exit(1)
 	}
 }
