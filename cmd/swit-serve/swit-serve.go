@@ -22,13 +22,34 @@
 package main
 
 import (
-	"github.com/innovationmech/swit/pkg/logger"
 	"os"
+
+	"github.com/innovationmech/swit/pkg/logger"
 
 	"github.com/innovationmech/swit/internal/component-base/cli"
 	"github.com/innovationmech/swit/internal/switserve/cmd"
 	"go.uber.org/zap"
 )
+
+// @title SWIT Server API
+// @version 1.0
+// @description This is the SWIT server API documentation.
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
 
 // main is the entry point of the application.
 func main() {

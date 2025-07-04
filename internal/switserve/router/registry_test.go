@@ -18,12 +18,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package server
+package router
 
 import (
-	"github.com/innovationmech/swit/pkg/logger"
 	"net/http"
 	"testing"
+
+	"github.com/innovationmech/swit/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -97,8 +98,8 @@ func init() {
 	logger.Logger, _ = zap.NewDevelopment()
 }
 
-func TestRouteRegistry_RegisterRoute(t *testing.T) {
-	registry := NewRouteRegistry()
+func TestRegistry_RegisterRoute(t *testing.T) {
+	registry := New()
 
 	registrar := NewTestRouteRegistrar("test-api", "v1", "")
 	registry.RegisterRoute(registrar)
@@ -107,8 +108,8 @@ func TestRouteRegistry_RegisterRoute(t *testing.T) {
 	assert.Equal(t, "test-api", registry.routeRegistrars[0].GetName())
 }
 
-func TestRouteRegistry_RegisterMiddleware(t *testing.T) {
-	registry := NewRouteRegistry()
+func TestRegistry_RegisterMiddleware(t *testing.T) {
+	registry := New()
 
 	registrar := NewTestMiddlewareRegistrar("test-middleware", 10)
 	registry.RegisterMiddleware(registrar)
@@ -117,10 +118,10 @@ func TestRouteRegistry_RegisterMiddleware(t *testing.T) {
 	assert.Equal(t, "test-middleware", registry.middlewareRegistrars[0].GetName())
 }
 
-func TestRouteRegistry_Setup(t *testing.T) {
+func TestRegistry_Setup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	registry := NewRouteRegistry()
+	registry := New()
 
 	// 注册中间件
 	middleware1 := NewTestMiddlewareRegistrar("middleware-1", 20)
@@ -154,8 +155,8 @@ func TestRouteRegistry_Setup(t *testing.T) {
 	assert.Contains(t, routePaths, "/test")    // root版本路由
 }
 
-func TestRouteRegistry_GetRegisteredRoutes(t *testing.T) {
-	registry := NewRouteRegistry()
+func TestRegistry_GetRegisteredRoutes(t *testing.T) {
+	registry := New()
 
 	registrar1 := NewTestRouteRegistrar("api-1", "v1", "prefix1")
 	registrar2 := NewTestRouteRegistrar("api-2", "v2", "prefix2")
@@ -174,8 +175,8 @@ func TestRouteRegistry_GetRegisteredRoutes(t *testing.T) {
 	assert.Equal(t, "prefix2", routes[1]["prefix"])
 }
 
-func TestRouteRegistry_GetRegisteredMiddlewares(t *testing.T) {
-	registry := NewRouteRegistry()
+func TestRegistry_GetRegisteredMiddlewares(t *testing.T) {
+	registry := New()
 
 	middleware1 := NewTestMiddlewareRegistrar("middleware-1", 10)
 	middleware2 := NewTestMiddlewareRegistrar("middleware-2", 20)
@@ -195,7 +196,7 @@ func TestRouteRegistry_GetRegisteredMiddlewares(t *testing.T) {
 func TestMiddlewarePrioritySort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	registry := NewRouteRegistry()
+	registry := New()
 
 	// 以错误的顺序注册中间件
 	middleware3 := NewTestMiddlewareRegistrar("middleware-3", 30)

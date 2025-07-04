@@ -24,6 +24,13 @@ package health
 import "github.com/gin-gonic/gin"
 
 // HealthHandler is the handler for the health check endpoint.
+// @Summary Health check
+// @Description Check if the service is healthy
+// @Tags health
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Service is healthy"
+// @Router /health [get]
 func HealthHandler(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"message": "pong",

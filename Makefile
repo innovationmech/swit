@@ -16,6 +16,7 @@ OUTPUTDIR := _output
 DOCKER := docker
 DOCKER_IMAGE_NAME := swit-serve
 DOCKER_IMAGE_TAG := $(shell git rev-parse --abbrev-ref HEAD)
+SWAG := swag
 
 include scripts/make-rules/copyright.mk
 
@@ -37,6 +38,11 @@ Options:
   IMAGE-SERVE      Build Docker image for swit-serve.
   INSTALL-HOOKS    Install Git pre-commit hooks.
   SETUP-DEV        Setup development environment (tools + hooks).
+  SWAGGER          Generate/update Swagger documentation for all services.
+  SWAGGER-SWITSERVE Generate Swagger documentation for switserve only.
+  SWAGGER-SWITAUTH Generate Swagger documentation for switauth only.
+  SWAGGER-COPY     Create unified documentation links in docs/generated/.
+  SWAGGER-INSTALL  Install swag tool for generating Swagger docs.
 endef
 export USAGE_OPTIONS
 
@@ -125,5 +131,58 @@ install-hooks:
 	@echo "Pre-commit hook installed"
 
 .PHONY: setup-dev
-setup-dev: install-hooks
+setup-dev: install-hooks swagger-install
 	@echo "Development environment setup completed"
+
+.PHONY: swagger-install
+swagger-install:
+	@echo "Installing swag tool"
+	@$(GO) install github.com/swaggo/swag/cmd/swag@v1.8.12
+	@echo "swag tool installed"
+
+# Generate Swagger documentation for all services
+.PHONY: swagger
+swagger: swagger-switserve
+	@echo "All Swagger documentation generated"
+
+# Generate Swagger documentation for switserve
+.PHONY: swagger-switserve
+swagger-switserve:
+	@echo "Generating Swagger documentation for switserve"
+	@$(SWAG) init -g cmd/swit-serve/swit-serve.go -o internal/switserve/docs --parseDependency --parseInternal
+	@echo "SwitServe Swagger documentation generated at: internal/switserve/docs/"
+
+# Generate Swagger documentation for switauth (placeholder for future)
+.PHONY: swagger-switauth
+swagger-switauth:
+	@echo "Generating Swagger documentation for switauth"
+	@echo "TODO: Add swag command for switauth when ready"
+	# @$(SWAG) init -g cmd/swit-auth/swit-auth.go -o internal/switauth/docs --parseDependency --parseInternal
+
+# Format Swagger annotations for all services
+.PHONY: swagger-fmt
+swagger-fmt: swagger-fmt-switserve
+	@echo "All Swagger annotations formatted"
+
+.PHONY: swagger-fmt-switserve
+swagger-fmt-switserve:
+	@echo "Formatting Swagger annotations for switserve"
+	@$(SWAG) fmt -g cmd/swit-serve
+	@echo "SwitServe Swagger annotations formatted"
+
+# Copy generated docs to unified location for easy access
+.PHONY: swagger-copy
+swagger-copy: swagger
+	@echo "Creating unified documentation links"
+	@mkdir -p docs/generated/switserve
+	@echo "# SwitServe API Documentation" > docs/generated/switserve/README.md
+	@echo "" >> docs/generated/switserve/README.md
+	@echo "**Generated API Documentation**: [internal/switserve/docs/](../../../internal/switserve/docs/)" >> docs/generated/switserve/README.md
+	@echo "**Swagger UI**: http://localhost:9000/swagger/index.html" >> docs/generated/switserve/README.md
+	@echo "**API Base URL**: http://localhost:9000" >> docs/generated/switserve/README.md
+	@echo "" >> docs/generated/switserve/README.md
+	@echo "文档文件位置：" >> docs/generated/switserve/README.md
+	@echo "- JSON: [swagger.json](../../../internal/switserve/docs/swagger.json)" >> docs/generated/switserve/README.md
+	@echo "- YAML: [swagger.yaml](../../../internal/switserve/docs/swagger.yaml)" >> docs/generated/switserve/README.md
+	@echo "- Go Code: [docs.go](../../../internal/switserve/docs/docs.go)" >> docs/generated/switserve/README.md
+	@echo "Unified documentation access created"

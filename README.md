@@ -12,6 +12,7 @@ Swit is a microservice-based backend system built with Go, featuring modular des
 - **Protocol Support**: Both HTTP REST API and gRPC protocol support
 - **Health Checks**: Built-in health check endpoints for service monitoring
 - **Docker Support**: Containerized deployment solutions
+- **OpenAPI Documentation**: Integrated Swagger UI with interactive API documentation
 
 ## System Architecture
 
@@ -82,6 +83,14 @@ Binaries will be generated in the `_output/` directory.
    ```
 
 ## API Endpoints
+
+### OpenAPI/Swagger Documentation
+
+The project integrates Swagger UI for interactive API documentation. After starting the service, you can access it at:
+
+```
+http://localhost:9000/swagger/index.html
+```
 
 ### Authentication Service API (Port 9001)
 
@@ -168,7 +177,13 @@ swit/
 - `make build`: Build all binaries
 - `make clean`: Clean output directory
 - `make test`: Run tests
+- `make test-coverage`: Run tests with coverage report
+- `make test-race`: Run tests with race detection
+- `make ci`: Run full CI pipeline (tidy, copyright, quality, test)
 - `make image-serve`: Build Docker image
+- `make swagger`: Generate/update OpenAPI documentation
+- `make swagger-install`: Install Swagger documentation tools
+- `make swagger-fmt`: Format Swagger annotations
 
 ### Docker Support
 

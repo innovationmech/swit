@@ -18,11 +18,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package server
+package router
 
 import (
-	"github.com/innovationmech/swit/pkg/logger"
 	"sort"
+
+	"github.com/innovationmech/swit/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -50,65 +51,71 @@ type MiddlewareRegistrar interface {
 	GetPriority() int
 }
 
-// RouteRegistry 路由注册表管理器
-type RouteRegistry struct {
+// RegistryProvider 路由注册表提供者接口（用于调试和监控）
+type RegistryProvider interface {
+	GetRegisteredRoutes() []map[string]interface{}
+	GetRegisteredMiddlewares() []map[string]interface{}
+}
+
+// Registry 路由注册表管理器
+type Registry struct {
 	routeRegistrars      []RouteRegistrar
 	middlewareRegistrars []MiddlewareRegistrar
 }
 
-// NewRouteRegistry 创建新的路由注册表
-func NewRouteRegistry() *RouteRegistry {
-	return &RouteRegistry{
+// New 创建新的路由注册表
+func New() *Registry {
+	return &Registry{
 		routeRegistrars:      make([]RouteRegistrar, 0),
 		middlewareRegistrars: make([]MiddlewareRegistrar, 0),
 	}
 }
 
 // RegisterRoute 注册路由注册器
-func (rr *RouteRegistry) RegisterRoute(registrar RouteRegistrar) {
+func (r *Registry) RegisterRoute(registrar RouteRegistrar) {
 	logger.Logger.Info("Registering route",
 		zap.String("name", registrar.GetName()),
 		zap.String("version", registrar.GetVersion()),
 		zap.String("prefix", registrar.GetPrefix()))
-	rr.routeRegistrars = append(rr.routeRegistrars, registrar)
+	r.routeRegistrars = append(r.routeRegistrars, registrar)
 }
 
 // RegisterMiddleware 注册中间件注册器
-func (rr *RouteRegistry) RegisterMiddleware(registrar MiddlewareRegistrar) {
+func (r *Registry) RegisterMiddleware(registrar MiddlewareRegistrar) {
 	logger.Logger.Info("Registering middleware",
 		zap.String("name", registrar.GetName()),
 		zap.Int("priority", registrar.GetPriority()))
-	rr.middlewareRegistrars = append(rr.middlewareRegistrars, registrar)
+	r.middlewareRegistrars = append(r.middlewareRegistrars, registrar)
 }
 
 // Setup 设置所有路由和中间件
-func (rr *RouteRegistry) Setup(router *gin.Engine) error {
+func (r *Registry) Setup(router *gin.Engine) error {
 	// 按优先级排序并注册中间件
-	if err := rr.setupMiddlewares(router); err != nil {
+	if err := r.setupMiddlewares(router); err != nil {
 		return err
 	}
 
 	// 注册路由
-	if err := rr.setupRoutes(router); err != nil {
+	if err := r.setupRoutes(router); err != nil {
 		return err
 	}
 
 	logger.Logger.Info("All routes and middlewares registered successfully",
-		zap.Int("route_count", len(rr.routeRegistrars)),
-		zap.Int("middleware_count", len(rr.middlewareRegistrars)))
+		zap.Int("route_count", len(r.routeRegistrars)),
+		zap.Int("middleware_count", len(r.middlewareRegistrars)))
 
 	return nil
 }
 
 // setupMiddlewares 设置中间件
-func (rr *RouteRegistry) setupMiddlewares(router *gin.Engine) error {
+func (r *Registry) setupMiddlewares(router *gin.Engine) error {
 	// 按优先级排序
-	sort.Slice(rr.middlewareRegistrars, func(i, j int) bool {
-		return rr.middlewareRegistrars[i].GetPriority() < rr.middlewareRegistrars[j].GetPriority()
+	sort.Slice(r.middlewareRegistrars, func(i, j int) bool {
+		return r.middlewareRegistrars[i].GetPriority() < r.middlewareRegistrars[j].GetPriority()
 	})
 
 	// 注册中间件
-	for _, registrar := range rr.middlewareRegistrars {
+	for _, registrar := range r.middlewareRegistrars {
 		if err := registrar.RegisterMiddleware(router); err != nil {
 			logger.Logger.Error("Failed to register middleware",
 				zap.String("name", registrar.GetName()),
@@ -120,11 +127,11 @@ func (rr *RouteRegistry) setupMiddlewares(router *gin.Engine) error {
 }
 
 // setupRoutes 设置路由
-func (rr *RouteRegistry) setupRoutes(router *gin.Engine) error {
+func (r *Registry) setupRoutes(router *gin.Engine) error {
 	// 按版本分组路由
 	versionGroups := make(map[string]*gin.RouterGroup)
 
-	for _, registrar := range rr.routeRegistrars {
+	for _, registrar := range r.routeRegistrars {
 		version := registrar.GetVersion()
 		if version == "" {
 			logger.Logger.Warn("Version is missing, defaulting to 'v1'",
@@ -171,10 +178,10 @@ func (rr *RouteRegistry) setupRoutes(router *gin.Engine) error {
 }
 
 // GetRegisteredRoutes 获取已注册的路由信息（用于调试和监控）
-func (rr *RouteRegistry) GetRegisteredRoutes() []map[string]interface{} {
+func (r *Registry) GetRegisteredRoutes() []map[string]interface{} {
 	routes := make([]map[string]interface{}, 0)
 
-	for _, registrar := range rr.routeRegistrars {
+	for _, registrar := range r.routeRegistrars {
 		routes = append(routes, map[string]interface{}{
 			"name":    registrar.GetName(),
 			"version": registrar.GetVersion(),
@@ -185,10 +192,11 @@ func (rr *RouteRegistry) GetRegisteredRoutes() []map[string]interface{} {
 	return routes
 }
 
-func (rr *RouteRegistry) GetRegisteredMiddlewares() []map[string]interface{} {
+// GetRegisteredMiddlewares 获取已注册的中间件信息（用于调试和监控）
+func (r *Registry) GetRegisteredMiddlewares() []map[string]interface{} {
 	middlewares := make([]map[string]interface{}, 0)
 
-	for _, registrar := range rr.middlewareRegistrars {
+	for _, registrar := range r.middlewareRegistrars {
 		middlewares = append(middlewares, map[string]interface{}{
 			"name":     registrar.GetName(),
 			"priority": registrar.GetPriority(),

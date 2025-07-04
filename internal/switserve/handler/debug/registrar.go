@@ -24,22 +24,17 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/router"
 )
 
 // DebugController 调试控制器
 type DebugController struct {
-	registry RouteRegistryProvider
+	registry router.RegistryProvider
 	engine   *gin.Engine
 }
 
-// RouteRegistryProvider 路由注册表提供者接口
-type RouteRegistryProvider interface {
-	GetRegisteredRoutes() []map[string]interface{}
-	GetRegisteredMiddlewares() []map[string]interface{}
-}
-
 // NewDebugController 创建调试控制器
-func NewDebugController(registry RouteRegistryProvider, engine *gin.Engine) *DebugController {
+func NewDebugController(registry router.RegistryProvider, engine *gin.Engine) *DebugController {
 	return &DebugController{
 		registry: registry,
 		engine:   engine,
@@ -79,7 +74,7 @@ type DebugRouteRegistrar struct {
 }
 
 // NewDebugRouteRegistrar 创建调试路由注册器
-func NewDebugRouteRegistrar(registry RouteRegistryProvider, engine *gin.Engine) *DebugRouteRegistrar {
+func NewDebugRouteRegistrar(registry router.RegistryProvider, engine *gin.Engine) *DebugRouteRegistrar {
 	return &DebugRouteRegistrar{
 		controller: NewDebugController(registry, engine),
 	}

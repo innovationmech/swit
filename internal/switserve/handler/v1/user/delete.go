@@ -27,15 +27,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DeleteUser deletes a user by ID.
+// DeleteUser deletes a user.
+// @Summary Delete a user
+// @Description Delete a user by ID
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{} "User deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid user ID"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Security BearerAuth
+// @Router /users/{id} [delete]
 func (uc *UserController) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
+
 	err := uc.userSrv.DeleteUser(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Return 204 No Content to indicate successful deletion
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
 }

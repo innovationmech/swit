@@ -28,32 +28,71 @@ import (
 	"github.com/innovationmech/swit/internal/switserve/handler/stop"
 	"github.com/innovationmech/swit/internal/switserve/handler/v1/user"
 	"github.com/innovationmech/swit/internal/switserve/middleware"
+	"github.com/innovationmech/swit/internal/switserve/router"
 	"github.com/innovationmech/swit/pkg/logger"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
+
+	// Import swagger docs
+	_ "github.com/innovationmech/swit/internal/switserve/docs"
 )
 
 // SetupRoutes sets up the routes for the application using the new route registry system.
 func (s *Server) SetupRoutes() {
 	// 创建路由注册表
-	registry := NewRouteRegistry()
+	registry := router.New()
 
-	// 注册全局中间件
-	registry.RegisterMiddleware(middleware.NewGlobalMiddlewareRegistrar())
-
-	// 注册路由
-	registry.RegisterRoute(health.NewHealthRouteRegistrar())
-	registry.RegisterRoute(stop.NewStopRouteRegistrar(s.Shutdown))
-	registry.RegisterRoute(user.NewUserRouteRegistrar())
-	registry.RegisterRoute(user.NewUserInternalRouteRegistrar())
-	// 注册调试路由（仅在开发环境）
-	if gin.Mode() == gin.DebugMode {
-		registry.RegisterRoute(debug.NewDebugRouteRegistrar(registry, s.router))
-	}
+	// 配置应用路由
+	s.configureRoutes(registry)
 
 	// 设置所有路由和中间件
 	if err := registry.Setup(s.router); err != nil {
 		logger.Logger.Fatal("Failed to setup routes", zap.Error(err))
 	}
 
+	// 设置 Swagger UI
+	s.setupSwaggerUI()
+
 	logger.Logger.Info("Route registry setup completed")
+}
+
+// configureRoutes 配置应用的所有路由和中间件
+func (s *Server) configureRoutes(registry *router.Registry) {
+	// 注册全局中间件
+	s.registerGlobalMiddlewares(registry)
+
+	// 注册API路由
+	s.registerAPIRoutes(registry)
+
+	// 注册调试路由（仅在开发环境）
+	s.registerDebugRoutes(registry)
+}
+
+// registerGlobalMiddlewares 注册全局中间件
+func (s *Server) registerGlobalMiddlewares(registry *router.Registry) {
+	registry.RegisterMiddleware(middleware.NewGlobalMiddlewareRegistrar())
+}
+
+// registerAPIRoutes 注册API路由
+func (s *Server) registerAPIRoutes(registry *router.Registry) {
+	// 基础服务路由
+	registry.RegisterRoute(health.NewHealthRouteRegistrar())
+	registry.RegisterRoute(stop.NewStopRouteRegistrar(s.Shutdown))
+
+	// 用户相关路由
+	registry.RegisterRoute(user.NewUserRouteRegistrar())
+	registry.RegisterRoute(user.NewUserInternalRouteRegistrar())
+}
+
+// registerDebugRoutes 注册调试路由（仅在开发环境）
+func (s *Server) registerDebugRoutes(registry *router.Registry) {
+	if gin.Mode() == gin.DebugMode {
+		registry.RegisterRoute(debug.NewDebugRouteRegistrar(registry, s.router))
+	}
+}
+
+// setupSwaggerUI 设置Swagger UI
+func (s *Server) setupSwaggerUI() {
+	s.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }

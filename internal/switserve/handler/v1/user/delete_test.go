@@ -49,8 +49,10 @@ func TestDeleteUser(t *testing.T) {
 			setupMocks: func(mockSrv *MockUserService) {
 				mockSrv.On("DeleteUser", mock.Anything, "123").Return(nil)
 			},
-			expectedStatus: http.StatusNoContent,
-			expectedBody:   nil,
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": "User deleted successfully",
+			},
 		},
 		{
 			name:   "error_service_failure",
@@ -77,8 +79,10 @@ func TestDeleteUser(t *testing.T) {
 			setupMocks: func(mockSrv *MockUserService) {
 				mockSrv.On("DeleteUser", mock.Anything, "abc-123_456").Return(nil)
 			},
-			expectedStatus: http.StatusNoContent,
-			expectedBody:   nil,
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": "User deleted successfully",
+			},
 		},
 		{
 			name:   "database_connection_error",
