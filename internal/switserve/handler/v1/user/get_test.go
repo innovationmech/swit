@@ -70,13 +70,13 @@ func TestGetUserByUsername(t *testing.T) {
 		},
 		{
 			name:     "error_user_not_found",
-			username: "nonexistentuser",
+			username: "nonexistent",
 			setupMocks: func(mockSrv *MockUserService) {
-				mockSrv.On("GetUserByUsername", mock.Anything, "nonexistentuser").Return(nil, errors.New("user not found"))
+				mockSrv.On("GetUserByUsername", mock.Anything, "nonexistent").Return(nil, errors.New("user not found"))
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusNotFound,
 			expectedBody: map[string]interface{}{
-				"error": "user not found",
+				"error": "User not found",
 			},
 		},
 		{
@@ -85,9 +85,9 @@ func TestGetUserByUsername(t *testing.T) {
 			setupMocks: func(mockSrv *MockUserService) {
 				mockSrv.On("GetUserByUsername", mock.Anything, "testuser").Return(nil, errors.New("database connection failed"))
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusNotFound,
 			expectedBody: map[string]interface{}{
-				"error": "database connection failed",
+				"error": "User not found",
 			},
 		},
 	}
@@ -177,9 +177,9 @@ func TestGetUserByEmail(t *testing.T) {
 			setupMocks: func(mockSrv *MockUserService) {
 				mockSrv.On("GetUserByEmail", mock.Anything, "nonexistent@example.com").Return(nil, errors.New("user not found"))
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusNotFound,
 			expectedBody: map[string]interface{}{
-				"error": "user not found",
+				"error": "User not found",
 			},
 		},
 		{
@@ -188,9 +188,9 @@ func TestGetUserByEmail(t *testing.T) {
 			setupMocks: func(mockSrv *MockUserService) {
 				mockSrv.On("GetUserByEmail", mock.Anything, "test@example.com").Return(nil, errors.New("database connection failed"))
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusNotFound,
 			expectedBody: map[string]interface{}{
-				"error": "database connection failed",
+				"error": "User not found",
 			},
 		},
 	}

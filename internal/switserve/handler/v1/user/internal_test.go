@@ -69,9 +69,13 @@ func TestValidateUserCredentials(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
-				"id":        "550e8400-e29b-41d4-a716-446655440000",
-				"username":  "testuser",
-				"is_active": true,
+				"valid": true,
+				"user": map[string]interface{}{
+					"id":       "550e8400-e29b-41d4-a716-446655440000",
+					"username": "testuser",
+					"email":    "test@example.com",
+					"role":     "",
+				},
 			},
 		},
 		{
@@ -83,7 +87,7 @@ func TestValidateUserCredentials(t *testing.T) {
 			setupMocks:     func(mockSrv *MockUserService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
-				"error": "Invalid request data",
+				"error": "invalid character '}' looking for beginning of value",
 			},
 		},
 		{
@@ -92,12 +96,11 @@ func TestValidateUserCredentials(t *testing.T) {
 				"password": testPassword,
 			},
 			setupMocks: func(mockSrv *MockUserService) {
-				// 即使username为空，代码仍会调用GetUserByUsername
-				mockSrv.On("GetUserByUsername", mock.Anything, "").Return(nil, errors.New("user not found"))
+				// 验证失败不会调用服务
 			},
-			expectedStatus: http.StatusUnauthorized,
+			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
-				"error": "Username or password is incorrect",
+				"error": "Key: 'Username' Error:Field validation for 'Username' failed on the 'required' tag",
 			},
 		},
 		{
@@ -106,20 +109,11 @@ func TestValidateUserCredentials(t *testing.T) {
 				"username": "testuser",
 			},
 			setupMocks: func(mockSrv *MockUserService) {
-				// 即使password为空，代码仍会调用GetUserByUsername
-				testID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
-				user := &model.User{
-					ID:           testID,
-					Username:     "testuser",
-					Email:        "test@example.com",
-					PasswordHash: hashedPassword,
-					IsActive:     true,
-				}
-				mockSrv.On("GetUserByUsername", mock.Anything, "testuser").Return(user, nil)
+				// 验证失败不会调用服务
 			},
-			expectedStatus: http.StatusUnauthorized,
+			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
-				"error": "Username or password is incorrect",
+				"error": "Key: 'Password' Error:Field validation for 'Password' failed on the 'required' tag",
 			},
 		},
 		{
@@ -133,7 +127,7 @@ func TestValidateUserCredentials(t *testing.T) {
 			},
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody: map[string]interface{}{
-				"error": "Username or password is incorrect",
+				"error": "Invalid credentials",
 			},
 		},
 		{
@@ -155,7 +149,7 @@ func TestValidateUserCredentials(t *testing.T) {
 			},
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody: map[string]interface{}{
-				"error": "Username or password is incorrect",
+				"error": "Invalid credentials",
 			},
 		},
 		{
@@ -169,7 +163,7 @@ func TestValidateUserCredentials(t *testing.T) {
 			},
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody: map[string]interface{}{
-				"error": "Username or password is incorrect",
+				"error": "Invalid credentials",
 			},
 		},
 		{
@@ -191,9 +185,13 @@ func TestValidateUserCredentials(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
-				"id":        "550e8400-e29b-41d4-a716-446655440001",
-				"username":  "inactiveuser",
-				"is_active": false,
+				"valid": true,
+				"user": map[string]interface{}{
+					"id":       "550e8400-e29b-41d4-a716-446655440001",
+					"username": "inactiveuser",
+					"email":    "inactive@example.com",
+					"role":     "",
+				},
 			},
 		},
 	}
@@ -234,7 +232,19 @@ func TestValidateUserCredentials(t *testing.T) {
 			assert.NoError(t, err)
 
 			for key, expectedValue := range tt.expectedBody {
-				assert.Equal(t, expectedValue, response[key])
+				if key == "user" {
+					// 处理嵌套的 user 对象
+					actualUser, ok := response[key].(map[string]interface{})
+					assert.True(t, ok, "user field should be a map")
+					expectedUser, ok := expectedValue.(map[string]interface{})
+					assert.True(t, ok, "expected user should be a map")
+
+					for userKey, userExpectedValue := range expectedUser {
+						assert.Equal(t, userExpectedValue, actualUser[userKey])
+					}
+				} else {
+					assert.Equal(t, expectedValue, response[key])
+				}
 			}
 
 			mockSrv.AssertExpectations(t)

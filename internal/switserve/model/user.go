@@ -29,15 +29,16 @@ import (
 )
 
 // User is the user model.
+// @Description User account information
 type User struct {
-	ID           uuid.UUID `gorm:"type:uuid;primary_key;" json:"id"`
-	Username     string    `gorm:"unique;not null" json:"username"`
-	Email        string    `gorm:"unique;not null" json:"email"`
+	ID           uuid.UUID `gorm:"type:uuid;primary_key;" json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Username     string    `gorm:"unique;not null" json:"username" example:"john_doe"`
+	Email        string    `gorm:"unique;not null" json:"email" example:"john@example.com"`
 	PasswordHash string    `gorm:"not null" json:"-"`
-	Role         string    `gorm:"default:'user'" json:"role"`
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	Role         string    `gorm:"default:'user'" json:"role" example:"user"`
+	IsActive     bool      `gorm:"default:true" json:"is_active" example:"true"`
+	CreatedAt    time.Time `json:"created_at" example:"2023-01-01T00:00:00Z"`
+	UpdatedAt    time.Time `json:"updated_at" example:"2023-01-01T00:00:00Z"`
 }
 
 func (user *User) BeforeCreate(tx *gorm.DB) (err error) {
@@ -47,8 +48,10 @@ func (user *User) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
+// CreateUserRequest represents the request body for creating a new user
+// @Description Request body for creating a new user
 type CreateUserRequest struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username string `json:"username" binding:"required" example:"john_doe"`
+	Email    string `json:"email" binding:"required,email" example:"john@example.com"`
+	Password string `json:"password" binding:"required,min=6" example:"secret123"`
 }

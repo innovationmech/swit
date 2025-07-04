@@ -41,6 +41,13 @@ func NewStopHandler(shutdownFunc func()) *StopHandler {
 }
 
 // Stop stops the server.
+// @Summary Stop the server
+// @Description Gracefully shutdown the server
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Server is stopping"
+// @Router /stop [post]
 func (h *StopHandler) Stop(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
 	go func() {
