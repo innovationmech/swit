@@ -19,23 +19,62 @@
 // THE SOFTWARE.
 //
 
+// SWIT Auth API
+//	@title			SWIT Auth API
+//	@version		1.0
+//	@description	This is the SWIT authentication service API documentation.
+//	@termsOfService	http://swagger.io/terms/
+
+//	@contact.name	API Support
+//	@contact.url	http://www.swagger.io/support
+//	@contact.email	support@swagger.io
+
+//	@license.name	MIT
+//	@license.url	https://opensource.org/licenses/MIT
+
+//	@host		localhost:8090
+//	@BasePath	/
+//	@schemes	http https
+
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Type "Bearer" followed by a space and JWT token.
+
 package main
 
 import (
+	"os"
+
 	"github.com/innovationmech/swit/internal/component-base/cli"
 	"github.com/innovationmech/swit/internal/switauth/cmd"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
-	"os"
+
+	// Import docs for swagger generation
+	_ "github.com/innovationmech/swit/internal/switauth/docs"
 )
 
 func main() {
+	// Initialize logger
+	logger.InitLogger()
+	defer func() {
+		if logger.Logger != nil {
+			if err := logger.Logger.Sync(); err != nil {
+				// Ignore errors on stderr sync - this is expected on some platforms
+			}
+		}
+	}()
+
 	command := cmd.NewSwitAuthCmd()
 	if err := cli.Run(command); err != nil {
 		logger.Logger.Error("Error occurred while running command", zap.Error(err))
+		// Ensure logger sync happens before exit
+		if logger.Logger != nil {
+			if syncErr := logger.Logger.Sync(); syncErr != nil {
+				// Ignore errors on stderr sync - this is expected on some platforms
+			}
+		}
 		os.Exit(1)
-	}
-	if err := logger.Logger.Sync(); err != nil {
-		logger.Logger.Error("Error occurred while syncing logs", zap.Error(err))
 	}
 }

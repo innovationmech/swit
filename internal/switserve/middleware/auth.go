@@ -72,7 +72,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		client := &http.Client{}
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/auth/validate", serviceURL), nil)
+		req, err := http.NewRequestWithContext(ctx.Request.Context(), "GET", fmt.Sprintf("%s/auth/validate", serviceURL), nil)
 		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to create validation request"})
 			return

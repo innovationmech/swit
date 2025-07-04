@@ -22,8 +22,9 @@
 package model
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // User is the user model.
@@ -40,4 +41,48 @@ type User struct {
 
 func (User) TableName() string {
 	return "users"
+}
+
+// LoginRequest 登录请求体
+type LoginRequest struct {
+	Username string `json:"username" binding:"required" example:"john_doe" validate:"required"`
+	Password string `json:"password" binding:"required" example:"password123" validate:"required,min=6"`
+}
+
+// LoginResponse 登录响应体
+type LoginResponse struct {
+	AccessToken  string `json:"access_token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	RefreshToken string `json:"refresh_token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+}
+
+// RefreshTokenRequest 刷新token请求体
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." validate:"required"`
+}
+
+// RefreshTokenResponse 刷新token响应体
+type RefreshTokenResponse struct {
+	AccessToken  string `json:"access_token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	RefreshToken string `json:"refresh_token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+}
+
+// ValidateTokenResponse 验证token响应体
+type ValidateTokenResponse struct {
+	Message string    `json:"message" example:"Token is valid"`
+	UserID  uuid.UUID `json:"user_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+}
+
+// LogoutResponse 退出登录响应体
+type LogoutResponse struct {
+	Message string `json:"message" example:"Logged out successfully"`
+}
+
+// ErrorResponse 错误响应体
+type ErrorResponse struct {
+	Error string `json:"error" example:"Invalid credentials"`
+}
+
+// HealthResponse 健康检查响应体
+type HealthResponse struct {
+	Message string `json:"message" example:"pong"`
 }

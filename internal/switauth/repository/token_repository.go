@@ -22,6 +22,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -30,27 +31,27 @@ import (
 )
 
 type TokenRepository interface {
-	Create(token *model.Token) error
-	GetByAccessToken(tokenString string) (*model.Token, error)
-	GetByRefreshToken(tokenString string) (*model.Token, error)
-	Update(token *model.Token) error
-	InvalidateToken(tokenString string) error
+	Create(ctx context.Context, token *model.Token) error
+	GetByAccessToken(ctx context.Context, tokenString string) (*model.Token, error)
+	GetByRefreshToken(ctx context.Context, tokenString string) (*model.Token, error)
+	Update(ctx context.Context, token *model.Token) error
+	InvalidateToken(ctx context.Context, tokenString string) error
 }
 
 type tokenRepository struct {
 	db *gorm.DB
 }
 
-func (r *tokenRepository) Create(token *model.Token) error {
+func (r *tokenRepository) Create(ctx context.Context, token *model.Token) error {
 	if token.ID == uuid.Nil {
 		token.ID = uuid.New()
 	}
-	return r.db.Create(token).Error
+	return r.db.WithContext(ctx).Create(token).Error
 }
 
-func (r *tokenRepository) GetByAccessToken(tokenString string) (*model.Token, error) {
+func (r *tokenRepository) GetByAccessToken(ctx context.Context, tokenString string) (*model.Token, error) {
 	var token model.Token
-	err := r.db.Where("access_token = ? AND is_valid = ?", tokenString, true).First(&token).Error
+	err := r.db.WithContext(ctx).Where("access_token = ? AND is_valid = ?", tokenString, true).First(&token).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("invalid or expired token")
@@ -60,9 +61,9 @@ func (r *tokenRepository) GetByAccessToken(tokenString string) (*model.Token, er
 	return &token, nil
 }
 
-func (r *tokenRepository) GetByRefreshToken(refreshToken string) (*model.Token, error) {
+func (r *tokenRepository) GetByRefreshToken(ctx context.Context, refreshToken string) (*model.Token, error) {
 	var token model.Token
-	err := r.db.Where("refresh_token = ? AND is_valid = ?", refreshToken, true).First(&token).Error
+	err := r.db.WithContext(ctx).Where("refresh_token = ? AND is_valid = ?", refreshToken, true).First(&token).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("invalid or expired refresh token")
@@ -72,12 +73,12 @@ func (r *tokenRepository) GetByRefreshToken(refreshToken string) (*model.Token, 
 	return &token, nil
 }
 
-func (r *tokenRepository) Update(token *model.Token) error {
-	return r.db.Save(token).Error
+func (r *tokenRepository) Update(ctx context.Context, token *model.Token) error {
+	return r.db.WithContext(ctx).Save(token).Error
 }
 
-func (r *tokenRepository) InvalidateToken(tokenString string) error {
-	return r.db.Model(&model.Token{}).Where("access_token = ?", tokenString).Update("is_valid", false).Error
+func (r *tokenRepository) InvalidateToken(ctx context.Context, tokenString string) error {
+	return r.db.WithContext(ctx).Model(&model.Token{}).Where("access_token = ?", tokenString).Update("is_valid", false).Error
 }
 
 func NewTokenRepository(db *gorm.DB) TokenRepository {

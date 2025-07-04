@@ -22,29 +22,40 @@
 package handler
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
+// Login authenticates a user and returns access and refresh tokens
+//
+//	@Summary		User login
+//	@Description	Authenticate a user with username and password, returns access and refresh tokens
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			login	body		model.LoginRequest	true	"User login credentials"
+//	@Success		200		{object}	model.LoginResponse	"Login successful"
+//	@Failure		400		{object}	model.ErrorResponse	"Bad request"
+//	@Failure		401		{object}	model.ErrorResponse	"Invalid credentials"
+//	@Router			/auth/login [post]
 func (c *AuthController) Login(ctx *gin.Context) {
-	var loginData struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var loginData model.LoginRequest
 
 	if err := ctx.ShouldBindJSON(&loginData); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	accessToken, refreshToken, err := c.authService.Login(loginData.Username, loginData.Password)
+	accessToken, refreshToken, err := c.authService.Login(ctx.Request.Context(), loginData.Username, loginData.Password)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
+	ctx.JSON(http.StatusOK, model.LoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 	})
 }

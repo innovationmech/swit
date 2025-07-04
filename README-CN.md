@@ -19,7 +19,7 @@ Swit 是一个基于 Go 语言开发的微服务架构后端系统，采用模�
 项目包含以下主要组件：
 
 1. **swit-serve** - 主要用户服务（端口 9000）
-2. **swit-auth** - 认证服务（端口 9001）
+2. **swit-auth** - 认证服务（端口 8090）
 3. **switctl** - 命令行控制工具
 
 ## 快速开始
@@ -88,11 +88,10 @@ make build-ctl      # 构建控制工具
 
 项目集成了 Swagger UI，提供交互式 API 文档。启动服务后，可以通过以下地址访问：
 
-```
-http://localhost:9000/swagger/index.html
-```
+- **SwitServe API**: http://localhost:9000/swagger/index.html
+- **SwitAuth API**: http://localhost:8090/swagger/index.html
 
-### 认证服务 API (端口 9001)
+### 认证服务 API (端口 8090)
 
 | 方法 | 路径 | 描述 |
 |------|------|------|
@@ -144,7 +143,7 @@ database:
   password: root
   dbname: auth_service_db
 server:
-  port: 9001
+  port: 8090
 serviceDiscovery:
   address: "localhost:8500"
 ```

@@ -7,7 +7,7 @@
 | 服务 | 文档位置 | Swagger UI | API Base | 状态 |
 |------|----------|------------|----------|------|
 | **SwitServe** | [内部文档](../../internal/switserve/docs/) | [UI界面](http://localhost:9000/swagger/index.html) | http://localhost:9000 | ✅ 已完成 |
-| **SwitAuth** | [内部文档](../../internal/switauth/docs/) | [UI界面](http://localhost:8080/swagger/index.html) | http://localhost:8080 | ⏳ 待完善 |
+| **SwitAuth** | [内部文档](../../internal/switauth/docs/) | [UI界面](http://localhost:8090/swagger/index.html) | http://localhost:8090 | ✅ 已完成 |
 
 ## 🚀 快速访问
 
@@ -17,9 +17,9 @@
 - **在线API**: http://localhost:9000/swagger/index.html
 
 ### SwitAuth - 认证授权服务  
-- **源码文档**: [internal/switauth/docs/](../../internal/switauth/docs/) （待生成）
+- **源码文档**: [internal/switauth/docs/](../../internal/switauth/docs/)
 - **使用指南**: [docs/services/switauth/](../services/switauth/)
-- **在线API**: http://localhost:8080/swagger/index.html （待完善）
+- **在线API**: http://localhost:8090/swagger/index.html
 
 ## 🛠 文档管理
 

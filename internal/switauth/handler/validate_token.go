@@ -26,20 +26,32 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
+// ValidateToken validates an access token and returns token information
+//
+//	@Summary		Validate access token
+//	@Description	Validate an access token and return token information including user ID
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	model.ValidateTokenResponse	"Token is valid"
+//	@Failure		401	{object}	model.ErrorResponse			"Invalid or expired token"
+//	@Router			/auth/validate [get]
 func (c *AuthController) ValidateToken(ctx *gin.Context) {
 	// Get Authorization header
 	authHeader := ctx.GetHeader("Authorization")
 	if authHeader == "" {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization header"})
+		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: "Missing Authorization header"})
 		return
 	}
 
 	// Split the Bearer token
 	parts := strings.SplitN(authHeader, " ", 2)
 	if !(len(parts) == 2 && parts[0] == "Bearer") {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
+		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: "Invalid Authorization header format"})
 		return
 	}
 
@@ -47,11 +59,14 @@ func (c *AuthController) ValidateToken(ctx *gin.Context) {
 	tokenString := parts[1]
 
 	// Validate token
-	token, err := c.authService.ValidateToken(tokenString)
+	token, err := c.authService.ValidateToken(ctx.Request.Context(), tokenString)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "Token is valid", "user_id": token.UserID})
+	ctx.JSON(http.StatusOK, model.ValidateTokenResponse{
+		Message: "Token is valid",
+		UserID:  token.UserID,
+	})
 }

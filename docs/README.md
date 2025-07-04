@@ -26,14 +26,14 @@ SWIT 是一个现代化的微服务框架，提供用户认证、内容管理等
 | 服务 | 功能描述 | API文档 | 默认端口 |
 |------|----------|---------|----------|
 | **switserve** | 用户管理、内容服务 | [Swagger UI](http://localhost:9000/swagger/index.html) | 9000 |
-| **switauth** | 认证授权服务 | [Swagger UI](http://localhost:8080/swagger/index.html) | 8080 |
+| **switauth** | 认证授权服务 | [Swagger UI](http://localhost:8090/swagger/index.html) | 8090 |
 
 ### 详细文档导航
 
 #### 📋 API 规范文档
 - [**API文档汇总**](./generated/README.md) - 所有服务的生成文档统一入口
 - [SwitServe 生成文档](../internal/switserve/docs/) - Swagger自动生成的API规范
-- [SwitAuth 生成文档](../internal/switauth/docs/) - 认证服务API规范（待完善）
+- [SwitAuth 生成文档](../internal/switauth/docs/) - 认证服务API规范
 
 #### 📖 使用指南
 - [SwitServe API 指南](./services/switserve/README.md) - 用户管理和内容服务使用指南
@@ -56,11 +56,11 @@ SWIT 是一个现代化的微服务框架，提供用户认证、内容管理等
 
 ### 开发环境
 - **SwitServe API**: http://localhost:9000
-- **SwitAuth API**: http://localhost:8080
+- **SwitAuth API**: http://localhost:8090
 
 ### API 文档界面
 - **SwitServe Swagger UI**: http://localhost:9000/swagger/index.html
-- **SwitAuth Swagger UI**: http://localhost:8080/swagger/index.html
+- **SwitAuth Swagger UI**: http://localhost:8090/swagger/index.html
 
 ## 相关链接
 

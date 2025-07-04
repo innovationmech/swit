@@ -17,28 +17,36 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
 
-package health
+package handler
 
 import "github.com/gin-gonic/gin"
 
-// HealthHandler is the handler for the health check endpoint.
-//
-//	@Summary		Health check
-//	@Description	Check if the service is healthy
-//	@Tags			health
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Service is healthy"
-//	@Router			/health [get]
-func HealthHandler(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"message": "pong",
-	})
+// HealthRouteRegistrar 健康检查路由注册器
+type HealthRouteRegistrar struct{}
+
+// NewHealthRouteRegistrar 创建健康检查路由注册器
+func NewHealthRouteRegistrar() *HealthRouteRegistrar {
+	return &HealthRouteRegistrar{}
 }
 
-// RegisterRoutes registers the routes for the health check endpoint.
-func RegisterRoutes(router *gin.Engine) {
-	router.GET("/health", HealthHandler)
+// RegisterRoutes 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) RegisterRoutes(rg *gin.RouterGroup) error {
+	rg.GET("/health", HealthHandler)
+	return nil
+}
+
+// GetName 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetName() string {
+	return "health-check"
+}
+
+// GetVersion 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetVersion() string {
+	return "root" // 健康检查不需要版本前缀
+}
+
+// GetPrefix 实现 RouteRegistrar 接口
+func (hrr *HealthRouteRegistrar) GetPrefix() string {
+	return ""
 }

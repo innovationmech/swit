@@ -21,10 +21,24 @@
 
 package handler
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
 
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
+)
+
+// HealthHandler checks if the authentication service is healthy
+//
+//	@Summary		Health check
+//	@Description	Check if the authentication service is healthy
+//	@Tags			health
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	model.HealthResponse	"Service is healthy"
+//	@Router			/health [get]
 func HealthHandler(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"message": "pong",
+	c.JSON(http.StatusOK, model.HealthResponse{
+		Message: "pong",
 	})
 }
