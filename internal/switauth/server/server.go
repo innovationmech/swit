@@ -61,8 +61,9 @@ func NewServer() (*Server, error) {
 
 	initConfig()
 
-	// Using GetServiceDiscovery function to get service discovery instance
-	sd, err := config.GetServiceDiscovery()
+	// Using unified service discovery manager
+	cfg := config.GetConfig()
+	sd, err := discovery.GetServiceDiscoveryByAddress(cfg.ServiceDiscovery.Address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service discovery client: %v", err)
 	}

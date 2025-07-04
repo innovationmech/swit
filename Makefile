@@ -15,6 +15,7 @@ AUTH_MAIN_FILE := swit-auth.go
 OUTPUTDIR := _output
 DOCKER := docker
 DOCKER_IMAGE_NAME := swit-serve
+DOCKER_AUTH_IMAGE_NAME := swit-auth
 DOCKER_IMAGE_TAG := $(shell git rev-parse --abbrev-ref HEAD)
 SWAG := swag
 
@@ -31,11 +32,15 @@ Options:
   QUALITY          Run all quality checks (format, lint, vet).
   BUILD            Build the binaries, output binaries are in _output/{application_name}/ directory.
   CLEAN            Delete the output binaries.
-  TEST             Run the tests.
+  TEST             Run all tests (internal + pkg).
+  TEST-PKG         Run tests for pkg packages only.
+  TEST-INTERNAL    Run tests for internal packages only.
   TEST-COVERAGE    Run tests with coverage report.
   TEST-RACE        Run tests with race detection.
   CI               Run full CI pipeline (tidy, copyright, quality, test).
   IMAGE-SERVE      Build Docker image for swit-serve.
+  IMAGE-AUTH       Build Docker image for swit-auth.
+  IMAGE-ALL        Build Docker images for all services.
   INSTALL-HOOKS    Install Git pre-commit hooks.
   SETUP-DEV        Setup development environment (tools + hooks).
   SWAGGER          Generate/update Swagger documentation for all services.
@@ -101,24 +106,43 @@ help:
 .PHONY: test
 test:
 	@echo "Running tests"
+	@$(GO) test -v ./internal/... ./pkg/...
+
+.PHONY: test-pkg
+test-pkg:
+	@echo "Running tests for pkg"
+	@$(GO) test -v ./pkg/...
+
+.PHONY: test-internal
+test-internal:
+	@echo "Running tests for internal"
 	@$(GO) test -v ./internal/...
 
 .PHONY: test-coverage
 test-coverage:
 	@echo "Running tests with coverage"
-	@$(GO) test -v -coverprofile=coverage.out ./internal/...
+	@$(GO) test -v -coverprofile=coverage.out ./internal/... ./pkg/...
 	@$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
 .PHONY: test-race
 test-race:
 	@echo "Running tests with race detection"
-	@$(GO) test -v -race ./internal/...
+	@$(GO) test -v -race ./internal/... ./pkg/...
 
 .PHONY: image-serve
 image-serve:
 	@echo "Building Docker image for swit-serve"
 	@$(DOCKER) build -f build/docker/swit-serve/Dockerfile -t $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG) .
+
+.PHONY: image-auth
+image-auth:
+	@echo "Building Docker image for swit-auth"
+	@$(DOCKER) build -f build/docker/switauth/Dockerfile -t $(DOCKER_AUTH_IMAGE_NAME):$(DOCKER_IMAGE_TAG) .
+
+.PHONY: image-all
+image-all: image-serve image-auth
+	@echo "All Docker images built successfully"
 
 .PHONY: ci
 ci: tidy copyright quality test

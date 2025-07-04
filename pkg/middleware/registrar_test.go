@@ -17,7 +17,6 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
 
 package middleware
 
@@ -28,6 +27,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
 
 func TestNewGlobalMiddlewareRegistrar(t *testing.T) {
 	registrar := NewGlobalMiddlewareRegistrar()
@@ -51,8 +54,6 @@ func TestGlobalMiddlewareRegistrar_GetPriority(t *testing.T) {
 }
 
 func TestGlobalMiddlewareRegistrar_RegisterMiddleware(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	t.Run("successful_registration", func(t *testing.T) {
 		router := gin.New()
 		registrar := NewGlobalMiddlewareRegistrar()
@@ -84,8 +85,6 @@ func TestGlobalMiddlewareRegistrar_RegisterMiddleware_NilRouter(t *testing.T) {
 }
 
 func TestGlobalMiddlewareRegistrar_MiddlewareOrder(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	router := gin.New()
 	registrar := NewGlobalMiddlewareRegistrar()
 
@@ -112,8 +111,6 @@ func TestGlobalMiddlewareRegistrar_MiddlewareOrder(t *testing.T) {
 }
 
 func TestGlobalMiddlewareRegistrar_ConfigurationValidation(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	router := gin.New()
 	registrar := NewGlobalMiddlewareRegistrar()
 
@@ -127,8 +124,6 @@ func TestGlobalMiddlewareRegistrar_ConfigurationValidation(t *testing.T) {
 }
 
 func TestGlobalMiddlewareRegistrar_MultipleRegistrations(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	router := gin.New()
 	registrar := NewGlobalMiddlewareRegistrar()
 
@@ -141,17 +136,6 @@ func TestGlobalMiddlewareRegistrar_MultipleRegistrations(t *testing.T) {
 
 	// Each registration adds more middleware handlers
 	assert.True(t, len(router.Handlers) >= 2, "Expected at least 2 middleware handlers after multiple registrations")
-}
-
-func BenchmarkGlobalMiddlewareRegistrar_RegisterMiddleware(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		router := gin.New()
-		registrar := NewGlobalMiddlewareRegistrar()
-		registrar.RegisterMiddleware(router)
-	}
 }
 
 func TestGlobalMiddlewareRegistrar_Interface(t *testing.T) {
@@ -168,8 +152,6 @@ func TestGlobalMiddlewareRegistrar_Interface(t *testing.T) {
 }
 
 func TestGlobalMiddlewareRegistrar_TimeoutConfiguration(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	router := gin.New()
 	registrar := NewGlobalMiddlewareRegistrar()
 
@@ -197,12 +179,21 @@ func TestGlobalMiddlewareRegistrar_Consistency(t *testing.T) {
 
 // Simple benchmark test that doesn't involve HTTP requests
 func BenchmarkGlobalMiddlewareRegistrar_Creation(b *testing.B) {
-	gin.SetMode(gin.TestMode)
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		registrar := NewGlobalMiddlewareRegistrar()
 		_ = registrar.GetName()
 		_ = registrar.GetPriority()
+	}
+}
+
+func BenchmarkGlobalMiddlewareRegistrar_RegisterMiddleware(b *testing.B) {
+	gin.SetMode(gin.TestMode)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		router := gin.New()
+		registrar := NewGlobalMiddlewareRegistrar()
+		registrar.RegisterMiddleware(router)
 	}
 }

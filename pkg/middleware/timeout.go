@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	middleware2 "github.com/innovationmech/swit/pkg/middleware"
 )
 
 // TimeoutMiddleware 创建一个真正的超时中间件，具备并发安全保护
@@ -243,32 +242,4 @@ func (tw *timeoutWriter) Written() bool {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 	return tw.hasWritten
-}
-
-// GlobalMiddlewareRegistrar 全局中间件注册器
-type GlobalMiddlewareRegistrar struct{}
-
-// NewGlobalMiddlewareRegistrar 创建全局中间件注册器
-func NewGlobalMiddlewareRegistrar() *GlobalMiddlewareRegistrar {
-	return &GlobalMiddlewareRegistrar{}
-}
-
-// RegisterMiddleware 实现 MiddlewareRegistrar 接口
-func (gmr *GlobalMiddlewareRegistrar) RegisterMiddleware(router *gin.Engine) error {
-	// 注册超时中间件，用于请求超时控制
-	router.Use(TimeoutMiddleware(30 * time.Second))
-
-	// 注册其他全局中间件
-	router.Use(middleware2.Logger(), middleware2.CORSMiddleware())
-	return nil
-}
-
-// GetName 实现 MiddlewareRegistrar 接口
-func (gmr *GlobalMiddlewareRegistrar) GetName() string {
-	return "global-middleware"
-}
-
-// GetPriority 实现 MiddlewareRegistrar 接口
-func (gmr *GlobalMiddlewareRegistrar) GetPriority() int {
-	return 1 // 高优先级，最先执行
 }
