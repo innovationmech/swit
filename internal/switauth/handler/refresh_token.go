@@ -48,7 +48,7 @@ func (c *AuthController) RefreshToken(ctx *gin.Context) {
 		return
 	}
 
-	newAccessToken, newRefreshToken, err := c.authService.RefreshToken(ctx, data.RefreshToken)
+	newAccessToken, newRefreshToken, err := c.authService.RefreshToken(ctx.Request.Context(), data.RefreshToken)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
 		return
