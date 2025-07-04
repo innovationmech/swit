@@ -40,7 +40,7 @@ func (uc *UserController) ValidateUserCredentials(c *gin.Context) {
 		return
 	}
 
-	user, err := uc.userSrv.GetUserByUsername(credentials.Username)
+	user, err := uc.userSrv.GetUserByUsername(c.Request.Context(), credentials.Username)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Username or password is incorrect"})
 		return

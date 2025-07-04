@@ -22,6 +22,7 @@
 package v1
 
 import (
+	"context"
 	"errors"
 	"github.com/innovationmech/swit/pkg/utils"
 	"strings"
@@ -32,10 +33,10 @@ import (
 
 // UserSrv is the service for the user model
 type UserSrv interface {
-	CreateUser(user *model.User) error
-	GetUserByUsername(username string) (*model.User, error)
-	GetUserByEmail(email string) (*model.User, error)
-	DeleteUser(id string) error
+	CreateUser(ctx context.Context, user *model.User) error
+	GetUserByUsername(ctx context.Context, username string) (*model.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
+	DeleteUser(ctx context.Context, id string) error
 }
 
 // UserServiceConfig user service config
@@ -106,7 +107,7 @@ func NewUserSrvWithConfig(config *UserServiceConfig) (UserSrv, error) {
 }
 
 // CreateUser creates a new user
-func (s *userService) CreateUser(user *model.User) error {
+func (s *userService) CreateUser(ctx context.Context, user *model.User) error {
 	// add validation
 	if user.Username == "" || user.Email == "" {
 		return errors.New("username and email cannot be empty")
@@ -119,7 +120,7 @@ func (s *userService) CreateUser(user *model.User) error {
 	user.PasswordHash = hashedPassword
 
 	// attempt to create the user directly, letting the database handle uniqueness constraints
-	err = s.config.UserRepo.CreateUser(user)
+	err = s.config.UserRepo.CreateUser(ctx, user)
 	if err != nil {
 		// check if it's a uniqueness constraint error
 		if strings.Contains(err.Error(), "Duplicate entry") {
@@ -132,16 +133,16 @@ func (s *userService) CreateUser(user *model.User) error {
 }
 
 // GetUserByUsername gets a user by username
-func (s *userService) GetUserByUsername(username string) (*model.User, error) {
-	return s.config.UserRepo.GetUserByUsername(username)
+func (s *userService) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
+	return s.config.UserRepo.GetUserByUsername(ctx, username)
 }
 
 // GetUserByEmail gets a user by email
-func (s *userService) GetUserByEmail(email string) (*model.User, error) {
-	return s.config.UserRepo.GetUserByEmail(email)
+func (s *userService) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	return s.config.UserRepo.GetUserByEmail(ctx, email)
 }
 
 // DeleteUser deletes a user by ID
-func (s *userService) DeleteUser(id string) error {
-	return s.config.UserRepo.DeleteUser(id)
+func (s *userService) DeleteUser(ctx context.Context, id string) error {
+	return s.config.UserRepo.DeleteUser(ctx, id)
 }

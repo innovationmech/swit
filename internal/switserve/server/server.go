@@ -24,12 +24,13 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/innovationmech/swit/pkg/discovery"
-	"github.com/innovationmech/swit/pkg/logger"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/innovationmech/swit/pkg/discovery"
+	"github.com/innovationmech/swit/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switserve/config"
@@ -43,13 +44,14 @@ type Server struct {
 	sd         *discovery.ServiceDiscovery
 	srv        *http.Server
 	grpcServer *grpc.Server
+	grpcMutex  sync.RWMutex // Mutex to protect grpcServer field access
 }
 
 // NewServer creates a new server for the application.
 func NewServer() (*Server, error) {
 	s := &Server{
-		router:     gin.Default(),
-		grpcServer: grpc.NewServer(),
+		router: gin.Default(),
+		// grpcServer will be initialized in runGRPCServer()
 	}
 
 	// Get service discovery address from configuration
@@ -62,6 +64,20 @@ func NewServer() (*Server, error) {
 
 	s.SetupRoutes()
 	return s, nil
+}
+
+// setGRPCServer safely sets the gRPC server with proper synchronization
+func (s *Server) setGRPCServer(grpcServer *grpc.Server) {
+	s.grpcMutex.Lock()
+	defer s.grpcMutex.Unlock()
+	s.grpcServer = grpcServer
+}
+
+// getGRPCServer safely gets the gRPC server with proper synchronization
+func (s *Server) getGRPCServer() *grpc.Server {
+	s.grpcMutex.RLock()
+	defer s.grpcMutex.RUnlock()
+	return s.grpcServer
 }
 
 // Run runs the server on the given address.
@@ -89,11 +105,21 @@ func (s *Server) Run(addr string) error {
 
 // Shutdown shuts down the server and deregisters it from the service discovery.
 func (s *Server) Shutdown() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownTimeout := 5 * time.Second
+
+	// Gracefully shutdown gRPC server
+	s.GracefulShutdownGRPC(shutdownTimeout)
+
+	// Shutdown HTTP server
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := s.srv.Shutdown(ctx); err != nil {
-		logger.Logger.Error("Shutdown error", zap.Error(err))
+		logger.Logger.Error("HTTP server shutdown error", zap.Error(err))
+	} else {
+		logger.Logger.Info("HTTP server shut down successfully")
 	}
+
+	// Deregister service from service discovery
 	port, _ := strconv.Atoi(config.GetConfig().Server.Port)
 	if err := s.sd.DeregisterService("swit-serve", "localhost", port); err != nil {
 		logger.Logger.Error("Deregister service error", zap.Error(err))
