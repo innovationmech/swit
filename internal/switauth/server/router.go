@@ -24,9 +24,9 @@ package server
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switauth/handler"
-	"github.com/innovationmech/swit/internal/switauth/middleware"
 	"github.com/innovationmech/swit/internal/switauth/router"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/middleware"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"

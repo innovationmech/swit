@@ -22,7 +22,7 @@ package user
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switserve/middleware"
+	"github.com/innovationmech/swit/pkg/middleware"
 )
 
 // UserRouteRegistrar 用户路由注册器
@@ -41,7 +41,9 @@ func NewUserRouteRegistrar() *UserRouteRegistrar {
 func (urr *UserRouteRegistrar) RegisterRoutes(rg *gin.RouterGroup) error {
 	// 需要认证的用户API路由
 	userGroup := rg.Group("/users")
-	userGroup.Use(middleware.AuthMiddleware())
+	// 配置认证中间件，包含 switserve 特定的白名单
+	authWhiteList := []string{"/users/create", "/health", "/stop"}
+	userGroup.Use(middleware.AuthMiddlewareWithWhiteList(authWhiteList))
 	{
 		userGroup.POST("/create", urr.controller.CreateUser)
 		userGroup.GET("/username/:username", urr.controller.GetUserByUsername)

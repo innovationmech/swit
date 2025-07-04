@@ -24,7 +24,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switserve/middleware"
+	"github.com/innovationmech/swit/pkg/middleware"
 )
 
 // ArticleController 文章控制器（示例）
@@ -76,7 +76,8 @@ func NewArticleRouteRegistrar() *ArticleRouteRegistrar {
 func (arr *ArticleRouteRegistrar) RegisterRoutes(rg *gin.RouterGroup) error {
 	// 需要认证的文章API路由
 	articleGroup := rg.Group("/articles")
-	articleGroup.Use(middleware.AuthMiddleware()) // 需要认证
+	// 使用统一的认证中间件
+	articleGroup.Use(middleware.AuthMiddleware())
 	{
 		articleGroup.GET("", arr.controller.GetArticles)
 		articleGroup.POST("", arr.controller.CreateArticle)

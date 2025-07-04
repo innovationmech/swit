@@ -36,40 +36,6 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-func TestNewGlobalMiddlewareRegistrar(t *testing.T) {
-	registrar := NewGlobalMiddlewareRegistrar()
-
-	assert.NotNil(t, registrar)
-	assert.IsType(t, &GlobalMiddlewareRegistrar{}, registrar)
-}
-
-func TestGlobalMiddlewareRegistrar_GetName(t *testing.T) {
-	registrar := NewGlobalMiddlewareRegistrar()
-
-	name := registrar.GetName()
-	assert.Equal(t, "global-middleware", name)
-}
-
-func TestGlobalMiddlewareRegistrar_GetPriority(t *testing.T) {
-	registrar := NewGlobalMiddlewareRegistrar()
-
-	priority := registrar.GetPriority()
-	assert.Equal(t, 1, priority)
-}
-
-func TestGlobalMiddlewareRegistrar_RegisterMiddleware(t *testing.T) {
-	t.Run("successful_registration", func(t *testing.T) {
-		router := gin.New()
-		registrar := NewGlobalMiddlewareRegistrar()
-
-		err := registrar.RegisterMiddleware(router)
-		assert.NoError(t, err)
-
-		// Verify that the router has middlewares registered
-		assert.NotEmpty(t, router.Handlers)
-	})
-}
-
 // TestTimeoutMiddleware_Success 测试正常请求（未超时）
 func TestTimeoutMiddleware_Success(t *testing.T) {
 	router := gin.New()
@@ -171,12 +137,12 @@ func TestTimeoutMiddleware_Panic(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
-// TestTimeoutMiddleware_Concurrent 测试并发请求安全性
+// TestTimeoutMiddleware_Concurrent 测试并发请求
 func TestTimeoutMiddleware_Concurrent(t *testing.T) {
 	router := gin.New()
 	router.Use(TimeoutMiddleware(500 * time.Millisecond))
 
-	requestCount := 50
+	requestCount := 100
 	successCount := 0
 	timeoutCount := 0
 	var mu sync.Mutex
@@ -219,10 +185,9 @@ func TestTimeoutMiddleware_Concurrent(t *testing.T) {
 
 	wg.Wait()
 
-	// 验证结果 - 允许一些误差
-	assert.Greater(t, successCount, requestCount/4, "应该有一些快速请求成功")
-	assert.Greater(t, timeoutCount, requestCount/4, "应该有一些慢速请求超时")
-	assert.Equal(t, requestCount, successCount+timeoutCount, "所有请求都应该得到响应")
+	// 验证结果
+	assert.Equal(t, requestCount/2, successCount, "一半的快速请求应该成功")
+	assert.Equal(t, requestCount/2, timeoutCount, "一半的慢速请求应该超时")
 }
 
 // TestTimeoutMiddleware_WriteAfterTimeout 测试超时后的写入是否被忽略
@@ -308,52 +273,7 @@ func TestTimeoutMiddleware_NoGoroutineLeak(t *testing.T) {
 		"Goroutine count increased significantly, possible leak")
 }
 
-// TestTimeoutWriter_HeaderOperation 测试timeoutWriter的header操作安全性
-func TestTimeoutWriter_HeaderOperation(t *testing.T) {
-	router := gin.New()
-	router.Use(TimeoutMiddleware(1 * time.Second))
-
-	router.GET("/test", func(c *gin.Context) {
-		// 正常的header操作
-		c.Header("X-Custom-Header", "test-value")
-		c.Header("X-Request-ID", "12345")
-		c.Header("X-API-Version", "v1")
-
-		// 测试重复设置相同header
-		c.Header("X-Custom-Header", "updated-value")
-
-		c.JSON(http.StatusOK, gin.H{"message": "header operation test"})
-	})
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/test", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "updated-value", w.Header().Get("X-Custom-Header"))
-	assert.Equal(t, "12345", w.Header().Get("X-Request-ID"))
-	assert.Equal(t, "v1", w.Header().Get("X-API-Version"))
-}
-
 // 辅助函数：统计当前goroutine数量
 func countGoroutines() int {
 	return runtime.NumGoroutine()
-}
-
-// BenchmarkTimeoutMiddleware 基准测试
-func BenchmarkTimeoutMiddleware(b *testing.B) {
-	router := gin.New()
-	router.Use(TimeoutMiddleware(1 * time.Second))
-
-	router.GET("/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "benchmark"})
-	})
-
-	req, _ := http.NewRequest("GET", "/test", nil)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-	}
 }

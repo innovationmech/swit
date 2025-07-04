@@ -54,9 +54,9 @@ func NewServer() (*Server, error) {
 		// grpcServer will be initialized in runGRPCServer()
 	}
 
-	// Get service discovery address from configuration
-	sdAddress := config.GetConfig().ServiceDiscovery.Address
-	sd, err := discovery.NewServiceDiscovery(sdAddress)
+	// Using unified service discovery manager
+	cfg := config.GetConfig()
+	sd, err := discovery.GetServiceDiscoveryByAddress(cfg.ServiceDiscovery.Address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service discovery client: %v", err)
 	}
