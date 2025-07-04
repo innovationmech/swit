@@ -24,12 +24,13 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/innovationmech/swit/pkg/discovery"
-	"github.com/innovationmech/swit/pkg/logger"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/innovationmech/swit/pkg/discovery"
+	"github.com/innovationmech/swit/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switserve/config"
@@ -48,8 +49,8 @@ type Server struct {
 // NewServer creates a new server for the application.
 func NewServer() (*Server, error) {
 	s := &Server{
-		router:     gin.Default(),
-		grpcServer: grpc.NewServer(),
+		router: gin.Default(),
+		// grpcServer will be initialized in runGRPCServer()
 	}
 
 	// Get service discovery address from configuration

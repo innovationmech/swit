@@ -25,6 +25,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -72,7 +73,9 @@ func (s *Server) getGRPCPort() string {
 
 	// First try to get dedicated gRPC port from config
 	if cfg.Server.GRPCPort != "" {
-		return cfg.Server.GRPCPort
+		// Validate the gRPC port
+		port := parsePort(cfg.Server.GRPCPort)
+		return fmt.Sprintf("%d", port)
 	}
 
 	// Fallback: use HTTP port + 1000 for gRPC (e.g., 8080 -> 9080)
@@ -113,6 +116,12 @@ func (s *Server) createConfiguredGRPCServer() *grpc.Server {
 
 // GracefulShutdown gracefully shuts down the gRPC server
 func (s *Server) GracefulShutdownGRPC(timeout time.Duration) {
+	// Check if grpcServer is initialized
+	if s.grpcServer == nil {
+		logger.Logger.Debug("gRPC server not initialized, skipping shutdown")
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -139,11 +148,23 @@ func parsePort(portStr string) int {
 	if portStr == "" {
 		return 8080 // default HTTP port
 	}
-	// Simple conversion, in production you might want more robust parsing
-	var port int
-	fmt.Sscanf(portStr, "%d", &port)
-	if port <= 0 || port > 65535 {
+
+	// Use strconv.Atoi for robust parsing
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		logger.Logger.Error("Failed to parse port string",
+			zap.String("port", portStr),
+			zap.Error(err))
 		return 8080
 	}
+
+	// Validate port range
+	if port <= 0 || port > 65535 {
+		logger.Logger.Error("Port number out of valid range",
+			zap.Int("port", port),
+			zap.String("original", portStr))
+		return 8080
+	}
+
 	return port
 }
