@@ -54,15 +54,18 @@ func (s *Server) runGRPCServer(wg *sync.WaitGroup) {
 	}
 
 	// Create gRPC server with optimized configuration
-	s.grpcServer = s.createConfiguredGRPCServer()
+	grpcServer := s.createConfiguredGRPCServer()
+
+	// Safely set the gRPC server with proper synchronization
+	s.setGRPCServer(grpcServer)
 
 	// Register services
-	pb.RegisterGreeterServer(s.grpcServer, &service.GreeterService{})
+	pb.RegisterGreeterServer(grpcServer, &service.GreeterService{})
 
 	logger.Logger.Info("Starting gRPC server", zap.String("address", grpcAddr))
 
 	// Start serving
-	if err := s.grpcServer.Serve(lis); err != nil {
+	if err := grpcServer.Serve(lis); err != nil {
 		logger.Logger.Error("gRPC server failed to serve", zap.Error(err))
 	}
 }
@@ -75,15 +78,31 @@ func (s *Server) getGRPCPort() string {
 	if cfg.Server.GRPCPort != "" {
 		// Validate the gRPC port
 		port := parsePort(cfg.Server.GRPCPort)
-		return fmt.Sprintf("%d", port)
+		if isValidPort(port) {
+			return fmt.Sprintf("%d", port)
+		}
+		logger.Logger.Warn("Invalid gRPC port in config, using fallback",
+			zap.String("configured_port", cfg.Server.GRPCPort),
+			zap.Int("parsed_port", port))
 	}
 
 	// Fallback: use HTTP port + 1000 for gRPC (e.g., 8080 -> 9080)
 	if cfg.Server.Port != "" {
-		return fmt.Sprintf("%d", parsePort(cfg.Server.Port)+1000)
+		httpPort := parsePort(cfg.Server.Port)
+		grpcPort := httpPort + 1000
+
+		// Validate that the calculated gRPC port is within valid range
+		if isValidPort(grpcPort) {
+			return fmt.Sprintf("%d", grpcPort)
+		}
+
+		logger.Logger.Warn("Calculated gRPC port exceeds valid range, using default",
+			zap.Int("http_port", httpPort),
+			zap.Int("calculated_grpc_port", grpcPort))
 	}
 
-	return "50051" // default gRPC port
+	// Final fallback: use default gRPC port
+	return "50051"
 }
 
 // createConfiguredGRPCServer creates a new gRPC server with optimized configuration
@@ -116,8 +135,9 @@ func (s *Server) createConfiguredGRPCServer() *grpc.Server {
 
 // GracefulShutdown gracefully shuts down the gRPC server
 func (s *Server) GracefulShutdownGRPC(timeout time.Duration) {
-	// Check if grpcServer is initialized
-	if s.grpcServer == nil {
+	// Safely get the gRPC server with proper synchronization
+	grpcServer := s.getGRPCServer()
+	if grpcServer == nil {
 		logger.Logger.Debug("gRPC server not initialized, skipping shutdown")
 		return
 	}
@@ -129,7 +149,7 @@ func (s *Server) GracefulShutdownGRPC(timeout time.Duration) {
 	done := make(chan struct{})
 
 	go func() {
-		s.grpcServer.GracefulStop()
+		grpcServer.GracefulStop()
 		close(done)
 	}()
 
@@ -139,7 +159,7 @@ func (s *Server) GracefulShutdownGRPC(timeout time.Duration) {
 		logger.Logger.Info("gRPC server gracefully stopped")
 	case <-ctx.Done():
 		logger.Logger.Warn("gRPC server shutdown timeout, forcing stop")
-		s.grpcServer.Stop()
+		grpcServer.Stop()
 	}
 }
 
@@ -158,13 +178,11 @@ func parsePort(portStr string) int {
 		return 8080
 	}
 
-	// Validate port range
-	if port <= 0 || port > 65535 {
-		logger.Logger.Error("Port number out of valid range",
-			zap.Int("port", port),
-			zap.String("original", portStr))
-		return 8080
-	}
-
+	// Return parsed port (validation will be done by isValidPort)
 	return port
+}
+
+// isValidPort validates if a port number is within the valid range
+func isValidPort(port int) bool {
+	return port > 0 && port <= 65535
 }

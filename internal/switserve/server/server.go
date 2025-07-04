@@ -44,6 +44,7 @@ type Server struct {
 	sd         *discovery.ServiceDiscovery
 	srv        *http.Server
 	grpcServer *grpc.Server
+	grpcMutex  sync.RWMutex // Mutex to protect grpcServer field access
 }
 
 // NewServer creates a new server for the application.
@@ -63,6 +64,20 @@ func NewServer() (*Server, error) {
 
 	s.SetupRoutes()
 	return s, nil
+}
+
+// setGRPCServer safely sets the gRPC server with proper synchronization
+func (s *Server) setGRPCServer(grpcServer *grpc.Server) {
+	s.grpcMutex.Lock()
+	defer s.grpcMutex.Unlock()
+	s.grpcServer = grpcServer
+}
+
+// getGRPCServer safely gets the gRPC server with proper synchronization
+func (s *Server) getGRPCServer() *grpc.Server {
+	s.grpcMutex.RLock()
+	defer s.grpcMutex.RUnlock()
+	return s.grpcServer
 }
 
 // Run runs the server on the given address.
