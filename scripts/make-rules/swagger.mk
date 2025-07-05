@@ -51,8 +51,8 @@ swagger-copy: swagger-switserve swagger-switauth
 	@echo "# SwitServe API Documentation" > docs/generated/switserve/README.md
 	@echo "" >> docs/generated/switserve/README.md
 	@echo "**Generated API Documentation**: [internal/switserve/docs/](../../../internal/switserve/docs/)" >> docs/generated/switserve/README.md
-	@echo "**Swagger UI**: http://localhost:9000/swagger/index.html" >> docs/generated/switserve/README.md
-	@echo "**API Base URL**: http://localhost:9000" >> docs/generated/switserve/README.md
+	@echo "**Swagger UI**: http://localhost:8080/swagger/index.html" >> docs/generated/switserve/README.md
+	@echo "**API Base URL**: http://localhost:8080" >> docs/generated/switserve/README.md
 	@echo "" >> docs/generated/switserve/README.md
 	@echo "文档文件位置：" >> docs/generated/switserve/README.md
 	@echo "- JSON: [swagger.json](../../../internal/switserve/docs/swagger.json)" >> docs/generated/switserve/README.md
