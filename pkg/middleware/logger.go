@@ -1,4 +1,4 @@
-// Copyright © 2023 jackelyj <dreamerlyj@gmail.com>
+// Copyright © 2025 jackelyj <dreamerlyj@gmail.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,8 +22,9 @@
 package middleware
 
 import (
-	"github.com/innovationmech/swit/pkg/logger"
 	"time"
+
+	"github.com/innovationmech/swit/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
