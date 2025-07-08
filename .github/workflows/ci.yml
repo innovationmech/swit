@@ -36,6 +36,18 @@ jobs:
     - name: Install Buf CLI
       run: make buf-install
 
+    # 安装 Swagger 工具
+    - name: Install Swagger tools
+      run: make swagger-install
+
+    # 生成必要的代码，这样 go mod tidy 才能正常工作
+    - name: Generate protobuf code
+      run: make proto-generate
+
+    # 生成 Swagger 文档
+    - name: Generate Swagger documentation
+      run: make swagger
+
     - name: Run go mod tidy
       run: make tidy
 
@@ -84,6 +96,10 @@ jobs:
     - name: Install Buf CLI
       run: make buf-install
 
+    # 安装 Swagger 工具 (make test 依赖 swagger)
+    - name: Install Swagger tools
+      run: make swagger-install
+
     - name: Run tests
       run: make test
 
@@ -126,6 +142,10 @@ jobs:
     # 确保 Buf CLI 可用
     - name: Install Buf CLI
       run: make buf-install
+
+    # 安装 Swagger 工具 (make build 依赖 swagger)
+    - name: Install Swagger tools
+      run: make swagger-install
 
     - name: Build binaries
       run: make build
