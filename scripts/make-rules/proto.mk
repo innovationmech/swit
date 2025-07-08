@@ -15,7 +15,7 @@ buf-install:
 .PHONY: proto-deps
 proto-deps: buf-install
 	@echo "Downloading protobuf dependencies"
-	@cd $(API_DIR) && $(BUF) dep update
+	@cd $(API_DIR) && $(BUF) mod update
 
 # 跳过依赖下载的快速生成（用于开发）
 .PHONY: proto-generate-dev
