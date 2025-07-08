@@ -1,0 +1,13 @@
+# Generated files
+gen/
+
+# Buf cache
+.buf/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db 

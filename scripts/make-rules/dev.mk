@@ -8,9 +8,9 @@ install-hooks:
 	@echo "Pre-commit hook installed"
 
 .PHONY: setup-dev
-setup-dev: install-hooks swagger-install
+setup-dev: install-hooks swagger-install proto-setup
 	@echo "Development environment setup completed"
 
 .PHONY: ci
-ci: tidy copyright quality test
+ci: tidy copyright quality proto test
 	@echo "CI pipeline completed successfully" 

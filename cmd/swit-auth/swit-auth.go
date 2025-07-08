@@ -50,9 +50,6 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/cmd"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
-
-	// Import docs for swagger generation
-	_ "github.com/innovationmech/swit/internal/switauth/docs"
 )
 
 func main() {

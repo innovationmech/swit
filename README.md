@@ -9,10 +9,11 @@ Swit is a microservice-based backend system built with Go, featuring modular des
 - **User Management**: Full CRUD operations and permission management for users
 - **Service Discovery**: Consul integration for service registration and discovery
 - **Database Support**: MySQL for data persistence
-- **Protocol Support**: Both HTTP REST API and gRPC protocol support
-- **Health Checks**: Built-in health check endpoints for service monitoring
-- **Docker Support**: Containerized deployment solutions
-- **OpenAPI Documentation**: Integrated Swagger UI with interactive API documentation
+- **Dual Protocol Support**: Both HTTP REST API and gRPC protocol support
+- **Modern API**: Buf toolchain for managing gRPC APIs with versioning and automatic documentation generation
+- **Health Check**: Built-in health check endpoints for service monitoring
+- **Docker Support**: Containerized deployment solution
+- **OpenAPI Documentation**: Integrated Swagger UI for interactive API documentation
 
 ## System Architecture
 
@@ -22,204 +23,289 @@ The project consists of the following main components:
 2. **swit-auth** - Authentication service (port 8090)
 3. **switctl** - Command-line control tool
 
+## Modern API Architecture
+
+The project has completed API modernization migration, using Buf toolchain to manage gRPC APIs:
+
+```
+api/
+├── buf.yaml              # Buf main configuration
+├── buf.gen.yaml          # Code generation configuration
+├── buf.lock              # Dependency lock file
+├── proto/                # Protocol Buffer definitions
+│   └── swit/
+│       └── v1/          # API version 1
+│           └── greeter/ # Greeter service
+├── gen/                 # Generated code
+│   ├── go/             # Go code
+│   └── openapiv2/      # OpenAPI documentation
+└── docs/               # Documentation
+    ├── README.md       # API usage documentation
+    └── MIGRATION.md    # Migration guide
+```
+
+### API Design Principles
+
+- **Versioning**: All APIs have clear version numbers (v1, v2, ...)
+- **Modular**: Organize proto files by service domain
+- **Dual Protocol**: Support both gRPC and HTTP/REST
+- **Automation**: Use Buf toolchain for automatic code and documentation generation
+
+## Current Implemented Services
+
+### 1. Greeter Service (gRPC)
+**Port**: 9000  
+**Protocol**: gRPC + HTTP  
+**Implemented Methods**:
+- `SayHello` - Simple greeting functionality ✅
+
+**HTTP Endpoints**:
+- `POST /v1/greeter/hello` - Send greeting request
+
+### 2. Auth Service (HTTP REST)
+**Port**: 8090  
+**Protocol**: HTTP REST  
+**Main Features**:
+- User login/logout
+- JWT Token management
+- Token refresh and validation
+
+### 3. User Service (HTTP REST)
+**Port**: 9000  
+**Protocol**: HTTP REST  
+**Main Features**:
+- User registration
+- User information management
+- User query and deletion
+
+## Requirements
+
+- Go 1.24+
+- MySQL 8.0+
+- Redis 6.0+
+- Consul 1.12+
+- Buf CLI 1.0+ (for API development)
+
 ## Quick Start
 
-### Prerequisites
-
-- Go 1.22 or higher
-- MySQL 5.7+ or 8.0+
-- Consul (optional, for service discovery)
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/innovationmech/swit.git
-   cd swit
-   ```
-
-2. Initialize databases:
-   ```bash
-   # Execute database scripts
-   mysql -u root -p < scripts/sql/user_service_db.sql
-   mysql -u root -p < scripts/sql/auth_service_db.sql
-   ```
-
-3. Configure services:
-   - Edit `swit.yaml` to configure main service database and port
-   - Edit `switauth.yaml` to configure authentication service database and port
-
-### Building
-
-Build all services:
+### 1. Clone Repository
 ```bash
+git clone https://github.com/innovationmech/swit.git
+cd swit
+```
+
+### 2. Install Dependencies
+```bash
+go mod download
+```
+
+### 3. Environment Configuration
+```bash
+# Copy configuration files
+cp swit.yaml.example swit.yaml
+cp switauth.yaml.example switauth.yaml
+
+# Edit configuration files with database information
+```
+
+### 4. Database Initialization
+```bash
+# Create databases
+mysql -u root -p
+CREATE DATABASE swit_db;
+CREATE DATABASE swit_auth_db;
+
+# Import database schema
+mysql -u root -p swit_db < scripts/sql/user_service_db.sql
+mysql -u root -p swit_auth_db < scripts/sql/auth_service_db.sql
+```
+
+### 5. Build and Run
+```bash
+# Build all services
 make build
+
+# Run authentication service
+./bin/swit-auth
+
+# Run user service
+./bin/swit-serve
 ```
 
-Or build individually:
+## API Development
+
+### Toolchain Setup
 ```bash
-make build-serve    # Build main service
-make build-auth     # Build auth service
-make build-ctl      # Build control tool
+# Install Buf CLI
+make buf-install
+
+# Setup development environment
+make proto-setup
 ```
 
-Binaries will be generated in the `_output/` directory.
+### Daily Development Commands
+```bash
+# Complete protobuf workflow
+make proto
 
-### Running Services
+# Generate code only
+make proto-generate
 
-1. Start authentication service:
+# Check proto files
+make proto-lint
+
+# Format proto files
+make proto-format
+
+# Check breaking changes
+make proto-breaking
+
+# Clean generated code
+make proto-clean
+
+# View OpenAPI documentation
+make proto-docs
+```
+
+### API Development Workflow
+
+1. **Modify proto files**
    ```bash
-   ./_output/swit-auth/swit-auth start
+   # Edit proto files
+   vim api/proto/swit/v1/greeter/greeter.proto
    ```
 
-2. Start main service:
+2. **Generate code**
    ```bash
-   ./_output/swit-serve/swit-serve serve
+   make proto-generate
    ```
 
-3. Check service status with control tool:
+3. **Implement service**
    ```bash
-   ./_output/switctl/switctl health
+   # Implement gRPC methods in corresponding service files
+   vim internal/switserve/service/greeter.go
    ```
 
-## API Endpoints
-
-### OpenAPI/Swagger Documentation
-
-The project integrates Swagger UI for interactive API documentation. After starting the services, you can access them at:
-
-- **SwitServe API**: http://localhost:9000/swagger/index.html
-- **SwitAuth API**: http://localhost:8090/swagger/index.html
-
-### Authentication Service API (Port 8090)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/auth/login` | User login |
-| POST | `/auth/logout` | User logout |
-| POST | `/auth/refresh` | Refresh access token |
-| GET | `/auth/validate` | Validate token |
-| GET | `/health` | Health check |
-
-### User Service API (Port 9000)
-
-| Method | Path | Description | Auth Required |
-|--------|------|-------------|---------------|
-| POST | `/api/v1/users/create` | Create user | ✓ |
-| GET | `/api/v1/users/username/:username` | Get user by username | ✓ |
-| GET | `/api/v1/users/email/:email` | Get user by email | ✓ |
-| DELETE | `/api/v1/users/:id` | Delete user | ✓ |
-| POST | `/internal/validate-user` | Validate user credentials (internal) | ✗ |
-| GET | `/health` | Health check | ✗ |
-| POST | `/stop` | Stop service | ✗ |
-
-### gRPC Services
-
-The project also provides gRPC interfaces defined in `api/proto/greeter.proto`:
-- `SayHello`: Simple greeting service
+4. **Test and validate**
+   ```bash
+   make proto-lint
+   make build
+   make test
+   ```
 
 ## Configuration
 
 ### Main Service Configuration (swit.yaml)
 ```yaml
-database:
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-  dbname: user_service_db
 server:
+  host: "0.0.0.0"
   port: 9000
-serviceDiscovery:
-  address: "localhost:8500"
+  grpc_port: 9001
+
+database:
+  host: "localhost"
+  port: 3306
+  name: "swit_db"
+  username: "root"
+  password: "password"
+
+consul:
+  address: "127.0.0.1:8500"
+  datacenter: "dc1"
 ```
 
 ### Authentication Service Configuration (switauth.yaml)
 ```yaml
-database:
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-  dbname: auth_service_db
 server:
+  host: "0.0.0.0"
   port: 8090
-serviceDiscovery:
-  address: "localhost:8500"
+
+database:
+  host: "localhost"
+  port: 3306
+  name: "swit_auth_db"
+  username: "root"
+  password: "password"
+
+jwt:
+  secret: "your-secret-key"
+  access_token_expiry: "15m"
+  refresh_token_expiry: "7d"
 ```
 
-## Development Guide
+## Docker Deployment
 
-### Project Structure
-
-```
-swit/
-├── cmd/                    # Application entry points
-│   ├── swit-serve/        # Main service
-│   ├── swit-auth/         # Authentication service
-│   └── switctl/           # Control tool
-├── internal/              # Internal packages
-│   ├── switserve/         # Main service internal logic
-│   ├── switauth/          # Auth service internal logic
-│   └── switctl/           # Control tool internal logic
-├── api/                   # API definitions
-│   └── proto/             # gRPC protocol definitions
-├── pkg/                   # Common packages
-├── scripts/               # Script files
-│   └── sql/               # Database scripts
-└── docs/                  # Documentation
-```
-
-### Available Make Commands
-
-- `make tidy`: Tidy Go module dependencies
-- `make build`: Build all binaries
-- `make clean`: Clean output directory
-- `make test`: Run tests
-- `make test-coverage`: Run tests with coverage report
-- `make test-race`: Run tests with race detection
-- `make ci`: Run full CI pipeline (tidy, copyright, quality, test)
-- `make image-serve`: Build Docker image
-- `make swagger`: Generate/update OpenAPI documentation
-- `make swagger-install`: Install Swagger documentation tools
-- `make swagger-fmt`: Format Swagger annotations
-
-### Docker Support
-
-Build Docker image:
+### Build Images
 ```bash
-make image-serve
+make docker-build
 ```
 
-Run container:
+### Run Containers
 ```bash
-docker run -d -p 9000:9000 -v ./swit.yaml:/root/swit.yaml swit-serve:master
+# Run user service
+docker run -d -p 9000:9000 -p 9001:9001 --name swit-serve swit-serve:latest
+
+# Run authentication service
+docker run -d -p 8090:8090 --name swit-auth swit-auth:latest
 ```
 
-## Database Schema
+### Using Docker Compose
+```bash
+docker-compose up -d
+```
 
-### Users Table (user_service_db.users)
-- `id`: UUID primary key
-- `username`: Username (unique)
-- `email`: Email address (unique)
-- `password_hash`: Encrypted password
-- `role`: User role
-- `is_active`: Whether user is active
-- `created_at`/`updated_at`: Timestamps
+## Testing
 
-### Tokens Table (auth_service_db.tokens)
-- `id`: UUID primary key
-- `user_id`: Associated user ID
-- `access_token`: Access token
-- `refresh_token`: Refresh token
-- `access_expires_at`: Access token expiration time
-- `refresh_expires_at`: Refresh token expiration time
-- `is_valid`: Whether token is valid
+### Run Unit Tests
+```bash
+make test
+```
+
+### Run Integration Tests
+```bash
+make test-integration
+```
+
+### Test Coverage
+```bash
+make test-coverage
+```
+
+## Development Tools
+
+### Code Formatting
+```bash
+make fmt
+```
+
+### Code Linting
+```bash
+make lint
+```
+
+### Dependency Check
+```bash
+make deps
+```
+
+## Upgrading from Previous Versions
+
+Please refer to the [API Migration Guide](api/MIGRATION.md) for detailed upgrade steps.
+
+Main changes:
+- New API directory structure
+- Use Buf toolchain to manage gRPC APIs
+- Updated package names and import paths
+- New HTTP/REST endpoint support
+
+## Related Documentation
+
+- [Development Guide](DEVELOPMENT.md)
+- [API Documentation](api/docs/README.md)
+- [API Migration Guide](api/MIGRATION.md)
+- [Route Registry Guide](docs/route-registry-guide.md)
+- [OpenAPI Integration](docs/openapi-integration.md)
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-[中文文档](README-CN.md)
+MIT License - See [LICENSE](LICENSE) file for details

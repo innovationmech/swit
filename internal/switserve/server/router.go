@@ -35,7 +35,7 @@ import (
 	"go.uber.org/zap"
 
 	// Import swagger docs
-	_ "github.com/innovationmech/swit/internal/switserve/docs"
+	_ "github.com/innovationmech/swit/docs/generated/switserve"
 )
 
 // SetupRoutes sets up the routes for the application using the new route registry system.

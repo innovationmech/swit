@@ -150,4 +150,4 @@ make test-switauth
 - [项目文档首页](../../README.md)
 - [SwitServe API文档](../switserve/README.md)
 - [快速开始指南](../../quick-start-example.md)
-- [API文档汇总](../../generated/README.md) 
+- [API文档汇总](../../generated/) 

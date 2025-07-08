@@ -16,4 +16,11 @@ DOCKER := docker
 DOCKER_IMAGE_NAME := swit-serve
 DOCKER_AUTH_IMAGE_NAME := swit-auth
 DOCKER_IMAGE_TAG := $(shell git rev-parse --abbrev-ref HEAD)
-SWAG := swag 
+SWAG := swag
+
+# Protobuf 相关变量
+BUF := buf
+BUF_VERSION := v1.28.1
+API_DIR := api
+PROTO_DIR := $(API_DIR)/proto
+GEN_DIR := $(API_DIR)/gen 

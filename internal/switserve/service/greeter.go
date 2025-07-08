@@ -24,13 +24,13 @@ package service
 import (
 	"context"
 
-	"github.com/innovationmech/swit/api/pb"
+	greeterv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/v1/greeter"
 )
 
 type GreeterService struct {
-	pb.UnimplementedGreeterServer
+	greeterv1.UnimplementedGreeterServiceServer
 }
 
-func (s *GreeterService) SayHello(ctx context.Context, req *pb.HelloRequest) (*pb.HelloResponse, error) {
-	return &pb.HelloResponse{Message: "Hello, " + req.Name}, nil
+func (s *GreeterService) SayHello(ctx context.Context, req *greeterv1.SayHelloRequest) (*greeterv1.SayHelloResponse, error) {
+	return &greeterv1.SayHelloResponse{Message: "Hello, " + req.Name}, nil
 }

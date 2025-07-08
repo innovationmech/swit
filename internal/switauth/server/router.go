@@ -32,7 +32,7 @@ import (
 	"go.uber.org/zap"
 
 	// Import swagger docs
-	_ "github.com/innovationmech/swit/internal/switauth/docs"
+	_ "github.com/innovationmech/swit/docs/generated/switauth"
 )
 
 // SetupRoutes 使用新的路由注册系统设置路由
