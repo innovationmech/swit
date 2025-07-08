@@ -25,52 +25,53 @@ import (
 	"context"
 	"testing"
 
-	"github.com/innovationmech/swit/api/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	greeterv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/v1/greeter"
 )
 
 func TestGreeterService_SayHello(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        *pb.HelloRequest
-		expectedResult *pb.HelloResponse
+		request        *greeterv1.SayHelloRequest
+		expectedResult *greeterv1.SayHelloResponse
 		expectError    bool
 	}{
 		{
 			name:           "valid_name",
-			request:        &pb.HelloRequest{Name: "World"},
-			expectedResult: &pb.HelloResponse{Message: "Hello, World"},
+			request:        &greeterv1.SayHelloRequest{Name: "World"},
+			expectedResult: &greeterv1.SayHelloResponse{Message: "Hello, World"},
 			expectError:    false,
 		},
 		{
 			name:           "empty_name",
-			request:        &pb.HelloRequest{Name: ""},
-			expectedResult: &pb.HelloResponse{Message: "Hello, "},
+			request:        &greeterv1.SayHelloRequest{Name: ""},
+			expectedResult: &greeterv1.SayHelloResponse{Message: "Hello, "},
 			expectError:    false,
 		},
 		{
 			name:           "name_with_spaces",
-			request:        &pb.HelloRequest{Name: "John Doe"},
-			expectedResult: &pb.HelloResponse{Message: "Hello, John Doe"},
+			request:        &greeterv1.SayHelloRequest{Name: "John Doe"},
+			expectedResult: &greeterv1.SayHelloResponse{Message: "Hello, John Doe"},
 			expectError:    false,
 		},
 		{
 			name:           "name_with_special_characters",
-			request:        &pb.HelloRequest{Name: "Alice-123!"},
-			expectedResult: &pb.HelloResponse{Message: "Hello, Alice-123!"},
+			request:        &greeterv1.SayHelloRequest{Name: "Alice-123!"},
+			expectedResult: &greeterv1.SayHelloResponse{Message: "Hello, Alice-123!"},
 			expectError:    false,
 		},
 		{
 			name:           "unicode_name",
-			request:        &pb.HelloRequest{Name: "世界"},
-			expectedResult: &pb.HelloResponse{Message: "Hello, 世界"},
+			request:        &greeterv1.SayHelloRequest{Name: "世界"},
+			expectedResult: &greeterv1.SayHelloResponse{Message: "Hello, 世界"},
 			expectError:    false,
 		},
 		{
 			name:           "long_name",
-			request:        &pb.HelloRequest{Name: "ThisIsAVeryLongNameThatShouldStillWork"},
-			expectedResult: &pb.HelloResponse{Message: "Hello, ThisIsAVeryLongNameThatShouldStillWork"},
+			request:        &greeterv1.SayHelloRequest{Name: "ThisIsAVeryLongNameThatShouldStillWork"},
+			expectedResult: &greeterv1.SayHelloResponse{Message: "Hello, ThisIsAVeryLongNameThatShouldStillWork"},
 			expectError:    false,
 		},
 	}
@@ -107,7 +108,7 @@ func TestGreeterService_SayHello_NilRequest(t *testing.T) {
 
 func TestGreeterService_SayHello_ContextVariations(t *testing.T) {
 	service := &GreeterService{}
-	request := &pb.HelloRequest{Name: "TestUser"}
+	request := &greeterv1.SayHelloRequest{Name: "TestUser"}
 
 	tests := []struct {
 		name    string
@@ -148,7 +149,7 @@ func TestGreeterService_SayHello_ContextVariations(t *testing.T) {
 
 func TestGreeterService_SayHello_CancelledContext(t *testing.T) {
 	service := &GreeterService{}
-	request := &pb.HelloRequest{Name: "TestUser"}
+	request := &greeterv1.SayHelloRequest{Name: "TestUser"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -163,14 +164,14 @@ func TestGreeterService_SayHello_CancelledContext(t *testing.T) {
 func TestGreeterService_Implements_Interface(t *testing.T) {
 	service := &GreeterService{}
 
-	_, ok := interface{}(service).(pb.GreeterServer)
-	assert.True(t, ok, "GreeterService should implement pb.GreeterServer interface")
+	_, ok := interface{}(service).(greeterv1.GreeterServiceServer)
+	assert.True(t, ok, "GreeterService should implement greeterv1.GreeterServiceServer interface")
 }
 
 func TestGreeterService_ResponseNotNil(t *testing.T) {
 	service := &GreeterService{}
 	ctx := context.Background()
-	request := &pb.HelloRequest{Name: "Test"}
+	request := &greeterv1.SayHelloRequest{Name: "Test"}
 
 	result, err := service.SayHello(ctx, request)
 
@@ -197,7 +198,7 @@ func TestGreeterService_MessageFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run("name_"+tt.inputName, func(t *testing.T) {
-			request := &pb.HelloRequest{Name: tt.inputName}
+			request := &greeterv1.SayHelloRequest{Name: tt.inputName}
 			result, err := service.SayHello(ctx, request)
 
 			assert.NoError(t, err)
@@ -220,7 +221,7 @@ func TestGreeterService_Concurrent(t *testing.T) {
 		go func(index int) {
 			defer func() { done <- true }()
 
-			request := &pb.HelloRequest{Name: "User" + string(rune('A'+index%26))}
+			request := &greeterv1.SayHelloRequest{Name: "User" + string(rune('A'+index%26))}
 			result, err := service.SayHello(ctx, request)
 
 			results[index] = ""
@@ -248,7 +249,7 @@ func TestGreeterService_Concurrent(t *testing.T) {
 func BenchmarkGreeterService_SayHello(b *testing.B) {
 	service := &GreeterService{}
 	ctx := context.Background()
-	request := &pb.HelloRequest{Name: "BenchmarkUser"}
+	request := &greeterv1.SayHelloRequest{Name: "BenchmarkUser"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -259,7 +260,7 @@ func BenchmarkGreeterService_SayHello(b *testing.B) {
 func BenchmarkGreeterService_SayHello_EmptyName(b *testing.B) {
 	service := &GreeterService{}
 	ctx := context.Background()
-	request := &pb.HelloRequest{Name: ""}
+	request := &greeterv1.SayHelloRequest{Name: ""}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -270,7 +271,7 @@ func BenchmarkGreeterService_SayHello_EmptyName(b *testing.B) {
 func BenchmarkGreeterService_SayHello_LongName(b *testing.B) {
 	service := &GreeterService{}
 	ctx := context.Background()
-	request := &pb.HelloRequest{Name: "ThisIsAVeryLongUserNameThatMightBeUsedInSomeScenarios"}
+	request := &greeterv1.SayHelloRequest{Name: "ThisIsAVeryLongUserNameThatMightBeUsedInSomeScenarios"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -281,7 +282,7 @@ func BenchmarkGreeterService_SayHello_LongName(b *testing.B) {
 func BenchmarkGreeterService_SayHello_Parallel(b *testing.B) {
 	service := &GreeterService{}
 	ctx := context.Background()
-	request := &pb.HelloRequest{Name: "ParallelUser"}
+	request := &greeterv1.SayHelloRequest{Name: "ParallelUser"}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

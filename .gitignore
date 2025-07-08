@@ -1,8 +1,28 @@
+# 构建输出
 _output/
+
+# IDE 相关文件
 .vscode/
 .idea/
 .DS_Store
+
+# 用户特定目录
 prompt/
 .cursor/
 .claude/
+
+# Protobuf 生成文件
+api/gen/
+
+# Swagger 生成文件
+docs/generated/
+internal/*/docs/docs.go
+
+# Go 相关文件
+*.log
+coverage.out
+coverage.html
+
+# 测试输出
+test.log
 

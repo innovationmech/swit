@@ -1,5 +1,8 @@
 BOILERPLATE_FILE := scripts/boilerplate.txt
-GO_FILES := $(shell find . -name '*.go')
+
+# 查找所有 Go 文件，但排除生成的代码目录
+GO_FILES := $(shell find . -name '*.go' -not -path './api/gen/*' -not -path './_output/*' -not -path './vendor/*' -not -path './internal/*/docs/docs.go')
+
 MISSING_COPYRIGHT := $(shell for file in $(GO_FILES); do if ! grep -q "Copyright" $$file; then echo $$file; fi; done)
 
 # 生成标准版权声明的哈希值
@@ -14,6 +17,25 @@ OUTDATED_COPYRIGHT := $(shell for file in $(GO_FILES); do \
 		fi; \
 	fi; \
 done)
+
+# 调试目标：显示哪些文件被包含或排除
+.PHONY: copyright-files
+copyright-files:
+	@echo "📋 版权管理包含的文件："
+	@for file in $(GO_FILES); do echo "$$file"; done
+	@echo "📊 统计信息："
+	@echo "  总文件数:       $$(echo '$(GO_FILES)' | wc -w)"
+	@echo "  缺少版权:       $$(echo '$(MISSING_COPYRIGHT)' | wc -w)"
+	@echo "  过期版权:       $$(echo '$(OUTDATED_COPYRIGHT)' | wc -w)"
+	@echo ""
+	@echo "🚫 排除的目录："
+	@echo "  - api/gen/*               (生成的 gRPC 代码)"
+	@echo "  - _output/*               (构建输出)"
+	@echo "  - vendor/*                (第三方依赖)"
+	@echo "  - internal/*/docs/docs.go (生成的 Swagger 文档)"
+	@echo ""
+	@echo "📂 示例排除的文件："
+	@find . -name '*.go' \( -path './api/gen/*' -o -path './_output/*' -o -path './vendor/*' -o -path './internal/*/docs/docs.go' \) 2>/dev/null | head -5 || echo "  (暂无排除的文件)"
 
 # 调试目标：显示哈希值比较信息（用于故障排除）
 .PHONY: copyright-debug
@@ -36,22 +58,25 @@ copyright-debug:
 
 .PHONY: copyright-check
 copyright-check:
-	@echo "Checking Go files for copyright statements"
+	@echo "🔍 检查 Go 文件版权声明（排除生成代码）"
 	@if [ -n "$(MISSING_COPYRIGHT)" ]; then \
-		echo "The following files are missing copyright statements:"; \
+		echo "❌ 以下文件缺少版权声明:"; \
 		echo "$(MISSING_COPYRIGHT)" | tr ' ' '\n'; \
+		echo ""; \
 	fi
 	@if [ -n "$(OUTDATED_COPYRIGHT)" ]; then \
-		echo "The following files have outdated copyright statements:"; \
+		echo "⚠️  以下文件版权声明过期:"; \
 		echo "$(OUTDATED_COPYRIGHT)" | tr ' ' '\n'; \
+		echo ""; \
 	fi
 	@if [ -z "$(MISSING_COPYRIGHT)" ] && [ -z "$(OUTDATED_COPYRIGHT)" ]; then \
-		echo "All Go files have up-to-date copyright statements"; \
+		echo "✅ 所有 Go 文件都有最新的版权声明"; \
 	fi
+	@echo "📊 文件统计: $(shell echo $(GO_FILES) | wc -w) 个文件已检查"
 
 .PHONY: copyright-add
 copyright-add:
-	@echo "Adding copyright statements to Go files"
+	@echo "📝 为 Go 文件添加版权声明"
 	@for file in $(MISSING_COPYRIGHT); do \
 		echo "Adding copyright statement to $$file"; \
 		sed 's/^/\/\/ /' $(BOILERPLATE_FILE) > temp_boilerplate.txt; \
@@ -62,7 +87,7 @@ copyright-add:
 
 .PHONY: copyright-update
 copyright-update:
-	@echo "Updating outdated copyright statements in Go files"
+	@echo "🔄 更新过期的版权声明"
 	@for file in $(OUTDATED_COPYRIGHT); do \
 		echo "Updating copyright statement in $$file"; \
 		sed 's/^/\/\/ /' $(BOILERPLATE_FILE) > temp_boilerplate.txt; \
@@ -74,7 +99,7 @@ copyright-update:
 
 .PHONY: copyright-force
 copyright-force:
-	@echo "Force updating all Go files with current copyright statement"
+	@echo "⚡ 强制更新所有 Go 文件的版权声明"
 	@for file in $(GO_FILES); do \
 		echo "Force updating copyright statement in $$file"; \
 		sed 's/^/\/\/ /' $(BOILERPLATE_FILE) > temp_boilerplate.txt; \
@@ -88,12 +113,12 @@ copyright-force:
 copyright:
 	@$(MAKE) copyright-check
 	@if [ -n "$(MISSING_COPYRIGHT)" ]; then \
-		echo "Found files missing copyright statements, adding..."; \
+		echo "发现缺少版权声明的文件，正在添加..."; \
 		$(MAKE) copyright-add; \
-		echo "Copyright statements added"; \
+		echo "✅ 版权声明已添加"; \
 	fi
 	@if [ -n "$(OUTDATED_COPYRIGHT)" ]; then \
-		echo "Found files with outdated copyright statements, updating..."; \
+		echo "发现过期版权声明的文件，正在更新..."; \
 		$(MAKE) copyright-update; \
-		echo "Copyright statements updated"; \
+		echo "✅ 版权声明已更新"; \
 	fi

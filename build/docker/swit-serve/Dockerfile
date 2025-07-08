@@ -1,10 +1,10 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o switserve ./cmd/switserve
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o swit-serve ./cmd/swit-serve
 
 FROM alpine:latest  
 

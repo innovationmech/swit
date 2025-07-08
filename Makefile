@@ -6,12 +6,13 @@ include scripts/make-rules/build.mk
 include scripts/make-rules/test.mk
 include scripts/make-rules/docker.mk
 include scripts/make-rules/swagger.mk
+include scripts/make-rules/proto.mk
 include scripts/make-rules/dev.mk
 include scripts/make-rules/copyright.mk
 
-# 主要组合目标
+# 主要组合目标（优化版，避免重复执行）
 .PHONY: all
-all: tidy copyright build swagger
+all: proto swagger tidy copyright build-fast
 
 define USAGE_OPTIONS
 
@@ -20,7 +21,11 @@ Options:
   FORMAT           Format the code using gofmt.
   QUALITY          Run all quality checks (format, lint, vet).
   BUILD            Build the binaries, output binaries are in _output/{application_name}/ directory.
-  CLEAN            Delete the output binaries.
+  CLEAN            Delete all generated code and build artifacts (binaries, protobuf, swagger, coverage, logs).
+  CLEAN-BUILD      Delete build outputs only.
+  CLEAN-PROTO      Delete protobuf generated code only.
+  CLEAN-SWAGGER    Delete Swagger generated documentation only.
+  CLEAN-TEST       Delete test artifacts (coverage files, logs) only.
   TEST             Run all tests (internal + pkg).
   TEST-PKG         Run tests for pkg packages only.
   TEST-INTERNAL    Run tests for internal packages only.
@@ -37,12 +42,23 @@ Options:
   SWAGGER-SWITAUTH Generate Swagger documentation for switauth only.
   SWAGGER-COPY     Create unified documentation links in docs/generated/.
   SWAGGER-INSTALL  Install swag tool for generating Swagger docs.
-  COPYRIGHT        Check and add/update copyright statements to Go files.
+  COPYRIGHT        Check and add/update copyright statements to Go files (excludes generated code).
   COPYRIGHT-CHECK  Check Go files for copyright statements.
   COPYRIGHT-ADD    Add copyright statements to Go files missing them.
   COPYRIGHT-UPDATE Update outdated copyright statements in Go files.
   COPYRIGHT-FORCE  Force update all Go files with current copyright statement.
   COPYRIGHT-DEBUG  Debug copyright hash comparison for troubleshooting.
+  COPYRIGHT-FILES  Show which files are included/excluded in copyright management.
+  PROTO            Generate protobuf code (format, lint, generate).
+  PROTO-SETUP      Setup protobuf development environment.
+  PROTO-GENERATE   Generate protobuf code only.
+  PROTO-LINT       Lint protobuf files.
+  PROTO-FORMAT     Format protobuf files.
+  PROTO-BREAKING   Check for breaking changes in protobuf files.
+  PROTO-CLEAN      Clean generated protobuf code.
+  PROTO-DOCS       Generate OpenAPI documentation from protobuf.
+  PROTO-VALIDATE   Validate protobuf configuration.
+  BUF-INSTALL      Install Buf CLI tool.
 endef
 export USAGE_OPTIONS
 

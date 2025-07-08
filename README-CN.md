@@ -9,7 +9,8 @@ Swit 是一个基于 Go 语言开发的微服务架构后端系统，采用模�
 - **用户管理**: 完整的用户 CRUD 操作和权限管理
 - **服务发现**: 集成 Consul 进行服务注册与发现
 - **数据库支持**: 使用 MySQL 进行数据持久化
-- **协议支持**: 同时支持 HTTP REST API 和 gRPC 协议
+- **双协议支持**: 同时支持 HTTP REST API 和 gRPC 协议
+- **现代化 API**: 使用 Buf 工具链管理 gRPC API，支持版本化和自动文档生成
 - **健康检查**: 内置健康检查端点用于监控服务状态
 - **Docker 支持**: 提供容器化部署方案
 - **OpenAPI 文档**: 集成 Swagger UI，提供交互式 API 文档
@@ -22,204 +23,289 @@ Swit 是一个基于 Go 语言开发的微服务架构后端系统，采用模�
 2. **swit-auth** - 认证服务（端口 8090）
 3. **switctl** - 命令行控制工具
 
+## API 现代化架构
+
+项目已完成 API 现代化迁移，采用 Buf 工具链管理 gRPC API：
+
+```
+api/
+├── buf.yaml              # Buf 主配置文件
+├── buf.gen.yaml          # 代码生成配置
+├── buf.lock              # 依赖锁文件
+├── proto/                # Protocol Buffer 定义
+│   └── swit/
+│       └── v1/          # API 版本 1
+│           └── greeter/ # 问候服务
+├── gen/                 # 生成的代码
+│   ├── go/             # Go 代码
+│   └── openapiv2/      # OpenAPI 文档
+└── docs/               # 文档
+    ├── README.md       # API 使用文档
+    └── MIGRATION.md    # 迁移指南
+```
+
+### API 设计原则
+
+- **版本化**: 所有 API 都有明确的版本号（v1, v2, ...）
+- **模块化**: 按服务域组织 proto 文件
+- **双协议**: 同时支持 gRPC 和 HTTP/REST
+- **自动化**: 使用 Buf 工具链自动生成代码和文档
+
+## 当前实现的服务
+
+### 1. Greeter 服务 (gRPC)
+**端口**: 9000  
+**协议**: gRPC + HTTP  
+**实现的方法**:
+- `SayHello` - 简单问候功能 ✅
+
+**HTTP 端点**:
+- `POST /v1/greeter/hello` - 发送问候请求
+
+### 2. Auth 服务 (HTTP REST)
+**端口**: 8090  
+**协议**: HTTP REST  
+**主要功能**:
+- 用户登录/登出
+- JWT Token 管理
+- Token 刷新和验证
+
+### 3. User 服务 (HTTP REST)
+**端口**: 9000  
+**协议**: HTTP REST  
+**主要功能**:
+- 用户注册
+- 用户信息管理
+- 用户查询和删除
+
+## 环境要求
+
+- Go 1.24+
+- MySQL 8.0+
+- Redis 6.0+
+- Consul 1.12+
+- Buf CLI 1.0+ (用于 API 开发)
+
 ## 快速开始
 
-### 环境要求
-
-- Go 1.22 或更高版本
-- MySQL 5.7+ 或 8.0+
-- Consul（可选，用于服务发现）
-
-### 安装步骤
-
-1. 克隆项目：
-   ```bash
-   git clone https://github.com/innovationmech/swit.git
-   cd swit
-   ```
-
-2. 初始化数据库：
-   ```bash
-   # 执行数据库脚本
-   mysql -u root -p < scripts/sql/user_service_db.sql
-   mysql -u root -p < scripts/sql/auth_service_db.sql
-   ```
-
-3. 配置服务：
-   - 编辑 `swit.yaml` 配置主服务数据库和端口
-   - 编辑 `switauth.yaml` 配置认证服务数据库和端口
-
-### 构建项目
-
-构建所有服务：
+### 1. 克隆仓库
 ```bash
+git clone https://github.com/innovationmech/swit.git
+cd swit
+```
+
+### 2. 安装依赖
+```bash
+go mod download
+```
+
+### 3. 环境配置
+```bash
+# 复制配置文件
+cp swit.yaml.example swit.yaml
+cp switauth.yaml.example switauth.yaml
+
+# 编辑配置文件，填入数据库等信息
+```
+
+### 4. 数据库初始化
+```bash
+# 创建数据库
+mysql -u root -p
+CREATE DATABASE swit_db;
+CREATE DATABASE swit_auth_db;
+
+# 导入数据库结构
+mysql -u root -p swit_db < scripts/sql/user_service_db.sql
+mysql -u root -p swit_auth_db < scripts/sql/auth_service_db.sql
+```
+
+### 5. 构建和运行
+```bash
+# 构建所有服务
 make build
+
+# 运行认证服务
+./bin/swit-auth
+
+# 运行用户服务
+./bin/swit-serve
 ```
 
-或者分别构建：
+## API 开发
+
+### 工具链设置
 ```bash
-make build-serve    # 构建主服务
-make build-auth     # 构建认证服务
-make build-ctl      # 构建控制工具
+# 安装 Buf CLI
+make buf-install
+
+# 设置开发环境
+make proto-setup
 ```
 
-构建完成后，二进制文件将生成在 `_output/` 目录下。
+### 日常开发命令
+```bash
+# 完整的 protobuf 工作流
+make proto
 
-### 运行服务
+# 仅生成代码
+make proto-generate
 
-1. 启动认证服务：
+# 检查 proto 文件
+make proto-lint
+
+# 格式化 proto 文件
+make proto-format
+
+# 检查破坏性变更
+make proto-breaking
+
+# 清理生成的代码
+make proto-clean
+
+# 查看 OpenAPI 文档
+make proto-docs
+```
+
+### API 开发工作流
+
+1. **修改 proto 文件**
    ```bash
-   ./_output/swit-auth/swit-auth start
+   # 编辑 proto 文件
+   vim api/proto/swit/v1/greeter/greeter.proto
    ```
 
-2. 启动主服务：
+2. **生成代码**
    ```bash
-   ./_output/swit-serve/swit-serve serve
+   make proto-generate
    ```
 
-3. 使用控制工具检查服务状态：
+3. **实现服务**
    ```bash
-   ./_output/switctl/switctl health
+   # 在相应的服务文件中实现 gRPC 方法
+   vim internal/switserve/service/greeter.go
    ```
 
-## API 接口
-
-### OpenAPI/Swagger 文档
-
-项目集成了 Swagger UI，提供交互式 API 文档。启动服务后，可以通过以下地址访问：
-
-- **SwitServe API**: http://localhost:9000/swagger/index.html
-- **SwitAuth API**: http://localhost:8090/swagger/index.html
-
-### 认证服务 API (端口 8090)
-
-| 方法 | 路径 | 描述 |
-|------|------|------|
-| POST | `/auth/login` | 用户登录 |
-| POST | `/auth/logout` | 用户登出 |
-| POST | `/auth/refresh` | 刷新访问令牌 |
-| GET | `/auth/validate` | 验证令牌有效性 |
-| GET | `/health` | 健康检查 |
-
-### 用户服务 API (端口 9000)
-
-| 方法 | 路径 | 描述 | 需要认证 |
-|------|------|------|----------|
-| POST | `/api/v1/users/create` | 创建用户 | ✓ |
-| GET | `/api/v1/users/username/:username` | 根据用户名获取用户 | ✓ |
-| GET | `/api/v1/users/email/:email` | 根据邮箱获取用户 | ✓ |
-| DELETE | `/api/v1/users/:id` | 删除用户 | ✓ |
-| POST | `/internal/validate-user` | 验证用户凭证（内部接口） | ✗ |
-| GET | `/health` | 健康检查 | ✗ |
-| POST | `/stop` | 停止服务 | ✗ |
-
-### gRPC 服务
-
-项目还提供 gRPC 接口，定义在 `api/proto/greeter.proto` 中：
-- `SayHello`: 简单的问候服务
+4. **测试和验证**
+   ```bash
+   make proto-lint
+   make build
+   make test
+   ```
 
 ## 配置说明
 
 ### 主服务配置 (swit.yaml)
 ```yaml
-database:
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-  dbname: user_service_db
 server:
+  host: "0.0.0.0"
   port: 9000
-serviceDiscovery:
-  address: "localhost:8500"
+  grpc_port: 9001
+
+database:
+  host: "localhost"
+  port: 3306
+  name: "swit_db"
+  username: "root"
+  password: "password"
+
+consul:
+  address: "127.0.0.1:8500"
+  datacenter: "dc1"
 ```
 
 ### 认证服务配置 (switauth.yaml)
 ```yaml
-database:
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-  dbname: auth_service_db
 server:
+  host: "0.0.0.0"
   port: 8090
-serviceDiscovery:
-  address: "localhost:8500"
+
+database:
+  host: "localhost"
+  port: 3306
+  name: "swit_auth_db"
+  username: "root"
+  password: "password"
+
+jwt:
+  secret: "your-secret-key"
+  access_token_expiry: "15m"
+  refresh_token_expiry: "7d"
 ```
 
-## 开发指南
+## Docker 部署
 
-### 项目结构
-
-```
-swit/
-├── cmd/                    # 应用入口点
-│   ├── swit-serve/        # 主服务
-│   ├── swit-auth/         # 认证服务
-│   └── switctl/           # 控制工具
-├── internal/              # 内部包
-│   ├── switserve/         # 主服务内部逻辑
-│   ├── switauth/          # 认证服务内部逻辑
-│   └── switctl/           # 控制工具内部逻辑
-├── api/                   # API 定义
-│   └── proto/             # gRPC 协议定义
-├── pkg/                   # 公共包
-├── scripts/               # 脚本文件
-│   └── sql/               # 数据库脚本
-└── docs/                  # 文档
-```
-
-### 可用的 Make 命令
-
-- `make tidy`: 整理 Go 模块依赖
-- `make build`: 构建所有二进制文件
-- `make clean`: 清理输出目录
-- `make test`: 运行测试
-- `make test-coverage`: 运行测试并生成覆盖率报告
-- `make test-race`: 运行竞态条件检测测试
-- `make ci`: 运行完整的 CI 流程（tidy, copyright, quality, test）
-- `make image-serve`: 构建 Docker 镜像
-- `make swagger`: 生成/更新 OpenAPI 文档
-- `make swagger-install`: 安装 Swagger 文档生成工具
-- `make swagger-fmt`: 格式化 Swagger 注释
-
-### Docker 支持
-
-构建 Docker 镜像：
+### 构建镜像
 ```bash
-make image-serve
+make docker-build
 ```
 
-运行容器：
+### 运行容器
 ```bash
-docker run -d -p 9000:9000 -v ./swit.yaml:/root/swit.yaml swit-serve:master
+# 运行用户服务
+docker run -d -p 9000:9000 -p 9001:9001 --name swit-serve swit-serve:latest
+
+# 运行认证服务
+docker run -d -p 8090:8090 --name swit-auth swit-auth:latest
 ```
 
-## 数据库模式
+### 使用 Docker Compose
+```bash
+docker-compose up -d
+```
 
-### 用户表 (user_service_db.users)
-- `id`: UUID 主键
-- `username`: 用户名（唯一）
-- `email`: 邮箱地址（唯一）
-- `password_hash`: 加密后的密码
-- `role`: 用户角色
-- `is_active`: 是否激活
-- `created_at`/`updated_at`: 时间戳
+## 测试
 
-### 令牌表 (auth_service_db.tokens)
-- `id`: UUID 主键
-- `user_id`: 关联用户ID
-- `access_token`: 访问令牌
-- `refresh_token`: 刷新令牌
-- `access_expires_at`: 访问令牌过期时间
-- `refresh_expires_at`: 刷新令牌过期时间
-- `is_valid`: 令牌是否有效
+### 运行单元测试
+```bash
+make test
+```
+
+### 运行集成测试
+```bash
+make test-integration
+```
+
+### 测试覆盖率
+```bash
+make test-coverage
+```
+
+## 开发工具
+
+### 代码格式化
+```bash
+make fmt
+```
+
+### 代码检查
+```bash
+make lint
+```
+
+### 依赖检查
+```bash
+make deps
+```
+
+## 从旧版本升级
+
+请参考 [API 迁移指南](api/MIGRATION.md) 了解详细的升级步骤。
+
+主要变更：
+- 新的 API 目录结构
+- 使用 Buf 工具链管理 gRPC API
+- 更新的包名和导入路径
+- 新增的 HTTP/REST 端点支持
+
+## 相关文档
+
+- [开发指南](DEVELOPMENT-CN.md)
+- [API 文档](api/docs/README.md)
+- [API 迁移指南](api/MIGRATION.md)
+- [路由注册指南](docs/route-registry-guide.md)
+- [OpenAPI 集成](docs/openapi-integration.md)
 
 ## 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
-
----
-
-[English Documentation](README.md) 
+MIT License - 详见 [LICENSE](LICENSE) 文件 

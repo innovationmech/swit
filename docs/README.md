@@ -19,7 +19,7 @@ SWIT 是一个现代化的微服务框架，提供用户认证、内容管理等
 ## 服务文档
 
 ### 📊 API文档快速入口
-- **[统一API文档汇总](./generated/README.md)** - 🔗 所有服务的API文档统一访问入口
+- **[统一API文档汇总](./generated/)** - 🔗 所有服务的API文档统一访问入口
 
 ### 微服务架构
 
@@ -31,7 +31,7 @@ SWIT 是一个现代化的微服务框架，提供用户认证、内容管理等
 ### 详细文档导航
 
 #### 📋 API 规范文档
-- [**API文档汇总**](./generated/README.md) - 所有服务的生成文档统一入口
+- [**API文档汇总**](./generated/) - 所有服务的生成文档统一入口
 - [SwitServe 生成文档](../internal/switserve/docs/) - Swagger自动生成的API规范
 - [SwitAuth 生成文档](../internal/switauth/docs/) - 认证服务API规范
 

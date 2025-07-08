@@ -29,13 +29,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/innovationmech/swit/api/pb"
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/internal/switserve/service"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+
+	greeterv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/v1/greeter"
 )
 
 func (s *Server) runGRPCServer(wg *sync.WaitGroup) {
@@ -60,7 +61,7 @@ func (s *Server) runGRPCServer(wg *sync.WaitGroup) {
 	s.setGRPCServer(grpcServer)
 
 	// Register services
-	pb.RegisterGreeterServer(grpcServer, &service.GreeterService{})
+	greeterv1.RegisterGreeterServiceServer(grpcServer, &service.GreeterService{})
 
 	logger.Logger.Info("Starting gRPC server", zap.String("address", grpcAddr))
 
