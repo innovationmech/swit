@@ -46,7 +46,7 @@ package main
 import (
 	"os"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
+	"github.com/innovationmech/swit/internal/base/cli"
 	"github.com/innovationmech/swit/internal/switauth/cmd"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"

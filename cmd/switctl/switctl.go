@@ -25,7 +25,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
+	"github.com/innovationmech/swit/internal/base/cli"
 	"github.com/innovationmech/swit/internal/switctl/cmd"
 )
 

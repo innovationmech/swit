@@ -38,10 +38,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/config"
+	"github.com/innovationmech/swit/internal/switauth/db"
 	"github.com/innovationmech/swit/internal/switauth/handler"
 	"github.com/innovationmech/swit/internal/switauth/repository"
 	"github.com/innovationmech/swit/internal/switauth/service"
-	"github.com/innovationmech/swit/internal/switauth/store"
 )
 
 var cfg *config.AuthConfig
@@ -70,7 +70,7 @@ func NewServer() (*Server, error) {
 	s.sd = sd
 
 	userClient := client.NewUserClient(sd)
-	tokenRepo := repository.NewTokenRepository(store.GetDB())
+	tokenRepo := repository.NewTokenRepository(db.GetDB())
 	authService := service.NewAuthService(userClient, tokenRepo)
 	authController := handler.NewAuthController(authService)
 
