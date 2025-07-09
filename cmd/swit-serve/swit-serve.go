@@ -26,7 +26,7 @@ import (
 
 	"github.com/innovationmech/swit/pkg/logger"
 
-	"github.com/innovationmech/swit/internal/component-base/cli"
+	"github.com/innovationmech/swit/internal/base/cli"
 	"github.com/innovationmech/swit/internal/switserve/cmd"
 	"go.uber.org/zap"
 )

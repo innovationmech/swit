@@ -1,14 +1,14 @@
 .DEFAULT_GOAL := all
 
 # 导入所有子规则文件
-include scripts/make-rules/variables.mk
-include scripts/make-rules/build.mk
-include scripts/make-rules/test.mk
-include scripts/make-rules/docker.mk
-include scripts/make-rules/swagger.mk
-include scripts/make-rules/proto.mk
-include scripts/make-rules/dev.mk
-include scripts/make-rules/copyright.mk
+include scripts/mk/variables.mk
+include scripts/mk/build.mk
+include scripts/mk/test.mk
+include scripts/mk/docker.mk
+include scripts/mk/swagger.mk
+include scripts/mk/proto.mk
+include scripts/mk/dev.mk
+include scripts/mk/copyright.mk
 
 # 主要组合目标（优化版，避免重复执行）
 .PHONY: all
