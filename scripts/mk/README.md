@@ -14,7 +14,7 @@
   - 提供 `help` 目标
 
 ### 2. 变量定义文件
-- **位置**: `scripts/make-rules/variables.mk`
+- **位置**: `scripts/mk/variables.mk`
 - **功能**: 定义所有的变量
 - **主要内容**:
   - Go 工具链变量
@@ -23,7 +23,7 @@
   - 工具变量
 
 ### 3. 构建相关文件
-- **位置**: `scripts/make-rules/build.mk`
+- **位置**: `scripts/mk/build.mk`
 - **功能**: 包含所有构建相关的规则
 - **主要内容**:
   - `tidy`: 运行 go mod tidy
@@ -35,7 +35,7 @@
   - `clean`: 清理构建产物
 
 ### 4. 测试相关文件
-- **位置**: `scripts/make-rules/test.mk`
+- **位置**: `scripts/mk/test.mk`
 - **功能**: 包含所有测试相关的规则
 - **主要内容**:
   - `test`: 运行所有测试
@@ -45,7 +45,7 @@
   - `test-race`: 运行竞态检测测试
 
 ### 5. Docker 相关文件
-- **位置**: `scripts/make-rules/docker.mk`
+- **位置**: `scripts/mk/docker.mk`
 - **功能**: 包含所有 Docker 相关的规则
 - **主要内容**:
   - `image-serve`: 构建 swit-serve Docker 镜像
@@ -53,7 +53,7 @@
   - `image-all`: 构建所有 Docker 镜像
 
 ### 6. Swagger 相关文件
-- **位置**: `scripts/make-rules/swagger.mk`
+- **位置**: `scripts/mk/swagger.mk`
 - **功能**: 包含所有 Swagger 文档相关的规则
 - **主要内容**:
   - `swagger-install`: 安装 swag 工具
@@ -64,7 +64,7 @@
   - `swagger-copy`: 创建统一的文档访问链接
 
 ### 7. 开发环境相关文件
-- **位置**: `scripts/make-rules/dev.mk`
+- **位置**: `scripts/mk/dev.mk`
 - **功能**: 包含开发环境设置和 CI 相关的规则
 - **主要内容**:
   - `install-hooks`: 安装 Git 钩子
@@ -72,7 +72,7 @@
   - `ci`: 运行 CI 流水线
 
 ### 8. 版权相关文件
-- **位置**: `scripts/make-rules/copyright.mk`
+- **位置**: `scripts/mk/copyright.mk`
 - **功能**: 包含版权检查和添加相关的规则
 - **主要内容**:
   - `copyright-check`: 检查版权声明（基于哈希比较）
