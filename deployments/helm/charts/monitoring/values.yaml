@@ -1,0 +1,45 @@
+# 监控组件配置
+monitoring:
+  enabled: true
+  
+  # Prometheus 配置
+  prometheus:
+    enabled: true
+    image: prom/prometheus:v2.45.0
+    port: 9090
+    replicas: 1
+    
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    
+    storage:
+      enabled: true
+      size: 5Gi
+      storageClass: "standard"
+    
+    config:
+      scrapeInterval: 15s
+      evaluationInterval: 15s
+      
+  # ServiceMonitor 配置
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    targets:
+      - name: swit-auth
+        port: 9001
+        path: /metrics
+      - name: swit-serve  
+        port: 9000
+        path: /metrics
+
+# 服务配置
+service:
+  type: ClusterIP
+  ports:
+    prometheus: 9090 

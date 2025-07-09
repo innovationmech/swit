@@ -1,0 +1,44 @@
+{{- if .Values.switAuth.enabled }}
+# Swit Auth 内部服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "swit.auth.fullname" . }}-service
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.auth.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.switAuth.service.type }}
+  ports:
+    - port: {{ .Values.switAuth.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "swit.auth.selectorLabels" . | nindent 4 }}
+
+{{- if .Values.switAuth.external.enabled }}
+---
+# Swit Auth 外部服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "swit.auth.fullname" . }}-external
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.auth.labels" . | nindent 4 }}
+    service-type: external
+spec:
+  type: {{ .Values.switAuth.external.service.type }}
+  ports:
+    - port: {{ .Values.switAuth.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+      {{- if and (eq .Values.switAuth.external.service.type "NodePort") .Values.switAuth.external.service.nodePort }}
+      nodePort: {{ .Values.switAuth.external.service.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "swit.auth.selectorLabels" . | nindent 4 }}
+{{- end }}
+{{- end }} 

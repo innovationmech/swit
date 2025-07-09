@@ -1,0 +1,52 @@
+{{- if .Values.consul.enabled }}
+# Consul 内部服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "swit.consul.fullname" . }}-service
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.consul.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.consul.service.type }}
+  ports:
+    - port: {{ .Values.consul.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.consul.service.dnsPortTcp }}
+      targetPort: dns-tcp
+      protocol: TCP
+      name: dns-tcp
+    - port: {{ .Values.consul.service.dnsPortUdp }}
+      targetPort: dns-udp
+      protocol: UDP
+      name: dns-udp
+  selector:
+    {{- include "swit.consul.selectorLabels" . | nindent 4 }}
+
+{{- if .Values.consul.ui.enabled }}
+---
+# Consul UI 外部服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "swit.consul.fullname" . }}-ui
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.consul.labels" . | nindent 4 }}
+    service-type: ui
+spec:
+  type: {{ .Values.consul.ui.service.type }}
+  ports:
+    - port: {{ .Values.consul.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+      {{- if and (eq .Values.consul.ui.service.type "NodePort") .Values.consul.ui.service.nodePort }}
+      nodePort: {{ .Values.consul.ui.service.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "swit.consul.selectorLabels" . | nindent 4 }}
+{{- end }}
+{{- end }} 

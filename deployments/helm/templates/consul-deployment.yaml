@@ -1,0 +1,79 @@
+{{- if .Values.consul.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "swit.consul.fullname" . }}
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.consul.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "swit.consul.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "swit.consul.labels" . | nindent 8 }}
+    spec:
+      {{- include "swit.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: consul
+          image: "{{ .Values.consul.image.repository }}:{{ .Values.consul.image.tag }}"
+          imagePullPolicy: {{ .Values.consul.image.pullPolicy }}
+          command:
+            - consul
+            - agent
+            - -server
+            - -bootstrap-expect=1
+            - -data-dir=/consul/data
+            - -ui
+            - -bind=0.0.0.0
+            - -client=0.0.0.0
+            - -log-level=INFO
+          ports:
+            - name: http
+              containerPort: 8500
+              protocol: TCP
+            - name: dns-tcp
+              containerPort: 8600
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 8600
+              protocol: UDP
+          {{- if .Values.consul.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /v1/status/leader
+              port: 8500
+            initialDelaySeconds: {{ .Values.consul.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.consul.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.consul.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.consul.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.consul.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /v1/status/leader
+              port: 8500
+            initialDelaySeconds: {{ .Values.consul.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.consul.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.consul.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.consul.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.consul.resources | nindent 12 }}
+          volumeMounts:
+            - name: consul-data
+              mountPath: /consul/data
+      volumes:
+        - name: consul-data
+          {{- if .Values.consul.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "swit.consul.fullname" . }}-pvc
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }} 

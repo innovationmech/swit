@@ -1,0 +1,15 @@
+apiVersion: v2
+name: monitoring
+description: Swit 监控组件子 Chart - 包含基础监控功能
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - monitoring
+  - prometheus
+  - metrics
+
+maintainers:
+  - name: Swit Team
+    email: team@swit.com 

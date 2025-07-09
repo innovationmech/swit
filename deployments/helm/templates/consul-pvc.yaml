@@ -1,0 +1,18 @@
+{{- if and .Values.consul.enabled .Values.consul.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "swit.consul.fullname" . }}-pvc
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.consul.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- range .Values.consul.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.consul.persistence.size | quote }}
+  {{- include "swit.storageClass" (dict "persistence" .Values.consul.persistence "global" .Values.global) }}
+{{- end }} 

@@ -1,0 +1,89 @@
+{{- if .Values.mysql.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "swit.mysql.fullname" . }}
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.mysql.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "swit.mysql.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "swit.mysql.labels" . | nindent 8 }}
+    spec:
+      {{- include "swit.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: mysql
+          image: "{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "swit.fullname" . }}-secret
+                  key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: ""
+            - name: MYSQL_USER
+              value: {{ .Values.mysql.auth.username | quote }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "swit.fullname" . }}-secret
+                  key: mysql-password
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+          {{- if .Values.mysql.livenessProbe.enabled }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  mysqladmin ping -h 127.0.0.1 -u root -p$MYSQL_ROOT_PASSWORD
+            initialDelaySeconds: {{ .Values.mysql.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.mysql.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.mysql.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.mysql.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.mysql.readinessProbe.enabled }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  mysql -h 127.0.0.1 -u root -p$MYSQL_ROOT_PASSWORD -e 'SELECT 1'
+            initialDelaySeconds: {{ .Values.mysql.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.mysql.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.mysql.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.mysql.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.mysql.resources | nindent 12 }}
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: mysql-init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: mysql-data
+          {{- if .Values.mysql.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "swit.mysql.fullname" . }}-pvc
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: mysql-init
+          configMap:
+            name: {{ include "swit.fullname" . }}-mysql-init
+{{- end }} 

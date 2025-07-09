@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: swit
+  labels:
+    app: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        ports:
+        - containerPort: 3306
+          name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: swit-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_CHARACTER_SET_SERVER
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: MYSQL_CHARACTER_SET_SERVER
+        - name: MYSQL_COLLATION_SERVER
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: MYSQL_COLLATION_SERVER
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: init-sql
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        livenessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+            - -u
+            - root
+            - -proot
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - mysqladmin
+            - ping
+            - -h
+            - localhost
+            - -u
+            - root
+            - -proot
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: mysql-data
+        persistentVolumeClaim:
+          claimName: mysql-pvc
+      - name: init-sql
+        configMap:
+          name: mysql-init-sql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+  namespace: swit
+  labels:
+    app: mysql
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306
+    name: mysql
+  type: ClusterIP
+
+---
+# MySQL 初始化 SQL ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-sql
+  namespace: swit
+  labels:
+    app: mysql
+data:
+  01-auth_service_db.sql: |
+    -- Create auth_service_db database
+    CREATE DATABASE IF NOT EXISTS auth_service_db DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+    -- Use auth_service_db database
+    USE auth_service_db;
+
+    -- Create or modify tokens table
+    CREATE TABLE IF NOT EXISTS tokens (
+        id CHAR(36) NOT NULL PRIMARY KEY,        -- UUID string, primary key
+        user_id CHAR(36) NOT NULL,               -- Associated user ID
+        access_token TEXT NOT NULL,              -- Access token string
+        refresh_token TEXT NOT NULL,             -- Refresh token string
+        access_expires_at TIMESTAMP NOT NULL,    -- Access token expiration time
+        refresh_expires_at TIMESTAMP NOT NULL,   -- Refresh token expiration time
+        is_valid BOOLEAN NOT NULL DEFAULT TRUE,  -- Whether the token is valid
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- Record creation time
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP  -- Record update time
+    );
+  
+  02-user_service_db.sql: |
+    -- Create user_service_db database
+    CREATE DATABASE IF NOT EXISTS user_service_db DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+    -- Use user_service_db database
+    USE user_service_db;
+
+    -- Create users table
+    CREATE TABLE IF NOT EXISTS users (
+        id CHAR(36) NOT NULL PRIMARY KEY,          -- UUID string, primary key
+        username VARCHAR(50) NOT NULL UNIQUE,      -- Username, unique constraint
+        email VARCHAR(100) NOT NULL UNIQUE,        -- Email, unique constraint
+        password_hash VARCHAR(255) NOT NULL,       -- Encrypted password hash
+        role VARCHAR(20) NOT NULL DEFAULT 'user',  -- User role, default is 'user'
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,   -- Whether the user is active
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- Record creation time
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP  -- Record update time
+    ); 

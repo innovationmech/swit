@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consul
+  namespace: swit
+  labels:
+    app: consul
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consul
+  template:
+    metadata:
+      labels:
+        app: consul
+    spec:
+      containers:
+      - name: consul
+        image: consul:1.15
+        ports:
+        - containerPort: 8500
+          name: http
+        - containerPort: 8600
+          name: dns-tcp
+          protocol: TCP
+        - containerPort: 8600
+          name: dns-udp
+          protocol: UDP
+        command:
+        - consul
+        - agent
+        - -server
+        - -bootstrap
+        - -ui
+        - -data-dir=/consul/data
+        - -config-dir=/consul/config
+        - -client=0.0.0.0
+        - -bind=0.0.0.0
+        volumeMounts:
+        - name: consul-data
+          mountPath: /consul/data
+        livenessProbe:
+          exec:
+            command:
+            - consul
+            - members
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /v1/status/leader
+            port: 8500
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: consul-data
+        persistentVolumeClaim:
+          claimName: consul-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: consul-service
+  namespace: swit
+  labels:
+    app: consul
+spec:
+  selector:
+    app: consul
+  ports:
+  - port: 8500
+    targetPort: 8500
+    name: http
+  - port: 8600
+    targetPort: 8600
+    protocol: TCP
+    name: dns-tcp
+  - port: 8600
+    targetPort: 8600
+    protocol: UDP
+    name: dns-udp
+  type: ClusterIP
+
+---
+# Consul UI 外部访问（可选）
+apiVersion: v1
+kind: Service
+metadata:
+  name: consul-ui
+  namespace: swit
+  labels:
+    app: consul
+    service: ui
+spec:
+  selector:
+    app: consul
+  ports:
+  - port: 8500
+    targetPort: 8500
+    name: http
+    nodePort: 30850
+  type: NodePort 

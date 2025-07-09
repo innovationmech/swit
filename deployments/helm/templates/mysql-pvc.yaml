@@ -1,0 +1,18 @@
+{{- if and .Values.mysql.enabled .Values.mysql.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "swit.mysql.fullname" . }}-pvc
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.mysql.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- range .Values.mysql.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.mysql.persistence.size | quote }}
+  {{- include "swit.storageClass" (dict "persistence" .Values.mysql.persistence "global" .Values.global) }}
+{{- end }} 

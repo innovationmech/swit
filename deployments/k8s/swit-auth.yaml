@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swit-auth
+  namespace: swit
+  labels:
+    app: swit-auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: swit-auth
+  template:
+    metadata:
+      labels:
+        app: swit-auth
+    spec:
+      containers:
+      - name: swit-auth
+        image: swit-auth:latest
+        imagePullPolicy: Never  # 使用本地构建的镜像
+        ports:
+        - containerPort: 9001
+          name: http
+        env:
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: DATABASE_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: DATABASE_PORT
+        - name: DATABASE_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: DATABASE_USERNAME
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: swit-secret
+              key: DATABASE_PASSWORD
+        - name: DATABASE_DBNAME
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: AUTH_DATABASE_DBNAME
+        - name: SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: AUTH_SERVER_PORT
+        - name: SERVICE_DISCOVERY_ADDRESS
+          valueFrom:
+            configMapKeyRef:
+              name: swit-config
+              key: SERVICE_DISCOVERY_ADDRESS
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: swit-secret
+              key: JWT_SECRET
+        volumeMounts:
+        - name: config
+          mountPath: /root/switauth.yaml
+          subPath: switauth.yaml
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: config
+        configMap:
+          name: swit-auth-config
+      initContainers:
+      - name: wait-for-mysql
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "等待 MySQL 服务就绪..."
+          until nc -z mysql-service 3306; do
+            echo "MySQL 未就绪，等待中..."
+            sleep 2
+          done
+          echo "MySQL 已就绪"
+      - name: wait-for-consul
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "等待 Consul 服务就绪..."
+          until nc -z consul-service 8500; do
+            echo "Consul 未就绪，等待中..."
+            sleep 2
+          done
+          echo "Consul 已就绪"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: swit-auth-service
+  namespace: swit
+  labels:
+    app: swit-auth
+spec:
+  selector:
+    app: swit-auth
+  ports:
+  - port: 9001
+    targetPort: 9001
+    name: http
+  type: ClusterIP
+
+---
+# 认证服务外部访问（可选）
+apiVersion: v1
+kind: Service
+metadata:
+  name: swit-auth-external
+  namespace: swit
+  labels:
+    app: swit-auth
+    service: external
+spec:
+  selector:
+    app: swit-auth
+  ports:
+  - port: 9001
+    targetPort: 9001
+    name: http
+    nodePort: 30901
+  type: NodePort 
