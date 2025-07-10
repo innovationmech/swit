@@ -1,4 +1,5 @@
 # 变量定义
+PROJECT_ROOT := $(shell pwd)
 GO := go
 GOFMT := gofmt
 GOVET := $(GO) vet

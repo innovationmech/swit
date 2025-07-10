@@ -93,7 +93,7 @@ jobs:
           ${{ runner.os }}-generated-
 
     - name: Install dependencies (if cache miss)
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: needs.setup.outputs.cache-hit != 'true'
       run: go mod download
 
     # 使用快速测试模式，跳过依赖生成
@@ -146,7 +146,7 @@ jobs:
           ${{ runner.os }}-generated-
 
     - name: Install dependencies (if cache miss)
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: needs.setup.outputs.cache-hit != 'true'
       run: go mod download
 
     # 使用快速构建模式，跳过质量检查

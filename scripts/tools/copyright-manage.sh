@@ -92,18 +92,24 @@ get_go_files() {
         -not -path './_output/*' \
         -not -path './vendor/*' \
         -not -path './internal/*/docs/docs.go' \
+        -not -path './docs/generated/*' \
         2>/dev/null || true
 }
 
 # 函数：获取标准版权声明哈希值
 get_standard_copyright_hash() {
-    sed 's/^/\/\/ /' "$BOILERPLATE_FILE" | shasum -a 256 | cut -d' ' -f1
+    awk '{if($0=="") print "//"; else print "// " $0}' "$BOILERPLATE_FILE" | shasum -a 256 | cut -d' ' -f1
 }
 
 # 函数：获取文件的版权声明哈希值
 get_file_copyright_hash() {
     local file=$1
-    awk '/^\/\/ Copyright/{found=1} found && !/^\/\//{found=0; exit} found{print}' "$file" | shasum -a 256 | cut -d' ' -f1
+    awk '
+    /^\/\/ Copyright/ { found=1 }
+    found && /^$/ { exit }
+    found && /^\/\// { print }
+    found && /^[^\/]/ { exit }
+    ' "$file" | shasum -a 256 | cut -d' ' -f1
 }
 
 # 函数：检查文件是否有版权声明
@@ -187,7 +193,7 @@ add_copyright() {
     local temp_file=$(mktemp)
     
     # 添加版权声明
-    sed 's/^/\/\/ /' "$BOILERPLATE_FILE" > "$temp_file"
+    awk '{if($0=="") print "//"; else print "// " $0}' "$BOILERPLATE_FILE" > "$temp_file"
     echo "" >> "$temp_file"
     cat "$file" >> "$temp_file"
     
@@ -211,7 +217,7 @@ update_copyright() {
     local temp_content=$(mktemp)
     
     # 生成新的版权声明
-    sed 's/^/\/\/ /' "$BOILERPLATE_FILE" > "$temp_copyright"
+    awk '{if($0=="") print "//"; else print "// " $0}' "$BOILERPLATE_FILE" > "$temp_copyright"
     echo "" >> "$temp_copyright"
     
     # 提取文件内容（去除旧的版权声明）
@@ -268,10 +274,12 @@ manage_copyright() {
     if [ ${#missing_files[@]} -eq 0 ] && [ ${#outdated_files[@]} -eq 0 ]; then
         echo ""
         log_success "🎉 所有文件的版权声明都是最新的！"
+        return 0
     else
         echo ""
         log_info "🔍 重新检查结果..."
         check_copyright
+        return $?
     fi
 }
 
@@ -521,7 +529,7 @@ show_summary() {
         local with_copyright=0
         for file in "${go_files[@]}"; do
             if has_copyright "$file"; then
-                ((with_copyright++))
+                with_copyright=$((with_copyright + 1))
             fi
         done
         
@@ -580,11 +588,14 @@ main() {
     
     # 执行相应模式
     local start_time=$(date +%s)
+    local exit_code=0
     
     if [ "$CHECK_ONLY" = "true" ]; then
         check_copyright
+        exit_code=$?
     elif [ "$SETUP_MODE" = "true" ]; then
         setup_copyright
+        exit_code=$?
     elif [ "$ADVANCED_MODE" = "true" ]; then
         if [ -z "$ADVANCED_OPERATION" ]; then
             log_error "高级模式需要指定操作类型"
@@ -592,9 +603,11 @@ main() {
             exit 1
         fi
         advanced_operations "$ADVANCED_OPERATION"
+        exit_code=$?
     else
         # 默认模式：标准版权管理
         manage_copyright
+        exit_code=$?
     fi
     
     local end_time=$(date +%s)
@@ -606,6 +619,9 @@ main() {
     # 显示总结
     echo ""
     show_summary
+    
+    # 返回适当的退出码
+    exit $exit_code
 }
 
 # 运行主函数
