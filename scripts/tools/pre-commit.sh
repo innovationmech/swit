@@ -21,7 +21,6 @@ fi
 # Get the list of staged files
 STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
 STAGED_PROTO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.proto$' || true)
-STAGED_SWAGGER_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(go|yaml|yml|json)$' || true)
 
 # Check if there are any staged files that need checking
 if [ -z "$STAGED_GO_FILES" ] && [ -z "$STAGED_PROTO_FILES" ]; then
@@ -62,7 +61,7 @@ if [ -n "$STAGED_PROTO_FILES" ]; then
     if command -v buf &> /dev/null; then
         if [ -d "api" ]; then
             echo "🎨 Formatting proto files..."
-            make proto-format
+            make proto-advanced OPERATION=format
             
             # Check if formatting changed anything in staged files
             FORMATTED_PROTO_FILES=$(git diff --name-only $STAGED_PROTO_FILES || true)
@@ -75,11 +74,11 @@ if [ -n "$STAGED_PROTO_FILES" ]; then
             
             # Lint proto files
             echo "🔍 Linting proto files..."
-            make proto-lint
+            make proto-advanced OPERATION=lint
             
             # Generate protobuf code for testing (but don't require staging)
             echo "⚙️  Generating protobuf code for testing..."
-            make proto-generate
+            make proto
             echo "ℹ️  Generated protobuf code is for testing only and will not be committed"
             
             REGENERATE_DOCS=true
@@ -88,7 +87,7 @@ if [ -n "$STAGED_PROTO_FILES" ]; then
         fi
     else
         echo "⚠️  Buf CLI not installed, skipping proto checks"
-        echo "Install with: make buf-install"
+        echo "Install with: make proto-setup"
     fi
 fi
 
@@ -136,41 +135,13 @@ if [ -n "$STAGED_GO_FILES" ]; then
     STAGED_GO_FILES_WITHOUT_DOCS=$(echo $STAGED_GO_FILES | tr ' ' '\n' | grep -v '/docs/docs.go$' || true)
     
     if [ -n "$STAGED_GO_FILES_WITHOUT_DOCS" ]; then
-        MISSING_COPYRIGHT=""
-        OUTDATED_COPYRIGHT=""
-        
-        # Check for missing copyright
-        for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
-            if ! grep -q "Copyright" "$file" 2>/dev/null; then
-                MISSING_COPYRIGHT="$MISSING_COPYRIGHT $file"
-            fi
-        done
-        
-        # Check for outdated copyright (simplified check)
-        if [ -f "scripts/boilerplate.txt" ]; then
-            for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
-                if grep -q "Copyright" "$file" 2>/dev/null; then
-                    if ! grep -q "$(date +%Y)" "$file" 2>/dev/null; then
-                        OUTDATED_COPYRIGHT="$OUTDATED_COPYRIGHT $file"
-                    fi
-                fi
-            done
-        fi
-        
-        if [ -n "$MISSING_COPYRIGHT" ] || [ -n "$OUTDATED_COPYRIGHT" ]; then
-            echo "⚠️  Copyright issues found:"
-            [ -n "$MISSING_COPYRIGHT" ] && echo "  Missing: $MISSING_COPYRIGHT"
-            [ -n "$OUTDATED_COPYRIGHT" ] && echo "  Outdated: $OUTDATED_COPYRIGHT"
-            echo "🔧 Fixing copyright statements..."
-            make copyright-add 2>/dev/null || true
-            make copyright-update 2>/dev/null || true
-            
-            # Check if copyright changes were made
-            if ! git diff --exit-code $STAGED_GO_FILES_WITHOUT_DOCS > /dev/null 2>&1; then
-                echo "⚠️  Copyright statements were updated"
-                echo "Please stage the changes and commit again"
-                exit 1
-            fi
+        # 直接用新版命令自动修复
+        make copyright
+        # 检查是否有变更
+        if ! git diff --exit-code $STAGED_GO_FILES_WITHOUT_DOCS > /dev/null 2>&1; then
+            echo "⚠️  Copyright statements were updated"
+            echo "Please stage the changes and commit again"
+            exit 1
         else
             echo "✅ All staged Go files have proper copyright statements"
         fi
@@ -183,13 +154,11 @@ if [ -n "$STAGED_GO_FILES" ]; then
         # Check if swag is installed
         if command -v swag &> /dev/null; then
             echo "⚙️  Generating Swagger documentation for testing..."
-            
-            # Use optimized swagger generation
-            make swagger-fmt swagger-switserve swagger-switauth swagger-copy
+            make swagger
             echo "ℹ️  Generated Swagger documentation is for testing only and will not be committed"
         else
             echo "⚠️  Swag tool not installed, skipping Swagger doc generation"
-            echo "Install with: make swagger-install"
+            echo "Install with: make swagger-setup"
         fi
     fi
 

@@ -1,108 +1,68 @@
 # Protobuf 相关规则
+# 统一使用 scripts/tools/proto-generate.sh 作为后端
 
-# Buf 工具安装
-.PHONY: buf-install
-buf-install:
-	@echo "Installing Buf CLI"
-	@if ! command -v $(BUF) &> /dev/null; then \
-		echo "Installing buf..."; \
-		$(GO) install github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION); \
-	else \
-		echo "buf is already installed"; \
-	fi
+# =============================================================================
+# 核心Proto目标 (用户主要使用)
+# =============================================================================
 
-# 下载 protobuf 依赖
-.PHONY: proto-deps
-proto-deps: buf-install
-	@echo "Downloading protobuf dependencies"
-	@cd $(API_DIR) && $(BUF) mod update
-
-# 跳过依赖下载的快速生成（用于开发）
-.PHONY: proto-generate-dev
-proto-generate-dev: buf-install
-	@echo "Generating protobuf code (dev mode - skipping deps)"
-	@cd $(API_DIR) && \
-	if $(BUF) generate --exclude-imports; then \
-		echo "✅ Protobuf code generation completed (dev mode)"; \
-	else \
-		echo "❌ Protobuf code generation failed"; \
-		echo "💡 Try using 'make proto-generate' for full generation with dependencies"; \
-		exit 1; \
-	fi
-
-# 生成 protobuf 代码（带重试逻辑）
-.PHONY: proto-generate
-proto-generate: proto-deps
-	@echo "Generating protobuf code"
-	@cd $(API_DIR) && \
-	for i in 1 2 3; do \
-		echo "🔄 Attempt $$i/3..."; \
-		if $(BUF) generate 2>&1; then \
-			echo "✅ Protobuf code generation completed"; \
-			exit 0; \
-		else \
-			if [ $$i -lt 3 ]; then \
-				echo "⚠️  Generation failed, waiting 30 seconds before retry..."; \
-				sleep 30; \
-			else \
-				echo "❌ Protobuf code generation failed after 3 attempts"; \
-				echo "💡 This might be due to BSR rate limits or network issues"; \
-				echo "📖 See: https://buf.build/docs/bsr/rate-limits/"; \
-				echo "🔧 Try running 'make proto-generate' again in a few minutes"; \
-				exit 1; \
-			fi; \
-		fi; \
-	done
-
-
-
-# 检查 protobuf 文件
-.PHONY: proto-lint
-proto-lint: buf-install
-	@echo "Linting protobuf files"
-	@cd $(API_DIR) && $(BUF) lint
-
-# 检查破坏性变更
-.PHONY: proto-breaking
-proto-breaking: buf-install
-	@echo "Checking for breaking changes"
-	@cd $(API_DIR) && $(BUF) breaking --against '.git#branch=main'
-
-# 格式化 protobuf 文件
-.PHONY: proto-format
-proto-format: buf-install
-	@echo "Formatting protobuf files"
-	@cd $(API_DIR) && $(BUF) format -w
-
-# 清理生成的 protobuf 代码
-.PHONY: proto-clean
-proto-clean: clean-proto
-
-# 完整的 protobuf 工作流
+# 主要proto命令 - 标准代码生成（推荐使用）
 .PHONY: proto
-proto: proto-format proto-lint proto-generate
-	@echo "Protobuf generation completed"
+proto:
+	@echo "🔧 标准proto代码生成（推荐用于开发和发布）"
+	@scripts/tools/proto-generate.sh
+	@echo ""
+	@echo "💡 快速提示："
+	@echo "  make proto-dev     # 快速开发模式（跳过依赖下载）"
+	@echo "  make proto-setup   # 首次环境设置"
 
-# 设置 protobuf 开发环境
+# 快速开发模式 - 跳过依赖下载，最快生成速度
+.PHONY: proto-dev
+proto-dev:
+	@echo "🚀 快速proto代码生成（开发模式）"
+	@scripts/tools/proto-generate.sh --dev
+
+# 环境设置 - 安装工具和下载依赖（首次使用）
 .PHONY: proto-setup
-proto-setup: buf-install proto-deps
-	@echo "Protobuf development environment setup completed"
+proto-setup:
+	@echo "⚙️  设置protobuf开发环境"
+	@scripts/tools/proto-generate.sh --setup
 
-# 验证 protobuf 配置
-.PHONY: proto-validate
-proto-validate: buf-install
-	@echo "Validating protobuf configuration"
-	@cd $(API_DIR) && $(BUF) mod ls-lint-rules
-	@cd $(API_DIR) && $(BUF) mod ls-breaking-rules
-	@echo "Protobuf configuration validation completed"
-
-# 生成 OpenAPI 文档
-.PHONY: proto-docs
-proto-docs: proto-generate
-	@echo "Generating OpenAPI documentation"
-	@if [ -d "$(API_DIR)/gen/openapiv2" ]; then \
-		echo "OpenAPI documentation generated at: $(API_DIR)/gen/openapiv2/"; \
-		find $(API_DIR)/gen/openapiv2 -name "*.json" -o -name "*.yaml" | head -5; \
+# 高级proto操作 - 支持所有参数的灵活命令
+.PHONY: proto-advanced
+proto-advanced:
+	@echo "⚙️  高级proto操作"
+	@if [ -z "$(OPERATION)" ]; then \
+		echo "用法: make proto-advanced OPERATION=操作类型"; \
+		echo ""; \
+		echo "支持的操作:"; \
+		echo "  format     - 格式化proto文件"; \
+		echo "  lint       - 检查proto语法"; \
+		echo "  breaking   - 检查破坏性变更"; \
+		echo "  clean      - 清理生成的代码"; \
+		echo "  docs       - 生成OpenAPI文档"; \
+		echo "  validate   - 验证proto配置"; \
+		echo "  dry-run    - 查看命令（试运行）"; \
+		echo ""; \
+		echo "示例:"; \
+		echo "  make proto-advanced OPERATION=format"; \
+		echo "  make proto-advanced OPERATION=lint"; \
+		echo "  make proto-advanced OPERATION=clean"; \
+		echo "  make proto-advanced OPERATION=dry-run"; \
 	else \
-		echo "No OpenAPI documentation found"; \
+		case "$(OPERATION)" in \
+			format) scripts/tools/proto-generate.sh --format ;; \
+			lint) scripts/tools/proto-generate.sh --lint ;; \
+			breaking) scripts/tools/proto-generate.sh --breaking ;; \
+			clean) scripts/tools/proto-generate.sh --clean ;; \
+			docs) scripts/tools/proto-generate.sh --docs ;; \
+			validate) scripts/tools/proto-generate.sh --validate ;; \
+			dry-run) scripts/tools/proto-generate.sh --dry-run ;; \
+			*) echo "❌ 未知操作: $(OPERATION)"; echo "运行 'make proto-advanced' 查看支持的操作" ;; \
+		esac \
 	fi
+
+# =============================================================================
+# 内部清理目标 (已迁移到clean.mk)
+# =============================================================================
+# 注意: proto清理功能已迁移到 scripts/mk/clean.mk
+# 这里保留内部目标供构建流程使用

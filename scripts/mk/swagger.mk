@@ -1,56 +1,76 @@
-# Swagger 相关规则
+# ==================================================================================
+# SWIT Swagger文档管理
+# ==================================================================================
+# 基于统一的swagger管理脚本，提供4个核心命令
+# 参考: scripts/tools/swagger-manage.sh
 
-# Clean old swagger documentation
-.PHONY: swagger-clean
-swagger-clean: clean-swagger
+SWAGGER_SCRIPT := scripts/tools/swagger-manage.sh
 
-.PHONY: swagger-install
-swagger-install:
-	@echo "Installing swag tool"
-	@$(GO) install github.com/swaggo/swag/cmd/swag@v1.8.12
-	@echo "swag tool installed"
+# ==================================================================================
+# 核心Commands (推荐使用)
+# ==================================================================================
 
-# Generate Swagger documentation for all services
+# 主要swagger文档生成（格式化+生成+整理）
 .PHONY: swagger
-swagger: swagger-fmt swagger-switserve swagger-switauth swagger-copy
-	@echo "All Swagger documentation generated and organized"
+swagger:
+	@echo "📚 标准swagger文档生成（推荐用于开发和发布）"
+	@$(SWAGGER_SCRIPT)
+	@echo ""
+	@echo "💡 快速提示："
+	@echo "  make swagger-dev     # 快速开发模式（跳过格式化）"
+	@echo "  make swagger-setup   # 首次环境设置"
 
-# Generate Swagger documentation for switserve
-.PHONY: swagger-switserve
-swagger-switserve:
-	@echo "Generating Swagger documentation for switserve"
-	@mkdir -p docs/generated/switserve
-	@$(SWAG) init -g cmd/swit-serve/swit-serve.go -o docs/generated/switserve --parseDependency --parseInternal --exclude internal/switauth
-	@echo "SwitServe Swagger documentation generated"
-	@echo "All files: docs/generated/switserve/"
+# 快速开发模式 - 跳过格式化，加速开发迭代
+.PHONY: swagger-dev
+swagger-dev:
+	@echo "🚀 快速swagger文档生成（开发模式）"
+	@$(SWAGGER_SCRIPT) --dev
 
-# Generate Swagger documentation for switauth
-.PHONY: swagger-switauth
-swagger-switauth:
-	@echo "Generating Swagger documentation for switauth"
-	@mkdir -p docs/generated/switauth
-	@$(SWAG) init -g cmd/swit-auth/swit-auth.go -o docs/generated/switauth --parseDependency --parseInternal --exclude internal/switserve
-	@echo "SwitAuth Swagger documentation generated"
-	@echo "All files: docs/generated/switauth/"
+# 环境设置 - 安装swag工具（首次使用）
+.PHONY: swagger-setup
+swagger-setup:
+	@echo "⚙️  设置swagger开发环境"
+	@$(SWAGGER_SCRIPT) --setup
 
-# Format Swagger annotations for all services
-.PHONY: swagger-fmt
-swagger-fmt: swagger-fmt-switserve swagger-fmt-switauth
-	@echo "All Swagger annotations formatted"
+# 高级swagger操作 - 支持所有参数的灵活命令
+.PHONY: swagger-advanced
+swagger-advanced:
+	@echo "⚙️  高级swagger操作"
+	@if [ -z "$(OPERATION)" ]; then \
+		echo "❌ 错误: 需要指定 OPERATION 参数"; \
+		echo "💡 用法: make swagger-advanced OPERATION=<操作类型>"; \
+		echo "📝 支持的操作: format, switserve, switauth, copy, clean, validate"; \
+		echo "📖 示例: make swagger-advanced OPERATION=format"; \
+		exit 1; \
+	fi
+	@$(SWAGGER_SCRIPT) --advanced $(OPERATION)
 
-.PHONY: swagger-fmt-switserve
-swagger-fmt-switserve:
-	@echo "Formatting Swagger annotations for switserve"
-	@$(SWAG) fmt -g cmd/swit-serve
-	@echo "SwitServe Swagger annotations formatted"
+# ==================================================================================
+# 内部清理目标 (已迁移到clean.mk)
+# ==================================================================================
+# 注意: swagger清理功能已迁移到 scripts/mk/clean.mk
 
-.PHONY: swagger-fmt-switauth
-swagger-fmt-switauth:
-	@echo "Formatting Swagger annotations for switauth"
-	@$(SWAG) fmt -g cmd/swit-auth
-	@echo "SwitAuth Swagger annotations formatted"
+# ==================================================================================
+# 帮助信息
+# ==================================================================================
 
-# Copy generated docs to unified location for easy access
-.PHONY: swagger-copy
-swagger-copy: swagger-switserve swagger-switauth
-	@echo "All Swagger documentation generated and organized" 
+.PHONY: swagger-help
+swagger-help:
+	@echo "📋 SWIT Swagger文档管理命令 (精简版)"
+	@echo ""
+	@echo "🎯 核心命令 (推荐使用):"
+	@echo "  swagger               标准swagger文档生成 (格式化+生成+整理)"
+	@echo "  swagger-dev           快速开发模式 (跳过格式化，加速迭代)"
+	@echo "  swagger-setup         环境设置 (安装swag工具)"
+	@echo "  swagger-advanced      高级操作 (需要 OPERATION 参数)"
+	@echo ""
+	@echo "⚙️  高级操作示例:"
+	@echo "  make swagger-advanced OPERATION=format      格式化swagger注释"
+	@echo "  make swagger-advanced OPERATION=switserve   只生成switserve文档"
+	@echo "  make swagger-advanced OPERATION=switauth    只生成switauth文档"
+	@echo "  make swagger-advanced OPERATION=copy        整理文档位置"
+	@echo "  make swagger-advanced OPERATION=clean       清理生成文档"
+	@echo "  make swagger-advanced OPERATION=validate    验证swagger配置"
+	@echo ""
+	@echo "📖 直接使用脚本:"
+	@echo "  $(SWAGGER_SCRIPT) --help" 

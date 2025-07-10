@@ -1,141 +1,56 @@
 # 构建相关规则
+# 注意: 代码质量相关功能已迁移到 scripts/mk/quality.mk
 
-.PHONY: tidy
-tidy:
-	@echo "Running go mod tidy"
-	@$(GO) mod tidy
+# =============================================================================
+# 核心构建目标 (用户主要使用)
+# =============================================================================
 
-.PHONY: format
-format:
-	@echo "Formatting Go code"
-	@$(GOFMT) -w .
-	@echo "Code formatting completed"
+# 主要构建命令 - 开发和测试使用
+.PHONY: build
+build: quality-dev
+	@echo "🔨 构建项目 (开发模式)"
+	@echo "📦 构建当前平台的所有服务..."
+	@scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
 
-# 独立vet目标（包含依赖）
-.PHONY: vet
-vet: proto-generate swagger
-	@echo "Running go vet"
-	@$(GOVET) ./...
-	@echo "Vet completed"
+# 快速开发构建 - 跳过质量检查，加速迭代
+.PHONY: build-dev
+build-dev:
+	@echo "🚀 快速开发构建（跳过质量检查）"
+	@scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
 
-# 快速vet目标（用于组合目标）
-.PHONY: vet-fast
-vet-fast:
-	@echo "Running go vet"
-	@$(GOVET) ./...
-	@echo "Vet completed"
+# 发布构建 - 构建所有平台的发布版本
+.PHONY: build-release
+build-release:
+	@echo "🎯 构建发布版本"
+	@echo "📦 构建所有平台并生成发布包..."
+	@scripts/tools/build-multiplatform.sh --clean --archive --checksum
 
-# 独立质量检查目标
-.PHONY: quality
-quality: format vet
-	@echo "All quality checks completed"
+# 高级构建 - 精确控制服务和平台
+.PHONY: build-advanced
+build-advanced:
+	@if [ -z "$(SERVICE)" ] || [ -z "$(PLATFORM)" ]; then \
+		echo "❌ 用法: make build-advanced SERVICE=服务名 PLATFORM=平台"; \
+		echo ""; \
+		echo "📋 示例:"; \
+		echo "  make build-advanced SERVICE=swit-serve PLATFORM=linux/amd64"; \
+		echo "  make build-advanced SERVICE=switctl PLATFORM=windows/amd64"; \
+		echo ""; \
+		echo "📋 支持的服务: swit-serve, swit-auth, switctl"; \
+		echo "📋 支持的平台: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64"; \
+		exit 1; \
+	fi
+	@echo "📦 构建 $(SERVICE) for $(PLATFORM)..."
+	@scripts/tools/build-multiplatform.sh -p $(PLATFORM) -s $(SERVICE)
 
-# 快速质量检查目标（用于组合目标）
-.PHONY: quality-fast
-quality-fast: format vet-fast
-	@echo "All quality checks completed"
+# =============================================================================
+# 清理目标 (使用统一的清理系统)
+# =============================================================================
+# 注意: 清理功能已迁移到 scripts/mk/clean.mk
+# 这里保留的目标主要用于内部构建流程
 
-# 独立构建目标（包含所有依赖，优化版）
-.PHONY: build  
-build: proto-generate swagger quality-fast build-serve-fast build-ctl-fast build-auth-fast
-	@echo "All binaries built successfully"
-
-# 组合构建目标（用于all，假设依赖已满足）
-.PHONY: build-fast
-build-fast: quality-fast build-serve-fast build-ctl-fast build-auth-fast
-	@echo "All binaries built successfully"
-
-# 独立构建目标（带依赖）
-.PHONY: build-serve-standalone
-build-serve-standalone: proto-generate swagger
-	@echo "Building go program: swit-serve"
-	@mkdir -p $(OUTPUTDIR)/$(SERVE_BIN_NAME)
-	@$(GO) build -o $(OUTPUTDIR)/$(SERVE_BIN_NAME)/$(SERVE_BIN_NAME) $(SERVE_MAIN_DIR)/$(SERVE_MAIN_FILE)
-
-.PHONY: build-ctl-standalone  
-build-ctl-standalone: proto-generate
-	@echo "Building go program: switctl"
-	@mkdir -p $(OUTPUTDIR)/$(CTL_BIN_NAME)
-	@$(GO) build -o $(OUTPUTDIR)/$(CTL_BIN_NAME)/$(CTL_BIN_NAME) $(CTL_MAIN_DIR)/$(CTL_MAIN_FILE)
-
-.PHONY: build-auth-standalone
-build-auth-standalone: proto-generate swagger
-	@echo "Building go program: swit-auth"
-	@mkdir -p $(OUTPUTDIR)/$(AUTH_BIN_NAME)
-	@$(GO) build -o $(OUTPUTDIR)/$(AUTH_BIN_NAME)/$(AUTH_BIN_NAME) $(AUTH_MAIN_DIR)/$(AUTH_MAIN_FILE)
-
-# 快速构建目标（无重复依赖）
-.PHONY: build-serve-fast
-build-serve-fast:
-	@echo "Building go program: swit-serve"
-	@mkdir -p $(OUTPUTDIR)/$(SERVE_BIN_NAME)
-	@$(GO) build -o $(OUTPUTDIR)/$(SERVE_BIN_NAME)/$(SERVE_BIN_NAME) $(SERVE_MAIN_DIR)/$(SERVE_MAIN_FILE)
-
-.PHONY: build-ctl-fast
-build-ctl-fast:
-	@echo "Building go program: switctl"
-	@mkdir -p $(OUTPUTDIR)/$(CTL_BIN_NAME)
-	@$(GO) build -o $(OUTPUTDIR)/$(CTL_BIN_NAME)/$(CTL_BIN_NAME) $(CTL_MAIN_DIR)/$(CTL_MAIN_FILE)
-
-.PHONY: build-auth-fast
-build-auth-fast:
-	@echo "Building go program: swit-auth"
-	@mkdir -p $(OUTPUTDIR)/$(AUTH_BIN_NAME)
-	@$(GO) build -o $(OUTPUTDIR)/$(AUTH_BIN_NAME)/$(AUTH_BIN_NAME) $(AUTH_MAIN_DIR)/$(AUTH_MAIN_FILE)
-
-# 兼容性别名
-.PHONY: build-serve build-ctl build-auth
-build-serve: build-serve-standalone
-build-ctl: build-ctl-standalone  
-build-auth: build-auth-standalone
-
-# 清理所有自动生成的代码和文件
-.PHONY: clean
-clean:
-	@echo "🧹 Cleaning all generated code and build artifacts..."
-	@echo "  Removing build outputs..."
+# 内部构建清理目标 (供其他目标使用，不显示用户提示)
+.PHONY: clean-build-for-build
+clean-build-for-build:
+	@echo "🧹 清理构建输出..."
 	@$(RM) -rf $(OUTPUTDIR)/
-	@echo "  Removing protobuf generated code..."
-	@$(RM) -rf api/gen/
-	@echo "  Removing Swagger generated documentation..."
-	@$(RM) -rf docs/generated/
-	@echo "  Removing individual Swagger docs.go files..."
-	@find internal -path "*/docs/docs.go" -type f -delete 2>/dev/null || true
-	@echo "  Removing test coverage files..."
-	@$(RM) -f coverage.out coverage.html
-	@echo "  Removing log files..."
-	@$(RM) -f *.log test.log
-	@echo "  Removing temporary files..."
-	@$(RM) -f .DS_Store
-	@find . -name "*.tmp" -type f -delete 2>/dev/null || true
-	@echo "✅ All generated code and build artifacts cleaned"
-
-# 快速清理（仅删除构建输出）
-.PHONY: clean-build
-clean-build:
-	@echo "Cleaning build outputs only"
-	@$(RM) -rf $(OUTPUTDIR)/
-	@echo "Build outputs cleaned"
-
-# 清理protobuf生成代码
-.PHONY: clean-proto
-clean-proto:
-	@echo "Cleaning protobuf generated code"
-	@$(RM) -rf api/gen/
-	@echo "Protobuf generated code cleaned"
-
-# 清理Swagger生成文档
-.PHONY: clean-swagger
-clean-swagger:
-	@echo "Cleaning Swagger generated documentation"
-	@$(RM) -rf docs/generated/
-	@find internal -path "*/docs/docs.go" -type f -delete 2>/dev/null || true
-	@echo "Swagger generated documentation cleaned"
-
-# 清理测试文件
-.PHONY: clean-test
-clean-test:
-	@echo "Cleaning test artifacts"
-	@$(RM) -f coverage.out coverage.html
-	@$(RM) -f *.log test.log
-	@echo "Test artifacts cleaned" 
+	@echo "构建输出已清理" 
