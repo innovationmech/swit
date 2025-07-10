@@ -7,7 +7,7 @@
 
 # 依赖管理 - 整理Go模块依赖
 .PHONY: tidy
-tidy:
+tidy: proto swagger
 	@echo "🔧 整理Go模块依赖..."
 	@$(GO) mod tidy
 	@echo "✅ Go模块依赖整理完成"
@@ -21,7 +21,7 @@ format:
 
 # 代码检查（完整版）- 包含依赖生成
 .PHONY: vet
-vet: proto-generate swagger
+vet: proto swagger
 	@echo "🔍 运行代码检查（包含依赖生成）..."
 	@$(GOVET) ./...
 	@echo "✅ 代码检查完成"
@@ -53,7 +53,7 @@ security:
 		gosec ./...; \
 	else \
 		echo "⚠️  gosec未安装，跳过安全扫描"; \
-		echo "💡 安装方法: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest"; \
+		echo "💡 安装方法: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
 	fi
 	@echo "✅ 安全扫描完成"
 
@@ -90,7 +90,7 @@ quality-setup:
 	@echo "检查gosec..."
 	@if ! command -v gosec >/dev/null 2>&1; then \
 		echo "📥 安装gosec..."; \
-		go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest; \
+		go install github.com/securego/gosec/v2/cmd/gosec@latest; \
 	else \
 		echo "✅ gosec已安装"; \
 	fi
