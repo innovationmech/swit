@@ -1,0 +1,154 @@
+🎉 Swit 微服务平台已成功部署！
+
+📋 部署信息:
+  命名空间: {{ include "swit.namespace" . }}
+  发布名称: {{ .Release.Name }}
+  Chart 版本: {{ .Chart.Version }}
+  应用程序版本: {{ .Chart.AppVersion }}
+
+📦 已部署的服务:
+
+{{- if .Values.mysql.enabled }}
+🗄️  MySQL 数据库:
+  - 内部地址: {{ include "swit.mysql.fullname" . }}-service:{{ .Values.mysql.service.port }}
+  - 状态: kubectl get pods -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=database
+{{- end }}
+
+{{- if .Values.consul.enabled }}
+🔍 Consul 服务发现:
+  - 内部地址: {{ include "swit.consul.fullname" . }}-service:{{ .Values.consul.service.httpPort }}
+  {{- if .Values.consul.ui.enabled }}
+  {{- if eq .Values.consul.ui.service.type "NodePort" }}
+  - UI 访问: http://<NODE-IP>:{{ .Values.consul.ui.service.nodePort }}
+  {{- else if eq .Values.consul.ui.service.type "LoadBalancer" }}
+  - UI 访问: http://<EXTERNAL-IP>:{{ .Values.consul.service.httpPort }}
+  {{- end }}
+  {{- end }}
+  - 状态: kubectl get pods -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=service-discovery
+{{- end }}
+
+{{- if .Values.switAuth.enabled }}
+🔐 认证服务 (swit-auth):
+  - 内部地址: {{ include "swit.auth.fullname" . }}-service:{{ .Values.switAuth.service.port }}
+  {{- if .Values.switAuth.external.enabled }}
+  {{- if eq .Values.switAuth.external.service.type "NodePort" }}
+  - 外部访问: http://<NODE-IP>:{{ .Values.switAuth.external.service.nodePort }}
+  {{- else if eq .Values.switAuth.external.service.type "LoadBalancer" }}
+  - 外部访问: http://<EXTERNAL-IP>:{{ .Values.switAuth.service.port }}
+  {{- end }}
+  {{- end }}
+  - 副本数: {{ .Values.switAuth.replicaCount }}
+  - 状态: kubectl get pods -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=authentication
+{{- end }}
+
+{{- if .Values.switServe.enabled }}
+🚀 主要服务 (swit-serve):
+  - 内部地址: {{ include "swit.serve.fullname" . }}-service:{{ .Values.switServe.service.port }}
+  {{- if .Values.switServe.external.enabled }}
+  {{- if eq .Values.switServe.external.service.type "NodePort" }}
+  - 外部访问: http://<NODE-IP>:{{ .Values.switServe.external.service.nodePort }}
+  {{- else if eq .Values.switServe.external.service.type "LoadBalancer" }}
+  - 外部访问: http://<EXTERNAL-IP>:{{ .Values.switServe.service.port }}
+  {{- end }}
+  {{- end }}
+  - 副本数: {{ .Values.switServe.replicaCount }}
+  - 状态: kubectl get pods -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=api-server
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+🌐 Ingress 路由:
+{{- range .Values.ingress.hosts }}
+  - 主机: {{ .host }}
+{{- range .paths }}
+    路径: {{ .path }} → {{ .backend.service }}
+{{- end }}
+{{- end }}
+  访问方式: 
+  - HTTP: http://{{ (index .Values.ingress.hosts 0).host }}
+  {{- if .Values.ingress.tls }}
+  - HTTPS: https://{{ (index .Values.ingress.hosts 0).host }}
+  {{- end }}
+{{- end }}
+
+🔧 管理命令:
+
+1. 查看所有资源状态:
+   kubectl get all -n {{ include "swit.namespace" . }}
+
+2. 查看服务日志:
+   # 认证服务日志
+   kubectl logs -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=authentication --tail=100 -f
+   
+   # 主要服务日志
+   kubectl logs -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=api-server --tail=100 -f
+
+3. 进入服务容器:
+   # 认证服务
+   kubectl exec -n {{ include "swit.namespace" . }} -it $(kubectl get pod -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=authentication -o jsonpath='{.items[0].metadata.name}') -- /bin/bash
+   
+   # 主要服务
+   kubectl exec -n {{ include "swit.namespace" . }} -it $(kubectl get pod -n {{ include "swit.namespace" . }} -l app.kubernetes.io/component=api-server -o jsonpath='{.items[0].metadata.name}') -- /bin/bash
+
+4. 端口转发（本地访问）:
+   {{- if .Values.switAuth.enabled }}
+   # 认证服务
+   kubectl port-forward -n {{ include "swit.namespace" . }} svc/{{ include "swit.auth.fullname" . }}-service {{ .Values.switAuth.service.port }}:{{ .Values.switAuth.service.port }}
+   {{- end }}
+   
+   {{- if .Values.switServe.enabled }}
+   # 主要服务
+   kubectl port-forward -n {{ include "swit.namespace" . }} svc/{{ include "swit.serve.fullname" . }}-service {{ .Values.switServe.service.port }}:{{ .Values.switServe.service.port }}
+   {{- end }}
+   
+   {{- if .Values.consul.enabled }}
+   # Consul UI
+   kubectl port-forward -n {{ include "swit.namespace" . }} svc/{{ include "swit.consul.fullname" . }}-service {{ .Values.consul.service.httpPort }}:{{ .Values.consul.service.httpPort }}
+   {{- end }}
+
+5. 扩容/缩容:
+   {{- if .Values.switAuth.enabled }}
+   # 认证服务
+   kubectl scale deployment -n {{ include "swit.namespace" . }} {{ include "swit.auth.fullname" . }} --replicas=<数量>
+   {{- end }}
+   
+   {{- if .Values.switServe.enabled }}
+   # 主要服务
+   kubectl scale deployment -n {{ include "swit.namespace" . }} {{ include "swit.serve.fullname" . }} --replicas=<数量>
+   {{- end }}
+
+📊 健康检查:
+{{- if .Values.switAuth.enabled }}
+- 认证服务健康检查: http://<SERVICE-IP>:{{ .Values.switAuth.service.port }}/health
+{{- end }}
+{{- if .Values.switServe.enabled }}
+- 主要服务健康检查: http://<SERVICE-IP>:{{ .Values.switServe.service.port }}/health
+{{- end }}
+
+📚 API 文档:
+{{- if .Values.switServe.enabled }}
+- API 文档: http://<SERVICE-IP>:{{ .Values.switServe.service.port }}/swagger/index.html (如果启用)
+{{- end }}
+
+🔄 升级/回滚:
+- 升级: helm upgrade {{ .Release.Name }} deployments/helm -n {{ include "swit.namespace" . }} -f <your-values.yaml>
+- 回滚: helm rollback {{ .Release.Name }} <REVISION> -n {{ include "swit.namespace" . }}
+- 查看历史: helm history {{ .Release.Name }} -n {{ include "swit.namespace" . }}
+
+🗑️  卸载:
+helm uninstall {{ .Release.Name }} -n {{ include "swit.namespace" . }}
+
+{{- if or (not .Values.switAuth.enabled) (not .Values.switServe.enabled) }}
+
+⚠️  注意: 某些服务未启用，请检查 values.yaml 配置:
+{{- if not .Values.switAuth.enabled }}
+  - 认证服务 (switAuth.enabled: false)
+{{- end }}
+{{- if not .Values.switServe.enabled }}
+  - 主要服务 (switServe.enabled: false)
+{{- end }}
+{{- end }}
+
+💡 提示: 
+  - 首次部署可能需要几分钟时间来拉取镜像和初始化数据库
+  - 确保 Docker 镜像已构建并可用
+  - 检查持久化存储是否正确配置

@@ -1,0 +1,58 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "swit.fullname" . }}-ingress
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- range .Values.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- with .pathType }}
+            pathType: {{ . }}
+            {{- end }}
+            backend:
+              service:
+                {{- if eq .backend.service "swit-serve" }}
+                name: {{ include "swit.serve.fullname" $ }}-service
+                port:
+                  number: {{ $.Values.switServe.service.port }}
+                {{- else if eq .backend.service "swit-auth" }}
+                name: {{ include "swit.auth.fullname" $ }}-service
+                port:
+                  number: {{ $.Values.switAuth.service.port }}
+                {{- else if eq .backend.service "consul" }}
+                name: {{ include "swit.consul.fullname" $ }}-service
+                port:
+                  number: {{ $.Values.consul.service.httpPort }}
+                {{- else }}
+                name: {{ include "swit.serve.fullname" $ }}-service
+                port:
+                  number: {{ $.Values.switServe.service.port }}
+                {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end }}

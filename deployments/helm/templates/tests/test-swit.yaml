@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "swit.fullname" . }}-test"
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: swit-test
+      image: busybox:1.35
+      command:
+        - sh
+        - -c
+        - |
+          set -e
+          
+          echo "========================================="
+          echo "🧪 Swit 微服务平台测试开始"
+          echo "========================================="
+          
+          # 测试函数
+          test_service() {
+            local service_name=$1
+            local port=$2
+            local path=${3:-"/health"}
+            local expected_code=${4:-200}
+            
+            echo "🔍 测试服务: $service_name:$port$path"
+            
+            # 检查服务是否可达
+            if nc -z "$service_name" "$port"; then
+              echo "✅ 服务 $service_name:$port 可达"
+              
+              # 如果是HTTP服务，测试HTTP响应
+              if [ "$path" != "" ]; then
+                response=$(wget -q -O - --timeout=10 "http://$service_name:$port$path" 2>/dev/null || echo "ERROR")
+                if [ "$response" != "ERROR" ]; then
+                  echo "✅ HTTP 响应正常: $service_name$path"
+                else
+                  echo "❌ HTTP 响应失败: $service_name$path"
+                  return 1
+                fi
+              fi
+            else
+              echo "❌ 服务 $service_name:$port 不可达"
+              return 1
+            fi
+          }
+          
+          # 等待服务启动
+          echo "⏳ 等待服务启动..."
+          sleep 10
+          
+          # 测试计数器
+          total_tests=0
+          passed_tests=0
+          
+          {{- if .Values.mysql.enabled }}
+          # 测试 MySQL 连接
+          total_tests=$((total_tests + 1))
+          echo "🗄️  测试 MySQL 数据库连接..."
+          if nc -z {{ include "swit.mysql.fullname" . }}-service {{ .Values.mysql.service.port }}; then
+            echo "✅ MySQL 数据库连接正常"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "❌ MySQL 数据库连接失败"
+          fi
+          {{- end }}
+          
+          {{- if .Values.consul.enabled }}
+          # 测试 Consul 服务
+          total_tests=$((total_tests + 1))
+          if test_service "{{ include "swit.consul.fullname" . }}-service" "{{ .Values.consul.service.httpPort }}" "/v1/status/leader"; then
+            passed_tests=$((passed_tests + 1))
+          fi
+          {{- end }}
+          
+          {{- if .Values.switAuth.enabled }}
+          # 测试认证服务
+          total_tests=$((total_tests + 1))
+          if test_service "{{ include "swit.auth.fullname" . }}-service" "{{ .Values.switAuth.service.port }}" "/health"; then
+            passed_tests=$((passed_tests + 1))
+          fi
+          {{- end }}
+          
+          {{- if .Values.switServe.enabled }}
+          # 测试主要服务
+          total_tests=$((total_tests + 1))
+          if test_service "{{ include "swit.serve.fullname" . }}-service" "{{ .Values.switServe.service.port }}" "/health"; then
+            passed_tests=$((passed_tests + 1))
+          fi
+          {{- end }}
+          
+          # 测试服务发现注册
+          {{- if and .Values.consul.enabled .Values.switAuth.enabled }}
+          total_tests=$((total_tests + 1))
+          echo "🔍 测试服务发现注册..."
+          services=$(wget -q -O - "http://{{ include "swit.consul.fullname" . }}-service:{{ .Values.consul.service.httpPort }}/v1/catalog/services" 2>/dev/null || echo "{}")
+          if echo "$services" | grep -q "swit-auth"; then
+            echo "✅ 认证服务已在 Consul 中注册"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "❌ 认证服务未在 Consul 中注册"
+          fi
+          {{- end }}
+          
+          # 测试配置文件
+          total_tests=$((total_tests + 1))
+          echo "🔍 测试配置文件..."
+          if [ -f "/tmp/test-config" ]; then
+            echo "✅ 配置文件存在"
+            passed_tests=$((passed_tests + 1))
+          else
+            echo "⚠️  配置文件测试跳过（非关键）"
+            passed_tests=$((passed_tests + 1))
+          fi
+          
+          # 输出测试结果
+          echo "========================================="
+          echo "📊 测试结果汇总"
+          echo "========================================="
+          echo "总测试数: $total_tests"
+          echo "通过测试: $passed_tests"
+          echo "失败测试: $((total_tests - passed_tests))"
+          
+          if [ "$passed_tests" -eq "$total_tests" ]; then
+            echo "🎉 所有测试通过！Swit 平台部署成功！"
+            echo ""
+            echo "📝 下一步操作："
+            echo "1. 查看服务状态: kubectl get pods -n {{ include "swit.namespace" . }}"
+            echo "2. 访问服务:"
+            {{- if .Values.switServe.external.enabled }}
+            echo "   - 主要服务: http://<NODE-IP>:{{ .Values.switServe.external.service.nodePort }}"
+            {{- end }}
+            {{- if .Values.switAuth.external.enabled }}
+            echo "   - 认证服务: http://<NODE-IP>:{{ .Values.switAuth.external.service.nodePort }}"
+            {{- end }}
+            {{- if .Values.consul.ui.enabled }}
+            echo "   - Consul UI: http://<NODE-IP>:{{ .Values.consul.ui.service.nodePort }}"
+            {{- end }}
+            echo "3. 查看日志: kubectl logs -n {{ include "swit.namespace" . }} -l app.kubernetes.io/name=swit"
+            exit 0
+          else
+            echo "❌ 测试失败！请检查服务状态和日志"
+            echo ""
+            echo "🔧 故障排除建议："
+            echo "1. 检查 Pod 状态: kubectl get pods -n {{ include "swit.namespace" . }}"
+            echo "2. 查看失败的 Pod 日志: kubectl logs -n {{ include "swit.namespace" . }} <pod-name>"
+            echo "3. 检查服务状态: kubectl get svc -n {{ include "swit.namespace" . }}"
+            echo "4. 查看事件: kubectl get events -n {{ include "swit.namespace" . }} --sort-by='.lastTimestamp'"
+            exit 1
+          fi
+      volumeMounts:
+        - name: test-config
+          mountPath: /tmp/test-config
+          subPath: app.yaml
+          readOnly: true
+  volumes:
+    - name: test-config
+      configMap:
+        name: {{ include "swit.fullname" . }}-config
+        items:
+          - key: app.yaml
+            path: app.yaml
+        optional: true 

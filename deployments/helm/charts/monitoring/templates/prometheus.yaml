@@ -1,0 +1,121 @@
+{{- if .Values.monitoring.prometheus.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "monitoring.fullname" . }}-prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: monitoring
+spec:
+  replicas: {{ .Values.monitoring.prometheus.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: monitoring
+    spec:
+      containers:
+      - name: prometheus
+        image: {{ .Values.monitoring.prometheus.image }}
+        ports:
+        - containerPort: {{ .Values.monitoring.prometheus.port }}
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.monitoring.prometheus.resources | nindent 10 }}
+        volumeMounts:
+        {{- if .Values.monitoring.prometheus.storage.enabled }}
+        - name: prometheus-storage
+          mountPath: /prometheus
+        {{- end }}
+        - name: prometheus-config
+          mountPath: /etc/prometheus
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: {{ .Values.monitoring.prometheus.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: {{ .Values.monitoring.prometheus.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      {{- if .Values.monitoring.prometheus.storage.enabled }}
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: {{ include "monitoring.fullname" . }}-prometheus-pvc
+      {{- end }}
+      - name: prometheus-config
+        configMap:
+          name: {{ include "monitoring.fullname" . }}-prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "monitoring.fullname" . }}-prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: monitoring
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+  - port: {{ .Values.service.ports.prometheus }}
+    targetPort: {{ .Values.monitoring.prometheus.port }}
+    protocol: TCP
+    name: prometheus
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- if .Values.monitoring.prometheus.storage.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "monitoring.fullname" . }}-prometheus-pvc
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.monitoring.prometheus.storage.size }}
+  {{- if .Values.monitoring.prometheus.storage.storageClass }}
+  storageClassName: {{ .Values.monitoring.prometheus.storage.storageClass }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "monitoring.fullname" . }}-prometheus-config
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: {{ .Values.monitoring.prometheus.config.scrapeInterval }}
+      evaluation_interval: {{ .Values.monitoring.prometheus.config.evaluationInterval }}
+    
+    scrape_configs:
+    {{- range .Values.monitoring.serviceMonitor.targets }}
+    - job_name: '{{ .name }}'
+      static_configs:
+      - targets: ['{{ .name }}:{{ .port }}']
+      metrics_path: {{ .path }}
+      scrape_interval: {{ $.Values.monitoring.serviceMonitor.interval }}
+    {{- end }}
+{{- end }} 

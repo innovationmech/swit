@@ -1,0 +1,70 @@
+apiVersion: v2
+name: swit
+description: Swit 微服务平台 Helm Chart - 包含认证服务、主要服务、数据库和服务发现
+
+# Chart 类型为应用程序
+type: application
+
+# Chart 版本 - 每次修改 Chart 时应递增此版本
+version: 1.0.0
+
+# 应用程序版本
+appVersion: "1.0.0"
+
+# 关键词
+keywords:
+  - microservice
+  - authentication
+  - api
+  - golang
+  - mysql
+  - consul
+
+# 主页
+home: https://github.com/innovationmech/swit
+
+# 源代码
+sources:
+  - https://github.com/innovationmech/swit
+
+# 维护者
+maintainers:
+  - name: Swit Team
+    email: team@swit.com
+
+# 图标（可选）
+# icon: https://example.com/swit-icon.png
+
+# 依赖项 - 包含本地监控组件
+dependencies:
+  # 本地监控子 Chart
+  - name: monitoring
+    version: "0.1.0"
+    repository: "file://./charts/monitoring"
+    condition: monitoring.enabled
+
+# 可选的外部依赖项配置（如需要请取消注释）：
+# dependencies:
+#   # 使用 Bitnami MySQL Chart（如果不想自己维护 MySQL）
+#   - name: mysql
+#     version: "9.14.4"
+#     repository: "https://charts.bitnami.com/bitnami"
+#     condition: mysql.external.enabled
+#     alias: mysql-external
+#   
+#   # 使用 Prometheus Stack
+#   - name: kube-prometheus-stack
+#     version: "55.5.0"
+#     repository: "https://prometheus-community.github.io/helm-charts"
+#     condition: monitoring.external.enabled
+#   
+#   # 使用 Grafana 可视化
+#   - name: grafana
+#     version: "7.0.19"
+#     repository: "https://grafana.github.io/helm-charts"
+#     condition: monitoring.grafana.enabled
+
+# annotations（可选）
+annotations:
+  category: "Application Services"
+  license: "MIT"

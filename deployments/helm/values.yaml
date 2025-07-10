@@ -1,0 +1,390 @@
+# Swit 微服务平台 Helm Chart 配置文件
+
+# 全局配置
+global:
+  # 镜像仓库前缀
+  imageRegistry: ""
+  # 镜像拉取密钥
+  imagePullSecrets: []
+  # 存储类
+  storageClass: "standard"
+
+# 命名空间
+namespaceOverride: "swit"
+
+# 监控组件配置（本地子 Chart）
+monitoring:
+  enabled: false  # 默认关闭，如需要请设置为 true
+  # 监控配置会继承 charts/monitoring/values.yaml 中的配置
+  # 可以在此处覆盖子 Chart 的配置值
+  prometheus:
+    enabled: true
+    replicas: 1
+    storage:
+      enabled: true
+      size: 5Gi
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
+# MySQL 数据库配置
+mysql:
+  enabled: true
+  image:
+    repository: mysql
+    tag: "8.0"
+    pullPolicy: IfNotPresent
+  
+  # 数据库配置
+  auth:
+    rootPassword: "root"
+    database: ""
+    username: "root"
+    password: "root"
+  
+  # 资源配置
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  # 持久化存储
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  
+  # 服务配置
+  service:
+    type: ClusterIP
+    port: 3306
+  
+  # 健康检查
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Consul 服务发现配置
+consul:
+  enabled: true
+  image:
+    repository: consul
+    tag: "1.15"
+    pullPolicy: IfNotPresent
+  
+  # 资源配置
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  
+  # 持久化存储
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  
+  # 服务配置
+  service:
+    type: ClusterIP
+    httpPort: 8500
+    dnsPortTcp: 8600
+    dnsPortUdp: 8600
+  
+  # 外部访问（UI）
+  ui:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30850
+  
+  # 健康检查
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# 认证服务配置
+switAuth:
+  enabled: true
+  image:
+    repository: swit-auth
+    tag: "latest"
+    pullPolicy: Never
+  
+  # 副本数
+  replicaCount: 2
+  
+  # 资源配置
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  
+  # 服务配置
+  service:
+    type: ClusterIP
+    port: 9001
+    targetPort: 9001
+  
+  # 外部访问
+  external:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30901
+  
+  # 健康检查
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 9001
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 9001
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  # 环境变量配置
+  env:
+    serverPort: "9001"
+    databaseDbname: "auth_service_db"
+  
+  # 初始化容器
+  initContainers:
+    waitForMysql:
+      enabled: true
+    waitForConsul:
+      enabled: true
+
+# 主要服务配置
+switServe:
+  enabled: true
+  image:
+    repository: swit-serve
+    tag: "latest"
+    pullPolicy: Never
+  
+  # 副本数
+  replicaCount: 3
+  
+  # 资源配置
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  
+  # 服务配置
+  service:
+    type: ClusterIP
+    port: 9000
+    targetPort: 9000
+  
+  # 外部访问
+  external:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30900
+  
+  # 健康检查
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 9000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 9000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  # 环境变量配置
+  env:
+    serverPort: "9000"
+    databaseDbname: "user_service_db"
+    # authServiceUrl 现在由模板自动生成：http://${RELEASE_NAME}-auth-service:9001
+  
+  # 初始化容器
+  initContainers:
+    waitForMysql:
+      enabled: true
+    waitForConsul:
+      enabled: true
+    waitForAuth:
+      enabled: true
+
+# 配置映射
+configMap:
+  # 数据库配置
+  database:
+    # host 现在由模板自动生成：${RELEASE_NAME}-mysql-service
+    port: "3306"
+    username: "root"
+    characterSet: "utf8mb4"
+    collation: "utf8mb4_unicode_ci"
+  
+  # 服务发现配置
+  serviceDiscovery:
+    # address 现在由模板自动生成：${RELEASE_NAME}-consul-service:8500
+    port: "8500"
+  
+  # 日志配置
+  logging:
+    level: "info"
+
+# 密钥配置
+secret:
+  # 数据库密码
+  database:
+    password: "root"
+    rootPassword: "root"
+  
+  # JWT 密钥
+  jwt:
+    secret: "c3dpdC1qd3Qtc2VjcmV0LWtleQ=="  # base64 编码的 "swit-jwt-secret-key"
+
+# Ingress 配置
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Content-Type, Authorization"
+  
+  hosts:
+    - host: swit.local
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service: swit-serve
+        - path: /auth
+          pathType: Prefix
+          backend:
+            service: swit-auth
+        - path: /consul
+          pathType: Prefix
+          backend:
+            service: consul
+  
+  tls: []
+
+# 自动扩容配置
+autoscaling:
+  # 认证服务自动扩容
+  switAuth:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  # 主要服务自动扩容
+  switServe:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# 服务账户配置
+serviceAccount:
+  # 是否创建服务账户
+  create: true
+  # 自动挂载 API 凭证
+  automount: true
+  # 注解
+  annotations: {}
+  # 服务账户名称
+  name: ""
+
+# Pod 安全上下文
+podSecurityContext:
+  # fsGroup: 2000
+
+# 容器安全上下文
+securityContext:
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# Pod 注解
+podAnnotations: {}
+
+# Pod 标签
+podLabels: {}
+
+# 节点选择器
+nodeSelector: {}
+
+# 容忍度
+tolerations: []
+
+# 亲和性
+affinity: {}
+
+# 镜像拉取密钥
+imagePullSecrets: []
+
+# 完整名称覆盖
+fullnameOverride: ""
+
+# 名称覆盖
+nameOverride: ""

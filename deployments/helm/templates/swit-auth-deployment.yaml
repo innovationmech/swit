@@ -1,0 +1,151 @@
+{{- if .Values.switAuth.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "swit.auth.fullname" . }}
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.auth.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.switAuth.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "swit.auth.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "swit.auth.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "swit.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "swit.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      
+      # 初始化容器
+      initContainers:
+        {{- if .Values.switAuth.initContainers.waitForMysql.enabled }}
+        - name: wait-for-mysql
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              echo "等待 MySQL 服务启动..."
+              until nc -z {{ include "swit.mysql.fullname" . }}-service {{ .Values.mysql.service.port }}; do
+                echo "MySQL 尚未准备就绪，等待 5 秒..."
+                sleep 5
+              done
+              echo "MySQL 服务已启动"
+        {{- end }}
+        
+        {{- if .Values.switAuth.initContainers.waitForConsul.enabled }}
+        - name: wait-for-consul
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              echo "等待 Consul 服务启动..."
+              until nc -z {{ include "swit.consul.fullname" . }}-service {{ .Values.consul.service.httpPort }}; do
+                echo "Consul 尚未准备就绪，等待 5 秒..."
+                sleep 5
+              done
+              echo "Consul 服务已启动"
+        {{- end }}
+      
+      containers:
+        - name: {{ .Chart.Name }}-auth
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.switAuth.image.repository }}:{{ .Values.switAuth.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.switAuth.image.pullPolicy }}
+          
+          ports:
+            - name: http
+              containerPort: {{ .Values.switAuth.service.port }}
+              protocol: TCP
+          
+          env:
+            - name: SERVER_PORT
+              value: {{ .Values.switAuth.env.serverPort | quote }}
+            - name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "swit.fullname" . }}-config
+                  key: DATABASE_HOST
+            - name: DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "swit.fullname" . }}-config
+                  key: DATABASE_PORT
+            - name: DATABASE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "swit.fullname" . }}-config
+                  key: DATABASE_USERNAME
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "swit.fullname" . }}-secret
+                  key: mysql-password
+            - name: DATABASE_DBNAME
+              value: {{ .Values.switAuth.env.databaseDbname | quote }}
+            - name: SERVICE_DISCOVERY_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "swit.fullname" . }}-config
+                  key: SERVICE_DISCOVERY_ADDRESS
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "swit.fullname" . }}-secret
+                  key: jwt-secret
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "swit.fullname" . }}-config
+                  key: LOG_LEVEL
+          
+          {{- if .Values.switAuth.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.switAuth.livenessProbe | nindent 12 }}
+          {{- end }}
+          
+          {{- if .Values.switAuth.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.switAuth.readinessProbe | nindent 12 }}
+          {{- end }}
+          
+          resources:
+            {{- toYaml .Values.switAuth.resources | nindent 12 }}
+          
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+      
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "swit.fullname" . }}-config
+            items:
+              - key: auth-app.yaml
+                path: app.yaml
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }} 

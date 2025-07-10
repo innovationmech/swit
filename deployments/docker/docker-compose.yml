@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: swit-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../../scripts/sql:/docker-entrypoint-initdb.d:ro
+    networks:
+      - swit-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+      start_period: 40s
+
+  # Consul 服务发现
+  consul:
+    image: consul:1.15
+    container_name: swit-consul
+    restart: unless-stopped
+    command: >
+      consul agent -server -bootstrap -ui 
+      -data-dir=/consul/data 
+      -config-dir=/consul/config
+      -client=0.0.0.0
+      -bind=0.0.0.0
+    ports:
+      - "8500:8500"
+      - "8600:8600/tcp"
+      - "8600:8600/udp"
+    volumes:
+      - consul_data:/consul/data
+    networks:
+      - swit-network
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # 认证服务
+  swit-auth:
+    build:
+      context: ../../
+      dockerfile: build/docker/switauth/Dockerfile
+    container_name: swit-auth
+    restart: unless-stopped
+    environment:
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD=root
+      - DATABASE_DBNAME=auth_service_db
+      - SERVER_PORT=9001
+      - SERVICE_DISCOVERY_ADDRESS=consul:8500
+    ports:
+      - "9001:9001"
+    networks:
+      - swit-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    volumes:
+      - ../../switauth.yaml:/root/switauth.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 主服务
+  swit-serve:
+    build:
+      context: ../../
+      dockerfile: build/docker/swit-serve/Dockerfile
+    container_name: swit-serve
+    restart: unless-stopped
+    environment:
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - DATABASE_USERNAME=root
+      - DATABASE_PASSWORD=root
+      - DATABASE_DBNAME=user_service_db
+      - SERVER_PORT=9000
+      - SERVICE_DISCOVERY_ADDRESS=consul:8500
+      - AUTH_SERVICE_URL=http://swit-auth:9001
+    ports:
+      - "9000:9000"
+    networks:
+      - swit-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      swit-auth:
+        condition: service_healthy
+    volumes:
+      - ../../swit.yaml:/root/swit.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# 数据卷
+volumes:
+  mysql_data:
+    driver: local
+  consul_data:
+    driver: local
+
+# 网络配置
+networks:
+  swit-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,273 @@
+# Swit 微服务平台开发环境配置
+# 这是一个针对开发环境优化的配置文件
+# 特点：
+# - 减少资源使用
+# - 禁用持久化存储（使用 emptyDir）
+# - 减少副本数
+# - 启用调试模式
+
+# 全局配置
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: "standard"
+
+# 命名空间
+namespaceOverride: "swit-dev"
+
+# MySQL 数据库配置 - 开发环境
+mysql:
+  enabled: true
+  image:
+    repository: mysql
+    tag: "8.0"
+    pullPolicy: IfNotPresent
+  
+  auth:
+    rootPassword: "dev-root"
+    database: ""
+    username: "root"
+    password: "dev-root"
+  
+  # 开发环境：禁用持久化存储
+  persistence:
+    enabled: false
+  
+  # 降低资源需求
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  
+  service:
+    type: ClusterIP
+    port: 3306
+
+# Consul 配置 - 开发环境
+consul:
+  enabled: true
+  image:
+    repository: consul
+    tag: "1.15"
+    pullPolicy: IfNotPresent
+  
+  # 开发环境：禁用持久化存储
+  persistence:
+    enabled: false
+  
+  # 降低资源需求
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  
+  service:
+    type: ClusterIP
+    httpPort: 8500
+    dnsPortTcp: 8600
+    dnsPortUdp: 8600
+  
+  # 启用 UI 访问
+  ui:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30850
+
+# 认证服务配置 - 开发环境
+switAuth:
+  enabled: true
+  # 开发环境：单副本
+  replicaCount: 1
+  
+  image:
+    repository: swit-auth
+    tag: "latest"
+    pullPolicy: Never
+  
+  # 降低资源需求
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  
+  service:
+    type: ClusterIP
+    port: 9001
+    targetPort: 9001
+  
+  external:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30901
+  
+  # 开发环境健康检查
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 9001
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 9001
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  env:
+    serverPort: "9001"
+    databaseDbname: "auth_service_db"
+  
+  initContainers:
+    waitForMysql:
+      enabled: true
+    waitForConsul:
+      enabled: true
+
+# 主要服务配置 - 开发环境
+switServe:
+  enabled: true
+  # 开发环境：单副本
+  replicaCount: 1
+  
+  image:
+    repository: swit-serve
+    tag: "latest"
+    pullPolicy: Never
+  
+  # 降低资源需求
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  
+  service:
+    type: ClusterIP
+    port: 9000
+    targetPort: 9000
+  
+  external:
+    enabled: true
+    service:
+      type: NodePort
+      nodePort: 30900
+  
+  # 开发环境健康检查
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 9000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 9000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  env:
+    serverPort: "9000"
+    databaseDbname: "user_service_db"
+    # authServiceUrl 现在由模板自动生成：http://${RELEASE_NAME}-auth-service:9001
+  
+  initContainers:
+    waitForMysql:
+      enabled: true
+    waitForConsul:
+      enabled: true
+    waitForAuth:
+      enabled: true
+
+# 配置映射 - 开发环境
+configMap:
+  database:
+    host: "swit-mysql-service"
+    port: "3306"
+    username: "root"
+    characterSet: "utf8mb4"
+    collation: "utf8mb4_unicode_ci"
+  
+  serviceDiscovery:
+    address: "swit-consul-service:8500"
+  
+  # 开发环境：调试日志级别
+  logging:
+    level: "debug"
+
+# 密钥配置 - 开发环境
+secret:
+  database:
+    password: "dev-root"
+    rootPassword: "dev-root"
+  
+  jwt:
+    secret: "ZGV2LWp3dC1zZWNyZXQta2V5"  # base64 编码的 "dev-jwt-secret-key"
+
+# Ingress 配置 - 开发环境
+ingress:
+  enabled: false  # 开发环境通常使用 NodePort
+
+# 自动扩容 - 开发环境禁用
+autoscaling:
+  switAuth:
+    enabled: false
+  switServe:
+    enabled: false
+
+# 服务账户配置
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# Pod 安全上下文 - 开发环境宽松配置
+podSecurityContext: {}
+
+# 容器安全上下文 - 开发环境宽松配置
+securityContext: {}
+
+# Pod 注解
+podAnnotations:
+  environment: "development"
+
+# Pod 标签
+podLabels:
+  environment: "development"
+
+# 节点选择器 - 开发环境可以运行在任何节点
+nodeSelector: {}
+
+# 容忍度 - 开发环境无特殊要求
+tolerations: []
+
+# 亲和性 - 开发环境无特殊要求
+affinity: {}
+
+# 镜像拉取密钥
+imagePullSecrets: [] 

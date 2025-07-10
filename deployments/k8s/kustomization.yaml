@@ -1,0 +1,72 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: swit-platform
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# 命名空间
+namespace: swit
+
+# 资源列表（按部署顺序）
+resources:
+  - namespace.yaml
+  - storage.yaml
+  - secret.yaml
+  - configmap.yaml
+  - mysql.yaml
+  - consul.yaml
+  - swit-auth.yaml
+  - swit-serve.yaml
+  - ingress.yaml
+
+# 通用标签
+commonLabels:
+  app.kubernetes.io/name: swit
+  app.kubernetes.io/instance: swit-platform
+  app.kubernetes.io/version: "latest"
+  app.kubernetes.io/component: microservice
+  app.kubernetes.io/part-of: swit-platform
+  app.kubernetes.io/managed-by: kustomize
+
+# 通用注解
+commonAnnotations:
+  swit.io/managed-by: "swit-k8s-deployment"
+  swit.io/version: "1.0.0"
+
+# 镜像配置
+images:
+  - name: swit-auth
+    newTag: latest
+  - name: swit-serve
+    newTag: latest
+  - name: mysql
+    newTag: "8.0"
+  - name: consul
+    newTag: "1.15"
+
+# 配置生成器
+configMapGenerator:
+  - name: swit-build-info
+    literals:
+      - BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+      - BUILD_VERSION=latest
+      - DEPLOYMENT_METHOD=kustomize
+
+# 密钥生成器（示例，实际使用时应该使用外部密钥管理）
+secretGenerator:
+  - name: swit-runtime-secret
+    literals:
+      - RUNTIME_ENV=kubernetes
+    type: Opaque
+
+# 补丁配置
+patchesStrategicMerge: []
+  # 可以在这里添加环境特定的补丁文件
+
+# 名称前缀（可选）
+# namePrefix: swit-
+
+# 名称后缀（可选）
+# nameSuffix: -v1 

@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "swit.fullname" . }}-config
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.labels" . | nindent 4 }}
+data:
+  # 数据库配置
+  DATABASE_HOST: {{ printf "%s-service" (include "swit.mysql.fullname" .) | quote }}
+  DATABASE_PORT: {{ .Values.configMap.database.port | quote }}
+  DATABASE_USERNAME: {{ .Values.configMap.database.username | quote }}
+  DATABASE_CHARACTER_SET: {{ .Values.configMap.database.characterSet | quote }}
+  DATABASE_COLLATION: {{ .Values.configMap.database.collation | quote }}
+  
+  # 服务发现配置
+  SERVICE_DISCOVERY_ADDRESS: {{ printf "%s-service:%s" (include "swit.consul.fullname" .) "8500" | quote }}
+  
+  # 日志配置
+  LOG_LEVEL: {{ .Values.configMap.logging.level | quote }}
+  
+  # 应用配置文件
+  app.yaml: |
+    server:
+      port: 9000
+      environment: development
+    
+    database:
+      host: {{ printf "%s-service" (include "swit.mysql.fullname" .) }}
+      port: {{ .Values.configMap.database.port }}
+      username: {{ .Values.configMap.database.username }}
+      character_set: {{ .Values.configMap.database.characterSet }}
+      collation: {{ .Values.configMap.database.collation }}
+    
+    service_discovery:
+      address: {{ printf "%s-service:8500" (include "swit.consul.fullname" .) }}
+    
+    logging:
+      level: {{ .Values.configMap.logging.level }}
+  
+  auth-app.yaml: |
+    server:
+      port: 9001
+      environment: development
+    
+    database:
+      host: {{ printf "%s-service" (include "swit.mysql.fullname" .) }}
+      port: {{ .Values.configMap.database.port }}
+      username: {{ .Values.configMap.database.username }}
+      character_set: {{ .Values.configMap.database.characterSet }}
+      collation: {{ .Values.configMap.database.collation }}
+    
+    service_discovery:
+      address: {{ printf "%s-service:8500" (include "swit.consul.fullname" .) }}
+    
+    logging:
+      level: {{ .Values.configMap.logging.level }}
+
+---
+# MySQL 初始化脚本 ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "swit.fullname" . }}-mysql-init
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.labels" . | nindent 4 }}
+    component: mysql-init
+data:
+  init.sql: |
+    -- 创建认证服务数据库
+    CREATE DATABASE IF NOT EXISTS auth_service_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    
+    -- 创建用户服务数据库
+    CREATE DATABASE IF NOT EXISTS user_service_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    
+    -- 认证服务表结构
+    USE auth_service_db;
+    
+    -- 用户表
+    CREATE TABLE IF NOT EXISTS users (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) NOT NULL UNIQUE,
+        email VARCHAR(100) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_username (username),
+        INDEX idx_email (email)
+    );
+    
+    -- 令牌表
+    CREATE TABLE IF NOT EXISTS tokens (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        token_hash VARCHAR(255) NOT NULL,
+        token_type ENUM('access', 'refresh') NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        is_revoked BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_token_hash (token_hash),
+        INDEX idx_user_id (user_id),
+        INDEX idx_expires_at (expires_at)
+    );
+    
+    -- 用户服务表结构
+    USE user_service_db;
+    
+    -- 用户信息表
+    CREATE TABLE IF NOT EXISTS user_profiles (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT NOT NULL UNIQUE,
+        first_name VARCHAR(50),
+        last_name VARCHAR(50),
+        phone VARCHAR(20),
+        avatar_url VARCHAR(255),
+        bio TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_user_id (user_id)
+    );
+    
+    -- 插入测试数据
+    USE auth_service_db;
+    INSERT IGNORE INTO users (username, email, password_hash) VALUES
+    ('admin', 'admin@swit.com', '$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
+    ('test', 'test@swit.com', '$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+    
+    USE user_service_db;
+    INSERT IGNORE INTO user_profiles (user_id, first_name, last_name) VALUES
+    (1, 'Admin', 'User'),
+    (2, 'Test', 'User'); 

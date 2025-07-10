@@ -1,0 +1,446 @@
+# Swit 微服务平台生产环境配置
+# 这是一个针对生产环境优化的配置文件
+# 特点：
+# - 高可用性配置
+# - 资源充足
+# - 启用持久化存储
+# - 自动扩容
+# - 安全加固
+
+# 全局配置
+global:
+  imageRegistry: "your-registry.com"  # 生产环境镜像仓库
+  imagePullSecrets:
+    - name: regcred
+  storageClass: "fast-ssd"  # 生产环境使用高性能存储
+
+# 命名空间
+namespaceOverride: "swit-prod"
+
+# MySQL 数据库配置 - 生产环境
+mysql:
+  enabled: true
+  image:
+    repository: mysql
+    tag: "8.0.35"  # 指定稳定版本
+    pullPolicy: IfNotPresent
+  
+  auth:
+    rootPassword: "CHANGE_ME_STRONG_PASSWORD"  # 生产环境需要更改
+    database: ""
+    username: "switapp"
+    password: "CHANGE_ME_APP_PASSWORD"  # 生产环境需要更改
+  
+  # 生产环境：启用持久化存储
+  persistence:
+    enabled: true
+    size: 100Gi  # 生产环境更大的存储空间
+    storageClass: "fast-ssd"
+    accessModes:
+      - ReadWriteOnce
+  
+  # 生产环境资源配置
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  
+  service:
+    type: ClusterIP
+    port: 3306
+  
+  # 生产环境健康检查
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Consul 配置 - 生产环境
+consul:
+  enabled: true
+  image:
+    repository: consul
+    tag: "1.17.0"  # 指定稳定版本
+    pullPolicy: IfNotPresent
+  
+  # 生产环境：启用持久化存储
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "fast-ssd"
+    accessModes:
+      - ReadWriteOnce
+  
+  # 生产环境资源配置
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "400m"
+  
+  service:
+    type: ClusterIP
+    httpPort: 8500
+    dnsPortTcp: 8600
+    dnsPortUdp: 8600
+  
+  # 生产环境：禁用外部UI访问（安全考虑）
+  ui:
+    enabled: false
+
+# 认证服务配置 - 生产环境
+switAuth:
+  enabled: true
+  # 生产环境：高可用配置
+  replicaCount: 3
+  
+  image:
+    repository: your-registry.com/swit-auth
+    tag: "v1.0.0"  # 生产环境使用具体版本号
+    pullPolicy: IfNotPresent
+  
+  # 生产环境资源配置
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  service:
+    type: ClusterIP
+    port: 9001
+    targetPort: 9001
+  
+  # 生产环境：禁用外部直接访问
+  external:
+    enabled: false
+  
+  # 生产环境健康检查
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 9001
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 9001
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  env:
+    serverPort: "9001"
+    databaseDbname: "auth_service_db"
+  
+  initContainers:
+    waitForMysql:
+      enabled: true
+    waitForConsul:
+      enabled: true
+
+# 主要服务配置 - 生产环境
+switServe:
+  enabled: true
+  # 生产环境：高可用配置
+  replicaCount: 5
+  
+  image:
+    repository: your-registry.com/swit-serve
+    tag: "v1.0.0"  # 生产环境使用具体版本号
+    pullPolicy: IfNotPresent
+  
+  # 生产环境资源配置
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  service:
+    type: ClusterIP
+    port: 9000
+    targetPort: 9000
+  
+  # 生产环境：通过 Ingress 提供外部访问
+  external:
+    enabled: false
+  
+  # 生产环境健康检查
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 9000
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 9000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  env:
+    serverPort: "9000"
+    databaseDbname: "user_service_db"
+    # authServiceUrl 现在由模板自动生成：http://${RELEASE_NAME}-auth-service:9001
+  
+  initContainers:
+    waitForMysql:
+      enabled: true
+    waitForConsul:
+      enabled: true
+    waitForAuth:
+      enabled: true
+
+# 配置映射 - 生产环境
+configMap:
+  database:
+    host: "swit-mysql-service"
+    port: "3306"
+    username: "switapp"
+    characterSet: "utf8mb4"
+    collation: "utf8mb4_unicode_ci"
+  
+  serviceDiscovery:
+    address: "swit-consul-service:8500"
+  
+  # 生产环境：信息级别日志
+  logging:
+    level: "info"
+
+# 密钥配置 - 生产环境
+secret:
+  database:
+    password: "CHANGE_ME_APP_PASSWORD"  # 生产环境需要更改
+    rootPassword: "CHANGE_ME_STRONG_PASSWORD"  # 生产环境需要更改
+  
+  jwt:
+    secret: "Q0hBTkdFX01FX1NUUk9OR19KV1RfU0VDUkVU"  # 生产环境需要更改为强密钥
+
+# Ingress 配置 - 生产环境
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  
+  hosts:
+    - host: api.swit.example.com
+      paths:
+        - path: /auth
+          pathType: Prefix
+          backend:
+            service: swit-auth
+        - path: /
+          pathType: Prefix
+          backend:
+            service: swit-serve
+  
+  tls:
+    - secretName: swit-tls-cert
+      hosts:
+        - api.swit.example.com
+
+# 自动扩容 - 生产环境启用
+autoscaling:
+  switAuth:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  switServe:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 50
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# 服务账户配置
+serviceAccount:
+  create: true
+  automount: false  # 生产环境安全考虑
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/SwitServiceRole"  # AWS EKS 示例
+  name: "swit-service-account"
+
+# Pod 安全上下文 - 生产环境加固
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+# 容器安全上下文 - 生产环境加固
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  capabilities:
+    drop:
+      - ALL
+    add:
+      - NET_BIND_SERVICE
+
+# Pod 注解
+podAnnotations:
+  environment: "production"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9000"
+  prometheus.io/path: "/metrics"
+
+# Pod 标签
+podLabels:
+  environment: "production"
+  tier: "backend"
+
+# 节点选择器 - 生产环境专用节点
+nodeSelector:
+  environment: "production"
+  instance-type: "high-performance"
+
+# 容忍度 - 生产环境节点污点
+tolerations:
+  - key: "production"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+# 亲和性 - 生产环境高可用
+affinity:
+  # Pod 反亲和性：确保 Pod 分布在不同节点
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - swit
+        topologyKey: kubernetes.io/hostname
+  
+  # 节点亲和性：优先选择生产环境节点
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: environment
+              operator: In
+              values:
+                - production
+
+# 镜像拉取密钥
+imagePullSecrets:
+  - name: regcred
+
+# 网络策略 - 生产环境安全
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: swit-prod
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9001
+  
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 3306  # MySQL
+        - protocol: TCP
+          port: 8500  # Consul
+        - protocol: TCP
+          port: 53    # DNS
+        - protocol: UDP
+          port: 53    # DNS
+        - protocol: TCP
+          port: 443   # HTTPS
+        - protocol: TCP
+          port: 80    # HTTP
+
+# 监控配置 - 生产环境
+monitoring:
+  enabled: true
+  prometheus:
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      path: /metrics
+      labels:
+        release: prometheus
+  
+  grafana:
+    enabled: true
+    dashboards:
+      enabled: true
+
+# 备份配置 - 生产环境
+backup:
+  enabled: true
+  mysql:
+    schedule: "0 2 * * *"  # 每天凌晨2点
+    retention: "30d"
+    
+# 通知配置 - 生产环境
+alerts:
+  enabled: true
+  slack:
+    webhook: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    channel: "#swit-alerts"
+  
+  email:
+    enabled: true
+    smtp:
+      host: "smtp.company.com"
+      port: 587
+      username: "alerts@company.com" 

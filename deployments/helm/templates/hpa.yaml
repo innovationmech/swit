@@ -1,0 +1,70 @@
+{{- if .Values.autoscaling.switAuth.enabled }}
+# Swit Auth 自动扩容
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "swit.auth.fullname" . }}-hpa
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.auth.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "swit.auth.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.switAuth.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.switAuth.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.switAuth.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.switAuth.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.switAuth.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.switAuth.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+
+{{- if .Values.autoscaling.switServe.enabled }}
+---
+# Swit Serve 自动扩容
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "swit.serve.fullname" . }}-hpa
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.serve.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "swit.serve.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.switServe.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.switServe.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.switServe.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.switServe.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.switServe.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.switServe.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}
