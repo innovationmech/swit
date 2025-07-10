@@ -172,18 +172,7 @@ prepare_build() {
     # 创建输出目录
     mkdir -p "${BUILD_DIR}" "${DIST_DIR}"
     
-    # 先生成 proto 和 swagger 代码
-    if [ -d "api/proto" ] && command -v buf &> /dev/null; then
-        log_info "生成 protobuf 代码..."
-        make proto 2>/dev/null || log_warning "protobuf 生成失败，继续构建..."
-    fi
-    
-    if command -v swag &> /dev/null; then
-        log_info "生成 Swagger 文档..."
-        make swagger 2>/dev/null || log_warning "Swagger 生成失败，继续构建..."
-    fi
-    
-    # 再运行 go mod tidy
+    # 运行 go mod tidy
     log_info "运行 go mod tidy..."
     go mod tidy
     

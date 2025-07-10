@@ -7,7 +7,7 @@
 
 # 主要构建命令 - 开发和测试使用
 .PHONY: build
-build: quality-dev
+build: quality-dev proto swagger
 	@echo "🔨 构建项目 (开发模式)"
 	@echo "📦 构建当前平台的所有服务..."
 	@scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
@@ -20,14 +20,14 @@ build-dev:
 
 # 发布构建 - 构建所有平台的发布版本
 .PHONY: build-release
-build-release:
+build-release: proto swagger
 	@echo "🎯 构建发布版本"
 	@echo "📦 构建所有平台并生成发布包..."
 	@scripts/tools/build-multiplatform.sh --clean --archive --checksum
 
 # 高级构建 - 精确控制服务和平台
 .PHONY: build-advanced
-build-advanced:
+build-advanced: proto swagger
 	@if [ -z "$(SERVICE)" ] || [ -z "$(PLATFORM)" ]; then \
 		echo "❌ 用法: make build-advanced SERVICE=服务名 PLATFORM=平台"; \
 		echo ""; \
