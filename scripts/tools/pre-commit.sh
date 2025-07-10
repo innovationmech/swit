@@ -21,7 +21,6 @@ fi
 # Get the list of staged files
 STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
 STAGED_PROTO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.proto$' || true)
-STAGED_SWAGGER_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(go|yaml|yml|json)$' || true)
 
 # Check if there are any staged files that need checking
 if [ -z "$STAGED_GO_FILES" ] && [ -z "$STAGED_PROTO_FILES" ]; then
@@ -62,7 +61,7 @@ if [ -n "$STAGED_PROTO_FILES" ]; then
     if command -v buf &> /dev/null; then
         if [ -d "api" ]; then
             echo "🎨 Formatting proto files..."
-            make proto-format
+            make proto-advanced OPERATION=format
             
             # Check if formatting changed anything in staged files
             FORMATTED_PROTO_FILES=$(git diff --name-only $STAGED_PROTO_FILES || true)
@@ -75,11 +74,11 @@ if [ -n "$STAGED_PROTO_FILES" ]; then
             
             # Lint proto files
             echo "🔍 Linting proto files..."
-            make proto-lint
+            make proto-advanced OPERATION=lint
             
             # Generate protobuf code for testing (but don't require staging)
             echo "⚙️  Generating protobuf code for testing..."
-            make proto-generate
+            make proto
             echo "ℹ️  Generated protobuf code is for testing only and will not be committed"
             
             REGENERATE_DOCS=true
@@ -88,7 +87,7 @@ if [ -n "$STAGED_PROTO_FILES" ]; then
         fi
     else
         echo "⚠️  Buf CLI not installed, skipping proto checks"
-        echo "Install with: make buf-install"
+        echo "Install with: make proto-setup"
     fi
 fi
 
@@ -136,39 +135,75 @@ if [ -n "$STAGED_GO_FILES" ]; then
     STAGED_GO_FILES_WITHOUT_DOCS=$(echo $STAGED_GO_FILES | tr ' ' '\n' | grep -v '/docs/docs.go$' || true)
     
     if [ -n "$STAGED_GO_FILES_WITHOUT_DOCS" ]; then
-        MISSING_COPYRIGHT=""
-        OUTDATED_COPYRIGHT=""
-        
-        # Check for missing copyright
+        # 先检查暂存文件的版权声明
+        FILES_NEED_UPDATE=""
         for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
-            if ! grep -q "Copyright" "$file" 2>/dev/null; then
-                MISSING_COPYRIGHT="$MISSING_COPYRIGHT $file"
+            if [ -f "$file" ]; then
+                # 检查是否有版权声明（支持多种格式）
+                if ! grep -q -i "^// Copyright\|^/\*.*Copyright\|^// (c)\|^/\*.*\((c)\|©\)" "$file"; then
+                    FILES_NEED_UPDATE="$FILES_NEED_UPDATE $file"
+                fi
             fi
         done
         
-        # Check for outdated copyright (simplified check)
-        if [ -f "scripts/boilerplate.txt" ]; then
-            for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
-                if grep -q "Copyright" "$file" 2>/dev/null; then
-                    if ! grep -q "$(date +%Y)" "$file" 2>/dev/null; then
-                        OUTDATED_COPYRIGHT="$OUTDATED_COPYRIGHT $file"
-                    fi
-                fi
-            done
-        fi
-        
-        if [ -n "$MISSING_COPYRIGHT" ] || [ -n "$OUTDATED_COPYRIGHT" ]; then
-            echo "⚠️  Copyright issues found:"
-            [ -n "$MISSING_COPYRIGHT" ] && echo "  Missing: $MISSING_COPYRIGHT"
-            [ -n "$OUTDATED_COPYRIGHT" ] && echo "  Outdated: $OUTDATED_COPYRIGHT"
-            echo "🔧 Fixing copyright statements..."
-            make copyright-add 2>/dev/null || true
-            make copyright-update 2>/dev/null || true
+        if [ -n "$FILES_NEED_UPDATE" ]; then
+            echo "⚠️  Some staged files need copyright statements"
             
-            # Check if copyright changes were made
-            if ! git diff --exit-code $STAGED_GO_FILES_WITHOUT_DOCS > /dev/null 2>&1; then
-                echo "⚠️  Copyright statements were updated"
-                echo "Please stage the changes and commit again"
+            # 只对暂存的文件添加版权声明
+            BOILERPLATE_FILE="scripts/boilerplate.txt"
+            if [ -f "$BOILERPLATE_FILE" ]; then
+                for file in $FILES_NEED_UPDATE; do
+                    if [ -f "$file" ]; then
+                        echo "🔧 Adding copyright to $file"
+                        
+                        # 检查文件是否部分暂存（有暂存和未暂存的更改）
+                        if git diff --name-only --cached | grep -q "^$(echo "$file" | sed 's|^\./||')$" && 
+                           git diff --name-only | grep -q "^$(echo "$file" | sed 's|^\./||')$"; then
+                            echo "⚠️  Warning: $file has both staged and unstaged changes"
+                            echo "💡 Consider staging all changes or using 'git add -p' for partial staging"
+                            echo "🔧 Proceeding with copyright addition to staged version..."
+                        fi
+                        
+                        # 创建临时文件，先写入版权声明，再写入原文件内容
+                        temp_file=$(mktemp)
+                        if [ -z "$temp_file" ] || [ ! -f "$temp_file" ]; then
+                            echo "❌ Failed to create temporary file for $file"
+                            echo "💡 mktemp failed - cannot safely add copyright"
+                            exit 1
+                        fi
+                        
+                        # 将版权声明转换为Go注释格式
+                        if ! sed 's/^/\/\/ /' "$BOILERPLATE_FILE" > "$temp_file"; then
+                            echo "❌ Failed to write copyright to temporary file for $file"
+                            rm -f "$temp_file"
+                            exit 1
+                        fi
+                        
+                        # 添加空行分隔
+                        echo "" >> "$temp_file"
+                        
+                        # 添加原文件内容
+                        if ! cat "$file" >> "$temp_file"; then
+                            echo "❌ Failed to append original content for $file"
+                            rm -f "$temp_file"
+                            exit 1
+                        fi
+                        
+                        # 原子性地替换文件
+                        if ! mv "$temp_file" "$file"; then
+                            echo "❌ Failed to update $file with copyright"
+                            rm -f "$temp_file"
+                            exit 1
+                        fi
+                        
+                        # 自动重新暂存修改的文件
+                        git add "$file"
+                        echo "✅ Copyright added and file restaged: $file"
+                    fi
+                done
+            else
+                echo "❌ Boilerplate file not found: $BOILERPLATE_FILE"
+                echo "💡 Run 'make copyright-setup' to initialize copyright management"
                 exit 1
             fi
         else
@@ -183,13 +218,11 @@ if [ -n "$STAGED_GO_FILES" ]; then
         # Check if swag is installed
         if command -v swag &> /dev/null; then
             echo "⚙️  Generating Swagger documentation for testing..."
-            
-            # Use optimized swagger generation
-            make swagger-fmt swagger-switserve swagger-switauth swagger-copy
+            make swagger
             echo "ℹ️  Generated Swagger documentation is for testing only and will not be committed"
         else
             echo "⚠️  Swag tool not installed, skipping Swagger doc generation"
-            echo "Install with: make swagger-install"
+            echo "Install with: make swagger-setup"
         fi
     fi
 

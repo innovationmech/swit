@@ -1,64 +1,75 @@
 .DEFAULT_GOAL := all
 
-# 导入所有子规则文件
-include scripts/mk/variables.mk
-include scripts/mk/build.mk
-include scripts/mk/test.mk
-include scripts/mk/docker.mk
-include scripts/mk/swagger.mk
-include scripts/mk/proto.mk
-include scripts/mk/dev.mk
-include scripts/mk/copyright.mk
+# 确定项目根目录
+MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-# 主要组合目标（优化版，避免重复执行）
+# 导入所有子规则文件
+include $(MAKEFILE_DIR)scripts/mk/variables.mk
+include $(MAKEFILE_DIR)scripts/mk/quality.mk
+include $(MAKEFILE_DIR)scripts/mk/build.mk
+include $(MAKEFILE_DIR)scripts/mk/test.mk
+include $(MAKEFILE_DIR)scripts/mk/docker.mk
+include $(MAKEFILE_DIR)scripts/mk/swagger.mk
+include $(MAKEFILE_DIR)scripts/mk/proto.mk
+include $(MAKEFILE_DIR)scripts/mk/dev.mk
+include $(MAKEFILE_DIR)scripts/mk/copyright.mk
+include $(MAKEFILE_DIR)scripts/mk/clean.mk
+
+# 主要组合目标（使用多平台构建系统）
 .PHONY: all
-all: proto swagger tidy copyright build-fast
+all: proto swagger tidy copyright build
 
 define USAGE_OPTIONS
 
-Options:
-  TIDY             Run go mod tidy.
-  FORMAT           Format the code using gofmt.
-  QUALITY          Run all quality checks (format, lint, vet).
-  BUILD            Build the binaries, output binaries are in _output/{application_name}/ directory.
-  CLEAN            Delete all generated code and build artifacts (binaries, protobuf, swagger, coverage, logs).
-  CLEAN-BUILD      Delete build outputs only.
-  CLEAN-PROTO      Delete protobuf generated code only.
-  CLEAN-SWAGGER    Delete Swagger generated documentation only.
-  CLEAN-TEST       Delete test artifacts (coverage files, logs) only.
-  TEST             Run all tests (internal + pkg).
-  TEST-PKG         Run tests for pkg packages only.
-  TEST-INTERNAL    Run tests for internal packages only.
-  TEST-COVERAGE    Run tests with coverage report.
-  TEST-RACE        Run tests with race detection.
-  CI               Run full CI pipeline (tidy, copyright, quality, test).
-  IMAGE-SERVE      Build Docker image for swit-serve.
-  IMAGE-AUTH       Build Docker image for swit-auth.
-  IMAGE-ALL        Build Docker images for all services.
-  INSTALL-HOOKS    Install Git pre-commit hooks.
-  SETUP-DEV        Setup development environment (tools + hooks).
-  SWAGGER          Generate/update Swagger documentation for all services.
-  SWAGGER-SWITSERVE Generate Swagger documentation for switserve only.
-  SWAGGER-SWITAUTH Generate Swagger documentation for switauth only.
-  SWAGGER-COPY     Create unified documentation links in docs/generated/.
-  SWAGGER-INSTALL  Install swag tool for generating Swagger docs.
-  COPYRIGHT        Check and add/update copyright statements to Go files (excludes generated code).
-  COPYRIGHT-CHECK  Check Go files for copyright statements.
-  COPYRIGHT-ADD    Add copyright statements to Go files missing them.
-  COPYRIGHT-UPDATE Update outdated copyright statements in Go files.
-  COPYRIGHT-FORCE  Force update all Go files with current copyright statement.
-  COPYRIGHT-DEBUG  Debug copyright hash comparison for troubleshooting.
-  COPYRIGHT-FILES  Show which files are included/excluded in copyright management.
-  PROTO            Generate protobuf code (format, lint, generate).
-  PROTO-SETUP      Setup protobuf development environment.
-  PROTO-GENERATE   Generate protobuf code only.
-  PROTO-LINT       Lint protobuf files.
-  PROTO-FORMAT     Format protobuf files.
-  PROTO-BREAKING   Check for breaking changes in protobuf files.
-  PROTO-CLEAN      Clean generated protobuf code.
-  PROTO-DOCS       Generate OpenAPI documentation from protobuf.
-  PROTO-VALIDATE   Validate protobuf configuration.
-  BUF-INSTALL      Install Buf CLI tool.
+【开发环境与CI】
+  SETUP-DEV        开发环境设置 - 完整的开发环境 (推荐)
+  SETUP-QUICK      快速开发设置 - 最小必要组件，快速开始
+  DEV-ADVANCED     高级开发环境管理 - 精确控制特定组件 (COMPONENT=组件类型)
+  CI               CI流水线 - 自动化测试和质量检查
+
+【构建与清理】
+  BUILD            构建项目 (开发模式) - 构建当前平台的所有服务
+  BUILD-DEV        快速构建 - 跳过质量检查，加速开发迭代
+  BUILD-RELEASE    发布构建 - 构建所有平台的发布版本
+  BUILD-ADVANCED   高级构建 - 精确控制服务和平台 (需要 SERVICE 和 PLATFORM 参数)
+  CLEAN            标准清理 - 删除所有生成的代码和构建产物
+  CLEAN-DEV        快速清理 - 仅删除构建输出 (开发时常用)
+  CLEAN-SETUP      深度清理 - 重置环境包括缓存和依赖
+  CLEAN-ADVANCED   高级清理 - 精确控制特定类型 (TYPE=清理类型)
+
+【测试相关】
+  TEST             运行测试 - 所有测试包含依赖生成 (推荐)
+  TEST-DEV         快速测试 - 跳过依赖生成，加速开发迭代
+  TEST-COVERAGE    覆盖率测试 - 生成详细的覆盖率报告
+  TEST-ADVANCED    高级测试 - 精确控制测试类型和包范围 (TYPE=测试类型)
+
+【代码质量相关】
+  TIDY             整理Go模块依赖 - 清理和更新go.mod文件
+  FORMAT           代码格式化 - 使用gofmt统一代码格式
+  QUALITY          代码质量检查 - 标准质量检查 (推荐用于CI/CD)
+  QUALITY-DEV      快速质量检查 - 开发时使用，跳过部分检查
+  QUALITY-SETUP    质量环境设置 - 安装必要的质量检查工具
+  QUALITY-ADVANCED 高级质量管理 - 精确控制特定操作 (OPERATION=操作类型)
+
+【API文档/Proto/版权】
+  SWAGGER          生成swagger文档 (推荐用于开发和发布)
+  SWAGGER-DEV      快速生成 - 跳过格式化，加速开发迭代
+  SWAGGER-SETUP    环境设置 - 首次使用时安装swag工具
+  SWAGGER-ADVANCED 高级操作 - 精确控制特定服务和操作 (OPERATION=操作类型)
+  PROTO            生成proto代码 (推荐用于开发和发布)
+  PROTO-DEV        快速生成 - 跳过依赖下载，加速开发迭代
+  PROTO-SETUP      环境设置 - 首次使用时安装工具和下载依赖
+  PROTO-ADVANCED   高级操作 - 精确控制格式化、检查等 (OPERATION=操作类型)
+  COPYRIGHT        版权声明管理 - 检查并自动修复版权声明
+  COPYRIGHT-CHECK  检查版权声明 - 只检查，不修改文件
+  COPYRIGHT-SETUP  初始版权设置 - 为新项目添加版权声明
+  COPYRIGHT-ADVANCED 高级版权操作 - 精确控制特定操作 (OPERATION=操作类型)
+
+【Docker相关】
+  DOCKER           Docker构建 - 标准镜像构建 (推荐用于生产发布)
+  DOCKER-DEV       快速Docker构建 - 使用缓存，加速开发迭代
+  DOCKER-SETUP     Docker开发环境 - 启动完整的开发环境
+  DOCKER-ADVANCED  高级Docker管理 - 精确控制特定操作 (OPERATION=操作类型)
 endef
 export USAGE_OPTIONS
 

@@ -1,4 +1,6 @@
 # 变量定义
+# 优先使用git获取项目根目录，如果失败则使用Makefile位置
+PROJECT_ROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo "$(MAKEFILE_DIR)" | sed 's/\/$$//g')
 GO := go
 GOFMT := gofmt
 GOVET := $(GO) vet
