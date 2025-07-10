@@ -32,17 +32,17 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
-    # 确保 Buf CLI 可用
-    - name: Install Buf CLI
-      run: make buf-install
+    # 安装 Proto 依赖和工具
+    - name: Install Proto tools
+      run: make proto-setup
 
     # 安装 Swagger 工具
     - name: Install Swagger tools
-      run: make swagger-install
+      run: make swagger-setup
 
     # 生成必要的代码，这样 go mod tidy 才能正常工作
     - name: Generate protobuf code
-      run: make proto-generate
+      run: make proto
 
     # 生成 Swagger 文档
     - name: Generate Swagger documentation
@@ -92,13 +92,13 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
-    # 确保 Buf CLI 可用
-    - name: Install Buf CLI
-      run: make buf-install
+    # 安装 Proto 依赖和工具
+    - name: Install Proto tools
+      run: make proto-setup
 
     # 安装 Swagger 工具 (make test 依赖 swagger)
     - name: Install Swagger tools
-      run: make swagger-install
+      run: make swagger-setup
 
     - name: Run tests
       run: make test
@@ -139,13 +139,13 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
-    # 确保 Buf CLI 可用
-    - name: Install Buf CLI
-      run: make buf-install
+    # 安装 Proto 依赖和工具
+    - name: Install Proto tools
+      run: make proto-setup
 
     # 安装 Swagger 工具 (make build 依赖 swagger)
     - name: Install Swagger tools
-      run: make swagger-install
+      run: make swagger-setup
 
     - name: Build binaries
       run: make build
