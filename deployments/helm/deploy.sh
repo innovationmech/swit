@@ -114,7 +114,7 @@ build_images() {
     
     # 构建认证服务镜像
     log_info "构建 swit-auth 镜像..."
-    if docker build -t swit-auth:latest -f cmd/swit-auth/Dockerfile .; then
+    if docker build -t swit-auth:latest -f build/docker/switauth/Dockerfile .; then
         log_success "swit-auth 镜像构建成功"
     else
         log_error "swit-auth 镜像构建失败"
@@ -123,7 +123,7 @@ build_images() {
     
     # 构建主要服务镜像
     log_info "构建 swit-serve 镜像..."
-    if docker build -t swit-serve:latest -f cmd/swit-serve/Dockerfile .; then
+    if docker build -t swit-serve:latest -f build/docker/swit-serve/Dockerfile .; then
         log_success "swit-serve 镜像构建成功"
     else
         log_error "swit-serve 镜像构建失败"
