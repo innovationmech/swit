@@ -7,14 +7,14 @@ metadata:
     {{- include "swit.labels" . | nindent 4 }}
 data:
   # 数据库配置
-  DATABASE_HOST: {{ .Values.configMap.database.host | quote }}
+  DATABASE_HOST: {{ printf "%s-service" (include "swit.mysql.fullname" .) | quote }}
   DATABASE_PORT: {{ .Values.configMap.database.port | quote }}
   DATABASE_USERNAME: {{ .Values.configMap.database.username | quote }}
   DATABASE_CHARACTER_SET: {{ .Values.configMap.database.characterSet | quote }}
   DATABASE_COLLATION: {{ .Values.configMap.database.collation | quote }}
   
   # 服务发现配置
-  SERVICE_DISCOVERY_ADDRESS: {{ .Values.configMap.serviceDiscovery.address | quote }}
+  SERVICE_DISCOVERY_ADDRESS: {{ printf "%s-service:%s" (include "swit.consul.fullname" .) "8500" | quote }}
   
   # 日志配置
   LOG_LEVEL: {{ .Values.configMap.logging.level | quote }}
@@ -26,14 +26,14 @@ data:
       environment: development
     
     database:
-      host: {{ .Values.configMap.database.host }}
+      host: {{ printf "%s-service" (include "swit.mysql.fullname" .) }}
       port: {{ .Values.configMap.database.port }}
       username: {{ .Values.configMap.database.username }}
       character_set: {{ .Values.configMap.database.characterSet }}
       collation: {{ .Values.configMap.database.collation }}
     
     service_discovery:
-      address: {{ .Values.configMap.serviceDiscovery.address }}
+      address: {{ printf "%s-service:8500" (include "swit.consul.fullname" .) }}
     
     logging:
       level: {{ .Values.configMap.logging.level }}
@@ -44,14 +44,14 @@ data:
       environment: development
     
     database:
-      host: {{ .Values.configMap.database.host }}
+      host: {{ printf "%s-service" (include "swit.mysql.fullname" .) }}
       port: {{ .Values.configMap.database.port }}
       username: {{ .Values.configMap.database.username }}
       character_set: {{ .Values.configMap.database.characterSet }}
       collation: {{ .Values.configMap.database.collation }}
     
     service_discovery:
-      address: {{ .Values.configMap.serviceDiscovery.address }}
+      address: {{ printf "%s-service:8500" (include "swit.consul.fullname" .) }}
     
     logging:
       level: {{ .Values.configMap.logging.level }}

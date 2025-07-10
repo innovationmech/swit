@@ -253,7 +253,7 @@ switServe:
   env:
     serverPort: "9000"
     databaseDbname: "user_service_db"
-    authServiceUrl: "http://swit-auth-service:9001"
+    # authServiceUrl 现在由模板自动生成：http://${RELEASE_NAME}-auth-service:9001
   
   # 初始化容器
   initContainers:
@@ -268,7 +268,7 @@ switServe:
 configMap:
   # 数据库配置
   database:
-    host: "mysql-service"
+    # host 现在由模板自动生成：${RELEASE_NAME}-mysql-service
     port: "3306"
     username: "root"
     characterSet: "utf8mb4"
@@ -276,7 +276,8 @@ configMap:
   
   # 服务发现配置
   serviceDiscovery:
-    address: "consul-service:8500"
+    # address 现在由模板自动生成：${RELEASE_NAME}-consul-service:8500
+    port: "8500"
   
   # 日志配置
   logging:

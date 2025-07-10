@@ -211,7 +211,7 @@ switServe:
   env:
     serverPort: "9000"
     databaseDbname: "user_service_db"
-    authServiceUrl: "http://swit-auth-service:9001"
+    # authServiceUrl 现在由模板自动生成：http://${RELEASE_NAME}-auth-service:9001
   
   initContainers:
     waitForMysql:

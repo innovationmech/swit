@@ -115,7 +115,7 @@ spec:
                   name: {{ include "swit.fullname" . }}-config
                   key: SERVICE_DISCOVERY_ADDRESS
             - name: AUTH_SERVICE_URL
-              value: {{ .Values.switServe.env.authServiceUrl | quote }}
+              value: {{ printf "http://%s-service:%d" (include "swit.auth.fullname" .) (.Values.switAuth.service.port | int) | quote }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
