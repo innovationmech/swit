@@ -10,20 +10,20 @@
 build: quality-dev proto swagger
 	@echo "🔨 构建项目 (开发模式)"
 	@echo "📦 构建当前平台的所有服务..."
-	@scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
+	@$(PROJECT_ROOT)/scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
 
 # 快速开发构建 - 跳过质量检查，加速迭代
 .PHONY: build-dev
 build-dev:
 	@echo "🚀 快速开发构建（跳过质量检查）"
-	@scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
+	@$(PROJECT_ROOT)/scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
 
 # 发布构建 - 构建所有平台的发布版本
 .PHONY: build-release
 build-release: proto swagger
 	@echo "🎯 构建发布版本"
 	@echo "📦 构建所有平台并生成发布包..."
-	@scripts/tools/build-multiplatform.sh --clean --archive --checksum
+	@$(PROJECT_ROOT)/scripts/tools/build-multiplatform.sh --clean --archive --checksum
 
 # 高级构建 - 精确控制服务和平台
 .PHONY: build-advanced
@@ -40,7 +40,7 @@ build-advanced: proto swagger
 		exit 1; \
 	fi
 	@echo "📦 构建 $(SERVICE) for $(PLATFORM)..."
-	@scripts/tools/build-multiplatform.sh -p $(PLATFORM) -s $(SERVICE)
+	@$(PROJECT_ROOT)/scripts/tools/build-multiplatform.sh -p $(PLATFORM) -s $(SERVICE)
 
 # =============================================================================
 # 清理目标 (使用统一的清理系统)

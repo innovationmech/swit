@@ -1,16 +1,19 @@
 .DEFAULT_GOAL := all
 
+# 确定项目根目录
+MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
 # 导入所有子规则文件
-include scripts/mk/variables.mk
-include scripts/mk/quality.mk
-include scripts/mk/build.mk
-include scripts/mk/test.mk
-include scripts/mk/docker.mk
-include scripts/mk/swagger.mk
-include scripts/mk/proto.mk
-include scripts/mk/dev.mk
-include scripts/mk/copyright.mk
-include scripts/mk/clean.mk
+include $(MAKEFILE_DIR)scripts/mk/variables.mk
+include $(MAKEFILE_DIR)scripts/mk/quality.mk
+include $(MAKEFILE_DIR)scripts/mk/build.mk
+include $(MAKEFILE_DIR)scripts/mk/test.mk
+include $(MAKEFILE_DIR)scripts/mk/docker.mk
+include $(MAKEFILE_DIR)scripts/mk/swagger.mk
+include $(MAKEFILE_DIR)scripts/mk/proto.mk
+include $(MAKEFILE_DIR)scripts/mk/dev.mk
+include $(MAKEFILE_DIR)scripts/mk/copyright.mk
+include $(MAKEFILE_DIR)scripts/mk/clean.mk
 
 # 主要组合目标（使用多平台构建系统）
 .PHONY: all

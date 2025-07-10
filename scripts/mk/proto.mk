@@ -9,7 +9,7 @@
 .PHONY: proto
 proto:
 	@echo "🔧 标准proto代码生成（推荐用于开发和发布）"
-	@scripts/tools/proto-generate.sh
+	@$(PROJECT_ROOT)/scripts/tools/proto-generate.sh
 	@echo ""
 	@echo "💡 快速提示："
 	@echo "  make proto-dev     # 快速开发模式（跳过依赖下载）"
@@ -19,13 +19,13 @@ proto:
 .PHONY: proto-dev
 proto-dev:
 	@echo "🚀 快速proto代码生成（开发模式）"
-	@scripts/tools/proto-generate.sh --dev
+	@$(PROJECT_ROOT)/scripts/tools/proto-generate.sh --dev
 
 # 环境设置 - 安装工具和下载依赖（首次使用）
 .PHONY: proto-setup
 proto-setup:
 	@echo "⚙️  设置protobuf开发环境"
-	@scripts/tools/proto-generate.sh --setup
+	@$(PROJECT_ROOT)/scripts/tools/proto-generate.sh --setup
 
 # 高级proto操作 - 支持所有参数的灵活命令
 .PHONY: proto-advanced
@@ -50,13 +50,13 @@ proto-advanced:
 		echo "  make proto-advanced OPERATION=dry-run"; \
 	else \
 		case "$(OPERATION)" in \
-			format) scripts/tools/proto-generate.sh --format ;; \
-			lint) scripts/tools/proto-generate.sh --lint ;; \
-			breaking) scripts/tools/proto-generate.sh --breaking ;; \
-			clean) scripts/tools/proto-generate.sh --clean ;; \
-			docs) scripts/tools/proto-generate.sh --docs ;; \
-			validate) scripts/tools/proto-generate.sh --validate ;; \
-			dry-run) scripts/tools/proto-generate.sh --dry-run ;; \
+			format) $(PROJECT_ROOT)/scripts/tools/proto-generate.sh --format ;; \
+			lint) $(PROJECT_ROOT)/scripts/tools/proto-generate.sh --lint ;; \
+			breaking) $(PROJECT_ROOT)/scripts/tools/proto-generate.sh --breaking ;; \
+			clean) $(PROJECT_ROOT)/scripts/tools/proto-generate.sh --clean ;; \
+			docs) $(PROJECT_ROOT)/scripts/tools/proto-generate.sh --docs ;; \
+			validate) $(PROJECT_ROOT)/scripts/tools/proto-generate.sh --validate ;; \
+			dry-run) $(PROJECT_ROOT)/scripts/tools/proto-generate.sh --dry-run ;; \
 			*) echo "❌ 未知操作: $(OPERATION)"; echo "运行 'make proto-advanced' 查看支持的操作" ;; \
 		esac \
 	fi

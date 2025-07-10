@@ -138,8 +138,11 @@ if [ -n "$STAGED_GO_FILES" ]; then
         # 先检查暂存文件的版权声明
         FILES_NEED_UPDATE=""
         for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
-            if [ -f "$file" ] && ! grep -q "^// Copyright" "$file"; then
-                FILES_NEED_UPDATE="$FILES_NEED_UPDATE $file"
+            if [ -f "$file" ]; then
+                # 检查是否有版权声明（支持多种格式）
+                if ! grep -q -i "^// Copyright\|^/\*.*Copyright\|^// (c)\|^/\*.*\((c)\|©\)" "$file"; then
+                    FILES_NEED_UPDATE="$FILES_NEED_UPDATE $file"
+                fi
             fi
         done
         
@@ -152,13 +155,46 @@ if [ -n "$STAGED_GO_FILES" ]; then
                 for file in $FILES_NEED_UPDATE; do
                     if [ -f "$file" ]; then
                         echo "🔧 Adding copyright to $file"
+                        
+                        # 检查文件是否部分暂存（有暂存和未暂存的更改）
+                        if git diff --name-only --cached | grep -q "^$(echo "$file" | sed 's|^\./||')$" && 
+                           git diff --name-only | grep -q "^$(echo "$file" | sed 's|^\./||')$"; then
+                            echo "⚠️  Warning: $file has both staged and unstaged changes"
+                            echo "💡 Consider staging all changes or using 'git add -p' for partial staging"
+                            echo "🔧 Proceeding with copyright addition to staged version..."
+                        fi
+                        
                         # 创建临时文件，先写入版权声明，再写入原文件内容
                         temp_file=$(mktemp)
+                        if [ -z "$temp_file" ] || [ ! -f "$temp_file" ]; then
+                            echo "❌ Failed to create temporary file for $file"
+                            echo "💡 mktemp failed - cannot safely add copyright"
+                            exit 1
+                        fi
+                        
                         # 将版权声明转换为Go注释格式
-                        sed 's/^/\/\/ /' "$BOILERPLATE_FILE" > "$temp_file"
+                        if ! sed 's/^/\/\/ /' "$BOILERPLATE_FILE" > "$temp_file"; then
+                            echo "❌ Failed to write copyright to temporary file for $file"
+                            rm -f "$temp_file"
+                            exit 1
+                        fi
+                        
+                        # 添加空行分隔
                         echo "" >> "$temp_file"
-                        cat "$file" >> "$temp_file"
-                        mv "$temp_file" "$file"
+                        
+                        # 添加原文件内容
+                        if ! cat "$file" >> "$temp_file"; then
+                            echo "❌ Failed to append original content for $file"
+                            rm -f "$temp_file"
+                            exit 1
+                        fi
+                        
+                        # 原子性地替换文件
+                        if ! mv "$temp_file" "$file"; then
+                            echo "❌ Failed to update $file with copyright"
+                            rm -f "$temp_file"
+                            exit 1
+                        fi
                         
                         # 自动重新暂存修改的文件
                         git add "$file"
