@@ -145,22 +145,30 @@ if [ -n "$STAGED_GO_FILES" ]; then
         
         if [ -n "$FILES_NEED_UPDATE" ]; then
             echo "⚠️  Some staged files need copyright statements"
-            # 运行版权修复（会修复所有文件，但我们只关心暂存的）
-            make copyright > /dev/null 2>&1 || true
             
-            # 检查暂存文件是否被修改
-            MODIFIED_FILES=""
-            for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
-                if ! git diff --exit-code "$file" > /dev/null 2>&1; then
-                    MODIFIED_FILES="$MODIFIED_FILES $file"
-                fi
-            done
-            
-            if [ -n "$MODIFIED_FILES" ]; then
-                echo "🔧 Copyright statements were updated in:$MODIFIED_FILES"
-                # 自动重新暂存修改的文件
-                git add $MODIFIED_FILES
-                echo "✅ Updated files have been automatically restaged"
+            # 只对暂存的文件添加版权声明
+            BOILERPLATE_FILE="scripts/boilerplate.txt"
+            if [ -f "$BOILERPLATE_FILE" ]; then
+                for file in $FILES_NEED_UPDATE; do
+                    if [ -f "$file" ]; then
+                        echo "🔧 Adding copyright to $file"
+                        # 创建临时文件，先写入版权声明，再写入原文件内容
+                        temp_file=$(mktemp)
+                        # 将版权声明转换为Go注释格式
+                        sed 's/^/\/\/ /' "$BOILERPLATE_FILE" > "$temp_file"
+                        echo "" >> "$temp_file"
+                        cat "$file" >> "$temp_file"
+                        mv "$temp_file" "$file"
+                        
+                        # 自动重新暂存修改的文件
+                        git add "$file"
+                        echo "✅ Copyright added and file restaged: $file"
+                    fi
+                done
+            else
+                echo "❌ Boilerplate file not found: $BOILERPLATE_FILE"
+                echo "💡 Run 'make copyright-setup' to initialize copyright management"
+                exit 1
             fi
         else
             echo "✅ All staged Go files have proper copyright statements"
