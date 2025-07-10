@@ -135,13 +135,33 @@ if [ -n "$STAGED_GO_FILES" ]; then
     STAGED_GO_FILES_WITHOUT_DOCS=$(echo $STAGED_GO_FILES | tr ' ' '\n' | grep -v '/docs/docs.go$' || true)
     
     if [ -n "$STAGED_GO_FILES_WITHOUT_DOCS" ]; then
-        # 直接用新版命令自动修复
-        make copyright
-        # 检查是否有变更
-        if ! git diff --exit-code $STAGED_GO_FILES_WITHOUT_DOCS > /dev/null 2>&1; then
-            echo "⚠️  Copyright statements were updated"
-            echo "Please stage the changes and commit again"
-            exit 1
+        # 先检查暂存文件的版权声明
+        FILES_NEED_UPDATE=""
+        for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
+            if [ -f "$file" ] && ! grep -q "^// Copyright" "$file"; then
+                FILES_NEED_UPDATE="$FILES_NEED_UPDATE $file"
+            fi
+        done
+        
+        if [ -n "$FILES_NEED_UPDATE" ]; then
+            echo "⚠️  Some staged files need copyright statements"
+            # 运行版权修复（会修复所有文件，但我们只关心暂存的）
+            make copyright > /dev/null 2>&1 || true
+            
+            # 检查暂存文件是否被修改
+            MODIFIED_FILES=""
+            for file in $STAGED_GO_FILES_WITHOUT_DOCS; do
+                if ! git diff --exit-code "$file" > /dev/null 2>&1; then
+                    MODIFIED_FILES="$MODIFIED_FILES $file"
+                fi
+            done
+            
+            if [ -n "$MODIFIED_FILES" ]; then
+                echo "🔧 Copyright statements were updated in:$MODIFIED_FILES"
+                # 自动重新暂存修改的文件
+                git add $MODIFIED_FILES
+                echo "✅ Updated files have been automatically restaged"
+            fi
         else
             echo "✅ All staged Go files have proper copyright statements"
         fi
