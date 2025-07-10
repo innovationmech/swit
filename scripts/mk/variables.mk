@@ -1,5 +1,5 @@
 # 变量定义
-PROJECT_ROOT := $(shell git rev-parse --show-toplevel)
+PROJECT_ROOT := $(shell git rev-parse --show-toplevel 2>/dev/null || echo "$(dir $(realpath $(firstword $(MAKEFILE_LIST))))/..")
 GO := go
 GOFMT := gofmt
 GOVET := $(GO) vet
