@@ -1,5 +1,5 @@
 # 变量定义
-PROJECT_ROOT := $(shell pwd)
+PROJECT_ROOT := $(shell git rev-parse --show-toplevel)
 GO := go
 GOFMT := gofmt
 GOVET := $(GO) vet
