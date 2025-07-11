@@ -18,10 +18,19 @@ api/gen/
 docs/generated/
 internal/*/docs/docs.go
 
-# Go 相关文件
-*.log
+# 许可证报告文件 (自动生成)
+licenses_report.txt
+licenses.txt
+license_check.txt
+licenses_temp.txt
+
+# 测试和覆盖率报告
 coverage.out
 coverage.html
+*.prof
+
+# Go 相关文件
+*.log
 
 # 测试输出
 test.log

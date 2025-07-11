@@ -110,16 +110,6 @@ jobs:
     - name: Run tests with race detection
       run: make test-advanced TYPE=race
 
-    - name: Run tests with coverage
-      run: make test-coverage
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
-
   build:
     name: Build
     runs-on: ubuntu-latest

@@ -1,5 +1,23 @@
 # Swit
 
+[![CI](https://github.com/innovationmech/swit/workflows/CI/badge.svg)](https://github.com/innovationmech/swit/actions/workflows/ci.yml)
+[![Security Checks](https://github.com/innovationmech/swit/workflows/Security%20Checks/badge.svg)](https://github.com/innovationmech/swit/actions/workflows/security-checks.yml)
+[![codecov](https://codecov.io/gh/innovationmech/swit/branch/master/graph/badge.svg)](https://codecov.io/gh/innovationmech/swit)
+[![Go Report Card](https://goreportcard.com/badge/github.com/innovationmech/swit)](https://goreportcard.com/report/github.com/innovationmech/swit)
+[![Go Reference](https://pkg.go.dev/badge/github.com/innovationmech/swit.svg)](https://pkg.go.dev/github.com/innovationmech/swit)
+![Go Version](https://img.shields.io/badge/go-%3E%3D1.24-blue.svg)
+[![GitHub release](https://img.shields.io/github/release/innovationmech/swit.svg)](https://github.com/innovationmech/swit/releases)
+[![License](https://img.shields.io/github/license/innovationmech/swit.svg)](LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues/innovationmech/swit.svg)](https://github.com/innovationmech/swit/issues)
+[![GitHub stars](https://img.shields.io/github/stars/innovationmech/swit.svg)](https://github.com/innovationmech/swit/stargazers)
+
+<!-- DYNAMIC_BADGES_START -->
+![Lines of Code](https://img.shields.io/badge/lines_of_code-calculating-blue)
+![Commits](https://img.shields.io/badge/commits-calculating-green)
+![Contributors](https://img.shields.io/badge/contributors-calculating-orange)
+![Last Update](https://img.shields.io/badge/last_update-calculating-yellow)
+<!-- DYNAMIC_BADGES_END -->
+
 Swit is a microservice-based backend system built with Go, featuring modular design for user management, authentication, and service discovery. The project uses the Gin framework for HTTP requests, GORM for data persistence, and supports gRPC protocol for inter-service communication.
 
 ## Core Features

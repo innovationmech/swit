@@ -1,0 +1,158 @@
+name: Update Badges
+
+on:
+  push:
+    branches: [ master ]
+  schedule:
+    # 每天更新一次徽章
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-badges:
+    name: Update Dynamic Badges
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Count Lines of Code
+      id: loc
+      run: |
+        # 计算代码行数 (排除生成的代码和vendor)
+        LINES=$(find . -name "*.go" -not -path "./vendor/*" -not -path "./_output/*" -not -path "./api/gen/*" | xargs wc -l | tail -1 | awk '{print $1}')
+        echo "lines=${LINES}" >> $GITHUB_OUTPUT
+        echo "📊 Total lines of code: ${LINES}"
+
+    - name: Count Commits
+      id: commits
+      run: |
+        COMMITS=$(git rev-list --count HEAD)
+        echo "commits=${COMMITS}" >> $GITHUB_OUTPUT
+        echo "📈 Total commits: ${COMMITS}"
+
+    - name: Get Last Commit Date
+      id: last_commit
+      run: |
+        LAST_COMMIT=$(git log -1 --format=%cd --date=short)
+        echo "last_commit=${LAST_COMMIT}" >> $GITHUB_OUTPUT
+        echo "📅 Last commit: ${LAST_COMMIT}"
+
+    - name: Count Contributors
+      id: contributors
+      run: |
+        CONTRIBUTORS=$(git log --format='%aN' | sort -u | wc -l)
+        echo "contributors=${CONTRIBUTORS}" >> $GITHUB_OUTPUT
+        echo "👥 Contributors: ${CONTRIBUTORS}"
+
+    - name: Check Dependencies
+      id: deps
+      run: |
+        # 计算直接依赖数量
+        DEPS=$(go list -m all | grep -v "^github.com/innovationmech/swit" | wc -l)
+        echo "dependencies=${DEPS}" >> $GITHUB_OUTPUT
+        echo "📦 Dependencies: ${DEPS}"
+
+    - name: Get Latest Release
+      id: release
+      run: |
+        # 获取最新标签作为版本
+        LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "version=${LATEST}" >> $GITHUB_OUTPUT
+        echo "🏷️ Latest version: ${LATEST}"
+
+    - name: Create Badge URLs
+      run: |
+        # 创建徽章 URL 文件供参考
+        cat > BADGE_URLS.md << EOF
+        # 项目徽章 URLs
+        
+        ## 自动生成的徽章
+        
+        ### 代码统计
+        - Lines of Code: ![Lines of Code](https://img.shields.io/badge/lines_of_code-${{ steps.loc.outputs.lines }}-blue)
+        - Commits: ![Commits](https://img.shields.io/badge/commits-${{ steps.commits.outputs.commits }}-green)
+        - Contributors: ![Contributors](https://img.shields.io/badge/contributors-${{ steps.contributors.outputs.contributors }}-orange)
+        - Dependencies: ![Dependencies](https://img.shields.io/badge/dependencies-${{ steps.deps.outputs.dependencies }}-purple)
+        - Last Update: ![Last Update](https://img.shields.io/badge/last_update-${{ steps.last_commit.outputs.last_commit }}-yellow)
+        - Version: ![Version](https://img.shields.io/badge/version-${{ steps.release.outputs.version }}-red)
+        
+        ### CI/CD 状态
+        - CI: ![CI](https://github.com/innovationmech/swit/workflows/CI/badge.svg)
+        - Security: ![Security](https://github.com/innovationmech/swit/workflows/Security%20Checks/badge.svg)
+        - Coverage: [![codecov](https://codecov.io/gh/innovationmech/swit/branch/master/graph/badge.svg)](https://codecov.io/gh/innovationmech/swit)
+        
+        ### 项目信息
+        - Go Report: [![Go Report Card](https://goreportcard.com/badge/github.com/innovationmech/swit)](https://goreportcard.com/report/github.com/innovationmech/swit)
+        - Go Reference: [![Go Reference](https://pkg.go.dev/badge/github.com/innovationmech/swit.svg)](https://pkg.go.dev/github.com/innovationmech/swit)
+        - License: [![License](https://img.shields.io/github/license/innovationmech/swit.svg)](LICENSE)
+        - Issues: [![GitHub issues](https://img.shields.io/github/issues/innovationmech/swit.svg)](https://github.com/innovationmech/swit/issues)
+        - Stars: [![GitHub stars](https://img.shields.io/github/stars/innovationmech/swit.svg)](https://github.com/innovationmech/swit/stargazers)
+        
+        ## 使用方法
+        
+        复制以上徽章代码并粘贴到 README.md 中相应位置。
+        EOF
+        
+        echo "📝 Generated badge URLs in BADGE_URLS.md"
+
+    - name: Update README with dynamic badges
+      run: |
+        # 在 README.md 中查找并更新动态徽章部分
+        if grep -q "<!-- DYNAMIC_BADGES_START -->" README.md; then
+          echo "Found dynamic badge markers, updating..."
+          # 创建临时文件存储新的徽章内容
+          cat > temp_badges.txt << 'EOF'
+        <!-- DYNAMIC_BADGES_START -->
+        ![Lines of Code](https://img.shields.io/badge/lines_of_code-${{ steps.loc.outputs.lines }}-blue)
+        ![Commits](https://img.shields.io/badge/commits-${{ steps.commits.outputs.commits }}-green)
+        ![Contributors](https://img.shields.io/badge/contributors-${{ steps.contributors.outputs.contributors }}-orange)
+        ![Last Update](https://img.shields.io/badge/last_update-${{ steps.last_commit.outputs.last_commit }}-yellow)
+        <!-- DYNAMIC_BADGES_END -->
+        EOF
+          
+          # 使用 awk 替换内容
+          awk '
+          /<!-- DYNAMIC_BADGES_START -->/ {
+            system("cat temp_badges.txt")
+            skip = 1
+            next
+          }
+          /<!-- DYNAMIC_BADGES_END -->/ {
+            skip = 0
+            next
+          }
+          !skip { print }
+          ' README.md > README_temp.md && mv README_temp.md README.md
+          
+          rm temp_badges.txt
+          echo "✅ Updated dynamic badges in README.md"
+        else
+          echo "ℹ️ No dynamic badge markers found in README.md"
+          echo "💡 Add <!-- DYNAMIC_BADGES_START --> and <!-- DYNAMIC_BADGES_END --> markers to enable auto-update"
+        fi
+
+    - name: Commit updates
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        if git diff --quiet; then
+          echo "No changes to commit"
+        else
+          git add .
+          git commit -m "chore: update project badges [skip ci]"
+          git push
+          echo "✅ Committed badge updates"
+        fi

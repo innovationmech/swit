@@ -1,0 +1,186 @@
+name: License Check
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ master, dev ]
+  schedule:
+    # 每月第一天检查一次
+    - cron: '0 0 1 * *'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  license-check:
+    name: Check Dependencies License
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+
+    - name: Install go-licenses
+      run: go install github.com/google/go-licenses@latest
+
+    - name: Check licenses
+      id: license_check
+      run: |
+        # 检查依赖的许可证
+        echo "🔍 Checking dependency licenses..."
+        
+        # 加载许可证配置
+        source .licenses
+        
+        # 先尝试运行许可证检查
+        if go-licenses check ./... > license_check.txt 2>&1; then
+          echo "check_passed=true" >> $GITHUB_OUTPUT
+          echo "✅ go-licenses check passed"
+        else
+          echo "check_passed=false" >> $GITHUB_OUTPUT
+          echo "⚠️ go-licenses check had issues, but continuing with detailed analysis..."
+        fi
+        
+        # 生成许可证报告
+        echo "📄 Generating license report..."
+        go-licenses report ./... > licenses.txt 2>&1 || true
+        
+        # 检查是否有禁用的许可证
+        FORBIDDEN_FOUND=false
+        REVIEW_NEEDED=false
+        
+        echo "🔍 Checking for forbidden licenses..."
+        for license in "${FORBIDDEN_LICENSES[@]}"; do
+          if grep -q "$license" licenses.txt; then
+            echo "❌ Found forbidden license: $license"
+            FORBIDDEN_FOUND=true
+          fi
+        done
+        
+        echo "📋 Checking for licenses requiring review..."
+        for license in "${REVIEW_REQUIRED_LICENSES[@]}"; do
+          if grep -q "$license" licenses.txt; then
+            echo "⚠️ Found license requiring review: $license"
+            REVIEW_NEEDED=true
+          fi
+        done
+        
+        # 设置输出变量
+        echo "forbidden_found=$FORBIDDEN_FOUND" >> $GITHUB_OUTPUT
+        echo "review_needed=$REVIEW_NEEDED" >> $GITHUB_OUTPUT
+        
+        if [ "$FORBIDDEN_FOUND" = "true" ]; then
+          echo "❌ Forbidden licenses detected!"
+          exit 1
+        else
+          echo "✅ No forbidden licenses found"
+        fi
+        
+        # 显示许可证统计
+        echo "📊 License summary:"
+        if [ -f "licenses.txt" ]; then
+          echo "Found licenses:"
+          grep -o '[A-Z][A-Z0-9-]*[0-9]\|MIT\|BSD.*\|Apache.*\|MPL.*' licenses.txt | sort | uniq -c | sort -nr || true
+          echo ""
+          echo "Total dependencies: $(wc -l < licenses.txt)"
+        fi
+
+    - name: Upload license report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: license-report
+        path: |
+          licenses.txt
+          license_check.txt
+        retention-days: 90
+
+    - name: Comment on PR
+      if: github.event_name == 'pull_request' && steps.license_check.outputs.forbidden_found == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## ⚠️ License Check Failed
+            
+            This PR introduces dependencies with incompatible licenses.
+            
+            Please review the license report in the artifacts and ensure all dependencies use acceptable licenses.
+            
+            **Forbidden licenses**: GPL-2.0, GPL-3.0, AGPL-1.0, AGPL-3.0
+            
+            ---
+            *Automated license check by GitHub Actions*`
+          });
+
+  copyright-check:
+    name: Check Copyright Headers
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check copyright headers
+      id: copyright_check
+      run: |
+        # 检查 Go 文件的版权头
+        echo "🔍 Checking copyright headers in Go files..."
+        
+        MISSING_COPYRIGHT=()
+        
+        for file in $(find . -name "*.go" -not -path "./vendor/*" -not -path "./_output/*" -not -path "./api/gen/*"); do
+          if ! head -10 "$file" | grep -q "Copyright"; then
+            MISSING_COPYRIGHT+=("$file")
+          fi
+        done
+        
+        if [ ${#MISSING_COPYRIGHT[@]} -gt 0 ]; then
+          echo "❌ Files missing copyright headers:"
+          printf '%s\n' "${MISSING_COPYRIGHT[@]}"
+          echo "missing_copyright=true" >> $GITHUB_OUTPUT
+        else
+          echo "✅ All Go files have copyright headers"
+          echo "missing_copyright=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Add copyright headers
+      if: steps.copyright_check.outputs.missing_copyright == 'true'
+      run: |
+        # 使用项目中的版权管理工具
+        if [ -f "scripts/tools/copyright-manage.sh" ]; then
+          echo "📝 Adding missing copyright headers..."
+          bash scripts/tools/copyright-manage.sh add
+        else
+          echo "⚠️ Copyright management script not found"
+        fi
+
+    - name: Create PR for copyright fixes
+      if: steps.copyright_check.outputs.missing_copyright == 'true' && github.event_name == 'push'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "chore: add missing copyright headers"
+        title: "📄 Add Missing Copyright Headers"
+        body: |
+          ## 📄 Copyright Headers Update
+          
+          This PR adds missing copyright headers to Go source files.
+          
+          ### Changes
+          - Added copyright headers to files that were missing them
+          - Ensures compliance with project licensing requirements
+          
+          ---
+          *This PR was automatically created by the license check workflow.*
+        branch: copyright-headers-update
+        delete-branch: true

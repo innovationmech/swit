@@ -1,4 +1,4 @@
-name: Status Checks
+name: Security Checks
 
 on:
   push:
@@ -12,27 +12,13 @@ permissions:
   security-events: write
   actions: read
 
-jobs:
-  # 这个 job 会检查所有必需的检查是否通过
-  status-check:
-    name: Status Check Summary
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check CI Status
-      run: |
-        echo "All required checks passed!"
-        echo "✅ Setup & Code Quality"
-        echo "✅ Tests" 
-        echo "✅ Build"
-        echo "✅ Security Check"
-        echo "✅ Go Security Check"
-        echo ""
-        echo "🎉 Status Check Summary completed successfully!"
-        echo "This job serves as a consolidated status check for branch protection."
+env:
+  GO_VERSION: '1.24'
 
-  # 额外的安全检查
-  security-check:
-    name: Security Check
+jobs:
+  # 通用安全扫描检查
+  vulnerability-scan:
+    name: Vulnerability Scan
     runs-on: ubuntu-latest
     env:
       TRIVY_DISABLE_VEX_NOTICE: true
@@ -80,9 +66,9 @@ jobs:
           fi
         fi
 
-  # Go 特定的安全检查
-  go-security-check:
-    name: Go Security Check
+  # Go 语言特定的安全检查
+  go-security-scan:
+    name: Go Security Scan
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -91,7 +77,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24'
+        go-version: ${{ env.GO_VERSION }}
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -104,23 +90,58 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
-    # 生成必需的代码
-    - name: Install Proto tools
-      run: make proto-setup
+    # 尝试恢复 CI 工作流生成的代码缓存
+    - name: Restore generated code cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          api/gen/
+          docs/
+          ~/.local/bin/
+          ~/go/bin/
+        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'cmd/**/*.go', 'internal/**/*.go') }}
+        restore-keys: |
+          ${{ runner.os }}-generated-
 
-    - name: Install Swagger tools
-      run: make swagger-setup
+    # 只在缓存未命中时重新生成代码
+    - name: Install Proto tools
+      run: |
+        if [ ! -d "api/gen" ] || [ ! -f "$HOME/.local/bin/protoc" ]; then
+          make proto-setup
+        fi
+
+    - name: Install Swagger tools  
+      run: |
+        if [ ! -d "docs" ] || [ ! -f "$HOME/go/bin/swag" ]; then
+          make swagger-setup
+        fi
 
     - name: Generate proto code
-      run: make proto
+      run: |
+        if [ ! -d "api/gen" ]; then
+          make proto
+        fi
 
     - name: Generate swagger docs
-      run: make swagger
+      run: |
+        if [ ! -d "docs" ]; then
+          make swagger
+        fi
         
     - name: Run govulncheck
       run: |
         go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck ./...
+        # 获取所有包，排除自动生成的代码
+        PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+        
+        if [ -z "$PACKAGES" ]; then
+          echo "No packages to check for vulnerabilities"
+          exit 0
+        fi
+        
+        echo "Checking packages for vulnerabilities:"
+        echo "$PACKAGES"
+        govulncheck $PACKAGES
         
     - name: Install and run gosec
       run: |
@@ -155,10 +176,21 @@ jobs:
           echo "✅ gosec successfully installed"
           gosec -version
           
-          # 运行 gosec 安全扫描
-          echo "Running gosec security scan..."
-          gosec -fmt json -out gosec-results.json ./... || true
-          gosec ./... || true
+          # 获取所有包，排除自动生成的代码
+          PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+          
+          if [ -z "$PACKAGES" ]; then
+            echo "No packages to scan with gosec"
+            echo '{"Stats":{"found":0},"Issues":[]}' > gosec-results.json
+          else
+            echo "Scanning packages with gosec:"
+            echo "$PACKAGES"
+            
+            # 运行 gosec 安全扫描（排除自动生成的代码）
+            echo "Running gosec security scan..."
+            gosec -fmt json -out gosec-results.json $PACKAGES || true
+            gosec $PACKAGES || true
+          fi
         else
           echo "❌ Failed to install gosec, skipping scan"
           echo '{"Stats":{"found":0},"Issues":[]}' > gosec-results.json
