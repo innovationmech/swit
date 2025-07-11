@@ -28,7 +28,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24'
+        go-version: '1.23'
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -63,10 +63,13 @@ jobs:
         
     - name: Generate changelog
       id: changelog
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        INPUT_TAG: ${{ github.event.inputs.tag }}
       run: |
         # 生成变更日志
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          TAG="${{ github.event.inputs.tag }}"
+        if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          TAG="${INPUT_TAG}"
         else
           TAG=${GITHUB_REF#refs/tags/}
         fi

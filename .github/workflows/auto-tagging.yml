@@ -77,12 +77,13 @@ jobs:
 
     - name: Determine version bump
       id: version_bump
+      env:
+        COMMIT_MSG: ${{ github.event.head_commit.message }}
+        VERSION_TYPE: ${{ github.event.inputs.version_type }}
+        EVENT_NAME: ${{ github.event_name }}
       run: |
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        VERSION_TYPE="${{ github.event.inputs.version_type }}"
-        
         # 如果是手动触发，使用选择的类型
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+        if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
           BUMP_TYPE="${VERSION_TYPE}"
         else
           # 根据提交消息确定版本更新类型

@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   update-badges:
@@ -22,7 +23,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24'
+        go-version: '1.23'
 
     - name: Install dependencies
       run: go mod download
@@ -143,16 +144,33 @@ jobs:
           echo "💡 Add <!-- DYNAMIC_BADGES_START --> and <!-- DYNAMIC_BADGES_END --> markers to enable auto-update"
         fi
 
-    - name: Commit updates
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        
-        if git diff --quiet; then
-          echo "No changes to commit"
-        else
-          git add .
-          git commit -m "chore: update project badges [skip ci]"
-          git push
-          echo "✅ Committed badge updates"
-        fi
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "chore: update project badges [skip ci]"
+        title: "🔄 Auto-update project badges"
+        body: |
+          ## 自动更新项目徽章
+          
+          此 PR 由 GitHub Actions 自动生成，更新了以下动态徽章：
+          
+          - 📊 代码行数: ${{ steps.loc.outputs.lines }}
+          - 📈 提交数量: ${{ steps.commits.outputs.commits }}
+          - 👥 贡献者数量: ${{ steps.contributors.outputs.contributors }}
+          - 📦 依赖数量: ${{ steps.deps.outputs.dependencies }}
+          - 📅 最后更新: ${{ steps.last_commit.outputs.last_commit }}
+          - 🏷️ 版本: ${{ steps.release.outputs.version }}
+          
+          ## 变更内容
+          
+          - 更新了 README.md 中的动态徽章
+          - 生成了 BADGE_URLS.md 参考文件
+          
+          > 这是一个自动化的更新，如果一切正常，可以直接合并。
+        branch: auto-update-badges
+        branch-suffix: timestamp
+        delete-branch: true
+        labels: |
+          documentation
+          automated
