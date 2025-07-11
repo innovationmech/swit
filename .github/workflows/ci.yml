@@ -8,6 +8,11 @@ on:
 
 env:
   GO_VERSION: '1.24'
+  
+# 确保所有 status checks 都有明确的状态
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   setup:
@@ -16,7 +21,8 @@ jobs:
     outputs:
       cache-hit: ${{ steps.cache.outputs.cache-hit }}
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -65,7 +71,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: setup
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -118,7 +125,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [setup, test]
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -153,9 +161,9 @@ jobs:
     - name: Build binaries
       run: make build-dev
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: binaries
-        path: _output/
+    # - name: Upload build artifacts
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: binaries
+    #     path: _output/
 

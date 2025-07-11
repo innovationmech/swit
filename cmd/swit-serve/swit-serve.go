@@ -31,6 +31,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// Version information set by ldflags during build
+var (
+	version   = "dev"     // Set by -X main.version
+	buildTime = "unknown" // Set by -X main.buildTime
+	gitCommit = "unknown" // Set by -X main.gitCommit
+)
+
 //	@title			SWIT Server API
 //	@version		1.0
 //	@description	This is the SWIT server API documentation.

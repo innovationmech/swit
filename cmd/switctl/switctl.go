@@ -29,6 +29,13 @@ import (
 	"github.com/innovationmech/swit/internal/switctl/cmd"
 )
 
+// Version information set by ldflags during build
+var (
+	version   = "dev"     // Set by -X main.version
+	buildTime = "unknown" // Set by -X main.buildTime
+	gitCommit = "unknown" // Set by -X main.gitCommit
+)
+
 // main is the entry point of the application.
 func main() {
 	rootCmd := cmd.NewRootSwitCtlCommand()
