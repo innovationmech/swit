@@ -52,6 +52,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// Version information set by ldflags during build
+var (
+	version   = "dev"     // Set by -X main.version
+	buildTime = "unknown" // Set by -X main.buildTime
+	gitCommit = "unknown" // Set by -X main.gitCommit
+)
+
 func main() {
 	// Initialize logger
 	logger.InitLogger()

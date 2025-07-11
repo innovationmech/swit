@@ -1,0 +1,75 @@
+# 多阶段构建的 Docker Compose 文件示例
+# 可以配合构建脚本使用
+
+# 构建所有服务的 Dockerfile
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+# 复制源代码
+COPY . .
+
+# 设置构建参数
+ARG SERVICE_NAME
+ARG VERSION=dev
+ARG BUILD_TIME
+ARG GIT_COMMIT
+ARG TARGET_OS=linux
+ARG TARGET_ARCH=amd64
+
+# 创建输出目录
+RUN mkdir -p _output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}
+
+# 动态构建指定服务
+RUN CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build \
+    -trimpath \
+    -ldflags "-w -s -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT}" \
+    -o _output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}/${SERVICE_NAME} \
+    ./cmd/${SERVICE_NAME}
+
+# 运行时镜像
+FROM alpine:latest
+
+# 安装证书和时区数据
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /root/
+
+ARG SERVICE_NAME
+ARG TARGET_OS=linux
+ARG TARGET_ARCH=amd64
+
+# 复制二进制文件
+COPY --from=builder /app/_output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}/${SERVICE_NAME} .
+
+# 复制配置文件（使用多阶段构建避免缺失文件问题）
+# 创建配置目录并复制所有可能的配置文件
+COPY . /tmp/source/
+
+# 根据服务类型设置配置文件（使用正确的文件名）
+RUN mkdir -p /root && \
+    if [ "${SERVICE_NAME}" = "swit-auth" ] && [ -f /tmp/source/switauth.yaml ]; then \
+        cp /tmp/source/switauth.yaml /root/switauth.yaml; \
+        cp /tmp/source/switauth.yaml /root/config.yaml; \
+    elif [ "${SERVICE_NAME}" = "swit-serve" ] && [ -f /tmp/source/swit.yaml ]; then \
+        cp /tmp/source/swit.yaml /root/swit.yaml; \
+        cp /tmp/source/swit.yaml /root/config.yaml; \
+    elif [ "${SERVICE_NAME}" = "switctl" ]; then \
+        echo "switctl doesn't need config file"; \
+        touch /root/config.yaml; \
+    else \
+        echo "Warning: No config file found for ${SERVICE_NAME}"; \
+        touch /root/config.yaml; \
+    fi && \
+    rm -rf /tmp/source
+
+# 创建启动脚本来解决运行时ARG问题
+RUN echo '#!/bin/sh' > /root/start.sh && \
+    echo 'exec ./'${SERVICE_NAME}' "$@"' >> /root/start.sh && \
+    chmod +x /root/start.sh
+
+# 设置标签
+LABEL org.opencontainers.image.source=https://github.com/innovationmech/swit
+
+# 使用启动脚本而不是直接引用ARG
+ENTRYPOINT ["/root/start.sh"]
