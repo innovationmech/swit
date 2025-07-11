@@ -43,29 +43,6 @@ check_requirements() {
     log_success "系统要求检查通过"
 }
 
-# 设置构建变量
-setup_build_vars() {
-    log_info "设置构建变量..."
-    
-    # 如果 .env 文件不存在，从示例创建
-    if [ ! -f ".env" ]; then
-        if [ -f ".env.example" ]; then
-            cp .env.example .env
-            log_info "已从 .env.example 创建 .env 文件"
-        fi
-    fi
-    
-    # 设置构建时变量
-    export VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}
-    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    export GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-    
-    log_info "构建变量已设置:"
-    echo "  VERSION: ${VERSION}"
-    echo "  BUILD_TIME: ${BUILD_TIME}"
-    echo "  GIT_COMMIT: ${GIT_COMMIT}"
-}
-
 # 启动服务
 start_services() {
     log_info "启动 Swit 开发环境..."
@@ -192,7 +169,6 @@ main() {
     case "${1:-start}" in
         "start")
             check_requirements
-            setup_build_vars
             start_services
             show_services_info
             ;;

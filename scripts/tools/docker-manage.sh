@@ -17,19 +17,6 @@ NC='\033[0m' # No Color
 # 项目根目录
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# 配置变量
-PROJECT_NAME="swit"
-VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}
-BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-
-# Docker 配置
-REGISTRY=${REGISTRY:-"ghcr.io/innovationmech"}
-TAG_PREFIX=${TAG_PREFIX:-"${PROJECT_NAME}"}
-
-# 服务列表
-SERVICES=("swit-serve" "swit-auth" "switctl")
-
 # 日志函数
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -53,17 +40,21 @@ log_debug() {
     fi
 }
 
-# Docker组件定义（兼容旧版 Bash）
-DOCKER_COMPONENTS_IMAGES="Docker镜像管理"
-DOCKER_COMPONENTS_COMPOSE="Docker Compose环境管理"
-DOCKER_COMPONENTS_REGISTRY="Docker镜像仓库操作"
-DOCKER_COMPONENTS_CLEANUP="Docker清理操作"
+# Docker组件定义（配置化）
+declare -A DOCKER_COMPONENTS=(
+    [images]="Docker镜像管理"
+    [compose]="Docker Compose环境管理"
+    [registry]="Docker镜像仓库操作"
+    [cleanup]="Docker清理操作"
+)
 
 # Docker组件操作映射
-DOCKER_COMPONENT_ACTIONS_IMAGES="build,tag,push,pull,list,remove"
-DOCKER_COMPONENT_ACTIONS_COMPOSE="up,down,restart,logs,status,clean"
-DOCKER_COMPONENT_ACTIONS_REGISTRY="login,logout,push,pull"
-DOCKER_COMPONENT_ACTIONS_CLEANUP="containers,images,volumes,networks,system"
+declare -A DOCKER_COMPONENT_ACTIONS=(
+    [images]="build,tag,push,pull,list,remove"
+    [compose]="up,down,restart,logs,status,clean"
+    [registry]="login,logout,push,pull"
+    [cleanup]="containers,images,volumes,networks,system"
+)
 
 # 环境验证
 check_docker_environment() {
@@ -224,13 +215,6 @@ docker_advanced() {
                     else
                         docker_build_service "$service"
                     fi
-                    ;;
-                "advanced")
-                    # 高级构建模式
-                    local use_buildkit=${4:-false}
-                    local push=${5:-false}
-                    local platforms=${6:-"linux/amd64"}
-                    docker_build_advanced "$use_buildkit" "$push" "$platforms" "$service"
                     ;;
                 *)
                     log_error "不支持的组件: $component"
@@ -396,24 +380,16 @@ show_advanced_help() {
     echo "  clean    清理资源"
     echo ""
     echo "组件:"
-    echo "  images     镜像管理"
-    echo "  advanced   高级构建（支持多平台、BuildKit）"
-    echo "  compose    Compose环境"
+    echo "  images   镜像管理"
+    echo "  compose  Compose环境"
     echo ""
     echo "服务:"
-    echo "  all        所有服务（默认）"
-    echo "  auth       认证服务"
-    echo "  serve      主要服务"
-    echo "  switctl    命令行工具"
-    echo ""
-    echo "高级构建参数:"
-    echo "  参数4: use_buildkit (true/false)"
-    echo "  参数5: push (true/false)"
-    echo "  参数6: platforms (例如: linux/amd64,linux/arm64)"
+    echo "  all      所有服务（默认）"
+    echo "  auth     认证服务"
+    echo "  serve    主要服务"
     echo ""
     echo "示例:"
     echo "  docker-manage.sh advanced build images auth"
-    echo "  docker-manage.sh advanced build advanced all true true linux/amd64,linux/arm64"
     echo "  docker-manage.sh advanced start compose all"
     echo "  docker-manage.sh advanced clean containers"
 }
@@ -430,214 +406,18 @@ show_help() {
     echo "  quick       快速构建 - 开发时快速构建（使用缓存）"
     echo "  setup       开发设置 - 启动完整的开发环境"
     echo "  advanced    高级管理 - 精确控制特定操作"
-    echo "  build       高级构建 - 支持多平台、BuildKit、推送"
     echo ""
     echo "高级管理用法:"
-    echo "  $0 advanced <操作> <组件> [服务] [参数...]"
-    echo ""
-    echo "高级构建用法:"
-    echo "  $0 build [--buildkit] [--push] [--platform PLATFORMS] [--service SERVICE]"
+    echo "  $0 advanced <操作> <组件> [服务]"
     echo ""
     echo "示例:"
     echo "  $0 standard                    # 标准镜像构建"
     echo "  $0 quick                       # 快速开发构建"
     echo "  $0 setup                       # 启动开发环境"
-    echo "  $0 build --buildkit --push --platform linux/amd64,linux/arm64"
-    echo "  $0 build --service swit-serve --push"
     echo "  $0 advanced build images all   # 构建所有镜像"
     echo "  $0 advanced start compose      # 启动Compose环境"
     echo "  $0 advanced clean system       # 系统清理"
     echo ""
-}
-
-# 简化的高级构建接口
-docker_build_cli() {
-    local use_buildkit=false
-    local push=false
-    local platforms="linux/amd64"
-    local selected_services=()
-    
-    # 解析命令行参数
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --buildkit)
-                use_buildkit=true
-                shift
-                ;;
-            --push)
-                push=true
-                shift
-                ;;
-            --platform)
-                platforms="$2"
-                shift 2
-                ;;
-            --service)
-                selected_services+=("$2")
-                shift 2
-                ;;
-            -s)
-                selected_services+=("$2")
-                shift 2
-                ;;
-            --help|-h)
-                show_build_help
-                return 0
-                ;;
-            *)
-                # 尝试作为服务名处理
-                local valid_service=false
-                for service in "${SERVICES[@]}"; do
-                    if [ "$1" = "$service" ]; then
-                        selected_services+=("$1")
-                        valid_service=true
-                        break
-                    fi
-                done
-                if [ "$valid_service" = false ]; then
-                    log_error "未知参数或服务: $1"
-                    show_build_help
-                    return 1
-                fi
-                shift
-                ;;
-        esac
-    done
-    
-    # 如果没有指定服务，构建所有服务
-    if [ ${#selected_services[@]} -eq 0 ]; then
-        selected_services=("${SERVICES[@]}")
-    fi
-    
-    docker_build_advanced "$use_buildkit" "$push" "$platforms" "${selected_services[@]}"
-}
-
-# 显示构建模式帮助
-show_build_help() {
-    echo ""
-    echo "高级Docker构建模式"
-    echo ""
-    echo "用法: $0 build [选项] [服务名...]"
-    echo ""
-    echo "选项:"
-    echo "  --buildkit              使用 Docker BuildKit"
-    echo "  --push                  构建后推送到注册表"
-    echo "  --platform PLATFORMS    目标平台 (例如: linux/amd64,linux/arm64)"
-    echo "  --service SERVICE       构建指定服务 (可多次使用)"
-    echo "  -s SERVICE              构建指定服务 (简写)"
-    echo "  --help, -h              显示此帮助信息"
-    echo ""
-    echo "支持的服务:"
-    printf "  %s\n" "${SERVICES[@]}"
-    echo ""
-    echo "示例:"
-    echo "  $0 build                                    # 构建所有服务"
-    echo "  $0 build --service swit-serve               # 构建指定服务"
-    echo "  $0 build --buildkit --push                  # 使用BuildKit构建并推送"
-    echo "  $0 build --platform linux/amd64,linux/arm64 # 多平台构建"
-    echo "  $0 build swit-auth swit-serve --push        # 构建多个服务并推送"
-    echo ""
-}
-
-# 高级Docker构建（支持多平台和BuildKit）
-docker_build_advanced() {
-    local use_buildkit=${1:-false}
-    local push=${2:-false}
-    local platforms=${3:-"linux/amd64"}
-    local selected_services=("${@:4}")
-    
-    if [ ${#selected_services[@]} -eq 0 ]; then
-        selected_services=("${SERVICES[@]}")
-    fi
-    
-    log_info "执行高级Docker构建..."
-    log_info "  BuildKit: $use_buildkit"
-    log_info "  推送: $push"
-    log_info "  平台: $platforms"
-    log_info "  服务: ${selected_services[*]}"
-    
-    # 环境验证
-    check_docker_environment || return 1
-    
-    # 切换到项目根目录
-    cd "$PROJECT_ROOT"
-    
-    local failures=0
-    
-    for service in "${selected_services[@]}"; do
-        if ! docker_build_service_advanced "$service" "$use_buildkit" "$push" "$platforms"; then
-            ((failures++))
-        fi
-    done
-    
-    if [ $failures -eq 0 ]; then
-        log_success "🎉 所有高级Docker构建完成！"
-    else
-        log_error "❌ ${failures} 个服务构建失败"
-        return 1
-    fi
-}
-
-# 高级单服务构建
-docker_build_service_advanced() {
-    local service=$1
-    local use_buildkit=${2:-false}
-    local push=${3:-false}
-    local platforms=${4:-"linux/amd64"}
-    
-    log_info "高级构建 Docker 镜像: ${service}"
-    
-    local image_name="${REGISTRY}/${TAG_PREFIX}-${service}"
-    local dockerfile_path="build/docker/${service}/Dockerfile"
-    
-    # 检查 Dockerfile 是否存在
-    if [ ! -f "$dockerfile_path" ]; then
-        log_warning "未找到 ${dockerfile_path}，使用模板构建"
-        dockerfile_path="build/docker/Dockerfile.template"
-    fi
-    
-    # 构建参数
-    local build_args=(
-        "--build-arg" "SERVICE_NAME=${service}"
-        "--build-arg" "VERSION=${VERSION}"
-        "--build-arg" "BUILD_TIME=${BUILD_TIME}"
-        "--build-arg" "GIT_COMMIT=${GIT_COMMIT}"
-        "--tag" "${image_name}:${VERSION}"
-        "--tag" "${image_name}:latest"
-        "--file" "${dockerfile_path}"
-    )
-    
-    # 如果使用 BuildKit
-    if [ "$use_buildkit" = true ]; then
-        export DOCKER_BUILDKIT=1
-        build_args+=("--platform" "${platforms}")
-    fi
-    
-    # 如果需要推送
-    if [ "$push" = true ]; then
-        if [ "$use_buildkit" = true ]; then
-            build_args+=("--push")
-        fi
-    fi
-    
-    # 执行构建
-    log_info "执行: docker build ${build_args[*]} ."
-    if docker build "${build_args[@]}" .; then
-        log_success "✓ ${service} Docker 镜像构建成功"
-        
-        # 如果不使用 BuildKit 但需要推送
-        if [ "$push" = true ] && [ "$use_buildkit" != true ]; then
-            log_info "推送镜像到注册表..."
-            docker push "${image_name}:${VERSION}"
-            docker push "${image_name}:latest"
-            log_success "✓ ${service} 镜像推送成功"
-        fi
-        
-        return 0
-    else
-        log_error "✗ ${service} Docker 镜像构建失败"
-        return 1
-    fi
 }
 
 # 主函数
@@ -651,10 +431,6 @@ main() {
             ;;
         "setup")
             docker_setup_dev
-            ;;
-        "build")
-            shift
-            docker_build_cli "$@"
             ;;
         "advanced")
             shift
@@ -674,4 +450,4 @@ main() {
 # 如果脚本被直接执行
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
-fi
+fi 
