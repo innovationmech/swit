@@ -59,7 +59,7 @@ jobs:
 
     - name: Build binaries
       run: |
-        make build-multiplatform
+        make build-release
         
     - name: Generate changelog
       id: changelog

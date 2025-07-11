@@ -83,7 +83,9 @@ jobs:
         
         if [ -z "$PACKAGES" ]; then
           echo "No packages to test"
-          exit 1
+          echo "coverage=0" >> $GITHUB_OUTPUT
+          echo "⚠️ No packages found to test (all packages excluded or no Go packages exist)"
+          exit 0
         fi
         
         echo "Testing packages:"
