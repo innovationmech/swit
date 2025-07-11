@@ -11,13 +11,6 @@
 [![GitHub issues](https://img.shields.io/github/issues/innovationmech/swit.svg)](https://github.com/innovationmech/swit/issues)
 [![GitHub stars](https://img.shields.io/github/stars/innovationmech/swit.svg)](https://github.com/innovationmech/swit/stargazers)
 
-<!-- DYNAMIC_BADGES_START -->
-![Lines of Code](https://img.shields.io/badge/lines_of_code-calculating-blue)
-![Commits](https://img.shields.io/badge/commits-calculating-green)
-![Contributors](https://img.shields.io/badge/contributors-calculating-orange)
-![Last Update](https://img.shields.io/badge/last_update-calculating-yellow)
-<!-- DYNAMIC_BADGES_END -->
-
 Swit is a microservice-based backend system built with Go, featuring modular design for user management, authentication, and service discovery. The project uses the Gin framework for HTTP requests, GORM for data persistence, and supports gRPC protocol for inter-service communication.
 
 ## Core Features
