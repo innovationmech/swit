@@ -1,0 +1,397 @@
+name: Quality Badges
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    # 每周检查一次质量状态
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+env:
+  GO_VERSION: '1.24'
+
+jobs:
+  quality-badges:
+    name: Generate Quality Badges
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Install Swagger tools  
+      run: |
+        if [ ! -f "$HOME/go/bin/swag" ]; then
+          make swagger-setup
+        fi
+
+    - name: Generate proto code
+      run: |
+        # 强制生成 proto 代码以确保依赖存在
+        make proto
+
+    - name: Generate swagger docs
+      run: |
+        # 强制生成 swagger 文档以确保依赖存在
+        make swagger
+
+    - name: Verify generated code
+      run: |
+        echo "Verifying generated code..."
+        
+        # 显示当前目录结构
+        echo "Current directory structure:"
+        ls -la
+        
+        # 检查必需的生成目录
+        echo "Checking api/gen directory:"
+        if [ ! -d "api/gen" ]; then
+          echo "❌ api/gen directory not found"
+          exit 1
+        else
+          echo "✅ api/gen directory exists"
+          find api/gen -name "*.go" | head -10
+        fi
+        
+        echo "Checking docs/generated directories:"
+        if [ ! -d "docs/generated/switauth" ]; then
+          echo "❌ docs/generated/switauth directory not found"
+          exit 1
+        else
+          echo "✅ docs/generated/switauth directory exists"
+          ls -la docs/generated/switauth/
+        fi
+        
+        if [ ! -d "docs/generated/switserve" ]; then
+          echo "❌ docs/generated/switserve directory not found"
+          exit 1
+        else
+          echo "✅ docs/generated/switserve directory exists"
+          ls -la docs/generated/switserve/
+        fi
+        
+        # 检查关键文件
+        if [ ! -f "docs/generated/switauth/docs.go" ]; then
+          echo "❌ docs/generated/switauth/docs.go not found"
+          exit 1
+        fi
+        
+        if [ ! -f "docs/generated/switserve/docs.go" ]; then
+          echo "❌ docs/generated/switserve/docs.go not found"
+          exit 1
+        fi
+        
+        echo "✅ All required generated code is present"
+        
+        # 验证 go mod 是否能解析所有导入
+        echo "Verifying Go module dependencies..."
+        go mod tidy
+        
+        # 尝试编译有问题的包来诊断问题
+        echo "Testing compilation of problematic packages:"
+        echo "Testing internal/switauth/server/:"
+        go build ./internal/switauth/server/ || echo "❌ Failed to build switauth/server"
+        
+        echo "Testing internal/switserve/server/:"
+        go build ./internal/switserve/server/ || echo "❌ Failed to build switserve/server"
+        
+        # 下载所有依赖（包括生成的包）
+        go mod download
+
+    - name: Install quality tools
+      run: |
+        go install golang.org/x/tools/cmd/goimports@latest
+        go install honnef.co/go/tools/cmd/staticcheck@latest
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+
+    - name: Check code formatting
+      id: format
+      run: |
+        UNFORMATTED=$(gofmt -l . | grep -v "\.pb\.go$" | wc -l)
+        if [ "$UNFORMATTED" -eq 0 ]; then
+          echo "status=passing" >> $GITHUB_OUTPUT
+          echo "message=well formatted" >> $GITHUB_OUTPUT
+        else
+          echo "status=failing" >> $GITHUB_OUTPUT
+          echo "message=${UNFORMATTED} files need formatting" >> $GITHUB_OUTPUT
+        fi
+        echo "📏 Code formatting check: $UNFORMATTED unformatted files"
+
+    - name: Run static analysis
+      id: static
+      run: |
+        # 获取所有包，排除自动生成的代码
+        PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+        
+        if [ -z "$PACKAGES" ]; then
+          echo "No packages to analyze"
+          echo "status=passing" >> $GITHUB_OUTPUT
+          echo "message=no packages to check" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        echo "Analyzing packages:"
+        echo "$PACKAGES"
+        
+        # 运行 staticcheck（排除自动生成的代码）
+        if staticcheck $PACKAGES > staticcheck.txt 2>&1; then
+          echo "status=passing" >> $GITHUB_OUTPUT
+          echo "message=no issues" >> $GITHUB_OUTPUT
+        else
+          ISSUES=$(wc -l < staticcheck.txt)
+          echo "status=failing" >> $GITHUB_OUTPUT
+          echo "message=${ISSUES} issues found" >> $GITHUB_OUTPUT
+        fi
+        echo "🔍 Static analysis completed"
+
+    - name: Security scan
+      id: security
+      run: |
+        # 获取所有包，排除自动生成的代码
+        PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+        
+        if [ -z "$PACKAGES" ]; then
+          echo "No packages to scan"
+          echo "status=passing" >> $GITHUB_OUTPUT
+          echo "message=no packages to check" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        echo "Scanning packages:"
+        echo "$PACKAGES"
+        
+        # 运行 gosec（排除自动生成的代码）
+        if gosec $PACKAGES > gosec.txt 2>&1; then
+          echo "status=passing" >> $GITHUB_OUTPUT
+          echo "message=no vulnerabilities" >> $GITHUB_OUTPUT
+        else
+          VULNS=$(grep -c "Severity:" gosec.txt || echo "0")
+          echo "status=failing" >> $GITHUB_OUTPUT
+          echo "message=${VULNS} potential issues" >> $GITHUB_OUTPUT
+        fi
+        echo "🔐 Security scan completed"
+
+    - name: Vulnerability check
+      id: vuln
+      run: |
+        # 获取所有包，排除自动生成的代码
+        PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+        
+        if [ -z "$PACKAGES" ]; then
+          echo "No packages to check"
+          echo "status=passing" >> $GITHUB_OUTPUT
+          echo "message=no packages to check" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        echo "Checking packages:"
+        echo "$PACKAGES"
+        
+        # 运行 govulncheck（排除自动生成的代码）
+        if govulncheck $PACKAGES > vuln.txt 2>&1; then
+          echo "status=passing" >> $GITHUB_OUTPUT
+          echo "message=no known vulnerabilities" >> $GITHUB_OUTPUT
+        else
+          echo "status=failing" >> $GITHUB_OUTPUT
+          echo "message=vulnerabilities found" >> $GITHUB_OUTPUT
+        fi
+        echo "🚨 Vulnerability check completed"
+
+    - name: Test coverage check
+      id: coverage
+      run: |
+        # 获取所有包，排除自动生成的代码
+        PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+        
+        if [ -z "$PACKAGES" ]; then
+          echo "No packages to test"
+          echo "status=needs_improvement" >> $GITHUB_OUTPUT
+          echo "color=red" >> $GITHUB_OUTPUT
+          echo "coverage=0" >> $GITHUB_OUTPUT
+          echo "📊 Test coverage: 0% (no packages to test)"
+          exit 0
+        fi
+        
+        echo "Testing packages:"
+        echo "$PACKAGES"
+        
+        # 运行测试并检查覆盖率（排除自动生成的代码）
+        go test -coverprofile=coverage.out $PACKAGES > test.txt 2>&1
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}' || echo "0")
+        
+        # 确保 COVERAGE 不为空，默认设置为 0
+        if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
+          COVERAGE="0"
+        fi
+        
+        # 转换为整数进行比较（去掉小数点）
+        COVERAGE_INT=$(echo "$COVERAGE" | cut -d. -f1)
+        
+        # 确保 COVERAGE_INT 是有效数字，默认设置为 0
+        if [ -z "$COVERAGE_INT" ] || [ "$COVERAGE_INT" = "" ]; then
+          COVERAGE_INT="0"
+        fi
+        
+        if [ "$COVERAGE_INT" -ge 80 ]; then
+          echo "status=excellent" >> $GITHUB_OUTPUT
+          echo "color=brightgreen" >> $GITHUB_OUTPUT
+        elif [ "$COVERAGE_INT" -ge 60 ]; then
+          echo "status=good" >> $GITHUB_OUTPUT
+          echo "color=yellow" >> $GITHUB_OUTPUT
+        else
+          echo "status=needs_improvement" >> $GITHUB_OUTPUT
+          echo "color=red" >> $GITHUB_OUTPUT
+        fi
+        echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
+        echo "📊 Test coverage: ${COVERAGE}%"
+
+    - name: Calculate overall quality score
+      id: quality
+      run: |
+        SCORE=0
+        TOTAL=5
+        
+        # 格式检查 (20%)
+        if [ "${{ steps.format.outputs.status }}" = "passing" ]; then
+          SCORE=$((SCORE + 1))
+        fi
+        
+        # 静态分析 (20%)
+        if [ "${{ steps.static.outputs.status }}" = "passing" ]; then
+          SCORE=$((SCORE + 1))
+        fi
+        
+        # 安全扫描 (20%)
+        if [ "${{ steps.security.outputs.status }}" = "passing" ]; then
+          SCORE=$((SCORE + 1))
+        fi
+        
+        # 漏洞检查 (20%)
+        if [ "${{ steps.vuln.outputs.status }}" = "passing" ]; then
+          SCORE=$((SCORE + 1))
+        fi
+        
+        # 测试覆盖率 (20%)
+        if [ "${{ steps.coverage.outputs.status }}" != "needs_improvement" ]; then
+          SCORE=$((SCORE + 1))
+        fi
+        
+        PERCENTAGE=$((SCORE * 100 / TOTAL))
+        
+        if [ $PERCENTAGE -ge 80 ]; then
+          GRADE="A"
+          COLOR="brightgreen"
+        elif [ $PERCENTAGE -ge 60 ]; then
+          GRADE="B"
+          COLOR="yellow"
+        elif [ $PERCENTAGE -ge 40 ]; then
+          GRADE="C"
+          COLOR="orange"
+        else
+          GRADE="D"
+          COLOR="red"
+        fi
+        
+        echo "score=${PERCENTAGE}" >> $GITHUB_OUTPUT
+        echo "grade=${GRADE}" >> $GITHUB_OUTPUT
+        echo "color=${COLOR}" >> $GITHUB_OUTPUT
+        echo "🏆 Overall quality score: ${PERCENTAGE}% (Grade: ${GRADE})"
+
+    - name: Generate quality report
+      run: |
+        cat > QUALITY_REPORT.md << EOF
+        # 📊 Code Quality Report
+        
+        Generated on: $(date)
+        
+        ## 🏆 Overall Score: ${{ steps.quality.outputs.score }}% (Grade: ${{ steps.quality.outputs.grade }})
+        
+        ### 📋 Detailed Results
+        
+        | Check | Status | Details |
+        |-------|--------|---------|
+        | 📏 Code Formatting | ${{ steps.format.outputs.status }} | ${{ steps.format.outputs.message }} |
+        | 🔍 Static Analysis | ${{ steps.static.outputs.status }} | ${{ steps.static.outputs.message }} |
+        | 🔐 Security Scan | ${{ steps.security.outputs.status }} | ${{ steps.security.outputs.message }} |
+        | 🚨 Vulnerability Check | ${{ steps.vuln.outputs.status }} | ${{ steps.vuln.outputs.message }} |
+        | 📊 Test Coverage | ${{ steps.coverage.outputs.status }} | ${{ steps.coverage.outputs.coverage }}% |
+        
+        ### 🏷️ Quality Badges
+        
+        Copy these badges to your README.md:
+        
+        \`\`\`markdown
+        ![Code Quality](https://img.shields.io/badge/quality-${{ steps.quality.outputs.grade }}-${{ steps.quality.outputs.color }})
+        ![Code Formatting](https://img.shields.io/badge/formatting-${{ steps.format.outputs.status }}-$([ "${{ steps.format.outputs.status }}" = "passing" ] && echo "brightgreen" || echo "red"))
+        ![Security](https://img.shields.io/badge/security-${{ steps.security.outputs.status }}-$([ "${{ steps.security.outputs.status }}" = "passing" ] && echo "brightgreen" || echo "red"))
+        ![Coverage](https://img.shields.io/badge/coverage-${{ steps.coverage.outputs.coverage }}%25-${{ steps.coverage.outputs.color }})
+        \`\`\`
+        EOF
+        
+        echo "📋 Generated quality report"
+
+    - name: Upload quality report
+      uses: actions/upload-artifact@v4
+      with:
+        name: quality-report
+        path: |
+          QUALITY_REPORT.md
+          staticcheck.txt
+          gosec.txt
+          vuln.txt
+          test.txt
+          coverage.out
+        retention-days: 30
+
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const score = parseInt('${{ steps.quality.outputs.score }}');
+          const grade = '${{ steps.quality.outputs.grade }}';
+          const body = `## 📊 Code Quality Report
+          
+          **Overall Score**: ${score}% (Grade: **${grade}**)
+          
+          ### Results Summary
+          - 📏 **Code Formatting**: ${{ steps.format.outputs.status }} (${{ steps.format.outputs.message }})
+          - 🔍 **Static Analysis**: ${{ steps.static.outputs.status }} (${{ steps.static.outputs.message }})  
+          - 🔐 **Security Scan**: ${{ steps.security.outputs.status }} (${{ steps.security.outputs.message }})
+          - 🚨 **Vulnerability Check**: ${{ steps.vuln.outputs.status }} (${{ steps.vuln.outputs.message }})
+          - 📊 **Test Coverage**: ${{ steps.coverage.outputs.status }} (${{ steps.coverage.outputs.coverage }}%)
+          
+          ${grade === 'A' ? '🎉 Excellent code quality!' : grade === 'B' ? '👍 Good code quality!' : '⚠️ Code quality could be improved.'}
+          
+          ---
+          *Quality report generated by GitHub Actions*`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });

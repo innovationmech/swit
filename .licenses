@@ -1,0 +1,44 @@
+# 许可证配置文件
+# 此文件定义了项目中允许的许可证类型
+
+# 允许的许可证 (白名单)
+ALLOWED_LICENSES=(
+    "MIT"
+    "BSD-2-Clause"
+    "BSD-3-Clause" 
+    "Apache-2.0"
+    "MPL-2.0"
+    "ISC"
+    "Unlicense"
+    "0BSD"
+)
+
+# 禁止的许可证 (黑名单)
+FORBIDDEN_LICENSES=(
+    "GPL-2.0"
+    "GPL-3.0"
+    "AGPL-1.0"
+    "AGPL-3.0"
+    "LGPL-2.1"
+    "LGPL-3.0"
+    "SSPL-1.0"
+    "BUSL-1.1"
+)
+
+# 需要审查的许可证 (灰名单)
+REVIEW_REQUIRED_LICENSES=(
+    "LGPL-2.0"
+    "EPL-1.0"
+    "EPL-2.0"
+    "CDDL-1.0"
+    "CDDL-1.1"
+)
+
+# 许可证说明
+# MIT: 最宽松的许可证，允许商业和私有使用
+# BSD: 类似MIT，但有更多的条款
+# Apache-2.0: 允许商业使用，提供专利保护
+# MPL-2.0: 文件级别的copyleft，兼容商业项目
+# GPL/AGPL: 强copyleft，要求衍生作品开源
+# LGPL: 库级别的copyleft
+# SSPL/BUSL: 限制云服务商的使用
