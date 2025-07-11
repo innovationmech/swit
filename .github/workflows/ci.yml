@@ -18,19 +18,15 @@ jobs:
   setup:
     name: Setup & Code Quality
     runs-on: ubuntu-latest
-    # CI 应该在以下情况运行：
-    # 1. 没有 [skip ci] 标记
-    # 2. 或者是重要的代码更改（即使有 [skip ci]）
-    # 3. 或者是 PR 事件
+    # CI 运行条件：
+    # - PR 事件：始终运行 CI，无法跳过
+    # - push 事件：仅当没有 [skip ci] 标记时运行
     if: |
       github.event_name == 'pull_request' ||
-      !github.event.head_commit || (
-        !contains(github.event.head_commit.message, '[skip ci]') ||
-        contains(github.event.head_commit.message, 'feat:') ||
-        contains(github.event.head_commit.message, 'fix:') ||
-        contains(github.event.head_commit.message, 'security:') ||
-        contains(github.event.head_commit.message, 'breaking:')
-      )
+      (github.event_name == 'push' && (
+        !github.event.head_commit ||
+        !contains(github.event.head_commit.message, '[skip ci]')
+      ))
     outputs:
       cache-hit: ${{ steps.cache.outputs.cache-hit }}
     steps:
