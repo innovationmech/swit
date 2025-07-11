@@ -144,11 +144,11 @@ jobs:
           echo "💡 Add <!-- DYNAMIC_BADGES_START --> and <!-- DYNAMIC_BADGES_END --> markers to enable auto-update"
         fi
 
-    - name: Create Pull Request
+    - name: Create Pull Request (Automated)
       uses: peter-evans/create-pull-request@v5
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        commit-message: "chore: update project badges [skip ci]"
+        token: ${{ secrets.PAT_TOKEN }}
+        commit-message: "chore: update project badges [skip ci] [skip tag]"
         title: "🔄 Auto-update project badges"
         body: |
           ## 自动更新项目徽章
@@ -164,13 +164,21 @@ jobs:
           
           ## 变更内容
           
-          - 更新了 README.md 中的动态徽章
-          - 生成了 BADGE_URLS.md 参考文件
+          - 自动更新了 README.md 中的动态徽章
+          - 生成了最新的 BADGE_URLS.md 文件供参考
           
-          > 这是一个自动化的更新，如果一切正常，可以直接合并。
+          ## 审核建议
+          
+          这是一个自动化更新，通常可以安全地合并。请检查：
+          - [ ] 徽章数据是否正确
+          - [ ] README.md 格式是否正常
+          
+          > 🤖 此 PR 由 GitHub Actions 自动创建和维护
         branch: auto-update-badges
         branch-suffix: timestamp
         delete-branch: true
         labels: |
           documentation
           automated
+          chore
+        draft: false
