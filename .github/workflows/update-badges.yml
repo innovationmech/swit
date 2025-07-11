@@ -148,7 +148,7 @@ jobs:
       uses: peter-evans/create-pull-request@v5
       with:
         token: ${{ secrets.PAT_TOKEN }}
-        commit-message: "chore: update project badges [skip tag]"
+        commit-message: "chore: update project badges [skip ci] [skip tag]"
         title: "🔄 Auto-update project badges"
         body: |
           ## 自动更新项目徽章
