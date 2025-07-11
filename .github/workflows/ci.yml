@@ -153,9 +153,9 @@ jobs:
     - name: Build binaries
       run: make build-dev
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: binaries
-        path: _output/
+    # - name: Upload build artifacts
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: binaries
+    #     path: _output/
 
