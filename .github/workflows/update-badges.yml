@@ -113,7 +113,7 @@ jobs:
         if grep -q "<!-- DYNAMIC_BADGES_START -->" README.md; then
           echo "Found dynamic badge markers, updating..."
           # 创建临时文件存储新的徽章内容
-          cat > temp_badges.txt << 'EOF'
+          cat > temp_badges.txt << EOF
         <!-- DYNAMIC_BADGES_START -->
         ![Lines of Code](https://img.shields.io/badge/lines_of_code-${{ steps.loc.outputs.lines }}-blue)
         ![Commits](https://img.shields.io/badge/commits-${{ steps.commits.outputs.commits }}-green)

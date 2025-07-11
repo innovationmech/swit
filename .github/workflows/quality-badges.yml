@@ -371,7 +371,7 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const score = '${{ steps.quality.outputs.score }}';
+          const score = parseInt('${{ steps.quality.outputs.score }}');
           const grade = '${{ steps.quality.outputs.grade }}';
           const body = `## 📊 Code Quality Report
           

@@ -1,7 +1,7 @@
 # 许可证配置文件
 # 此文件定义了项目中允许的许可证类型
 
-## 允许的许可证 (白名单)
+# 允许的许可证 (白名单)
 ALLOWED_LICENSES=(
     "MIT"
     "BSD-2-Clause"
@@ -13,7 +13,7 @@ ALLOWED_LICENSES=(
     "0BSD"
 )
 
-## 禁止的许可证 (黑名单)
+# 禁止的许可证 (黑名单)
 FORBIDDEN_LICENSES=(
     "GPL-2.0"
     "GPL-3.0"
@@ -25,7 +25,7 @@ FORBIDDEN_LICENSES=(
     "BUSL-1.1"
 )
 
-## 需要审查的许可证 (灰名单)
+# 需要审查的许可证 (灰名单)
 REVIEW_REQUIRED_LICENSES=(
     "LGPL-2.0"
     "EPL-1.0"
@@ -34,7 +34,7 @@ REVIEW_REQUIRED_LICENSES=(
     "CDDL-1.1"
 )
 
-## 许可证说明
+# 许可证说明
 # MIT: 最宽松的许可证，允许商业和私有使用
 # BSD: 类似MIT，但有更多的条款
 # Apache-2.0: 允许商业使用，提供专利保护
