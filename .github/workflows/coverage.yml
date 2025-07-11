@@ -96,7 +96,13 @@ jobs:
         go tool cover -html=coverage.out -o coverage.html
         
         # 计算总覆盖率
-        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}' || echo "0")
+        
+        # 确保 COVERAGE 不为空，默认设置为 0
+        if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
+          COVERAGE="0"
+        fi
+        
         echo "Total coverage: ${COVERAGE}%"
         echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
 
@@ -115,8 +121,18 @@ jobs:
         COVERAGE=${{ steps.coverage.outputs.coverage }}
         COLOR=""
         
+        # 确保 COVERAGE 不为空，默认设置为 0
+        if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
+          COVERAGE="0"
+        fi
+        
         # 转换为整数进行比较（去掉小数点）
         COVERAGE_INT=$(echo "$COVERAGE" | cut -d. -f1)
+        
+        # 确保 COVERAGE_INT 是有效数字，默认设置为 0
+        if [ -z "$COVERAGE_INT" ] || [ "$COVERAGE_INT" = "" ]; then
+          COVERAGE_INT="0"
+        fi
         
         if [ "$COVERAGE_INT" -ge 80 ]; then
           COLOR="brightgreen"
