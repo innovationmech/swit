@@ -31,20 +31,20 @@ import (
 // ServeConfig is the global configuration for the application.
 type ServeConfig struct {
 	Database struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Host     string `json:"host"`
-		Port     string `json:"port"`
-		DBName   string `json:"dbname"`
-	} `json:"database"`
+		Username string `json:"username" mapstructure:"username"`
+		Password string `json:"password" mapstructure:"password"`
+		Host     string `json:"host" mapstructure:"host"`
+		Port     string `json:"port" mapstructure:"port"`
+		DBName   string `json:"dbname" mapstructure:"dbname"`
+	} `json:"database" mapstructure:"database"`
 	Server struct {
-		Port     string `json:"port"`
-		GRPCPort string `json:"grpc_port"`
-	} `json:"server"`
-	Url              string `json:"url"`
+		Port     string `json:"port" mapstructure:"port"`
+		GRPCPort string `json:"grpc_port" mapstructure:"grpc_port"`
+	} `json:"server" mapstructure:"server"`
+	Url              string `json:"url" mapstructure:"url"`
 	ServiceDiscovery struct {
-		Address string `json:"address"`
-	} `json:"serviceDiscovery"`
+		Address string `json:"address" mapstructure:"address"`
+	} `json:"serviceDiscovery" mapstructure:"serviceDiscovery"`
 }
 
 var (

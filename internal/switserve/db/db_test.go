@@ -22,37 +22,31 @@
 package db
 
 import (
-	"fmt"
 	"sync"
+	"testing"
 
-	"github.com/innovationmech/swit/internal/switserve/config"
-	"gorm.io/driver/mysql"
+	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 )
 
-var (
-	// dbConn is the global database connection for the application.
-	dbConn *gorm.DB
-	// once is used to ensure that the database connection is only initialized once.
-	once sync.Once
-	// newDbConn is a factory function for creating a database connection.
-	// It's a variable so it can be replaced by a mock in tests.
-	newDbConn = func() (*gorm.DB, error) {
-		cfg := config.GetConfig()
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
-			cfg.Database.Username, cfg.Database.Password, cfg.Database.Host, cfg.Database.Port, cfg.Database.DBName)
-		return gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	}
-)
+// TestGetDB tests the GetDB function to ensure it returns a singleton database connection.
+func TestGetDB(t *testing.T) {
+	// 1. Reset the sync.Once and the dbConn for a clean test environment
+	once = sync.Once{}
+	dbConn = nil
 
-// GetDB returns the global database connection for the application.
-func GetDB() *gorm.DB {
-	once.Do(func() {
-		db, err := newDbConn()
-		if err != nil {
-			panic("fail to connect database")
-		}
-		dbConn = db
-	})
-	return dbConn
+	// 2. Replace the newDbConn factory with a mock
+	newDbConn = func() (*gorm.DB, error) {
+		return &gorm.DB{}, nil
+	}
+
+	// 3. Call GetDB multiple times
+	db1 := GetDB()
+	db2 := GetDB()
+
+	// 4. Assert that the DB connection is not nil
+	assert.NotNil(t, db1, "GetDB() should not return a nil connection")
+
+	// 5. Assert that both calls return the same instance
+	assert.Same(t, db1, db2, "GetDB() should return the same instance on subsequent calls")
 }

@@ -40,6 +40,10 @@ func NewServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the SWIT server",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			initConfig()
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srv, err := server.NewServer()
 			if err != nil {
@@ -60,8 +64,6 @@ func NewServeCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cobra.OnInitialize(initConfig)
 
 	return cmd
 }
