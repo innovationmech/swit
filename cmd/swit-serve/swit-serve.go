@@ -58,8 +58,7 @@ var (
 //	@name						Authorization
 //	@description				Type "Bearer" followed by a space and JWT token.
 
-// main is the entry point of the application.
-func main() {
+func run() int {
 	// Initialize logger
 	logger.InitLogger()
 	defer func() {
@@ -79,6 +78,12 @@ func main() {
 				// Ignore errors on stderr sync - this is expected on some platforms
 			}
 		}
-		os.Exit(1)
+		return 1
 	}
+	return 0
+}
+
+// main is the entry point of the application.
+func main() {
+	os.Exit(run())
 }

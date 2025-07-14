@@ -19,33 +19,52 @@
 // THE SOFTWARE.
 //
 
-package main
+package health
 
 import (
-	"fmt"
-	"os"
+	"testing"
 
-	"github.com/innovationmech/swit/internal/base/cli"
-	"github.com/innovationmech/swit/internal/switctl/cmd"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 )
 
-// Version information set by ldflags during build
-var (
-	version   = "dev"     // Set by -X main.version
-	buildTime = "unknown" // Set by -X main.buildTime
-	gitCommit = "unknown" // Set by -X main.gitCommit
-)
-
-func run() int {
-	rootCmd := cmd.NewRootSwitCtlCommand()
-	if err := cli.Run(rootCmd); err != nil {
-		fmt.Println(err)
-		return 1
+func TestNewHealthCmd(t *testing.T) {
+	tests := []struct {
+		name     string
+		validate func(t *testing.T, cmd *cobra.Command)
+	}{
+		{
+			name: "should create health command successfully",
+			validate: func(t *testing.T, cmd *cobra.Command) {
+				assert.NotNil(t, cmd)
+				assert.Equal(t, "health", cmd.Use)
+				assert.Equal(t, "Check the health status of the SWIT server", cmd.Short)
+			},
+		},
+		{
+			name: "should have correct command structure",
+			validate: func(t *testing.T, cmd *cobra.Command) {
+				assert.Empty(t, cmd.Commands()) // No subcommands
+				assert.NotNil(t, cmd.RunE)      // Has execution function
+			},
+		},
 	}
-	return 0
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := NewHealthCmd()
+			tt.validate(t, cmd)
+		})
+	}
 }
 
-// main is the entry point of the application.
-func main() {
-	os.Exit(run())
+func TestHealthCommandProperties(t *testing.T) {
+	cmd := NewHealthCmd()
+
+	// Test all command properties
+	assert.Equal(t, "health", cmd.Use)
+	assert.Equal(t, "Check the health status of the SWIT server", cmd.Short)
+	assert.Equal(t, "", cmd.Long)
+	assert.Empty(t, cmd.Commands())
+	assert.NotNil(t, cmd.RunE)
 }

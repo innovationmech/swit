@@ -211,9 +211,15 @@ func TestMiddlewarePrioritySort(t *testing.T) {
 	err := registry.Setup(router)
 	assert.NoError(t, err)
 
-	// 验证中间件是否按优先级正确排序
+	// 验证注册表保持原始注册顺序（不被Setup()修改）
 	middlewares := registry.GetRegisteredMiddlewares()
-	assert.Equal(t, "middleware-1", middlewares[0]["name"]) // 优先级10，应该第一
-	assert.Equal(t, "middleware-2", middlewares[1]["name"]) // 优先级20，应该第二
-	assert.Equal(t, "middleware-3", middlewares[2]["name"]) // 优先级30，应该第三
+	assert.Equal(t, "middleware-3", middlewares[0]["name"]) // 第一个注册
+	assert.Equal(t, "middleware-1", middlewares[1]["name"]) // 第二个注册
+	assert.Equal(t, "middleware-2", middlewares[2]["name"]) // 第三个注册
+
+	// 验证多次调用Setup不会改变注册顺序
+	err = registry.Setup(gin.New())
+	assert.NoError(t, err)
+	middlewares2 := registry.GetRegisteredMiddlewares()
+	assert.Equal(t, middlewares, middlewares2) // 顺序应该保持一致
 }
