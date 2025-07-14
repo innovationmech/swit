@@ -25,7 +25,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 // TestMain is a special function that runs before any tests
@@ -44,6 +46,51 @@ func TestMain(m *testing.M) {
 	gitCommit = originalGitCommit
 
 	os.Exit(code)
+}
+
+// mockLogger 用于捕获日志输出，避免真实输出
+func mockLogger() {
+	logger.Logger, _ = zap.NewDevelopment()
+}
+
+func TestRun_Success(t *testing.T) {
+	mockLogger()
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"swit-serve", "--help"}
+
+	code := run()
+	assert.Equal(t, 0, code)
+}
+
+func TestRun_Error(t *testing.T) {
+	mockLogger()
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"swit-serve", "invalid-cmd"}
+
+	code := run()
+	assert.Equal(t, 1, code)
+}
+
+func TestRun_Version(t *testing.T) {
+	mockLogger()
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"swit-serve", "--version"}
+
+	code := run()
+	assert.Equal(t, 0, code)
+}
+
+func TestRun_EmptyArgs(t *testing.T) {
+	mockLogger()
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"swit-serve"}
+
+	code := run()
+	assert.Equal(t, 0, code)
 }
 
 func TestVersionVariables(t *testing.T) {

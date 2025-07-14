@@ -22,6 +22,7 @@
 package cmd
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -69,18 +70,44 @@ func TestNewSwitAuthCmd(t *testing.T) {
 }
 
 func TestCommandExecution(t *testing.T) {
-	cmd := NewSwitAuthCmd()
+	tests := []struct {
+		name     string
+		args     []string
+		validate func(t *testing.T, output string, err error)
+	}{
+		{
+			name: "help command",
+			args: []string{"--help"},
+			validate: func(t *testing.T, output string, err error) {
+				assert.NoError(t, err)
+				assert.Contains(t, output, "Usage:")
+				assert.Contains(t, output, "switauth [command]")
+			},
+		},
+		{
+			name: "version command",
+			args: []string{"--version"},
+			validate: func(t *testing.T, output string, err error) {
+				assert.NoError(t, err)
+				assert.Contains(t, output, "switauth version 0.0.2")
+			},
+		},
+	}
 
-	// Test help output
-	helpOutput, err := cmd.ExecuteC()
-	assert.NoError(t, err)
-	assert.NotNil(t, helpOutput)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a new command instance for each test to avoid state retention
+			cmd := NewSwitAuthCmd()
 
-	// Test version flag
-	cmd.SetArgs([]string{"--version"})
-	versionOutput, err := cmd.ExecuteC()
-	assert.NoError(t, err)
-	assert.NotNil(t, versionOutput)
+			var buf bytes.Buffer
+			cmd.SetOut(&buf)
+			cmd.SetErr(&buf)
+			cmd.SetArgs(tt.args)
+
+			_, err := cmd.ExecuteC()
+			tt.validate(t, buf.String(), err)
+		})
+	}
 }
 
 func TestCommandWithInvalidArgs(t *testing.T) {

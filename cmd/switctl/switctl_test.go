@@ -46,6 +46,42 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func TestRun_Success(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"switctl", "--help"}
+
+	code := run()
+	assert.Equal(t, 0, code)
+}
+
+func TestRun_Error(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"switctl", "invalid-cmd"}
+
+	code := run()
+	assert.Equal(t, 1, code)
+}
+
+func TestRun_Version(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"switctl", "--version"}
+
+	code := run()
+	assert.Equal(t, 0, code)
+}
+
+func TestRun_EmptyArgs(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"switctl"}
+
+	code := run()
+	assert.Equal(t, 0, code)
+}
+
 func TestVersionVariables(t *testing.T) {
 	// Test that version variables have expected default values
 	assert.Equal(t, "dev", version)

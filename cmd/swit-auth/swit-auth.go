@@ -59,7 +59,7 @@ var (
 	gitCommit = "unknown" // Set by -X main.gitCommit
 )
 
-func main() {
+func run() int {
 	// Initialize logger
 	logger.InitLogger()
 	defer func() {
@@ -79,6 +79,11 @@ func main() {
 				// Ignore errors on stderr sync - this is expected on some platforms
 			}
 		}
-		os.Exit(1)
+		return 1
 	}
+	return 0
+}
+
+func main() {
+	os.Exit(run())
 }

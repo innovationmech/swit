@@ -1,15 +1,15 @@
 // Copyright © 2025 jackelyj <dreamerlyj@gmail.com>
-//
+// 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-//
+// 
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-//
+// 
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -17,35 +17,53 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
+// 
 
-package main
+package middleware
 
 import (
-	"fmt"
-	"os"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 
-	"github.com/innovationmech/swit/internal/base/cli"
-	"github.com/innovationmech/swit/internal/switctl/cmd"
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
-// Version information set by ldflags during build
-var (
-	version   = "dev"     // Set by -X main.version
-	buildTime = "unknown" // Set by -X main.buildTime
-	gitCommit = "unknown" // Set by -X main.gitCommit
-)
+func TestLoggerMiddleware_Basic(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logger.Logger = zap.NewNop()
 
-func run() int {
-	rootCmd := cmd.NewRootSwitCtlCommand()
-	if err := cli.Run(rootCmd); err != nil {
-		fmt.Println(err)
-		return 1
-	}
-	return 0
+	r := gin.New()
+	r.Use(Logger())
+	r.GET("/ping", func(c *gin.Context) {
+		c.String(200, "pong")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/ping", nil)
+
+	r.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "pong", w.Body.String())
 }
 
-// main is the entry point of the application.
-func main() {
-	os.Exit(run())
+func TestLoggerMiddleware_WithQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logger.Logger = zap.NewNop()
+
+	r := gin.New()
+	r.Use(Logger())
+	r.GET("/hello", func(c *gin.Context) {
+		c.String(200, "world")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/hello?foo=bar", nil)
+
+	r.ServeHTTP(w, req)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "world", w.Body.String())
 }

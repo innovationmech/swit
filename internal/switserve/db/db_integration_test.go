@@ -1,15 +1,15 @@
 // Copyright © 2025 jackelyj <dreamerlyj@gmail.com>
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -17,7 +17,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-// 
+//
 
 //go:build integration
 // +build integration
@@ -26,29 +26,16 @@ package db
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/innovationmech/swit/internal/switserve/config"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
-// Reset the singleton state for testing
-func resetSingleton() {
-	dbConn = nil
-	once = sync.Once{}
-	newDbConn = func() (*gorm.DB, error) {
-		cfg := config.GetConfig()
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
-			cfg.Database.Username, cfg.Database.Password, cfg.Database.Host, cfg.Database.Port, cfg.Database.DBName)
-		return gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	}
-}
-
 // setupMockDB creates a mock database for testing
+// Instead of resetting sync.Once, we test the behavior by mocking newDbConn
 func setupMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, func()) {
 	// Create a mock database
 	db, mock, err := sqlmock.New()
@@ -65,11 +52,14 @@ func setupMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, func()) {
 		t.Fatalf("Failed to create GORM database: %v", err)
 	}
 
-	// Reset singleton
-	resetSingleton()
+	// Store original factory
+	originalNewDbConn := newDbConn
+	originalDBConn := dbConn
+
+	// Reset only dbConn, let sync.Once manage itself
+	dbConn = nil
 
 	// Replace newDbConn with our mock
-	originalNewDbConn := newDbConn
 	newDbConn = func() (*gorm.DB, error) {
 		return gormDB, nil
 	}
@@ -77,14 +67,12 @@ func setupMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, func()) {
 	// Return cleanup function
 	return gormDB, mock, func() {
 		newDbConn = originalNewDbConn
-		resetSingleton()
+		dbConn = originalDBConn
 		db.Close()
 	}
 }
 
 func TestGetDB_Success(t *testing.T) {
-	resetSingleton()
-
 	// Setup mock database
 	_, mock, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -105,8 +93,6 @@ func TestGetDB_Success(t *testing.T) {
 }
 
 func TestGetDB_SingletonPattern(t *testing.T) {
-	resetSingleton()
-
 	// Setup mock database
 	_, mock, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -134,14 +120,20 @@ func TestGetDB_SingletonPattern(t *testing.T) {
 }
 
 func TestGetDB_Failure(t *testing.T) {
-	resetSingleton()
-
-	// Replace newDbConn to return error
+	// Store original factory
 	originalNewDbConn := newDbConn
+	originalDBConn := dbConn
+
+	// Reset dbConn and replace newDbConn with error
+	dbConn = nil
 	newDbConn = func() (*gorm.DB, error) {
 		return nil, errors.New("mock connection error")
 	}
-	defer func() { newDbConn = originalNewDbConn }()
+
+	defer func() {
+		newDbConn = originalNewDbConn
+		dbConn = originalDBConn
+	}()
 
 	// Test that the function panics on connection failure
 	defer func() {
@@ -156,8 +148,6 @@ func TestGetDB_Failure(t *testing.T) {
 }
 
 func TestGetDB_ConcurrentAccess(t *testing.T) {
-	resetSingleton()
-
 	// Setup mock database
 	_, mock, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -207,8 +197,6 @@ func TestGetDB_ConcurrentAccess(t *testing.T) {
 }
 
 func TestGetDB_DatabaseOperations(t *testing.T) {
-	resetSingleton()
-
 	// Setup mock database
 	_, mock, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -246,8 +234,6 @@ func TestGetDB_DatabaseOperations(t *testing.T) {
 }
 
 func TestGetDB_RaceCondition(t *testing.T) {
-	resetSingleton()
-
 	// Setup mock database
 	_, mock, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -274,7 +260,7 @@ func TestGetDB_RaceCondition(t *testing.T) {
 
 	wg.Wait()
 
-	// Verify all instances are the same
+	// All instances should be the same
 	if len(instances) != 100 {
 		t.Errorf("Expected 100 instances, got %d", len(instances))
 	}
