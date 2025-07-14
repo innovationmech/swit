@@ -121,15 +121,16 @@ func (r *Registry) Setup(router *gin.Engine) error {
 
 // setupMiddlewares 设置中间件
 func (r *Registry) setupMiddlewares(router *gin.Engine) error {
-	r.mu.Lock()
-	// 按优先级排序
-	sort.Slice(r.middlewareRegistrars, func(i, j int) bool {
-		return r.middlewareRegistrars[i].GetPriority() < r.middlewareRegistrars[j].GetPriority()
-	})
-	// 创建副本以避免在解锁后访问
+	r.mu.RLock()
+	// 创建副本以避免修改原始注册顺序
 	middlewares := make([]MiddlewareRegistrar, len(r.middlewareRegistrars))
 	copy(middlewares, r.middlewareRegistrars)
-	r.mu.Unlock()
+	r.mu.RUnlock()
+
+	// 按优先级排序副本
+	sort.Slice(middlewares, func(i, j int) bool {
+		return middlewares[i].GetPriority() < middlewares[j].GetPriority()
+	})
 
 	// 注册中间件
 	for _, registrar := range middlewares {
