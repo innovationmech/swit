@@ -26,6 +26,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewSwitAuthCmd creates and returns the root command for the SWIT authentication service
+// with all available subcommands registered
 func NewSwitAuthCmd() *cobra.Command {
 	cmds := &cobra.Command{
 		Use:     "switauth",

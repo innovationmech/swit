@@ -1,0 +1,305 @@
+syntax = "proto3";
+
+package swit.user.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/swit/common/v1/common.proto";
+import "proto/swit/user/v1/user.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/user/v1";
+
+// AuthService provides authentication and authorization functionality
+service AuthService {
+  // Login authenticates a user and returns tokens
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/login"
+      body: "*"
+    };
+  }
+
+  // Logout invalidates the current session
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/logout"
+      body: "*"
+    };
+  }
+
+  // RefreshToken refreshes an access token
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/refresh"
+      body: "*"
+    };
+  }
+
+  // ValidateToken validates a token
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/validate"
+      body: "*"
+    };
+  }
+
+  // ResetPassword initiates a password reset
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/reset-password"
+      body: "*"
+    };
+  }
+
+  // ChangePassword changes a user's password
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/change-password"
+      body: "*"
+    };
+  }
+
+  // VerifyEmail verifies a user's email address
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/verify-email"
+      body: "*"
+    };
+  }
+}
+
+// LoginRequest represents a login request
+message LoginRequest {
+  // Username or email
+  string identifier = 1;
+  // Password
+  string password = 2;
+  // Remember me flag
+  bool remember_me = 3;
+  // Device information
+  DeviceInfo device_info = 4;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 5;
+}
+
+// LoginResponse represents a login response
+message LoginResponse {
+  // Authentication tokens
+  AuthTokens tokens = 1;
+  // User information
+  AuthUser user = 2;
+  // Session information
+  SessionInfo session = 3;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 4;
+}
+
+// LogoutRequest represents a logout request
+message LogoutRequest {
+  // Refresh token to invalidate
+  string refresh_token = 1;
+  // Logout from all devices
+  bool all_devices = 2;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 3;
+}
+
+// LogoutResponse represents a logout response
+message LogoutResponse {
+  // Success status
+  bool success = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// RefreshTokenRequest represents a refresh token request
+message RefreshTokenRequest {
+  // Refresh token
+  string refresh_token = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// RefreshTokenResponse represents a refresh token response
+message RefreshTokenResponse {
+  // New authentication tokens
+  AuthTokens tokens = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// ValidateTokenRequest represents a token validation request
+message ValidateTokenRequest {
+  // Token to validate
+  string token = 1;
+  // Token type
+  TokenType token_type = 2;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 3;
+}
+
+// ValidateTokenResponse represents a token validation response
+message ValidateTokenResponse {
+  // Validation result
+  bool valid = 1;
+  // User information (if valid)
+  AuthUser user = 2;
+  // Token claims (if valid)
+  map<string, string> claims = 3;
+  // Expires at timestamp
+  google.protobuf.Timestamp expires_at = 4;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 5;
+}
+
+// ResetPasswordRequest represents a password reset request
+message ResetPasswordRequest {
+  // Email address
+  string email = 1;
+  // Reset URL template
+  string reset_url_template = 2;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 3;
+}
+
+// ResetPasswordResponse represents a password reset response
+message ResetPasswordResponse {
+  // Success status
+  bool success = 1;
+  // Reset token (for testing purposes)
+  string reset_token = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// ChangePasswordRequest represents a password change request
+message ChangePasswordRequest {
+  // Current password
+  string current_password = 1;
+  // New password
+  string new_password = 2;
+  // Confirm new password
+  string confirm_password = 3;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// ChangePasswordResponse represents a password change response
+message ChangePasswordResponse {
+  // Success status
+  bool success = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// VerifyEmailRequest represents an email verification request
+message VerifyEmailRequest {
+  // Verification token
+  string verification_token = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// VerifyEmailResponse represents an email verification response
+message VerifyEmailResponse {
+  // Success status
+  bool success = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// AuthTokens represents authentication tokens
+message AuthTokens {
+  // Access token
+  string access_token = 1;
+  // Refresh token
+  string refresh_token = 2;
+  // Token type (usually "Bearer")
+  string token_type = 3;
+  // Expires in seconds
+  int64 expires_in = 4;
+  // Scope
+  string scope = 5;
+}
+
+// AuthUser represents user information for authentication
+message AuthUser {
+  // User ID
+  string id = 1;
+  // Username
+  string username = 2;
+  // Email address
+  string email = 3;
+  // Full name
+  string full_name = 4;
+  // User role
+  UserRole role = 5;
+  // Permissions
+  repeated string permissions = 6;
+  // Email verified status
+  bool email_verified = 7;
+}
+
+// SessionInfo represents session information
+message SessionInfo {
+  // Session ID
+  string session_id = 1;
+  // Device information
+  DeviceInfo device_info = 2;
+  // IP address
+  string ip_address = 3;
+  // User agent
+  string user_agent = 4;
+  // Session created at
+  google.protobuf.Timestamp created_at = 5;
+  // Session expires at
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// DeviceInfo represents device information
+message DeviceInfo {
+  // Device ID
+  string device_id = 1;
+  // Device type
+  DeviceType device_type = 2;
+  // Operating system
+  string os = 3;
+  // OS version
+  string os_version = 4;
+  // App version
+  string app_version = 5;
+  // Device model
+  string model = 6;
+  // Device manufacturer
+  string manufacturer = 7;
+}
+
+// TokenType represents token types
+enum TokenType {
+  // Unspecified token type
+  TOKEN_TYPE_UNSPECIFIED = 0;
+  // Access token
+  TOKEN_TYPE_ACCESS = 1;
+  // Refresh token
+  TOKEN_TYPE_REFRESH = 2;
+  // Reset token
+  TOKEN_TYPE_RESET = 3;
+  // Verification token
+  TOKEN_TYPE_VERIFICATION = 4;
+}
+
+// DeviceType represents device types
+enum DeviceType {
+  // Unspecified device type
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  // Desktop/laptop
+  DEVICE_TYPE_DESKTOP = 1;
+  // Mobile phone
+  DEVICE_TYPE_MOBILE = 2;
+  // Tablet
+  DEVICE_TYPE_TABLET = 3;
+  // Web browser
+  DEVICE_TYPE_WEB = 4;
+  // API client
+  DEVICE_TYPE_API = 5;
+}

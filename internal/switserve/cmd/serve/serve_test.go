@@ -22,17 +22,11 @@
 package serve
 
 import (
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -58,6 +52,7 @@ func TestNewServeCmd(t *testing.T) {
 			assert.Equal(t, "serve", cmd.Use)
 			assert.Equal(t, "Start the SWIT server", cmd.Short)
 			assert.NotNil(t, cmd.RunE)
+			assert.NotNil(t, cmd.PreRunE)
 		})
 	}
 }
@@ -69,8 +64,10 @@ func TestNewServeCmd_CommandProperties(t *testing.T) {
 	assert.Equal(t, "Start the SWIT server", cmd.Short)
 
 	assert.NotNil(t, cmd.RunE)
+	assert.NotNil(t, cmd.PreRunE)
 
 	assert.NotEmpty(t, cmd.Short)
+	assert.NotEmpty(t, cmd.Long)
 }
 
 func TestNewServeCmd_HelpOutput(t *testing.T) {
@@ -83,238 +80,85 @@ func TestNewServeCmd_HelpOutput(t *testing.T) {
 	})
 }
 
-func TestInitConfig(t *testing.T) {
-	tempDir := createTempDir(t)
-	defer os.RemoveAll(tempDir)
+func TestCommandCreation(t *testing.T) {
+	cmd := NewServeCmd()
 
-	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
-	os.Chdir(tempDir)
-
-	configContent := `database:
-  host: test-host
-  port: "3306"
-  username: test-user
-  password: test-pass
-  dbname: test-db
-server:
-  port: "8080"
-  grpc_port: "9090"
-serviceDiscovery:
-  address: "localhost:8500"
-url: "http://localhost:8080"
-`
-	configFile := filepath.Join(tempDir, "swit.yaml")
-	err := ioutil.WriteFile(configFile, []byte(configContent), 0644)
-	require.NoError(t, err)
-
-	resetState()
-
-	assert.NotPanics(t, func() {
-		initConfig()
-	})
-
-	assert.NotNil(t, cfg)
-	assert.Equal(t, "test-host", cfg.Database.Host)
-	assert.Equal(t, "8080", cfg.Server.Port)
-	assert.Equal(t, "9090", cfg.Server.GRPCPort)
+	// Test basic command creation
+	assert.NotNil(t, cmd)
+	assert.Equal(t, "serve", cmd.Use)
+	assert.NotEmpty(t, cmd.Short)
+	assert.NotEmpty(t, cmd.Long)
 }
 
-func TestInitConfig_MissingConfigFile(t *testing.T) {
-	// Create a temporary directory for the test
-	tempDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+func TestPreRunE_InitializesLogger(t *testing.T) {
+	cmd := NewServeCmd()
 
-	// Change the current working directory to the temporary directory
-	originalWd, err := os.Getwd()
-	require.NoError(t, err)
-	err = os.Chdir(tempDir)
-	require.NoError(t, err)
-	defer os.Chdir(originalWd)
-
-	// Create a dummy config file
-	configContent := `
-server:
-  port: "8080"
-`
-	configPath := filepath.Join(tempDir, "swit.yaml")
-	err = ioutil.WriteFile(configPath, []byte(configContent), 0644)
-	require.NoError(t, err)
-
-	// Reset Viper and the global config
-	viper.Reset()
-	cfg = nil
-
-	// Test that initConfig does not panic when the config file is present
+	// Test that PreRunE doesn't panic and initializes logger
 	assert.NotPanics(t, func() {
-		initConfig()
+		err := cmd.PreRunE(cmd, []string{})
+		assert.NoError(t, err)
 	})
 
-	// Test that the config is loaded correctly
-	assert.NotNil(t, cfg)
-	assert.Equal(t, "8080", cfg.Server.Port)
+	// Logger should be initialized after PreRunE
+	assert.NotNil(t, logger.Logger)
 }
 
 func TestNewServeCmd_Integration(t *testing.T) {
-	tempDir := createTempDir(t)
-	defer os.RemoveAll(tempDir)
-
-	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
-	defer func() {
-		os.Chdir(originalWd)
-	}()
-	os.Chdir(tempDir)
-
-	configContent := `database:
-  host: integration-test-host
-  port: "3306"
-  username: test-user
-  password: test-pass
-  dbname: test-db
-server:
-  port: "8080"
-  grpc_port: "9090"
-serviceDiscovery:
-  address: "localhost:8500"
-url: "http://localhost:8080"
-`
-	configFile := filepath.Join(tempDir, "swit.yaml")
-	err := ioutil.WriteFile(configFile, []byte(configContent), 0644)
-	require.NoError(t, err)
-
-	resetState()
-
 	cmd := NewServeCmd()
 	assert.NotNil(t, cmd)
 
 	assert.Equal(t, "serve", cmd.Use)
 	assert.NotNil(t, cmd.RunE)
+	assert.NotNil(t, cmd.PreRunE)
+
+	// Test that command can handle arguments
+	assert.NotPanics(t, func() {
+		cmd.SetArgs([]string{})
+	})
 }
 
 func TestServeCmd_ArgsHandling(t *testing.T) {
-	tempDir := createTempDir(t)
-	defer os.RemoveAll(tempDir)
-
-	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
-	os.Chdir(tempDir)
-
-	configContent := `database:
-  host: args-test-host
-  port: "3306"
-  username: test-user
-  password: test-pass
-  dbname: test-db
-server:
-  port: "8080"
-  grpc_port: "9090"
-serviceDiscovery:
-  address: "localhost:8500"
-url: "http://localhost:8080"
-`
-	configFile := filepath.Join(tempDir, "swit.yaml")
-	err := ioutil.WriteFile(configFile, []byte(configContent), 0644)
-	require.NoError(t, err)
-
-	resetState()
-
 	cmd := NewServeCmd()
 
 	assert.NotPanics(t, func() {
 		cmd.SetArgs([]string{})
 	})
 
+	// Test that command doesn't accept unknown flags
 	assert.NotPanics(t, func() {
-		cmd.SetArgs([]string{"extra", "args"})
+		cmd.SetArgs([]string{"--help"})
 	})
 }
 
-func TestServeCmd_CobraOnInitialize(t *testing.T) {
-	tempDir := createTempDir(t)
-	defer os.RemoveAll(tempDir)
-
-	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
-	os.Chdir(tempDir)
-
-	configContent := `database:
-  host: cobra-test-host
-  port: "3306"
-  username: test-user
-  password: test-pass
-  dbname: test-db
-server:
-  port: "8080"
-  grpc_port: "9090"
-serviceDiscovery:
-  address: "localhost:8500"
-url: "http://localhost:8080"
-`
-	configFile := filepath.Join(tempDir, "swit.yaml")
-	err := ioutil.WriteFile(configFile, []byte(configContent), 0644)
-	require.NoError(t, err)
-
-	resetState()
-
+func TestServeCmd_BasicFunctionality(t *testing.T) {
 	cmd := NewServeCmd()
 
 	assert.NotNil(t, cmd)
-
 	assert.Equal(t, "serve", cmd.Use)
 	assert.NotNil(t, cmd.RunE)
+
+	// Test basic flag parsing (should not error with no flags)
+	err := cmd.ParseFlags([]string{})
+	assert.NoError(t, err)
 }
 
-func TestGlobalConfigVariable(t *testing.T) {
-	originalCfg := cfg
-
-	testCfg := &config.ServeConfig{}
-	testCfg.Server.Port = "9999"
-	cfg = testCfg
-
-	assert.Equal(t, "9999", cfg.Server.Port)
-
-	cfg = originalCfg
-}
-
-func TestServeCmd_ConfigurationDependency(t *testing.T) {
-	if cfg == nil {
-		tempDir := createTempDir(t)
-		defer os.RemoveAll(tempDir)
-
-		originalWd, _ := os.Getwd()
-		defer os.Chdir(originalWd)
-		os.Chdir(tempDir)
-
-		configContent := `database:
-  host: dependency-test
-  port: "3306"
-  username: test-user
-  password: test-pass
-  dbname: test-db
-server:
-  port: "8080"
-  grpc_port: "9090"
-serviceDiscovery:
-  address: "localhost:8500"
-url: "http://localhost:8080"
-`
-		configFile := filepath.Join(tempDir, "swit.yaml")
-		err := ioutil.WriteFile(configFile, []byte(configContent), 0644)
-		require.NoError(t, err)
-
-		resetState()
-		initConfig()
-	}
-
-	assert.NotNil(t, cfg)
-	assert.NotEmpty(t, cfg.Server.Port)
-	assert.NotEmpty(t, cfg.Database.Host)
-
+func TestServeCmd_NoFlags(t *testing.T) {
 	cmd := NewServeCmd()
+
+	// Test that there are no flags by default
+	assert.Empty(t, cmd.Flags().FlagUsages())
+}
+
+func TestServeCmd_CommandStructure(t *testing.T) {
+	cmd := NewServeCmd()
+
 	assert.NotNil(t, cmd)
 	assert.NotNil(t, cmd.RunE)
+	assert.NotNil(t, cmd.PreRunE)
+
+	// Check command hierarchy
+	assert.Equal(t, "serve", cmd.Use)
+	assert.Contains(t, cmd.Long, "Unified gRPC and HTTP transport management")
 }
 
 func TestServeCmd_RunEFunctionSignature(t *testing.T) {
@@ -333,15 +177,12 @@ func TestServeCmd_Metadata(t *testing.T) {
 
 	assert.NotEmpty(t, cmd.Use)
 	assert.NotEmpty(t, cmd.Short)
+	assert.NotEmpty(t, cmd.Long)
 }
 
-func createTempDir(t *testing.T) string {
-	tempDir, err := ioutil.TempDir("", "serve_test")
-	require.NoError(t, err)
-	return tempDir
-}
-
-func resetState() {
-	viper.Reset()
-	cfg = nil
+// Helper function to test command creation
+func TestServeCmd_Creation(t *testing.T) {
+	assert.NotPanics(t, func() {
+		NewServeCmd()
+	})
 }

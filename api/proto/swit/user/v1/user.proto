@@ -1,0 +1,309 @@
+syntax = "proto3";
+
+package swit.user.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/swit/common/v1/common.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/user/v1";
+
+// UserService provides user management functionality
+service UserService {
+  // CreateUser creates a new user
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {
+    option (google.api.http) = {
+      post: "/v1/users"
+      body: "*"
+    };
+  }
+
+  // GetUser retrieves a user by ID
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = {get: "/v1/users/{user_id}"};
+  }
+
+  // GetUserByUsername retrieves a user by username
+  rpc GetUserByUsername(GetUserByUsernameRequest) returns (GetUserByUsernameResponse) {
+    option (google.api.http) = {get: "/v1/users/username/{username}"};
+  }
+
+  // GetUserByEmail retrieves a user by email
+  rpc GetUserByEmail(GetUserByEmailRequest) returns (GetUserByEmailResponse) {
+    option (google.api.http) = {get: "/v1/users/email/{email}"};
+  }
+
+  // UpdateUser updates an existing user
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse) {
+    option (google.api.http) = {
+      put: "/v1/users/{user_id}"
+      body: "*"
+    };
+  }
+
+  // DeleteUser deletes a user
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {
+    option (google.api.http) = {delete: "/v1/users/{user_id}"};
+  }
+
+  // ListUsers lists users with pagination
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = {get: "/v1/users"};
+  }
+}
+
+// CreateUserRequest represents a user creation request
+message CreateUserRequest {
+  // User to create
+  UserInput user = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// CreateUserResponse represents a user creation response
+message CreateUserResponse {
+  // Created user
+  User user = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// GetUserRequest represents a get user request
+message GetUserRequest {
+  // User ID to retrieve
+  string user_id = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// GetUserResponse represents a get user response
+message GetUserResponse {
+  // Retrieved user
+  User user = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// GetUserByUsernameRequest represents a get user by username request
+message GetUserByUsernameRequest {
+  // Username to search for
+  string username = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// GetUserByUsernameResponse represents a get user by username response
+message GetUserByUsernameResponse {
+  // Retrieved user
+  User user = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// GetUserByEmailRequest represents a get user by email request
+message GetUserByEmailRequest {
+  // Email to search for
+  string email = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// GetUserByEmailResponse represents a get user by email response
+message GetUserByEmailResponse {
+  // Retrieved user
+  User user = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// UpdateUserRequest represents a user update request
+message UpdateUserRequest {
+  // User ID to update
+  string user_id = 1;
+  // User data to update
+  UserInput user = 2;
+  // Update mask for partial updates
+  repeated string update_mask = 3;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// UpdateUserResponse represents a user update response
+message UpdateUserResponse {
+  // Updated user
+  User user = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// DeleteUserRequest represents a user deletion request
+message DeleteUserRequest {
+  // User ID to delete
+  string user_id = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// DeleteUserResponse represents a user deletion response
+message DeleteUserResponse {
+  // Success status
+  bool success = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// ListUsersRequest represents a list users request
+message ListUsersRequest {
+  // Pagination parameters
+  swit.common.v1.PaginationRequest pagination = 1;
+  // Sorting criteria
+  repeated swit.common.v1.SortBy sort_by = 2;
+  // Filters
+  repeated swit.common.v1.Filter filters = 3;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// ListUsersResponse represents a list users response
+message ListUsersResponse {
+  // List of users
+  repeated User users = 1;
+  // Pagination information
+  swit.common.v1.PaginationResponse pagination = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// User represents a user entity
+message User {
+  // Unique user ID
+  string id = 1;
+  // Username
+  string username = 2;
+  // Email address
+  string email = 3;
+  // Full name
+  string full_name = 4;
+  // User status
+  UserStatus status = 5;
+  // User role
+  UserRole role = 6;
+  // Profile information
+  UserProfile profile = 7;
+  // When the user was created
+  google.protobuf.Timestamp created_at = 8;
+  // When the user was last updated
+  google.protobuf.Timestamp updated_at = 9;
+  // When the user last logged in
+  google.protobuf.Timestamp last_login_at = 10;
+  // Additional metadata
+  map<string, string> metadata = 11;
+}
+
+// UserInput represents user input for create/update operations
+message UserInput {
+  // Username
+  string username = 1;
+  // Email address
+  string email = 2;
+  // Password (for creation)
+  string password = 3;
+  // Full name
+  string full_name = 4;
+  // User status
+  UserStatus status = 5;
+  // User role
+  UserRole role = 6;
+  // Profile information
+  UserProfile profile = 7;
+  // Additional metadata
+  map<string, string> metadata = 8;
+}
+
+// UserProfile represents user profile information
+message UserProfile {
+  // First name
+  string first_name = 1;
+  // Last name
+  string last_name = 2;
+  // Display name
+  string display_name = 3;
+  // Avatar URL
+  string avatar_url = 4;
+  // Bio/description
+  string bio = 5;
+  // Phone number
+  string phone = 6;
+  // Address
+  Address address = 7;
+  // Preferences
+  UserPreferences preferences = 8;
+}
+
+// Address represents a user's address
+message Address {
+  // Street address
+  string street = 1;
+  // City
+  string city = 2;
+  // State/province
+  string state = 3;
+  // Postal code
+  string postal_code = 4;
+  // Country
+  string country = 5;
+}
+
+// UserPreferences represents user preferences
+message UserPreferences {
+  // Language preference
+  string language = 1;
+  // Timezone
+  string timezone = 2;
+  // Theme preference
+  string theme = 3;
+  // Notification preferences
+  NotificationPreferences notifications = 4;
+}
+
+// NotificationPreferences represents notification preferences
+message NotificationPreferences {
+  // Email notifications enabled
+  bool email_enabled = 1;
+  // Push notifications enabled
+  bool push_enabled = 2;
+  // SMS notifications enabled
+  bool sms_enabled = 3;
+  // In-app notifications enabled
+  bool in_app_enabled = 4;
+}
+
+// UserStatus represents the user status
+enum UserStatus {
+  // Unspecified status
+  USER_STATUS_UNSPECIFIED = 0;
+  // Active user
+  USER_STATUS_ACTIVE = 1;
+  // Inactive user
+  USER_STATUS_INACTIVE = 2;
+  // Suspended user
+  USER_STATUS_SUSPENDED = 3;
+  // Deleted user
+  USER_STATUS_DELETED = 4;
+  // Pending verification
+  USER_STATUS_PENDING = 5;
+}
+
+// UserRole represents the user role
+enum UserRole {
+  // Unspecified role
+  USER_ROLE_UNSPECIFIED = 0;
+  // Regular user
+  USER_ROLE_USER = 1;
+  // Administrator
+  USER_ROLE_ADMIN = 2;
+  // Moderator
+  USER_ROLE_MODERATOR = 3;
+  // Super admin
+  USER_ROLE_SUPER_ADMIN = 4;
+}

@@ -22,54 +22,96 @@
 package serve
 
 import (
-	"github.com/innovationmech/swit/internal/switserve/config"
-	"github.com/innovationmech/swit/internal/switserve/server"
-	"github.com/innovationmech/swit/pkg/logger"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap"
+	"context"
+	"github.com/innovationmech/swit/internal/switserve"
 	"os"
 	"os/signal"
 	"syscall"
-)
 
-// cfg is the global configuration for the application.
-var cfg *config.ServeConfig
+	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+)
 
 // NewServeCmd creates a new serve command.
 func NewServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the SWIT server",
+		Long: `Start the SWIT server using the improved architecture with:
+- Unified gRPC and HTTP transport management
+- Clean separation of business logic and protocol handling
+- Enterprise-grade middleware support
+- Multiple service registration (Greeter, Notification)`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			initConfig()
+			// Initialize logger if not already done
+			logger.InitLogger()
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srv, err := server.NewServer()
-			if err != nil {
-				return err
-			}
-			go func() {
-				if err := srv.Run(":" + cfg.Server.Port); err != nil {
-					logger.Logger.Error("Server exited", zap.Error(err))
-				}
-			}()
-
-			quit := make(chan os.Signal, 1)
-			signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-			<-quit
-
-			logger.Logger.Info("Shutting down server...")
-			srv.Shutdown()
-			return nil
+			return runServer()
 		},
 	}
 
 	return cmd
 }
 
-// initConfig initializes the global configuration for the application.
-func initConfig() {
-	logger.InitLogger()
-	cfg = config.GetConfig()
+// runServer runs the SWIT server
+func runServer() error {
+	logger.Logger.Info("Starting SWIT server...")
+
+	// Create server
+	srv, err := switserve.NewServer()
+	if err != nil {
+		logger.Logger.Error("Failed to create server", zap.Error(err))
+		return err
+	}
+
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle shutdown signals
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start server in goroutine
+	serverErr := make(chan error, 1)
+	go func() {
+		// Print registered transports
+		transports := srv.GetTransports()
+		logger.Logger.Info("Registered transports",
+			zap.Int("count", len(transports)),
+		)
+
+		for _, transport := range transports {
+			logger.Logger.Info("Transport registered",
+				zap.String("name", transport.Name()),
+				zap.String("address", transport.Address()),
+			)
+		}
+
+		if err := srv.Start(ctx); err != nil {
+			serverErr <- err
+		}
+	}()
+
+	// Wait for shutdown signal or server error
+	select {
+	case <-quit:
+		logger.Logger.Info("Shutdown signal received, stopping server...")
+		cancel()
+
+		if err := srv.Stop(); err != nil {
+			logger.Logger.Error("Error during server shutdown", zap.Error(err))
+			return err
+		}
+
+		logger.Logger.Info("Server shutdown complete")
+	case err := <-serverErr:
+		logger.Logger.Error("Server error", zap.Error(err))
+		return err
+	}
+
+	return nil
 }

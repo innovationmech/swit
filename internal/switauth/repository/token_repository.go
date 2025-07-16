@@ -30,6 +30,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// TokenRepository defines the interface for token data access operations
+// including create, retrieve, update, and invalidate operations
 type TokenRepository interface {
 	Create(ctx context.Context, token *model.Token) error
 	GetByAccessToken(ctx context.Context, tokenString string) (*model.Token, error)
@@ -81,6 +83,8 @@ func (r *tokenRepository) InvalidateToken(ctx context.Context, tokenString strin
 	return r.db.WithContext(ctx).Model(&model.Token{}).Where("access_token = ?", tokenString).Update("is_valid", false).Error
 }
 
+// NewTokenRepository creates a new TokenRepository instance
+// with the provided database connection
 func NewTokenRepository(db *gorm.DB) TokenRepository {
 	return &tokenRepository{db: db}
 }

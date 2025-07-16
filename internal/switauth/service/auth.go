@@ -33,6 +33,8 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/repository"
 )
 
+// AuthService defines the interface for authentication business logic
+// including login, logout, token refresh, and token validation operations
 type AuthService interface {
 	Login(ctx context.Context, username, password string) (string, string, error)
 	RefreshToken(ctx context.Context, refreshToken string) (string, string, error)
@@ -154,6 +156,8 @@ func (s *authService) Logout(ctx context.Context, tokenString string) error {
 	return nil
 }
 
+// NewAuthService creates a new AuthService instance
+// with the provided user client and token repository
 func NewAuthService(userClient client.UserClient, tokenRepo repository.TokenRepository) AuthService {
 	return &authService{userClient: userClient, tokenRepo: tokenRepo}
 }

@@ -46,7 +46,7 @@ jobs:
           docs/
           ~/.local/bin/
           ~/go/bin/
-        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'cmd/**/*.go', 'internal/**/*.go') }}
+        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'api/buf.gen.yaml', 'api/buf.yaml') }}
         restore-keys: |
           ${{ runner.os }}-generated-
 
@@ -65,9 +65,17 @@ jobs:
 
     - name: Generate proto code
       run: |
-        if [ ! -d "api/gen" ]; then
-          make proto
+        # 强制重新生成proto代码以确保与当前代码库同步
+        echo "Generating proto code to ensure consistency..."
+        make proto
+        
+        # 验证生成是否成功
+        if [ ! -d "api/gen" ] || [ $(find api/gen -name "*.pb.go" 2>/dev/null | wc -l) -eq 0 ]; then
+          echo "❌ Proto code generation failed or produced no output"
+          exit 1
         fi
+        
+        echo "✅ Proto code generation completed successfully"
 
     - name: Generate swagger docs
       run: |

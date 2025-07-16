@@ -33,6 +33,8 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
+// UserClient defines the interface for user-related operations
+// including user credential validation through service discovery
 type UserClient interface {
 	ValidateUserCredentials(ctx context.Context, username, password string) (*model.User, error)
 }
@@ -41,6 +43,8 @@ type userClient struct {
 	sd *discovery.ServiceDiscovery
 }
 
+// NewUserClient creates a new UserClient instance with service discovery
+// for communicating with the user service
 func NewUserClient(sd *discovery.ServiceDiscovery) UserClient {
 	return &userClient{sd: sd}
 }

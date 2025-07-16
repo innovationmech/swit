@@ -42,6 +42,7 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at" example:"2023-01-01T00:00:00Z"`
 }
 
+// BeforeCreate is a GORM hook that runs before creating a new user
 func (user *User) BeforeCreate(tx *gorm.DB) (err error) {
 	if user.ID == uuid.Nil {
 		user.ID = uuid.New()

@@ -39,6 +39,7 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// TableName returns the database table name for the User model
 func (User) TableName() string {
 	return "users"
 }

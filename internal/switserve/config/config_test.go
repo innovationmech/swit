@@ -44,7 +44,7 @@ func TestServeConfig_Structure(t *testing.T) {
 	assert.IsType(t, "", config.Database.DBName)
 	assert.IsType(t, "", config.Server.Port)
 	assert.IsType(t, "", config.Server.GRPCPort)
-	assert.IsType(t, "", config.Url)
+	assert.IsType(t, "", config.URL)
 	assert.IsType(t, "", config.ServiceDiscovery.Address)
 }
 
@@ -91,7 +91,7 @@ serviceDiscovery:
 
 	// These fields are not in the actual config structure used in the project
 	assert.Empty(t, cfg.Server.GRPCPort) // Not set in config
-	assert.Empty(t, cfg.Url)             // Not set in config
+	assert.Empty(t, cfg.URL)             // Not set in config
 }
 
 func TestGetConfig_SingletonBehavior(t *testing.T) {
@@ -269,7 +269,7 @@ func TestGetConfig_EmptyConfigFile(t *testing.T) {
 	assert.Empty(t, cfg.Database.Port)
 	assert.Empty(t, cfg.Server.Port)
 	assert.Empty(t, cfg.Server.GRPCPort)
-	assert.Empty(t, cfg.Url)
+	assert.Empty(t, cfg.URL)
 	assert.Empty(t, cfg.ServiceDiscovery.Address)
 }
 
@@ -305,7 +305,7 @@ server:
 	assert.Empty(t, cfg.Database.Username) // Should be empty since not in config
 	assert.Equal(t, "8080", cfg.Server.Port)
 	assert.Empty(t, cfg.Server.GRPCPort) // Should be empty since not in config
-	assert.Empty(t, cfg.Url)             // Should be empty since not in config
+	assert.Empty(t, cfg.URL)             // Should be empty since not in config
 }
 
 func TestGetConfig_AllFieldsPresent(t *testing.T) {
@@ -356,7 +356,7 @@ serviceDiscovery:
 
 	// These fields are not in the actual config structure used in the project
 	assert.Empty(t, cfg.Server.GRPCPort) // Not set in config
-	assert.Empty(t, cfg.Url)             // Not set in config
+	assert.Empty(t, cfg.URL)             // Not set in config
 }
 
 func TestGetConfig_JSONTags(t *testing.T) {
@@ -369,7 +369,7 @@ func TestGetConfig_JSONTags(t *testing.T) {
 		cfg.Database.Port = "3306"
 		cfg.Server.Port = "8080"
 		cfg.Server.GRPCPort = "9090"
-		cfg.Url = "http://test.com"
+		cfg.URL = "http://test.com"
 		cfg.ServiceDiscovery.Address = "localhost:8500"
 	})
 }

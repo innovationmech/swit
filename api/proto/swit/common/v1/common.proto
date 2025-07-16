@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package swit.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/common/v1";
+
+// RequestMetadata contains common request metadata
+message RequestMetadata {
+  // Request ID for tracking
+  string request_id = 1;
+  // User agent information
+  string user_agent = 2;
+  // IP address of the client
+  string client_ip = 3;
+  // User ID making the request (if authenticated)
+  string user_id = 4;
+  // Session ID
+  string session_id = 5;
+  // Trace ID for distributed tracing
+  string trace_id = 6;
+}
+
+// ResponseMetadata contains common response metadata
+message ResponseMetadata {
+  // Request ID for tracking
+  string request_id = 1;
+  // Server instance ID
+  string server_id = 2;
+  // Processing time in milliseconds
+  int64 processing_time_ms = 3;
+  // Response timestamp
+  google.protobuf.Timestamp timestamp = 4;
+  // API version
+  string api_version = 5;
+}
+
+// ErrorCode represents standardized error codes
+enum ErrorCode {
+  // Unspecified error code
+  ERROR_CODE_UNSPECIFIED = 0;
+  // No error
+  ERROR_CODE_OK = 1;
+  // Invalid argument
+  ERROR_CODE_INVALID_ARGUMENT = 2;
+  // Resource not found
+  ERROR_CODE_NOT_FOUND = 3;
+  // Permission denied
+  ERROR_CODE_PERMISSION_DENIED = 4;
+  // Resource already exists
+  ERROR_CODE_ALREADY_EXISTS = 5;
+  // Resource exhausted
+  ERROR_CODE_RESOURCE_EXHAUSTED = 6;
+  // Internal server error
+  ERROR_CODE_INTERNAL = 7;
+  // Service unavailable
+  ERROR_CODE_UNAVAILABLE = 8;
+  // Unauthenticated
+  ERROR_CODE_UNAUTHENTICATED = 9;
+  // Deadline exceeded
+  ERROR_CODE_DEADLINE_EXCEEDED = 10;
+  // Operation cancelled
+  ERROR_CODE_CANCELLED = 11;
+}
+
+// ErrorDetail provides detailed error information
+message ErrorDetail {
+  // Error code
+  ErrorCode code = 1;
+  // Human-readable error message
+  string message = 2;
+  // Field that caused the error (if applicable)
+  string field = 3;
+  // Additional context or metadata
+  map<string, string> metadata = 4;
+}
+
+// PaginationRequest represents pagination parameters
+message PaginationRequest {
+  // Page size (number of items per page)
+  int32 page_size = 1;
+  // Page token for pagination
+  string page_token = 2;
+  // Alternative: offset-based pagination
+  int32 offset = 3;
+}
+
+// PaginationResponse represents pagination information in response
+message PaginationResponse {
+  // Next page token
+  string next_page_token = 1;
+  // Total count of items (if available)
+  int64 total_count = 2;
+  // Current page size
+  int32 page_size = 3;
+  // Current offset
+  int32 offset = 4;
+}
+
+// SortOrder represents sort direction
+enum SortOrder {
+  // Unspecified sort order
+  SORT_ORDER_UNSPECIFIED = 0;
+  // Ascending order
+  SORT_ORDER_ASC = 1;
+  // Descending order
+  SORT_ORDER_DESC = 2;
+}
+
+// SortBy represents sorting criteria
+message SortBy {
+  // Field to sort by
+  string field = 1;
+  // Sort order
+  SortOrder order = 2;
+}
+
+// FilterOperator represents filter operations
+enum FilterOperator {
+  // Unspecified filter operator
+  FILTER_OPERATOR_UNSPECIFIED = 0;
+  // Equal to
+  FILTER_OPERATOR_EQ = 1;
+  // Not equal to
+  FILTER_OPERATOR_NE = 2;
+  // Greater than
+  FILTER_OPERATOR_GT = 3;
+  // Greater than or equal to
+  FILTER_OPERATOR_GTE = 4;
+  // Less than
+  FILTER_OPERATOR_LT = 5;
+  // Less than or equal to
+  FILTER_OPERATOR_LTE = 6;
+  // Contains (for strings)
+  FILTER_OPERATOR_CONTAINS = 7;
+  // Starts with (for strings)
+  FILTER_OPERATOR_STARTS_WITH = 8;
+  // Ends with (for strings)
+  FILTER_OPERATOR_ENDS_WITH = 9;
+  // In a list of values
+  FILTER_OPERATOR_IN = 10;
+  // Not in a list of values
+  FILTER_OPERATOR_NOT_IN = 11;
+}
+
+// Filter represents a filter condition
+message Filter {
+  // Field to filter on
+  string field = 1;
+  // Filter operator
+  FilterOperator operator = 2;
+  // Filter value
+  string value = 3;
+  // Multiple values for IN/NOT_IN operators
+  repeated string values = 4;
+}

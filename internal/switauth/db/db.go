@@ -34,6 +34,8 @@ var (
 	once   sync.Once
 )
 
+// GetDB returns the singleton database connection instance
+// initialized with MySQL driver and configuration from config package
 func GetDB() *gorm.DB {
 	once.Do(func() {
 		cfg := config.GetConfig()

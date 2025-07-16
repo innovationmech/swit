@@ -71,7 +71,7 @@ jobs:
           docs/
           ~/.local/bin/
           ~/go/bin/
-        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'cmd/**/*.go', 'internal/**/*.go') }}
+        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'buf.yaml', 'buf.gen.yaml', 'Makefile') }}
         restore-keys: |
           ${{ runner.os }}-generated-
 
@@ -104,7 +104,7 @@ jobs:
           docs/
           ~/.local/bin/
           ~/go/bin/
-        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'cmd/**/*.go', 'internal/**/*.go') }}
+        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'buf.yaml', 'buf.gen.yaml', 'Makefile') }}
         restore-keys: |
           ${{ runner.os }}-generated-
 
@@ -148,7 +148,7 @@ jobs:
           docs/
           ~/.local/bin/
           ~/go/bin/
-        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'cmd/**/*.go', 'internal/**/*.go') }}
+        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'buf.yaml', 'buf.gen.yaml', 'Makefile') }}
         restore-keys: |
           ${{ runner.os }}-generated-
 
