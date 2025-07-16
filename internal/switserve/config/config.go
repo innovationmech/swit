@@ -41,7 +41,7 @@ type ServeConfig struct {
 		Port     string `json:"port" mapstructure:"port"`
 		GRPCPort string `json:"grpc_port" mapstructure:"grpc_port"`
 	} `json:"server" mapstructure:"server"`
-	Url              string `json:"url" mapstructure:"url"`
+	URL              string `json:"url" mapstructure:"url"`
 	ServiceDiscovery struct {
 		Address string `json:"address" mapstructure:"address"`
 	} `json:"serviceDiscovery" mapstructure:"serviceDiscovery"`

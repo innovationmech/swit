@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package swit.common.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/swit/common/v1/common.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/common/v1";
+
+// HealthService provides health check functionality
+service HealthService {
+  // Check performs a health check
+  rpc Check(CheckRequest) returns (CheckResponse) {
+    option (google.api.http) = {get: "/health"};
+  }
+
+  // Watch performs a streaming health check
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {
+    option (google.api.http) = {get: "/health/watch"};
+  }
+}
+
+// CheckRequest represents a health check request
+message CheckRequest {
+  // Service name to check (empty for overall health)
+  string service = 1;
+  // Request metadata
+  RequestMetadata metadata = 2;
+}
+
+// CheckResponse represents a health check response
+message CheckResponse {
+  // Health status
+  HealthStatus status = 1;
+  // Service name
+  string service = 2;
+  // Additional details about the health status
+  repeated HealthDetail details = 3;
+  // Response metadata
+  ResponseMetadata metadata = 4;
+}
+
+// WatchRequest represents a streaming health check request
+message WatchRequest {
+  // Service name to watch (empty for overall health)
+  string service = 1;
+  // Request metadata
+  RequestMetadata metadata = 2;
+}
+
+// WatchResponse represents a streaming health check response
+message WatchResponse {
+  // Health status
+  HealthStatus status = 1;
+  // Service name
+  string service = 2;
+  // Additional details about the health status
+  repeated HealthDetail details = 3;
+  // Response metadata
+  ResponseMetadata metadata = 4;
+}
+
+// HealthStatus represents the health status
+enum HealthStatus {
+  // Unspecified status
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  // Unknown status
+  HEALTH_STATUS_UNKNOWN = 1;
+  // Service is healthy
+  HEALTH_STATUS_SERVING = 2;
+  // Service is not healthy
+  HEALTH_STATUS_NOT_SERVING = 3;
+  // Service is in a degraded state
+  HEALTH_STATUS_DEGRADED = 4;
+}
+
+// HealthDetail provides detailed health information
+message HealthDetail {
+  // Component name (e.g., "database", "cache", "external_api")
+  string component = 1;
+  // Component status
+  HealthStatus status = 2;
+  // Status message
+  string message = 3;
+  // Last check timestamp
+  google.protobuf.Timestamp last_check = 4;
+  // Response time in milliseconds
+  int64 response_time_ms = 5;
+  // Additional metadata
+  map<string, string> metadata = 6;
+}

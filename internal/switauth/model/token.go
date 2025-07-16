@@ -28,6 +28,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// Token represents a JWT authentication token pair with access and refresh tokens
+// stored in the database for user authentication sessions
 type Token struct {
 	ID               uuid.UUID `json:"id" gorm:"type:char(36);primary_key"`
 	UserID           uuid.UUID `json:"user_id" gorm:"type:char(36);not null"`

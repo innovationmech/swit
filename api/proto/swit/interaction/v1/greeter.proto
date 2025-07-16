@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package swit.interaction.v1;
+
+import "google/api/annotations.proto";
+import "proto/swit/common/v1/common.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/interaction/v1";
+
+// GreeterService provides greeting functionality
+service GreeterService {
+  // SayHello greets a person
+  rpc SayHello(SayHelloRequest) returns (SayHelloResponse) {
+    option (google.api.http) = {
+      post: "/v1/greeter/hello"
+      body: "*"
+    };
+  }
+
+  // SayHelloStream provides streaming greeting
+  rpc SayHelloStream(SayHelloStreamRequest) returns (stream SayHelloStreamResponse) {
+    option (google.api.http) = {
+      post: "/v1/greeter/hello/stream"
+      body: "*"
+    };
+  }
+}
+
+// SayHelloRequest represents a greeting request
+message SayHelloRequest {
+  // Name of the person to greet
+  string name = 1;
+  // Language for the greeting (optional)
+  string language = 2;
+  // Greeting style (formal, casual, friendly)
+  GreetingStyle style = 3;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// SayHelloResponse represents a greeting response
+message SayHelloResponse {
+  // The greeting message
+  string message = 1;
+  // Language used for the greeting
+  string language = 2;
+  // Style used for the greeting
+  GreetingStyle style = 3;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 4;
+}
+
+// SayHelloStreamRequest represents a streaming greeting request
+message SayHelloStreamRequest {
+  // Name of the person to greet
+  string name = 1;
+  // Language for the greeting (optional)
+  string language = 2;
+  // Greeting style (formal, casual, friendly)
+  GreetingStyle style = 3;
+  // Number of greetings to send
+  int32 count = 4;
+  // Interval between greetings in seconds
+  int32 interval_seconds = 5;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 6;
+}
+
+// SayHelloStreamResponse represents a streaming greeting response
+message SayHelloStreamResponse {
+  // The greeting message
+  string message = 1;
+  // Language used for the greeting
+  string language = 2;
+  // Style used for the greeting
+  GreetingStyle style = 3;
+  // Sequence number for this stream item
+  int32 sequence = 4;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 5;
+}
+
+// GreetingStyle represents different greeting styles
+enum GreetingStyle {
+  // Unspecified style (defaults to casual)
+  GREETING_STYLE_UNSPECIFIED = 0;
+  // Formal style
+  GREETING_STYLE_FORMAL = 1;
+  // Casual style
+  GREETING_STYLE_CASUAL = 2;
+  // Friendly style
+  GREETING_STYLE_FRIENDLY = 3;
+  // Professional style
+  GREETING_STYLE_PROFESSIONAL = 4;
+}

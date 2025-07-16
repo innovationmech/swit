@@ -28,11 +28,14 @@ import (
 )
 
 var (
+	// JwtSecret contains the secret key used for JWT token signing and verification
 	JwtSecret = []byte("my-256-bit-secret")
 	config    *AuthConfig
 	once      sync.Once
 )
 
+// AuthConfig holds the configuration settings for the authentication service
+// including database, server, and service discovery configuration
 type AuthConfig struct {
 	Database struct {
 		Username string `json:"username" yaml:"username"`
@@ -49,6 +52,8 @@ type AuthConfig struct {
 	} `json:"serviceDiscovery" yaml:"serviceDiscovery"`
 }
 
+// GetConfig returns the singleton instance of AuthConfig
+// loaded from the configuration file using viper
 func GetConfig() *AuthConfig {
 	once.Do(func() {
 		viper.SetConfigName("switauth")

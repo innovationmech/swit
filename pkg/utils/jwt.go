@@ -29,6 +29,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// GenerateAccessToken creates a new access token for the given user ID
 func GenerateAccessToken(userID string) (string, time.Time, error) {
 	expiresAt := time.Now().Add(time.Minute * 15)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -41,6 +42,7 @@ func GenerateAccessToken(userID string) (string, time.Time, error) {
 	return tokenString, expiresAt, err
 }
 
+// GenerateRefreshToken creates a new refresh token for the given user ID
 func GenerateRefreshToken(userID string) (string, time.Time, error) {
 	expiresAt := time.Now().Add(time.Hour * 72)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -53,10 +55,12 @@ func GenerateRefreshToken(userID string) (string, time.Time, error) {
 	return tokenString, expiresAt, err
 }
 
+// ValidateAccessToken validates an access token and returns its claims
 func ValidateAccessToken(tokenString string) (jwt.MapClaims, error) {
 	return validateToken(tokenString, "access")
 }
 
+// ValidateRefreshToken validates a refresh token and returns its claims
 func ValidateRefreshToken(tokenString string) (jwt.MapClaims, error) {
 	return validateToken(tokenString, "refresh")
 }

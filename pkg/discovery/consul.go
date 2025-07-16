@@ -30,12 +30,14 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
+// ServiceDiscovery handles service discovery using Consul
 type ServiceDiscovery struct {
 	client          *api.Client
 	mu              sync.Mutex
 	roundRobinIndex int
 }
 
+// NewServiceDiscovery creates a new service discovery client
 func NewServiceDiscovery(address string) (*ServiceDiscovery, error) {
 	config := api.DefaultConfig()
 	config.Address = address

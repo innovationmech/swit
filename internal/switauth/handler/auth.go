@@ -25,10 +25,14 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/service"
 )
 
+// AuthController handles HTTP requests for authentication operations
+// including login, logout, token refresh, and token validation
 type AuthController struct {
 	authService service.AuthService
 }
 
+// NewAuthController creates a new AuthController instance
+// with the provided authentication service
 func NewAuthController(authService service.AuthService) *AuthController {
 	return &AuthController{authService: authService}
 }

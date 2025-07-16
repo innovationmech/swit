@@ -24,7 +24,12 @@ test:
 .PHONY: test-dev
 test-dev:
 	@echo "🔥 快速开发测试 - 跳过依赖生成（开发模式）"
-	@$(TEST_SCRIPT) --dev
+	@if [ -f "$(TEST_SCRIPT)" ]; then \
+		$(TEST_SCRIPT) --dev; \
+	else \
+		echo "❌ 测试脚本未找到: $(TEST_SCRIPT)"; \
+		exit 1; \
+	fi
 
 # 覆盖率测试 - 生成详细的覆盖率报告
 .PHONY: test-coverage

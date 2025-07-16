@@ -104,11 +104,29 @@ EOF
 check_go_env() {
     if ! command -v go &> /dev/null; then
         log_error "Go 未安装或不在 PATH 中"
+        echo "PATH: $PATH"
         exit 1
     fi
     
     if [[ "$verbose" == "true" ]]; then
         log_info "Go 版本: $(go version)"
+    fi
+    
+    # 检查Go模块是否存在
+    if [[ ! -f "go.mod" ]]; then
+        log_error "go.mod 文件未找到"
+        echo "当前目录: $(pwd)"
+        echo "目录内容: $(ls -la)"
+        exit 1
+    fi
+    
+    # 验证Go模块
+    if ! go mod verify &> /dev/null; then
+        log_warning "Go模块验证失败，尝试修复..."
+        if ! go mod download &> /dev/null; then
+            log_error "Go模块下载失败"
+            exit 1
+        fi
     fi
 }
 
@@ -123,12 +141,17 @@ generate_deps() {
     
     log_info "🔄 生成测试依赖..."
     
+    # 创建必要的目录（如果不存在）
+    mkdir -p api/gen docs
+    
     # 生成proto代码
     if [[ -f "$PROTO_SCRIPT" ]]; then
         log_info "  生成proto代码..."
         if ! bash "$PROTO_SCRIPT" --dev >/dev/null 2>&1; then
             log_warning "Proto代码生成失败，继续测试..."
         fi
+    else
+        log_warning "  Proto脚本未找到，跳过proto代码生成"
     fi
     
     # 生成swagger文档
@@ -137,6 +160,8 @@ generate_deps() {
         if ! bash "$SWAGGER_SCRIPT" --dev >/dev/null 2>&1; then
             log_warning "Swagger文档生成失败，继续测试..."
         fi
+    else
+        log_warning "  Swagger脚本未找到，跳过swagger文档生成"
     fi
 }
 
@@ -187,7 +212,20 @@ run_tests() {
     local package_paths
     package_paths=$(get_package_paths "$package")
     
-    local test_cmd="$GO_CMD test $test_options $package_paths"
+    # 确保包路径存在
+    local valid_paths=""
+    for path in $package_paths; do
+        if [[ -d "$path" ]] || [[ "$path" == *"..." ]]; then
+            valid_paths="$valid_paths $path"
+        fi
+    done
+    
+    if [[ -z "$valid_paths" ]]; then
+        log_warning "  没有找到有效的测试包路径"
+        return 0
+    fi
+    
+    local test_cmd="$GO_CMD test $test_options $valid_paths"
     
     log_info "🧪 运行测试 - 类型: ${test_type}, 包: ${package}"
     

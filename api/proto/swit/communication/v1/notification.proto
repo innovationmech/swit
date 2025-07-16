@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+package swit.communication.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/swit/common/v1/common.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/communication/v1";
+
+// NotificationService provides notification management functionality
+service NotificationService {
+  // CreateNotification creates a new notification
+  rpc CreateNotification(CreateNotificationRequest) returns (CreateNotificationResponse) {
+    option (google.api.http) = {
+      post: "/v1/notifications"
+      body: "*"
+    };
+  }
+
+  // GetNotifications retrieves notifications for a user
+  rpc GetNotifications(GetNotificationsRequest) returns (GetNotificationsResponse) {
+    option (google.api.http) = {get: "/v1/notifications"};
+  }
+
+  // MarkAsRead marks a notification as read
+  rpc MarkAsRead(MarkAsReadRequest) returns (MarkAsReadResponse) {
+    option (google.api.http) = {patch: "/v1/notifications/{notification_id}/read"};
+  }
+
+  // DeleteNotification deletes a notification
+  rpc DeleteNotification(DeleteNotificationRequest) returns (DeleteNotificationResponse) {
+    option (google.api.http) = {delete: "/v1/notifications/{notification_id}"};
+  }
+
+  // StreamNotifications provides real-time notification streaming
+  rpc StreamNotifications(StreamNotificationsRequest) returns (stream StreamNotificationsResponse) {
+    option (google.api.http) = {get: "/v1/notifications/stream"};
+  }
+}
+
+// CreateNotificationRequest represents a notification creation request
+message CreateNotificationRequest {
+  // User ID to send notification to
+  string user_id = 1;
+  // Notification title
+  string title = 2;
+  // Notification content
+  string content = 3;
+  // Notification type (info, warning, error, success)
+  NotificationType type = 4;
+  // Priority level (low, medium, high, urgent)
+  NotificationPriority priority = 5;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 6;
+}
+
+// CreateNotificationResponse represents a notification creation response
+message CreateNotificationResponse {
+  // Created notification
+  Notification notification = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// GetNotificationsRequest represents a request to get notifications
+message GetNotificationsRequest {
+  // User ID to get notifications for
+  string user_id = 1;
+  // Pagination parameters
+  swit.common.v1.PaginationRequest pagination = 2;
+  // Filter by read status (optional)
+  optional bool is_read = 3;
+  // Filter by notification type (optional)
+  optional NotificationType type = 4;
+  // Sorting criteria
+  repeated swit.common.v1.SortBy sort_by = 5;
+  // Filters
+  repeated swit.common.v1.Filter filters = 6;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 7;
+}
+
+// GetNotificationsResponse represents a response with notifications
+message GetNotificationsResponse {
+  // List of notifications
+  repeated Notification notifications = 1;
+  // Pagination information
+  swit.common.v1.PaginationResponse pagination = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// MarkAsReadRequest represents a request to mark notification as read
+message MarkAsReadRequest {
+  // Notification ID to mark as read
+  string notification_id = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// MarkAsReadResponse represents a response for mark as read operation
+message MarkAsReadResponse {
+  // Updated notification
+  Notification notification = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// DeleteNotificationRequest represents a request to delete a notification
+message DeleteNotificationRequest {
+  // Notification ID to delete
+  string notification_id = 1;
+  // Metadata for the request
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// DeleteNotificationResponse represents a response for delete operation
+message DeleteNotificationResponse {
+  // Success status
+  bool success = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// StreamNotificationsRequest represents a request for streaming notifications
+message StreamNotificationsRequest {
+  // User ID to stream notifications for
+  string user_id = 1;
+  // Filter by notification type (optional)
+  repeated NotificationType types = 2;
+  // Filter by priority (optional)
+  repeated NotificationPriority priorities = 3;
+}
+
+// StreamNotificationsResponse represents a streaming notification response
+message StreamNotificationsResponse {
+  // The notification
+  Notification notification = 1;
+  // Stream event type (created, updated, deleted)
+  StreamEventType event_type = 2;
+  // Timestamp of the event
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+// Notification represents a notification entity
+message Notification {
+  // Unique notification ID
+  string id = 1;
+  // User ID this notification belongs to
+  string user_id = 2;
+  // Notification title
+  string title = 3;
+  // Notification content
+  string content = 4;
+  // Notification type
+  NotificationType type = 5;
+  // Priority level
+  NotificationPriority priority = 6;
+  // Whether the notification has been read
+  bool is_read = 7;
+  // When the notification was created
+  google.protobuf.Timestamp created_at = 8;
+  // When the notification was last updated
+  google.protobuf.Timestamp updated_at = 9;
+  // Additional metadata
+  map<string, string> metadata = 10;
+}
+
+// NotificationType represents different types of notifications
+enum NotificationType {
+  // Unspecified notification type
+  NOTIFICATION_TYPE_UNSPECIFIED = 0;
+  // Informational notification
+  NOTIFICATION_TYPE_INFO = 1;
+  // Warning notification
+  NOTIFICATION_TYPE_WARNING = 2;
+  // Error notification
+  NOTIFICATION_TYPE_ERROR = 3;
+  // Success notification
+  NOTIFICATION_TYPE_SUCCESS = 4;
+  // System notification
+  NOTIFICATION_TYPE_SYSTEM = 5;
+  // User notification
+  NOTIFICATION_TYPE_USER = 6;
+}
+
+// NotificationPriority represents notification priority levels
+enum NotificationPriority {
+  // Unspecified priority
+  NOTIFICATION_PRIORITY_UNSPECIFIED = 0;
+  // Low priority
+  NOTIFICATION_PRIORITY_LOW = 1;
+  // Medium priority
+  NOTIFICATION_PRIORITY_MEDIUM = 2;
+  // High priority
+  NOTIFICATION_PRIORITY_HIGH = 3;
+  // Urgent priority
+  NOTIFICATION_PRIORITY_URGENT = 4;
+}
+
+// StreamEventType represents types of stream events
+enum StreamEventType {
+  // Unspecified event type
+  STREAM_EVENT_TYPE_UNSPECIFIED = 0;
+  // Notification created event
+  STREAM_EVENT_TYPE_CREATED = 1;
+  // Notification updated event
+  STREAM_EVENT_TYPE_UPDATED = 2;
+  // Notification deleted event
+  STREAM_EVENT_TYPE_DELETED = 3;
+}
