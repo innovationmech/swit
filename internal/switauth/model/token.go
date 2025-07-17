@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/innovationmech/swit/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -52,5 +53,92 @@ func (token *Token) BeforeCreate(tx *gorm.DB) (err error) {
 	if token.ID == uuid.Nil {
 		token.ID = uuid.New()
 	}
+	
+	// Encrypt tokens before saving
+	if err := token.encryptTokens(); err != nil {
+		return err
+	}
+	
 	return
+}
+
+// BeforeUpdate is a GORM hook, called before updating a record
+func (token *Token) BeforeUpdate(tx *gorm.DB) (err error) {
+	// Encrypt tokens before updating
+	if err := token.encryptTokens(); err != nil {
+		return err
+	}
+	return
+}
+
+// AfterFind is a GORM hook, called after finding a record
+func (token *Token) AfterFind(tx *gorm.DB) (err error) {
+	// Decrypt tokens after loading from database
+	if err := token.decryptTokens(); err != nil {
+		return err
+	}
+	return
+}
+
+// encryptTokens encrypts the access and refresh tokens
+func (token *Token) encryptTokens() error {
+	// Only encrypt if tokens are not already encrypted (avoid double encryption)
+	if token.AccessToken != "" && !token.isEncrypted(token.AccessToken) {
+		encryptedAccessToken, err := utils.EncryptToken(token.AccessToken)
+		if err != nil {
+			return err
+		}
+		token.AccessToken = encryptedAccessToken
+	}
+	
+	if token.RefreshToken != "" && !token.isEncrypted(token.RefreshToken) {
+		encryptedRefreshToken, err := utils.EncryptToken(token.RefreshToken)
+		if err != nil {
+			return err
+		}
+		token.RefreshToken = encryptedRefreshToken
+	}
+	
+	return nil
+}
+
+// decryptTokens decrypts the access and refresh tokens
+func (token *Token) decryptTokens() error {
+	// Only decrypt if tokens are encrypted
+	if token.AccessToken != "" && token.isEncrypted(token.AccessToken) {
+		decryptedAccessToken, err := utils.DecryptToken(token.AccessToken)
+		if err != nil {
+			return err
+		}
+		token.AccessToken = decryptedAccessToken
+	}
+	
+	if token.RefreshToken != "" && token.isEncrypted(token.RefreshToken) {
+		decryptedRefreshToken, err := utils.DecryptToken(token.RefreshToken)
+		if err != nil {
+			return err
+		}
+		token.RefreshToken = decryptedRefreshToken
+	}
+	
+	return nil
+}
+
+// isEncrypted checks if a token is encrypted by checking if it's base64 encoded
+// This is a simple heuristic - encrypted tokens are base64 encoded
+func (token *Token) isEncrypted(tokenStr string) bool {
+	// JWT tokens start with "ey" (base64 encoded header)
+	// Encrypted tokens are longer base64 strings without the JWT format
+	return len(tokenStr) > 100 && !isJWTFormat(tokenStr)
+}
+
+// isJWTFormat checks if a string looks like a JWT token (has 3 parts separated by dots)
+func isJWTFormat(tokenStr string) bool {
+	parts := 0
+	for _, char := range tokenStr {
+		if char == '.' {
+			parts++
+		}
+	}
+	return parts == 2 // JWT has 3 parts separated by 2 dots
 }

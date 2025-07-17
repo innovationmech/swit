@@ -22,6 +22,7 @@
 package config
 
 import (
+	"os"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -29,7 +30,8 @@ import (
 
 var (
 	// JwtSecret contains the secret key used for JWT token signing and verification
-	JwtSecret = []byte("my-256-bit-secret")
+	// This is loaded from configuration or environment variable during startup
+	JwtSecret []byte
 	config    *AuthConfig
 	once      sync.Once
 )
@@ -51,6 +53,9 @@ type AuthConfig struct {
 	ServiceDiscovery struct {
 		Address string `json:"address" yaml:"address"`
 	} `json:"serviceDiscovery" yaml:"serviceDiscovery"`
+	Security struct {
+		JwtSecret string `json:"jwtSecret" yaml:"jwtSecret"`
+	} `json:"security" yaml:"security"`
 }
 
 // GetConfig returns the singleton instance of AuthConfig
@@ -60,6 +65,13 @@ func GetConfig() *AuthConfig {
 		viper.SetConfigName("switauth")
 		viper.SetConfigType("yaml")
 		viper.AddConfigPath(".")
+		
+		// Set default values
+		viper.SetDefault("security.jwtSecret", "")
+		
+		// Allow environment variable override
+		viper.BindEnv("security.jwtSecret", "JWT_SECRET")
+		
 		err := viper.ReadInConfig()
 		if err != nil {
 			panic(err)
@@ -69,6 +81,23 @@ func GetConfig() *AuthConfig {
 		if err != nil {
 			panic(err)
 		}
+		
+		// Load JWT secret from config or environment
+		jwtSecret := config.Security.JwtSecret
+		if jwtSecret == "" {
+			jwtSecret = os.Getenv("JWT_SECRET")
+		}
+		
+		// Validate JWT secret is present and has minimum length
+		if jwtSecret == "" {
+			panic("JWT secret is required. Set it in config file or JWT_SECRET environment variable")
+		}
+		if len(jwtSecret) < 32 {
+			panic("JWT secret must be at least 32 characters long for security")
+		}
+		
+		// Update global JwtSecret
+		JwtSecret = []byte(jwtSecret)
 	})
 	return config
 }
