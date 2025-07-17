@@ -19,40 +19,43 @@
 // THE SOFTWARE.
 //
 
-package stop
+package v1
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
-// Handler is the handler for the stop endpoint.
-type Handler struct {
-	shutdownFunc func()
-}
-
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
-	return &Handler{
-		shutdownFunc: shutdownFunc,
-	}
-}
-
-// Stop stops the server.
+// Login authenticates a user and returns access and refresh tokens
 //
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
+//	@Summary		User login
+//	@Description	Authenticate a user with username and password, returns access and refresh tokens
+//	@Tags			authentication
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
+//	@Param			login	body		model.LoginRequest	true	"User login credentials"
+//	@Success		200		{object}	model.LoginResponse	"Login successful"
+//	@Failure		400		{object}	model.ErrorResponse	"Bad request"
+//	@Failure		401		{object}	model.ErrorResponse	"Invalid credentials"
+//	@Router			/auth/login [post]
+func (c *Controller) Login(ctx *gin.Context) {
+	var loginData model.LoginRequest
+
+	if err := ctx.ShouldBindJSON(&loginData); err != nil {
+		ctx.JSON(http.StatusBadRequest, model.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	accessToken, refreshToken, err := c.authService.Login(ctx.Request.Context(), loginData.Username, loginData.Password)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, model.LoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	})
 }

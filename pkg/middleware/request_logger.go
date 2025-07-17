@@ -19,40 +19,49 @@
 // THE SOFTWARE.
 //
 
-package stop
+package middleware
 
 import (
-	"net/http"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/logger"
+
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
-// Handler is the handler for the stop endpoint.
-type Handler struct {
-	shutdownFunc func()
-}
+// RequestLogger is a middleware function for logging HTTP requests
+func RequestLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Start time
+		start := time.Now()
+		path := c.Request.URL.Path
+		raw := c.Request.URL.RawQuery
 
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
-	return &Handler{
-		shutdownFunc: shutdownFunc,
+		// Process request
+		c.Next()
+
+		// End time
+		end := time.Now()
+		latency := end.Sub(start)
+
+		clientIP := c.ClientIP()
+		method := c.Request.Method
+		statusCode := c.Writer.Status()
+
+		if raw != "" {
+			path = path + "?" + raw
+		}
+
+		// Use logger.RequestLogger to record logs
+		logger.Logger.Info("HTTP Request Log",
+			zap.String("ClientIP", clientIP),
+			zap.String("Host", c.Request.Host),
+			zap.String("Time", end.Format("02/Jan/2006:15:04:05 -0700")),
+			zap.String("Method", method),
+			zap.String("Path", path),
+			zap.Int("StatusCode", statusCode),
+			zap.Duration("Latency", latency),
+		)
 	}
-}
-
-// Stop stops the server.
-//
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
 }

@@ -15,8 +15,6 @@ require (
 	github.com/spf13/cobra v1.7.0
 	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.9.0
-	github.com/swaggo/files v1.0.0
-	github.com/swaggo/gin-swagger v1.5.3
 	github.com/swaggo/swag v1.8.12
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.38.0

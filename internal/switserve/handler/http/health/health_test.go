@@ -68,7 +68,7 @@ func TestHealthHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a new gin router
 			router := gin.New()
-			RegisterRoutes(router)
+			router.GET("/health", Handler)
 
 			// Create a new HTTP request
 			req, err := http.NewRequest(tt.method, tt.path, nil)
@@ -91,18 +91,16 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
-func TestRegisterRoutes(t *testing.T) {
+func TestHealthRouteRegistration(t *testing.T) {
 	// Set gin to test mode
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
 		name           string
-		registerFunc   func(*gin.Engine)
 		expectedRoutes []string
 	}{
 		{
 			name:           "register health routes",
-			registerFunc:   RegisterRoutes,
 			expectedRoutes: []string{"GET:/health"},
 		},
 	}
@@ -113,7 +111,7 @@ func TestRegisterRoutes(t *testing.T) {
 			router := gin.New()
 
 			// Register the routes
-			RegisterRoutes(router)
+			router.GET("/health", Handler)
 
 			// Check if the routes are registered correctly
 			for _, route := range tt.expectedRoutes {
@@ -141,7 +139,7 @@ func TestHealthHandlerConcurrent(t *testing.T) {
 
 	// Create a new gin router
 	router := gin.New()
-	RegisterRoutes(router)
+	router.GET("/health", Handler)
 
 	// Number of concurrent requests
 	const concurrentRequests = 100
@@ -186,7 +184,7 @@ func TestHealthHandlerWithMiddleware(t *testing.T) {
 	})
 
 	// Register the routes
-	RegisterRoutes(router)
+	router.GET("/health", Handler)
 
 	// Create a new HTTP request
 	req, _ := http.NewRequest("GET", "/health", nil)

@@ -19,40 +19,43 @@
 // THE SOFTWARE.
 //
 
-package stop
+package v1
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
-// Handler is the handler for the stop endpoint.
-type Handler struct {
-	shutdownFunc func()
-}
-
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
-	return &Handler{
-		shutdownFunc: shutdownFunc,
-	}
-}
-
-// Stop stops the server.
+// RefreshToken generates new access and refresh tokens using a valid refresh token
 //
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
+//	@Summary		Refresh access token
+//	@Description	Generate new access and refresh tokens using a valid refresh token
+//	@Tags			authentication
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
+//	@Param			refresh	body		model.RefreshTokenRequest	true	"Refresh token"
+//	@Success		200		{object}	model.RefreshTokenResponse	"Token refresh successful"
+//	@Failure		400		{object}	model.ErrorResponse			"Bad request"
+//	@Failure		401		{object}	model.ErrorResponse			"Invalid or expired refresh token"
+//	@Router			/auth/refresh [post]
+func (c *Controller) RefreshToken(ctx *gin.Context) {
+	var data model.RefreshTokenRequest
+
+	if err := ctx.ShouldBindJSON(&data); err != nil {
+		ctx.JSON(http.StatusBadRequest, model.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	newAccessToken, newRefreshToken, err := c.authService.RefreshToken(ctx.Request.Context(), data.RefreshToken)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, model.RefreshTokenResponse{
+		AccessToken:  newAccessToken,
+		RefreshToken: newRefreshToken,
+	})
 }

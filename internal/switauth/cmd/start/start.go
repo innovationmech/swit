@@ -22,13 +22,17 @@
 package start
 
 import (
+	"context"
+	"github.com/innovationmech/swit/internal/switauth"
+	"os"
+	"os/signal"
+	"sync"
+	"time"
+
 	"github.com/innovationmech/swit/internal/switauth/config"
-	"github.com/innovationmech/swit/internal/switauth/server"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-	"os"
-	"os/signal"
 )
 
 // cfg is the global configuration for the application.
@@ -42,21 +46,59 @@ func NewStartCmd() *cobra.Command {
 		Long:    "Start the SWIT authentication service with all necessary configurations and dependencies.",
 		Version: "0.0.1",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srv, err := server.NewServer()
+			srv, err := switauth.NewServer()
 			if err != nil {
 				return err
 			}
+
+			// Create a long-lived context for the server
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			// Channel to capture server startup errors
+			startupErr := make(chan error, 1)
+			var wg sync.WaitGroup
+
+			wg.Add(1)
 			go func() {
-				if err := srv.Run(":" + cfg.Server.Port); err != nil {
-					logger.Logger.Error("Auth Server exited", zap.Error(err))
+				defer wg.Done()
+				if err := srv.Start(ctx); err != nil {
+					startupErr <- err
 				}
 			}()
 
+			// Wait for server startup with timeout
+			select {
+			case err := <-startupErr:
+				logger.Logger.Error("Server startup failed", zap.Error(err))
+				return err
+			case <-time.After(5 * time.Second):
+				// Server started successfully (no error within timeout)
+				logger.Logger.Info("Server started successfully")
+			}
+
+			// Setup graceful shutdown
 			quit := make(chan os.Signal, 1)
 			signal.Notify(quit, os.Interrupt)
 			<-quit
+
 			logger.Logger.Info("Shutting down authentication server...")
-			srv.Shutdown()
+
+			// Create context with timeout for graceful shutdown
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer shutdownCancel()
+
+			if err := srv.Stop(shutdownCtx); err != nil {
+				logger.Logger.Error("Error during server shutdown", zap.Error(err))
+			}
+
+			// Cancel the server context to ensure cleanup
+			cancel()
+
+			// Wait for server goroutine to finish
+			wg.Wait()
+
+			logger.Logger.Info("Server shut down successfully")
 			return nil
 		},
 	}

@@ -6,5 +6,6 @@ database:
   dbname: auth_service_db
 server:
   port: 9001
+  grpcPort: 50051
 serviceDiscovery:
   address: "localhost:8500"

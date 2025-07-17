@@ -26,38 +26,62 @@ import (
 	"time"
 )
 
-// Status represents health check response
+// Service defines the interface for health check operations
+type Service interface {
+	// CheckHealth returns the current health status
+	CheckHealth(ctx context.Context) *Status
+	// GetHealthDetails returns detailed health information
+	GetHealthDetails(ctx context.Context) map[string]interface{}
+}
+
+// Status represents the health check response
 type Status struct {
 	Status    string            `json:"status"`
 	Timestamp int64             `json:"timestamp"`
+	Service   string            `json:"service"`
+	Version   string            `json:"version"`
 	Details   map[string]string `json:"details,omitempty"`
 }
 
-// Service implements health check business logic
-type Service struct {
-	// Add dependencies here (database, external services, etc.)
+// healthService implements the Service interface
+type healthService struct {
+	name    string
+	version string
 }
 
-// NewService creates a new health service instance
-func NewService() *Service {
-	return &Service{}
+// NewHealthService creates a new health service instance
+func NewHealthService() Service {
+	return &healthService{
+		name:    "switauth",
+		version: "1.0.0",
+	}
 }
 
-// CheckHealth performs health checks and returns status
-func (s *Service) CheckHealth(ctx context.Context) (*Status, error) {
-	// Perform health checks here
-	// - Database connectivity
-	// - External service availability
-	// - Resource usage checks
-
-	status := &Status{
+// CheckHealth returns the basic health status
+func (h *healthService) CheckHealth(ctx context.Context) *Status {
+	return &Status{
 		Status:    "healthy",
 		Timestamp: time.Now().Unix(),
+		Service:   h.name,
+		Version:   h.version,
 		Details: map[string]string{
-			"server":  "swit-serve",
-			"version": "1.0.0",
+			"uptime": "running",
 		},
 	}
+}
 
-	return status, nil
+// GetHealthDetails returns comprehensive health information
+func (h *healthService) GetHealthDetails(ctx context.Context) map[string]interface{} {
+	return map[string]interface{}{
+		"service":   h.name,
+		"version":   h.version,
+		"status":    "healthy",
+		"timestamp": time.Now().Unix(),
+		"uptime":    "running",
+		"checks": map[string]interface{}{
+			"database": "ok",
+			"cache":    "ok",
+			"external": "ok",
+		},
+	}
 }

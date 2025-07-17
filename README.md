@@ -31,7 +31,7 @@ Swit is a microservice-based backend system built with Go, featuring modular des
 The project consists of the following main components:
 
 1. **swit-serve** - Main user service (port 9000)
-2. **swit-auth** - Authentication service (port 8090)
+2. **swit-auth** - Authentication service (port 9001)
 3. **switctl** - Command-line control tool
 
 ## Modern API Architecture
@@ -65,7 +65,8 @@ api/
 ## Current Implemented Services
 
 ### 1. Greeter Service (gRPC)
-**Port**: 9000  
+**HTTP Port**: 9000  
+**gRPC Port**: 10000 (HTTP port + 1000)  
 **Protocol**: gRPC + HTTP  
 **Implemented Methods**:
 - `SayHello` - Simple greeting functionality ✅
@@ -73,17 +74,21 @@ api/
 **HTTP Endpoints**:
 - `POST /v1/greeter/hello` - Send greeting request
 
+**gRPC Endpoints**:
+- `greeter.v1.GreeterService/SayHello` - gRPC greeting service
+
 ### 2. Auth Service (HTTP REST)
-**Port**: 8090  
-**Protocol**: HTTP REST  
+**Port**: 9001  
+**Protocol**: HTTP REST + gRPC  
 **Main Features**:
 - User login/logout
 - JWT Token management
 - Token refresh and validation
 
 ### 3. User Service (HTTP REST)
-**Port**: 9000  
-**Protocol**: HTTP REST  
+**HTTP Port**: 9000  
+**gRPC Port**: 10000 (HTTP port + 1000)  
+**Protocol**: HTTP REST + gRPC  
 **Main Features**:
 - User registration
 - User information management
@@ -93,7 +98,6 @@ api/
 
 - Go 1.24+
 - MySQL 8.0+
-- Redis 6.0+
 - Consul 1.12+
 - Buf CLI 1.0+ (for API development)
 
@@ -123,18 +127,21 @@ cp switauth.yaml.example switauth.yaml
 ```bash
 # Create databases
 mysql -u root -p
-CREATE DATABASE swit_db;
-CREATE DATABASE swit_auth_db;
+CREATE DATABASE user_service_db;
+CREATE DATABASE auth_service_db;
 
 # Import database schema
-mysql -u root -p swit_db < scripts/sql/user_service_db.sql
-mysql -u root -p swit_auth_db < scripts/sql/auth_service_db.sql
+mysql -u root -p user_service_db < scripts/sql/user_service_db.sql
+mysql -u root -p auth_service_db < scripts/sql/auth_service_db.sql
 ```
 
 ### 5. Build and Run
 ```bash
-# Build all services
+# Build all services (development mode)
 make build
+
+# Or quick build (skip quality checks)
+make build-dev
 
 # Run authentication service
 ./bin/swit-auth
@@ -147,35 +154,44 @@ make build
 
 ### Toolchain Setup
 ```bash
-# Install Buf CLI
-make buf-install
-
-# Setup development environment
+# Setup protobuf development environment
 make proto-setup
+
+# Setup swagger development environment
+make swagger-setup
 ```
 
 ### Daily Development Commands
+
+#### Protobuf Development
 ```bash
-# Complete protobuf workflow
+# Complete protobuf workflow (recommended)
 make proto
 
-# Generate code only
-make proto-generate
+# Quick development mode (skip dependencies)
+make proto-dev
 
-# Check proto files
-make proto-lint
+# Advanced proto operations
+make proto-advanced OPERATION=format
+make proto-advanced OPERATION=lint
+make proto-advanced OPERATION=breaking
+make proto-advanced OPERATION=clean
+make proto-advanced OPERATION=docs
+```
 
-# Format proto files
-make proto-format
+#### Swagger Documentation
+```bash
+# Generate swagger documentation (recommended)
+make swagger
 
-# Check breaking changes
-make proto-breaking
+# Quick development mode (skip formatting)
+make swagger-dev
 
-# Clean generated code
-make proto-clean
-
-# View OpenAPI documentation
-make proto-docs
+# Advanced swagger operations
+make swagger-advanced OPERATION=format
+make swagger-advanced OPERATION=switserve
+make swagger-advanced OPERATION=switauth
+make swagger-advanced OPERATION=clean
 ```
 
 ### API Development Workflow
@@ -209,55 +225,50 @@ make proto-docs
 ### Main Service Configuration (swit.yaml)
 ```yaml
 server:
-  host: "0.0.0.0"
   port: 9000
-  grpc_port: 9001
 
 database:
-  host: "localhost"
+  host: 127.0.0.1
   port: 3306
-  name: "swit_db"
-  username: "root"
-  password: "password"
+  username: root
+  password: root
+  dbname: user_service_db
 
-consul:
-  address: "127.0.0.1:8500"
-  datacenter: "dc1"
+serviceDiscovery:
+  address: "localhost:8500"
 ```
 
 ### Authentication Service Configuration (switauth.yaml)
 ```yaml
 server:
-  host: "0.0.0.0"
-  port: 8090
+  port: 9001
+  grpcPort: 50051
 
 database:
-  host: "localhost"
+  host: 127.0.0.1
   port: 3306
-  name: "swit_auth_db"
-  username: "root"
-  password: "password"
+  username: root
+  password: root
+  dbname: auth_service_db
 
-jwt:
-  secret: "your-secret-key"
-  access_token_expiry: "15m"
-  refresh_token_expiry: "7d"
+serviceDiscovery:
+  address: "localhost:8500"
 ```
 
 ## Docker Deployment
 
 ### Build Images
 ```bash
-make docker-build
+make docker
 ```
 
 ### Run Containers
 ```bash
 # Run user service
-docker run -d -p 9000:9000 -p 9001:9001 --name swit-serve swit-serve:latest
+docker run -d -p 9000:9000 -p 10000:10000 --name swit-serve swit-serve:latest
 
 # Run authentication service
-docker run -d -p 8090:8090 --name swit-auth swit-auth:latest
+docker run -d -p 9001:9001 --name swit-auth swit-auth:latest
 ```
 
 ### Using Docker Compose
@@ -267,14 +278,14 @@ docker-compose up -d
 
 ## Testing
 
-### Run Unit Tests
+### Run All Tests
 ```bash
 make test
 ```
 
-### Run Integration Tests
+### Quick Development Testing
 ```bash
-make test-integration
+make test-dev
 ```
 
 ### Test Coverage
@@ -282,40 +293,224 @@ make test-integration
 make test-coverage
 ```
 
-## Development Tools
-
-### Code Formatting
+### Advanced Testing
 ```bash
-make fmt
+# Run specific test types
+make test-advanced TYPE=unit
+make test-advanced TYPE=race
+make test-advanced TYPE=bench
+
+# Run tests for specific packages
+make test-advanced TYPE=unit PACKAGE=internal
+make test-advanced TYPE=unit PACKAGE=pkg
 ```
 
-### Code Linting
+## Development Environment
+
+### Setup Development Environment
 ```bash
+# Complete development setup (recommended)
+make setup-dev
+
+# Quick setup for minimal requirements
+make setup-quick
+```
+
+### Development Tools
+
+#### Code Quality
+```bash
+# Standard quality checks (recommended for CI/CD)
+make quality
+
+# Quick quality checks (for development)
+make quality-dev
+
+# Setup quality tools
+make quality-setup
+```
+
+#### Code Formatting and Linting
+```bash
+# Format code
+make format
+
+# Check code
+make vet
+
+# Lint code
 make lint
+
+# Security scan
+make security
 ```
 
-### Dependency Check
+#### Dependency Management
 ```bash
-make deps
+# Tidy Go modules
+make tidy
 ```
 
-## Upgrading from Previous Versions
+### Build Commands
 
-Please refer to the [API Migration Guide](api/MIGRATION.md) for detailed upgrade steps.
+#### Standard Build
+```bash
+# Build all services (development mode)
+make build
 
-Main changes:
-- New API directory structure
-- Use Buf toolchain to manage gRPC APIs
-- Updated package names and import paths
-- New HTTP/REST endpoint support
+# Quick build (skip quality checks)
+make build-dev
+
+# Release build (all platforms)
+make build-release
+```
+
+#### Advanced Build
+```bash
+# Build specific service for specific platform
+make build-advanced SERVICE=swit-serve PLATFORM=linux/amd64
+make build-advanced SERVICE=swit-auth PLATFORM=darwin/arm64
+```
+
+### Cleaning
+
+```bash
+# Standard clean (all generated files)
+make clean
+
+# Quick clean (build outputs only)
+make clean-dev
+
+# Deep clean (reset environment)
+make clean-setup
+
+# Advanced clean (specific types)
+make clean-advanced TYPE=build
+make clean-advanced TYPE=proto
+make clean-advanced TYPE=swagger
+```
+
+### CI/CD and Copyright Management
+
+#### CI Pipeline
+```bash
+# Run CI pipeline (automated testing and quality checks)
+make ci
+```
+
+#### Copyright Management
+```bash
+# Check and fix copyright headers
+make copyright
+
+# Only check copyright headers
+make copyright-check
+
+# Setup copyright for new project
+make copyright-setup
+```
+
+### Docker Development
+
+```bash
+# Standard Docker build (production)
+make docker
+
+# Quick Docker build (development with cache)
+make docker-dev
+
+# Setup Docker development environment
+make docker-setup
+
+# Advanced Docker operations
+make docker-advanced OPERATION=build COMPONENT=images SERVICE=auth
+```
+
+## Makefile Command Reference
+
+The project uses a comprehensive Makefile system with organized commands. Here's a quick reference:
+
+### Core Development Commands
+```bash
+make all              # Complete build pipeline (proto + swagger + tidy + copyright + build)
+make setup-dev        # Setup complete development environment
+make setup-quick      # Quick setup with minimal components
+make ci               # Run CI pipeline
+```
+
+### Build Commands
+```bash
+make build            # Standard build (development mode)
+make build-dev        # Quick build (skip quality checks)
+make build-release    # Release build (all platforms)
+make build-advanced   # Advanced build with SERVICE and PLATFORM parameters
+```
+
+### Test Commands
+```bash
+make test             # Run all tests (with dependency generation)
+make test-dev         # Quick development testing
+make test-coverage    # Generate coverage reports
+make test-advanced    # Advanced testing with TYPE and PACKAGE parameters
+```
+
+### Quality Commands
+```bash
+make quality          # Standard quality checks (CI/CD)
+make quality-dev      # Quick quality checks (development)
+make quality-setup    # Setup quality tools
+make tidy             # Tidy Go modules
+make format           # Format code
+make vet              # Code checks
+make lint             # Lint code
+make security         # Security scan
+```
+
+### API Development Commands
+```bash
+make proto            # Generate protobuf code
+make proto-dev        # Quick proto generation
+make proto-setup      # Setup protobuf tools
+make swagger          # Generate swagger documentation
+make swagger-dev      # Quick swagger generation
+make swagger-setup    # Setup swagger tools
+```
+
+### Clean Commands
+```bash
+make clean            # Standard clean (all generated files)
+make clean-dev        # Quick clean (build outputs only)
+make clean-setup      # Deep clean (reset environment)
+make clean-advanced   # Advanced clean with TYPE parameter
+```
+
+### Docker Commands
+```bash
+make docker           # Standard Docker build
+make docker-dev       # Quick Docker build (with cache)
+make docker-setup     # Setup Docker development environment
+make docker-advanced  # Advanced Docker operations
+```
+
+### Copyright Commands
+```bash
+make copyright        # Check and fix copyright headers
+make copyright-check  # Only check copyright headers
+make copyright-setup  # Setup copyright for new project
+```
+
+### Help Commands
+```bash
+make help             # Show all available commands with descriptions
+```
+
+For detailed command options and parameters, run `make help` or refer to the specific `.mk` files in `scripts/mk/`.
+
 
 ## Related Documentation
 
 - [Development Guide](DEVELOPMENT.md)
 - [API Documentation](api/docs/README.md)
-- [API Migration Guide](api/MIGRATION.md)
-- [Route Registry Guide](docs/route-registry-guide.md)
-- [OpenAPI Integration](docs/openapi-integration.md)
 
 ## License
 

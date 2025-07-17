@@ -19,40 +19,26 @@
 // THE SOFTWARE.
 //
 
-package stop
+package health
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
-// Handler is the handler for the stop endpoint.
-type Handler struct {
-	shutdownFunc func()
-}
-
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
-	return &Handler{
-		shutdownFunc: shutdownFunc,
-	}
-}
-
-// Stop stops the server.
+// Handler checks if the authentication service is healthy
 //
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
+//	@Summary		Health check
+//	@Description	Check if the authentication service is healthy
+//	@Tags			health
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
+//	@Success		200	{object}	model.HealthResponse	"Service is healthy"
+//	@Router			/health [get]
+func Handler(c *gin.Context) {
+	c.JSON(http.StatusOK, model.HealthResponse{
+		Message: "pong",
+	})
 }

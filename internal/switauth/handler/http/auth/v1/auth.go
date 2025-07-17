@@ -19,40 +19,20 @@
 // THE SOFTWARE.
 //
 
-package stop
+package v1
 
 import (
-	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/service"
 )
 
-// Handler is the handler for the stop endpoint.
-type Handler struct {
-	shutdownFunc func()
+// Controller handles HTTP requests for authentication operations
+// including login, logout, token refresh, and token validation
+type Controller struct {
+	authService service.AuthService
 }
 
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
-	return &Handler{
-		shutdownFunc: shutdownFunc,
-	}
-}
-
-// Stop stops the server.
-//
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
+// NewAuthController creates a new auth Controller instance
+// with the provided authentication service
+func NewAuthController(authService service.AuthService) *Controller {
+	return &Controller{authService: authService}
 }

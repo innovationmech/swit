@@ -45,7 +45,8 @@ type AuthConfig struct {
 		DBName   string `json:"dbname" yaml:"dbname"`
 	} `json:"database"`
 	Server struct {
-		Port string `json:"port" yaml:"port"`
+		Port     string `json:"port" yaml:"port"`
+		GRPCPort string `json:"grpcPort" yaml:"grpcPort"`
 	} `json:"server" yaml:"server"`
 	ServiceDiscovery struct {
 		Address string `json:"address" yaml:"address"`

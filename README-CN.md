@@ -20,7 +20,7 @@ Swit 是一个基于 Go 语言开发的微服务架构后端系统，采用模�
 项目包含以下主要组件：
 
 1. **swit-serve** - 主要用户服务（端口 9000）
-2. **swit-auth** - 认证服务（端口 8090）
+2. **swit-auth** - 认证服务（端口 9001）
 3. **switctl** - 命令行控制工具
 
 ## API 现代化架构
@@ -54,7 +54,8 @@ api/
 ## 当前实现的服务
 
 ### 1. Greeter 服务 (gRPC)
-**端口**: 9000  
+**HTTP 端口**: 9000  
+**gRPC 端口**: 10000 (HTTP 端口 + 1000)  
 **协议**: gRPC + HTTP  
 **实现的方法**:
 - `SayHello` - 简单问候功能 ✅
@@ -62,17 +63,21 @@ api/
 **HTTP 端点**:
 - `POST /v1/greeter/hello` - 发送问候请求
 
+**gRPC 端点**:
+- `greeter.v1.GreeterService/SayHello` - gRPC 问候服务
+
 ### 2. Auth 服务 (HTTP REST)
-**端口**: 8090  
-**协议**: HTTP REST  
+**端口**: 9001  
+**协议**: HTTP REST + gRPC  
 **主要功能**:
 - 用户登录/登出
 - JWT Token 管理
 - Token 刷新和验证
 
 ### 3. User 服务 (HTTP REST)
-**端口**: 9000  
-**协议**: HTTP REST  
+**HTTP 端口**: 9000  
+**gRPC 端口**: 10000 (HTTP 端口 + 1000)  
+**协议**: HTTP REST + gRPC  
 **主要功能**:
 - 用户注册
 - 用户信息管理
@@ -82,7 +87,6 @@ api/
 
 - Go 1.24+
 - MySQL 8.0+
-- Redis 6.0+
 - Consul 1.12+
 - Buf CLI 1.0+ (用于 API 开发)
 
@@ -112,18 +116,21 @@ cp switauth.yaml.example switauth.yaml
 ```bash
 # 创建数据库
 mysql -u root -p
-CREATE DATABASE swit_db;
-CREATE DATABASE swit_auth_db;
+CREATE DATABASE user_service_db;
+CREATE DATABASE auth_service_db;
 
 # 导入数据库结构
-mysql -u root -p swit_db < scripts/sql/user_service_db.sql
-mysql -u root -p swit_auth_db < scripts/sql/auth_service_db.sql
+mysql -u root -p user_service_db < scripts/sql/user_service_db.sql
+mysql -u root -p auth_service_db < scripts/sql/auth_service_db.sql
 ```
 
 ### 5. 构建和运行
 ```bash
-# 构建所有服务
+# 构建所有服务（开发模式）
 make build
+
+# 或快速构建（跳过质量检查）
+make build-dev
 
 # 运行认证服务
 ./bin/swit-auth
@@ -136,35 +143,44 @@ make build
 
 ### 工具链设置
 ```bash
-# 安装 Buf CLI
-make buf-install
-
-# 设置开发环境
+# 设置 protobuf 开发环境
 make proto-setup
+
+# 设置 swagger 开发环境
+make swagger-setup
 ```
 
 ### 日常开发命令
+
+#### Protobuf 开发
 ```bash
-# 完整的 protobuf 工作流
+# 完整的 protobuf 工作流（推荐）
 make proto
 
-# 仅生成代码
-make proto-generate
+# 快速开发模式（跳过依赖）
+make proto-dev
 
-# 检查 proto 文件
-make proto-lint
+# 高级 proto 操作
+make proto-advanced OPERATION=format
+make proto-advanced OPERATION=lint
+make proto-advanced OPERATION=breaking
+make proto-advanced OPERATION=clean
+make proto-advanced OPERATION=docs
+```
 
-# 格式化 proto 文件
-make proto-format
+#### Swagger 文档
+```bash
+# 生成 swagger 文档（推荐）
+make swagger
 
-# 检查破坏性变更
-make proto-breaking
+# 快速开发模式（跳过格式化）
+make swagger-dev
 
-# 清理生成的代码
-make proto-clean
-
-# 查看 OpenAPI 文档
-make proto-docs
+# 高级 swagger 操作
+make swagger-advanced OPERATION=format
+make swagger-advanced OPERATION=switserve
+make swagger-advanced OPERATION=switauth
+make swagger-advanced OPERATION=clean
 ```
 
 ### API 开发工作流
@@ -198,55 +214,50 @@ make proto-docs
 ### 主服务配置 (swit.yaml)
 ```yaml
 server:
-  host: "0.0.0.0"
   port: 9000
-  grpc_port: 9001
 
 database:
-  host: "localhost"
+  host: 127.0.0.1
   port: 3306
-  name: "swit_db"
-  username: "root"
-  password: "password"
+  username: root
+  password: root
+  dbname: user_service_db
 
-consul:
-  address: "127.0.0.1:8500"
-  datacenter: "dc1"
+serviceDiscovery:
+  address: "localhost:8500"
 ```
 
 ### 认证服务配置 (switauth.yaml)
 ```yaml
 server:
-  host: "0.0.0.0"
-  port: 8090
+  port: 9001
+  grpcPort: 50051
 
 database:
-  host: "localhost"
+  host: 127.0.0.1
   port: 3306
-  name: "swit_auth_db"
-  username: "root"
-  password: "password"
+  username: root
+  password: root
+  dbname: auth_service_db
 
-jwt:
-  secret: "your-secret-key"
-  access_token_expiry: "15m"
-  refresh_token_expiry: "7d"
+serviceDiscovery:
+  address: "localhost:8500"
 ```
 
 ## Docker 部署
 
 ### 构建镜像
 ```bash
-make docker-build
+make docker
 ```
 
 ### 运行容器
 ```bash
 # 运行用户服务
-docker run -d -p 9000:9000 -p 9001:9001 --name swit-serve swit-serve:latest
+docker run -d -p 9000:9000 -p 10000:10000 --name swit-serve swit-serve:latest
 
 # 运行认证服务
-docker run -d -p 8090:8090 --name swit-auth swit-auth:latest
+docker run -d -p 9001:9001 --name swit-auth swit-auth:latest
 ```
 
 ### 使用 Docker Compose
@@ -256,14 +267,14 @@ docker-compose up -d
 
 ## 测试
 
-### 运行单元测试
+### 运行所有测试
 ```bash
 make test
 ```
 
-### 运行集成测试
+### 快速开发测试
 ```bash
-make test-integration
+make test-dev
 ```
 
 ### 测试覆盖率
@@ -271,41 +282,225 @@ make test-integration
 make test-coverage
 ```
 
-## 开发工具
-
-### 代码格式化
+### 高级测试
 ```bash
-make fmt
+# 运行特定类型的测试
+make test-advanced TYPE=unit
+make test-advanced TYPE=race
+make test-advanced TYPE=bench
+
+# 运行特定包的测试
+make test-advanced TYPE=unit PACKAGE=internal
+make test-advanced TYPE=unit PACKAGE=pkg
 ```
 
-### 代码检查
+## 开发环境
+
+### 设置开发环境
 ```bash
+# 完整开发环境设置（推荐）
+make setup-dev
+
+# 快速设置（最小必要组件）
+make setup-quick
+```
+
+### 开发工具
+
+#### 代码质量
+```bash
+# 标准质量检查（推荐用于CI/CD）
+make quality
+
+# 快速质量检查（开发时使用）
+make quality-dev
+
+# 设置质量检查工具
+make quality-setup
+```
+
+#### 代码格式化和检查
+```bash
+# 格式化代码
+make format
+
+# 检查代码
+make vet
+
+# 代码规范检查
 make lint
+
+# 安全扫描
+make security
 ```
 
-### 依赖检查
+#### 依赖管理
 ```bash
-make deps
+# 整理Go模块依赖
+make tidy
 ```
 
-## 从旧版本升级
+### 构建命令
 
-请参考 [API 迁移指南](api/MIGRATION.md) 了解详细的升级步骤。
+#### 标准构建
+```bash
+# 构建所有服务（开发模式）
+make build
 
-主要变更：
-- 新的 API 目录结构
-- 使用 Buf 工具链管理 gRPC API
-- 更新的包名和导入路径
-- 新增的 HTTP/REST 端点支持
+# 快速构建（跳过质量检查）
+make build-dev
+
+# 发布构建（所有平台）
+make build-release
+```
+
+#### 高级构建
+```bash
+# 为特定平台构建特定服务
+make build-advanced SERVICE=swit-serve PLATFORM=linux/amd64
+make build-advanced SERVICE=swit-auth PLATFORM=darwin/arm64
+```
+
+### 清理
+
+```bash
+# 标准清理（所有生成文件）
+make clean
+
+# 快速清理（仅构建输出）
+make clean-dev
+
+# 深度清理（重置环境）
+make clean-setup
+
+# 高级清理（特定类型）
+make clean-advanced TYPE=build
+make clean-advanced TYPE=proto
+make clean-advanced TYPE=swagger
+```
+
+### CI/CD 和版权管理
+
+#### CI 流水线
+```bash
+# 运行 CI 流水线（自动化测试和质量检查）
+make ci
+```
+
+#### 版权管理
+```bash
+# 检查并修复版权声明
+make copyright
+
+# 仅检查版权声明
+make copyright-check
+
+# 为新项目设置版权
+make copyright-setup
+```
+
+### Docker 开发
+
+```bash
+# 标准 Docker 构建（生产环境）
+make docker
+
+# 快速 Docker 构建（开发时使用缓存）
+make docker-dev
+
+# 设置 Docker 开发环境
+make docker-setup
+
+# 高级 Docker 操作
+make docker-advanced OPERATION=build COMPONENT=images SERVICE=auth
+```
+
+## Makefile 命令参考
+
+项目使用了完善的 Makefile 系统，命令组织清晰。以下是快速参考：
+
+### 核心开发命令
+```bash
+make all              # 完整构建流水线 (proto + swagger + tidy + copyright + build)
+make setup-dev        # 设置完整开发环境
+make setup-quick      # 快速设置（最小组件）
+make ci               # 运行 CI 流水线
+```
+
+### 构建命令
+```bash
+make build            # 标准构建（开发模式）
+make build-dev        # 快速构建（跳过质量检查）
+make build-release    # 发布构建（所有平台）
+make build-advanced   # 高级构建（需要 SERVICE 和 PLATFORM 参数）
+```
+
+### 测试命令
+```bash
+make test             # 运行所有测试（包含依赖生成）
+make test-dev         # 快速开发测试
+make test-coverage    # 生成覆盖率报告
+make test-advanced    # 高级测试（需要 TYPE 和 PACKAGE 参数）
+```
+
+### 质量检查命令
+```bash
+make quality          # 标准质量检查（CI/CD）
+make quality-dev      # 快速质量检查（开发）
+make quality-setup    # 设置质量检查工具
+make tidy             # 整理 Go 模块
+make format           # 格式化代码
+make vet              # 代码检查
+make lint             # 代码规范检查
+make security         # 安全扫描
+```
+
+### API 开发命令
+```bash
+make proto            # 生成 protobuf 代码
+make proto-dev        # 快速 proto 生成
+make proto-setup      # 设置 protobuf 工具
+make swagger          # 生成 swagger 文档
+make swagger-dev      # 快速 swagger 生成
+make swagger-setup    # 设置 swagger 工具
+```
+
+### 清理命令
+```bash
+make clean            # 标准清理（所有生成文件）
+make clean-dev        # 快速清理（仅构建输出）
+make clean-setup      # 深度清理（重置环境）
+make clean-advanced   # 高级清理（需要 TYPE 参数）
+```
+
+### Docker 命令
+```bash
+make docker           # 标准 Docker 构建
+make docker-dev       # 快速 Docker 构建（使用缓存）
+make docker-setup     # 设置 Docker 开发环境
+make docker-advanced  # 高级 Docker 操作
+```
+
+### 版权管理命令
+```bash
+make copyright        # 检查并修复版权声明
+make copyright-check  # 仅检查版权声明
+make copyright-setup  # 为新项目设置版权
+```
+
+### 帮助命令
+```bash
+make help             # 显示所有可用命令及说明
+```
+
+如需了解详细的命令选项和参数，请运行 `make help` 或参考 `scripts/mk/` 目录下的具体 `.mk` 文件。
+
 
 ## 相关文档
 
 - [开发指南](DEVELOPMENT-CN.md)
 - [API 文档](api/docs/README.md)
-- [API 迁移指南](api/MIGRATION.md)
-- [路由注册指南](docs/route-registry-guide.md)
-- [OpenAPI 集成](docs/openapi-integration.md)
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件 
+MIT License - 详见 [LICENSE](LICENSE) 文件

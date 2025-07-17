@@ -43,7 +43,7 @@ func (gmr *GlobalMiddlewareRegistrar) RegisterMiddleware(router *gin.Engine) err
 	router.Use(TimeoutMiddleware(30 * time.Second))
 
 	// 注册其他全局中间件
-	router.Use(Logger(), CORSMiddleware())
+	router.Use(RequestLogger(), CORSMiddleware())
 	return nil
 }
 

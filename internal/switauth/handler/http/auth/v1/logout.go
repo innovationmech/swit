@@ -19,40 +19,38 @@
 // THE SOFTWARE.
 //
 
-package stop
+package v1
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/model"
 )
 
-// Handler is the handler for the stop endpoint.
-type Handler struct {
-	shutdownFunc func()
-}
-
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
-	return &Handler{
-		shutdownFunc: shutdownFunc,
-	}
-}
-
-// Stop stops the server.
+// Logout invalidates the user's access token and logs them out
 //
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
+//	@Summary		User logout
+//	@Description	Invalidate the user's access token and log them out
+//	@Tags			authentication
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
+//	@Security		BearerAuth
+//	@Success		200	{object}	model.LogoutResponse	"Logout successful"
+//	@Failure		400	{object}	model.ErrorResponse		"Authorization header is missing"
+//	@Failure		500	{object}	model.ErrorResponse		"Internal server error"
+//	@Router			/auth/logout [post]
+func (c *Controller) Logout(ctx *gin.Context) {
+	tokenString := ctx.GetHeader("Authorization")
+	if tokenString == "" {
+		ctx.JSON(http.StatusBadRequest, model.ErrorResponse{Error: "Authorization header is missing"})
+		return
+	}
+
+	if err := c.authService.Logout(ctx.Request.Context(), tokenString); err != nil {
+		ctx.JSON(http.StatusInternalServerError, model.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, model.LogoutResponse{Message: "Logged out successfully"})
 }
