@@ -28,56 +28,68 @@ service GreeterService {
 
 // SayHelloRequest represents a greeting request
 message SayHelloRequest {
+  // Reserved field numbers to maintain compatibility
+  reserved 2, 3;
+  
   // Name of the person to greet
   string name = 1;
-  // Language for the greeting (optional)
-  string language = 2;
-  // Greeting style (formal, casual, friendly)
-  GreetingStyle style = 3;
   // Metadata for the request
   swit.common.v1.RequestMetadata metadata = 4;
+  // Language for the greeting (optional)
+  string language = 10;
+  // Greeting style (formal, casual, friendly)
+  GreetingStyle style = 11;
 }
 
 // SayHelloResponse represents a greeting response
 message SayHelloResponse {
+  // Reserved field numbers to maintain compatibility
+  reserved 2, 3;
+  
   // The greeting message
   string message = 1;
-  // Language used for the greeting
-  string language = 2;
-  // Style used for the greeting
-  GreetingStyle style = 3;
   // Response metadata
   swit.common.v1.ResponseMetadata metadata = 4;
+  // Language used for the greeting
+  string language = 10;
+  // Style used for the greeting
+  GreetingStyle style = 11;
 }
 
 // SayHelloStreamRequest represents a streaming greeting request
 message SayHelloStreamRequest {
+  // Reserved field numbers to maintain compatibility
+  reserved 2, 3;
+  
   // Name of the person to greet
   string name = 1;
-  // Language for the greeting (optional)
-  string language = 2;
-  // Greeting style (formal, casual, friendly)
-  GreetingStyle style = 3;
   // Number of greetings to send
   int32 count = 4;
   // Interval between greetings in seconds
   int32 interval_seconds = 5;
   // Metadata for the request
   swit.common.v1.RequestMetadata metadata = 6;
+  // Language for the greeting (optional)
+  string language = 10;
+  // Greeting style (formal, casual, friendly)
+  GreetingStyle style = 11;
 }
 
 // SayHelloStreamResponse represents a streaming greeting response
 message SayHelloStreamResponse {
+  // Reserved field numbers to maintain compatibility
+  reserved 2, 3;
+  
   // The greeting message
   string message = 1;
-  // Language used for the greeting
-  string language = 2;
-  // Style used for the greeting
-  GreetingStyle style = 3;
   // Sequence number for this stream item
   int32 sequence = 4;
   // Response metadata
   swit.common.v1.ResponseMetadata metadata = 5;
+  // Language used for the greeting
+  string language = 10;
+  // Style used for the greeting
+  GreetingStyle style = 11;
 }
 
 // GreetingStyle represents different greeting styles
