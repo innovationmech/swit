@@ -30,7 +30,7 @@ service GreeterService {
 message SayHelloRequest {
   // Reserved field numbers to maintain compatibility
   reserved 2, 3;
-  
+
   // Name of the person to greet
   string name = 1;
   // Metadata for the request
@@ -45,7 +45,7 @@ message SayHelloRequest {
 message SayHelloResponse {
   // Reserved field numbers to maintain compatibility
   reserved 2, 3;
-  
+
   // The greeting message
   string message = 1;
   // Response metadata
@@ -60,7 +60,7 @@ message SayHelloResponse {
 message SayHelloStreamRequest {
   // Reserved field numbers to maintain compatibility
   reserved 2, 3;
-  
+
   // Name of the person to greet
   string name = 1;
   // Number of greetings to send
@@ -79,7 +79,7 @@ message SayHelloStreamRequest {
 message SayHelloStreamResponse {
   // Reserved field numbers to maintain compatibility
   reserved 2, 3;
-  
+
   // The greeting message
   string message = 1;
   // Sequence number for this stream item

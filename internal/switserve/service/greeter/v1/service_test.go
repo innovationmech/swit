@@ -702,8 +702,13 @@ func TestGreeterService_GenerateGreeting_ContextWithValues(t *testing.T) {
 	service := NewService()
 
 	// Create context with values
-	ctx := context.WithValue(context.Background(), "user_id", "123")
-	ctx = context.WithValue(ctx, "trace_id", "abc-def-ghi")
+	type contextKey string
+	const (
+		userIDKey  contextKey = "user_id"
+		traceIDKey contextKey = "trace_id"
+	)
+	ctx := context.WithValue(context.Background(), userIDKey, "123")
+	ctx = context.WithValue(ctx, traceIDKey, "abc-def-ghi")
 
 	result, err := service.GenerateGreeting(ctx, "Test", "")
 	assert.NoError(t, err)

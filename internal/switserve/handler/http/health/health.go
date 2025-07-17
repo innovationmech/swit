@@ -37,8 +37,3 @@ func Handler(c *gin.Context) {
 		"message": "pong",
 	})
 }
-
-// RegisterRoutes registers the routes for the health check endpoint.
-func RegisterRoutes(router *gin.Engine) {
-	router.GET("/health", Handler)
-}

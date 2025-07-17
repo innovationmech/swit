@@ -19,80 +19,51 @@
 // THE SOFTWARE.
 //
 
-package stop
+package middleware
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
-func TestNewStopHandler(t *testing.T) {
-	var called bool
-	h := NewHandler(func() { called = true })
-	assert.NotNil(t, h)
-	assert.False(t, called)
-}
-
-func TestStopHandler_Stop(t *testing.T) {
+func TestRequestLoggerMiddleware_Basic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	shutdownCalled := make(chan bool, 1)
-	h := NewHandler(func() {
-		select {
-		case shutdownCalled <- true:
-		default:
-		}
-	})
+	logger.Logger = zap.NewNop()
 
 	r := gin.New()
-	r.POST("/stop", h.Stop)
+	r.Use(RequestLogger())
+	r.GET("/ping", func(c *gin.Context) {
+		c.String(200, "pong")
+	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodPost, "/stop", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/ping", nil)
 
 	r.ServeHTTP(w, req)
-
-	// 检查响应
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Server is stopping")
-
-	// 检查 shutdownFunc 是否被调用
-	select {
-	case <-shutdownCalled:
-		// ok
-	case <-time.After(2 * time.Second):
-		t.Fatal("shutdownFunc not called")
-	}
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "pong", w.Body.String())
 }
 
-func TestStopRouteRegistration(t *testing.T) {
+func TestRequestLoggerMiddleware_WithQuery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	shutdownCalled := make(chan bool, 1)
+	logger.Logger = zap.NewNop()
+
 	r := gin.New()
-	handler := NewHandler(func() {
-		select {
-		case shutdownCalled <- true:
-		default:
-		}
+	r.Use(RequestLogger())
+	r.GET("/hello", func(c *gin.Context) {
+		c.String(200, "world")
 	})
-	r.POST("/stop", handler.Stop)
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodPost, "/stop", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/hello?foo=bar", nil)
 
 	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Server is stopping")
-
-	select {
-	case <-shutdownCalled:
-		// ok
-	case <-time.After(2 * time.Second):
-		t.Fatal("shutdownFunc not called")
-	}
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "world", w.Body.String())
 }

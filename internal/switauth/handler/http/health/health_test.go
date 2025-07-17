@@ -19,80 +19,35 @@
 // THE SOFTWARE.
 //
 
-package stop
+package health
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewStopHandler(t *testing.T) {
-	var called bool
-	h := NewHandler(func() { called = true })
-	assert.NotNil(t, h)
-	assert.False(t, called)
-}
-
-func TestStopHandler_Stop(t *testing.T) {
+func TestHealthHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	shutdownCalled := make(chan bool, 1)
-	h := NewHandler(func() {
-		select {
-		case shutdownCalled <- true:
-		default:
-		}
-	})
 
-	r := gin.New()
-	r.POST("/stop", h.Stop)
+	router := gin.New()
+	router.GET("/health", Handler)
+
+	req, err := http.NewRequest("GET", "/health", nil)
+	assert.NoError(t, err)
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodPost, "/stop", nil)
-
-	r.ServeHTTP(w, req)
-
-	// 检查响应
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Server is stopping")
-
-	// 检查 shutdownFunc 是否被调用
-	select {
-	case <-shutdownCalled:
-		// ok
-	case <-time.After(2 * time.Second):
-		t.Fatal("shutdownFunc not called")
-	}
-}
-
-func TestStopRouteRegistration(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	shutdownCalled := make(chan bool, 1)
-	r := gin.New()
-	handler := NewHandler(func() {
-		select {
-		case shutdownCalled <- true:
-		default:
-		}
-	})
-	r.POST("/stop", handler.Stop)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodPost, "/stop", nil)
-
-	r.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Server is stopping")
 
-	select {
-	case <-shutdownCalled:
-		// ok
-	case <-time.After(2 * time.Second):
-		t.Fatal("shutdownFunc not called")
-	}
+	var response map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "pong", response["message"])
 }

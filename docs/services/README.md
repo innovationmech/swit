@@ -21,9 +21,9 @@ graph TB
 
 ### 🔐 SwitAuth - 认证授权服务
 - **功能**: 用户登录、Token管理、权限验证
-- **端口**: 8090
+- **端口**: 9001
 - **文档**: [详细文档](./switauth/README.md)
-- **API**: http://localhost:8090/swagger/index.html
+- **API**: http://localhost:9001/swagger/index.html
 
 **主要端点**:
 - `POST /auth/login` - 用户登录
@@ -72,11 +72,11 @@ make swagger
 ```bash
 # 健康检查
 curl http://localhost:9000/health
-curl http://localhost:8090/health
+curl http://localhost:9001/health
 
 # 查看API版本
 curl http://localhost:9000/version
-curl http://localhost:8090/version
+curl http://localhost:9001/version
 ```
 
 ## 环境配置
@@ -84,4 +84,4 @@ curl http://localhost:8090/version
 各服务的配置文件：
 - **SwitServe**: `switblog.yaml`
 - **SwitAuth**: `switauth.yaml`
-- **通用配置**: `swit.yaml` 
+- **通用配置**: `swit.yaml`

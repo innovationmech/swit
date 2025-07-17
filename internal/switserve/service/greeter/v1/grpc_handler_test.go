@@ -281,7 +281,7 @@ func TestGRPCHandler_SayHello_ContextVariations(t *testing.T) {
 		},
 		{
 			name:    "context_with_value",
-			ctx:     context.WithValue(context.Background(), "key", "value"),
+			ctx:     context.WithValue(context.Background(), struct{ string }{"key"}, "value"),
 			wantErr: false,
 		},
 	}

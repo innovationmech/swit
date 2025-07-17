@@ -19,40 +19,28 @@
 // THE SOFTWARE.
 //
 
-package stop
+package v1
 
 import (
-	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 )
 
-// Handler is the handler for the stop endpoint.
-type Handler struct {
-	shutdownFunc func()
+// Server handles gRPC requests for authentication operations
+// This is a placeholder for future gRPC authentication service implementation
+type Server struct {
+	// UnimplementedAuthServiceServer should be embedded when protobuf is available
+	authService v1.AuthSrv
 }
 
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
-	return &Handler{
-		shutdownFunc: shutdownFunc,
-	}
+// NewAuthServer creates a new gRPC auth server instance
+// with the provided authentication service
+func NewAuthServer(authService v1.AuthSrv) *Server {
+	return &Server{authService: authService}
 }
 
-// Stop stops the server.
-//
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
-}
+// TODO: Implement gRPC methods when protobuf definitions are available
+// Example methods that would be implemented:
+// - Login(context.Context, *LoginRequest) (*LoginResponse, error)
+// - Logout(context.Context, *LogoutRequest) (*LogoutResponse, error)
+// - RefreshToken(context.Context, *RefreshTokenRequest) (*RefreshTokenResponse, error)
+// - ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error)
