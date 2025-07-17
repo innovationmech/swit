@@ -30,6 +30,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -50,8 +51,11 @@ func TestRefreshToken(t *testing.T) {
 				"refresh_token": "valid_refresh_token",
 			},
 			setupMocks: func(mockSrv *MockAuthService) {
-				mockSrv.On("RefreshToken", mock.Anything, "valid_refresh_token").Return(
-					"new_access_token", "new_refresh_token", nil)
+				response := &v1.AuthResponse{
+					AccessToken:  "new_access_token",
+					RefreshToken: "new_refresh_token",
+				}
+				mockSrv.On("RefreshToken", mock.Anything, "valid_refresh_token").Return(response, nil)
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
@@ -77,7 +81,7 @@ func TestRefreshToken(t *testing.T) {
 			},
 			setupMocks: func(mockSrv *MockAuthService) {
 				mockSrv.On("RefreshToken", mock.Anything, "invalid_refresh_token").Return(
-					"", "", errors.New("invalid refresh token"))
+					(*v1.AuthResponse)(nil), errors.New("invalid refresh token"))
 			},
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody: map[string]interface{}{

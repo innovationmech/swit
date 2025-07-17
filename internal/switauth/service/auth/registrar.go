@@ -29,7 +29,6 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/client"
 	v1handler "github.com/innovationmech/swit/internal/switauth/handler/http/auth/v1"
 	"github.com/innovationmech/swit/internal/switauth/repository"
-	"github.com/innovationmech/swit/internal/switauth/service"
 	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -38,13 +37,13 @@ import (
 
 // ServiceRegistrar implements the ServiceRegistrar interface for authentication services
 type ServiceRegistrar struct {
-	service    service.AuthService
+	service    v1.AuthSrv
 	controller *v1handler.Controller
 }
 
 // NewServiceRegistrar creates a new authentication service registrar
 func NewServiceRegistrar(userClient client.UserClient, tokenRepo repository.TokenRepository) (*ServiceRegistrar, error) {
-	v1Service, err := v1.NewAuthSrv(
+	service, err := v1.NewAuthSrv(
 		v1.WithUserClient(userClient),
 		v1.WithTokenRepository(tokenRepo),
 	)
@@ -52,8 +51,6 @@ func NewServiceRegistrar(userClient client.UserClient, tokenRepo repository.Toke
 		return nil, err
 	}
 
-	// Create adapter for backward compatibility
-	service := NewAuthServiceAdapter(v1Service)
 	controller := v1handler.NewAuthController(service)
 
 	return &ServiceRegistrar{
@@ -98,7 +95,7 @@ func (a *ServiceRegistrar) GetName() string {
 }
 
 // GetService returns the underlying authentication service
-func (a *ServiceRegistrar) GetService() service.AuthService {
+func (a *ServiceRegistrar) GetService() v1.AuthSrv {
 	return a.service
 }
 

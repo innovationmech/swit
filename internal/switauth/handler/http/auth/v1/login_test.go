@@ -32,6 +32,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switauth/model"
+	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -40,14 +41,20 @@ type MockAuthService struct {
 	mock.Mock
 }
 
-func (m *MockAuthService) Login(ctx context.Context, username, password string) (string, string, error) {
+func (m *MockAuthService) Login(ctx context.Context, username, password string) (*v1.AuthResponse, error) {
 	args := m.Called(ctx, username, password)
-	return args.String(0), args.String(1), args.Error(2)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*v1.AuthResponse), args.Error(1)
 }
 
-func (m *MockAuthService) RefreshToken(ctx context.Context, refreshToken string) (string, string, error) {
+func (m *MockAuthService) RefreshToken(ctx context.Context, refreshToken string) (*v1.AuthResponse, error) {
 	args := m.Called(ctx, refreshToken)
-	return args.String(0), args.String(1), args.Error(2)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*v1.AuthResponse), args.Error(1)
 }
 
 func (m *MockAuthService) ValidateToken(ctx context.Context, tokenString string) (*model.Token, error) {
@@ -80,8 +87,11 @@ func TestLogin(t *testing.T) {
 				"password": "password123",
 			},
 			setupMocks: func(mockSrv *MockAuthService) {
-				mockSrv.On("Login", mock.Anything, "testuser", "password123").Return(
-					"access_token_123", "refresh_token_456", nil)
+				response := &v1.AuthResponse{
+					AccessToken:  "access_token_123",
+					RefreshToken: "refresh_token_456",
+				}
+				mockSrv.On("Login", mock.Anything, "testuser", "password123").Return(response, nil)
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
@@ -109,7 +119,7 @@ func TestLogin(t *testing.T) {
 			},
 			setupMocks: func(mockSrv *MockAuthService) {
 				mockSrv.On("Login", mock.Anything, "wronguser", "wrongpassword").Return(
-					"", "", errors.New("invalid credentials"))
+					(*v1.AuthResponse)(nil), errors.New("invalid credentials"))
 			},
 			expectedStatus: http.StatusUnauthorized,
 			expectedBody: map[string]interface{}{

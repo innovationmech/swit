@@ -2,7 +2,7 @@
 
 ## 概述
 
-本文档基于 `switauth` 和 `switserve` 项目的架构分析，为新增子项目提供标准化的架构指导方案。遵循本指南可以确保新项目与现有项目保持架构一致性，提高代码复用性和可维护性。
+本文档基于 `switauth` v1.0 重构后的成熟架构和 `switserve` 项目的架构分析，为新增子项目提供标准化的架构指导方案。遵循本指南可以确保新项目与现有项目保持架构一致性，采用版本化设计模式，提高代码复用性和可维护性。
 
 ## 架构设计原则
 
@@ -36,8 +36,12 @@
 
 ### 2. 核心设计原则
 
+- **领域驱动设计**: 按业务领域划分服务目录结构
+- **版本化设计**: 需要版本化的服务接口采用版本化设计（如 v1、v2），支持向后兼容的 API 演进
+- **统一响应格式**: 采用标准化的 API 响应格式和错误处理机制
+- **选项模式依赖注入**: 使用函数选项模式进行依赖注入，支持灵活配置
+- **服务注册器**: 每个领域服务必须有独立的注册器
 - **单一职责**: 每个组件只负责一个明确的功能
-- **依赖注入**: 通过构造函数注入依赖，便于测试
 - **接口隔离**: 定义清晰的接口边界
 - **配置外部化**: 所有配置通过配置文件管理
 - **优雅关闭**: 支持优雅的服务关闭
@@ -59,12 +63,18 @@ internal/new-service/
 │   └── migrations/         # 数据库迁移文件
 ├── handler/
 │   └── http/
-│       ├── service1/
-│       │   ├── service1.go      # HTTP 处理器
-│       │   └── service1_test.go # 处理器测试
-│       └── health/
-│           ├── health.go        # 健康检查处理器
-│           └── health_test.go   # 健康检查测试
+│       ├── v1/
+│       │   ├── service1/
+│       │   │   ├── service1.go      # v1 HTTP 处理器
+│       │   │   └── service1_test.go # 处理器测试
+│       │   └── health/
+│       │       ├── health.go        # 健康检查处理器
+│       │       └── health_test.go   # 健康检查测试
+│       └── middleware/             # 项目特定中间件（可选）
+│           └── custom.go           # 自定义业务中间件
+│
+│   注意：通用中间件（如认证、CORS、日志等）统一放在 `/pkg/middleware/` 目录下，
+│         供所有子项目复用。项目内的 middleware 目录仅用于项目特定的业务中间件。
 ├── model/
 │   ├── entity.go           # 数据模型定义
 │   └── dto.go              # 数据传输对象
@@ -72,16 +82,33 @@ internal/new-service/
 │   ├── interface.go        # 仓储接口定义
 │   ├── impl.go             # 仓储实现
 │   └── impl_test.go        # 仓储测试
-├── service/
-│   ├── service1/
-│   │   ├── service_impl.go      # 业务逻辑实现
-│   │   ├── service_grpc.go      # gRPC 服务实现
-│   │   ├── service_registrar.go # 服务注册器
-│   │   └── service_test.go      # 服务测试
-│   └── health/
-│       ├── health_impl.go       # 健康检查实现
-│       ├── health_registrar.go  # 健康检查注册器
-│       └── health_test.go       # 健康检查测试
+├── service/                         # 按领域划分的服务层
+│   ├── {domain-a}/                  # 业务领域 A（需要版本化）
+│   │   ├── registrar.go             # 服务注册器
+│   │   ├── registrar_test.go        # 注册器测试
+│   │   └── v1/                      # v1 版本实现
+│   │       ├── service.go           # 业务逻辑实现
+│   │       ├── service_test.go      # 服务测试
+│   │       ├── grpc_handler.go      # gRPC 处理器（可选）
+│   │       ├── grpc_handler_test.go # gRPC 测试（可选）
+│   │       └── errors.go            # 领域错误定义（可选）
+│   ├── {domain-b}/                  # 业务领域 B（需要版本化）
+│   │   ├── registrar.go             # 服务注册器
+│   │   ├── registrar_test.go        # 注册器测试
+│   │   └── v1/                      # v1 版本实现
+│   │       ├── service.go           # 业务逻辑实现
+│   │       ├── service_test.go      # 服务测试
+│   │       └── ...
+│   ├── health/                      # 健康检查服务（通用服务，无版本）
+│   │   ├── registrar.go             # 服务注册器
+│   │   ├── registrar_test.go        # 注册器测试
+│   │   ├── service.go               # 健康检查实现
+│   │   └── service_test.go          # 健康检查测试
+│   └── {common-service}/            # 其他通用服务（如停止服务等）
+│       ├── registrar.go             # 服务注册器
+│       ├── registrar_test.go        # 注册器测试
+│       ├── service.go               # 服务实现
+│       └── service_test.go          # 服务测试
 ├── transport/
 │   ├── transport.go        # 传输层接口
 │   ├── http.go             # HTTP 传输实现
@@ -103,7 +130,59 @@ cmd/new-service/
 
 ## 核心组件实现指南
 
-### 1. ServiceRegistrar 接口实现
+### 1. 中间件使用指南
+
+#### 通用中间件复用
+
+项目应优先使用 `pkg/middleware` 中的通用中间件：
+
+```go
+// internal/new-service/server.go
+import (
+    "github.com/innovationmech/swit/pkg/middleware"
+)
+
+// 在服务器配置中使用全局中间件注册器
+func (s *Server) configureMiddleware() {
+    // 使用全局中间件注册器
+    globalMiddleware := middleware.NewGlobalMiddlewareRegistrar()
+    globalMiddleware.RegisterMiddleware(s.httpTransport.GetRouter())
+    
+    // 如果需要认证中间件
+    s.httpTransport.GetRouter().Use(middleware.AuthMiddleware())
+    
+    // 或使用自定义配置的认证中间件
+    authConfig := &middleware.AuthConfig{
+        WhiteList: []string{"/health", "/metrics", "/api/v1/public"},
+        AuthServiceName: "switauth",
+        AuthEndpoint: "/auth/validate",
+    }
+    s.httpTransport.GetRouter().Use(middleware.AuthMiddlewareWithConfig(authConfig))
+}
+```
+
+#### 项目特定中间件
+
+仅在需要项目特定业务逻辑时，才在项目内创建自定义中间件：
+
+```go
+// internal/new-service/middleware/custom.go
+package middleware
+
+import (
+    "github.com/gin-gonic/gin"
+)
+
+// ProjectSpecificMiddleware 项目特定的业务中间件
+func ProjectSpecificMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 项目特定的业务逻辑
+        c.Next()
+    }
+}
+```
+
+### 2. ServiceRegistrar 接口实现
 
 每个服务必须实现 `ServiceRegistrar` 接口：
 
@@ -118,52 +197,306 @@ type ServiceRegistrar interface {
 **实现模板：**
 
 ```go
-// internal/new-service/service/example/example_registrar.go
-package example
+// internal/new-service/service/{domain-name}/registrar.go
+package domain
 
 import (
     "google.golang.org/grpc"
     "github.com/gin-gonic/gin"
-    "your-project/internal/new-service/handler/http/example"
+    "your-project/internal/new-service/handler/http/{domain-name}"
 )
 
 type ServiceRegistrar struct {
-    service ExampleService
+    service DomainService
 }
 
-func NewServiceRegistrar(deps ...interface{}) *ServiceRegistrar {
-    // 依赖注入逻辑
-    return &ServiceRegistrar{
-        service: NewExampleService(deps...),
+type ServiceRegistrarOption func(*ServiceRegistrar)
+
+func WithDomainRepository(repo repository.DomainRepository) ServiceRegistrarOption {
+    return func(sr *ServiceRegistrar) {
+        sr.repository = repo
     }
 }
 
-func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
-    handler := example.NewHandler(sr.service)
+func WithLogger(logger *slog.Logger) ServiceRegistrarOption {
+    return func(sr *ServiceRegistrar) {
+        sr.logger = logger
+    }
+}
+
+func NewServiceRegistrar(opts ...ServiceRegistrarOption) *ServiceRegistrar {
+    sr := &ServiceRegistrar{}
     
-    v1 := router.Group("/api/v1")
+    for _, opt := range opts {
+        opt(sr)
+    }
+    
+    sr.service = NewDomainService(
+        WithRepository(sr.repository),
+        WithServiceLogger(sr.logger),
+    )
+    
+    return sr
+}
+
+func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
+    handler := v1.NewDomainHandler(
+        v1.WithDomainService(sr.service),
+        v1.WithHandlerLogger(sr.logger),
+    )
+    
+    v1Group := router.Group("/api/v1")
     {
-        v1.GET("/example", handler.GetExample)
-        v1.POST("/example", handler.CreateExample)
-        v1.PUT("/example/:id", handler.UpdateExample)
-        v1.DELETE("/example/:id", handler.DeleteExample)
+        v1Group.GET("/entities", handler.ListEntities)
+        v1Group.GET("/entities/:id", handler.GetEntity)
+        v1Group.POST("/entities", handler.CreateEntity)
+        v1Group.PUT("/entities/:id", handler.UpdateEntity)
+        v1Group.DELETE("/entities/:id", handler.DeleteEntity)
     }
     
     return nil
 }
 
 func (sr *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
-    grpcHandler := NewExampleGRPCHandler(sr.service)
-    pb.RegisterExampleServiceServer(server, grpcHandler)
+    // gRPC 服务注册实现
+    // grpcHandler := NewDomainGRPCHandler(sr.service)
+    // pb.RegisterDomainServiceServer(server, grpcHandler)
     return nil
 }
 
 func (sr *ServiceRegistrar) GetName() string {
-    return "example"
+    return "{domain-name}"
 }
 ```
 
-### 2. Transport Layer 实现
+### 2. 统一响应格式定义
+
+**基于 `switauth` v1.0 的标准响应格式：**
+
+```go
+// internal/new-service/model/response.go
+package model
+
+import (
+    "net/http"
+    "time"
+)
+
+// StandardResponse 统一响应格式
+type StandardResponse struct {
+    Success   bool        `json:"success"`
+    Message   string      `json:"message"`
+    Data      interface{} `json:"data,omitempty"`
+    Error     *ErrorInfo  `json:"error,omitempty"`
+    Timestamp time.Time   `json:"timestamp"`
+}
+
+// ErrorInfo 错误信息结构
+type ErrorInfo struct {
+    Code    string `json:"code"`
+    Message string `json:"message"`
+    Details string `json:"details,omitempty"`
+}
+
+// NewSuccessResponse 创建成功响应
+func NewSuccessResponse(data interface{}, message string) *StandardResponse {
+    return &StandardResponse{
+        Success:   true,
+        Message:   message,
+        Data:      data,
+        Timestamp: time.Now(),
+    }
+}
+
+// NewErrorResponse 创建错误响应
+func NewErrorResponse(code, message, details string) *StandardResponse {
+    return &StandardResponse{
+        Success: false,
+        Message: message,
+        Error: &ErrorInfo{
+            Code:    code,
+            Message: message,
+            Details: details,
+        },
+        Timestamp: time.Now(),
+    }
+}
+```
+
+### 2. 版本化服务接口定义
+
+基于 `switauth` v1.0 的服务接口模式：
+
+```go
+// internal/new-service/service/{domain-name}/v1/service.go
+package v1
+
+import (
+    "context"
+    "log/slog"
+    
+    "your-project/internal/new-service/model"
+    "your-project/internal/new-service/repository"
+)
+
+// EntityResponse 领域实体响应
+type EntityResponse struct {
+    ID          string                 `json:"id"`
+    Name        string                 `json:"name"`
+    Description string                 `json:"description"`
+    CreatedAt   time.Time              `json:"created_at"`
+    UpdatedAt   time.Time              `json:"updated_at"`
+    Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// DomainSrv v1 领域服务接口
+type DomainSrv interface {
+    GetEntity(ctx context.Context, id string) (*EntityResponse, error)
+    ListEntities(ctx context.Context, limit, offset int) ([]*EntityResponse, error)
+    CreateEntity(ctx context.Context, req *CreateEntityRequest) (*EntityResponse, error)
+    UpdateEntity(ctx context.Context, id string, req *UpdateEntityRequest) (*EntityResponse, error)
+    DeleteEntity(ctx context.Context, id string) error
+}
+
+// CreateEntityRequest 创建实体请求
+type CreateEntityRequest struct {
+    Name        string                 `json:"name" binding:"required"`
+    Description string                 `json:"description"`
+    Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// UpdateEntityRequest 更新实体请求
+type UpdateEntityRequest struct {
+    Name        *string                `json:"name,omitempty"`
+    Description *string                `json:"description,omitempty"`
+    Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// DomainServiceConfig 服务配置
+type DomainServiceConfig struct {
+    Repository repository.DomainRepository
+    Logger     *slog.Logger
+    Cache      CacheService
+}
+
+// DomainServiceOption 服务选项函数
+type DomainServiceOption func(*domainService)
+
+// WithRepository 设置仓储
+func WithRepository(repo repository.DomainRepository) DomainServiceOption {
+    return func(s *domainService) {
+        s.repository = repo
+    }
+}
+
+// WithServiceLogger 设置日志器
+func WithServiceLogger(logger *slog.Logger) DomainServiceOption {
+    return func(s *domainService) {
+        s.logger = logger
+    }
+}
+
+// WithCache 设置缓存服务
+func WithCache(cache CacheService) DomainServiceOption {
+    return func(s *domainService) {
+        s.cache = cache
+    }
+}
+
+// domainService 服务实现
+type domainService struct {
+    repository repository.DomainRepository
+    logger     *slog.Logger
+    cache      CacheService
+}
+
+// NewDomainSrv 创建领域服务实例
+func NewDomainSrv(opts ...DomainServiceOption) DomainSrv {
+    s := &domainService{
+        logger: slog.Default(),
+    }
+    
+    for _, opt := range opts {
+        opt(s)
+    }
+    
+    return s
+}
+
+// NewDomainSrvWithConfig 使用配置创建服务实例
+func NewDomainSrvWithConfig(config *DomainServiceConfig) DomainSrv {
+    return NewDomainSrv(
+        WithRepository(config.Repository),
+        WithServiceLogger(config.Logger),
+        WithCache(config.Cache),
+    )
+}
+
+// GetEntity 获取实体
+func (s *domainService) GetEntity(ctx context.Context, id string) (*EntityResponse, error) {
+    s.logger.InfoContext(ctx, "Getting entity", "id", id)
+    
+    // 尝试从缓存获取
+    if s.cache != nil {
+        if cached, err := s.cache.Get(ctx, "entity:"+id); err == nil {
+            return cached.(*EntityResponse), nil
+        }
+    }
+    
+    // 从仓储获取
+    entity, err := s.repository.GetByID(ctx, id)
+    if err != nil {
+        s.logger.ErrorContext(ctx, "Failed to get entity", "id", id, "error", err)
+        return nil, fmt.Errorf("failed to get entity: %w", err)
+    }
+    
+    response := &EntityResponse{
+        ID:          entity.ID,
+        Name:        entity.Name,
+        Description: entity.Description,
+        CreatedAt:   entity.CreatedAt,
+        UpdatedAt:   entity.UpdatedAt,
+        Metadata:    entity.Metadata,
+    }
+    
+    // 缓存结果
+    if s.cache != nil {
+        s.cache.Set(ctx, "entity:"+id, response, 5*time.Minute)
+    }
+    
+    return response, nil
+}
+
+// CreateEntity 创建实体
+func (s *domainService) CreateEntity(ctx context.Context, req *CreateEntityRequest) (*EntityResponse, error) {
+    s.logger.InfoContext(ctx, "Creating entity", "name", req.Name)
+    
+    entity := &model.Entity{
+        ID:          generateID(),
+        Name:        req.Name,
+        Description: req.Description,
+        Metadata:    req.Metadata,
+        CreatedAt:   time.Now(),
+        UpdatedAt:   time.Now(),
+    }
+    
+    if err := s.repository.Create(ctx, entity); err != nil {
+        s.logger.ErrorContext(ctx, "Failed to create entity", "error", err)
+        return nil, fmt.Errorf("failed to create entity: %w", err)
+    }
+    
+    return &EntityResponse{
+        ID:          entity.ID,
+        Name:        entity.Name,
+        Description: entity.Description,
+        CreatedAt:   entity.CreatedAt,
+        UpdatedAt:   entity.UpdatedAt,
+        Metadata:    entity.Metadata,
+    }, nil
+}
+```
+
+### 4. Transport Layer 实现
 
 **HTTP Transport 模板：**
 
@@ -352,7 +685,184 @@ func (gt *GRPCTransport) GetServer() *grpc.Server {
 }
 ```
 
-### 3. ServiceRegistry 实现
+### 5. HTTP 处理器实现
+
+**基于 `switauth` v1.0 的处理器模式：**
+
+```go
+// internal/new-service/handler/http/v1/{domain-name}.go
+package v1
+
+import (
+    "log/slog"
+    "net/http"
+    "strconv"
+    
+    "github.com/gin-gonic/gin"
+    
+    "your-project/internal/new-service/model"
+    servicev1 "your-project/internal/new-service/service/{domain-name}/v1"
+)
+
+// DomainHandler v1 领域处理器
+type DomainHandler struct {
+    service servicev1.DomainSrv
+    logger  *slog.Logger
+}
+
+// DomainHandlerOption 处理器选项函数
+type DomainHandlerOption func(*DomainHandler)
+
+// WithDomainService 设置领域服务
+func WithDomainService(service servicev1.DomainSrv) DomainHandlerOption {
+    return func(h *DomainHandler) {
+        h.service = service
+    }
+}
+
+// WithHandlerLogger 设置日志器
+func WithHandlerLogger(logger *slog.Logger) DomainHandlerOption {
+    return func(h *DomainHandler) {
+        h.logger = logger
+    }
+}
+
+// NewDomainHandler 创建领域处理器
+func NewDomainHandler(opts ...DomainHandlerOption) *DomainHandler {
+    h := &DomainHandler{
+        logger: slog.Default(),
+    }
+    
+    for _, opt := range opts {
+        opt(h)
+    }
+    
+    return h
+}
+
+// GetEntity 获取实体
+func (h *DomainHandler) GetEntity(c *gin.Context) {
+    id := c.Param("id")
+    if id == "" {
+        response := model.NewErrorResponse("INVALID_PARAMETER", "ID parameter is required", "")
+        c.JSON(http.StatusBadRequest, response)
+        return
+    }
+    
+    entity, err := h.service.GetEntity(c.Request.Context(), id)
+    if err != nil {
+        h.logger.ErrorContext(c.Request.Context(), "Failed to get entity", "id", id, "error", err)
+        response := model.NewErrorResponse("INTERNAL_ERROR", "Failed to get entity", err.Error())
+        c.JSON(http.StatusInternalServerError, response)
+        return
+    }
+    
+    response := model.NewSuccessResponse(entity, "Entity retrieved successfully")
+    c.JSON(http.StatusOK, response)
+}
+
+// ListEntities 列出实体
+func (h *DomainHandler) ListEntities(c *gin.Context) {
+    limitStr := c.DefaultQuery("limit", "10")
+    offsetStr := c.DefaultQuery("offset", "0")
+    
+    limit, err := strconv.Atoi(limitStr)
+    if err != nil || limit <= 0 {
+        response := model.NewErrorResponse("INVALID_PARAMETER", "Invalid limit parameter", "")
+        c.JSON(http.StatusBadRequest, response)
+        return
+    }
+    
+    offset, err := strconv.Atoi(offsetStr)
+    if err != nil || offset < 0 {
+        response := model.NewErrorResponse("INVALID_PARAMETER", "Invalid offset parameter", "")
+        c.JSON(http.StatusBadRequest, response)
+        return
+    }
+    
+    entities, err := h.service.ListEntities(c.Request.Context(), limit, offset)
+    if err != nil {
+        h.logger.ErrorContext(c.Request.Context(), "Failed to list entities", "error", err)
+        response := model.NewErrorResponse("INTERNAL_ERROR", "Failed to list entities", err.Error())
+        c.JSON(http.StatusInternalServerError, response)
+        return
+    }
+    
+    response := model.NewSuccessResponse(entities, "Entities retrieved successfully")
+    c.JSON(http.StatusOK, response)
+}
+
+// CreateEntity 创建实体
+func (h *DomainHandler) CreateEntity(c *gin.Context) {
+    var req servicev1.CreateEntityRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        response := model.NewErrorResponse("INVALID_REQUEST", "Invalid request body", err.Error())
+        c.JSON(http.StatusBadRequest, response)
+        return
+    }
+    
+    entity, err := h.service.CreateEntity(c.Request.Context(), &req)
+    if err != nil {
+        h.logger.ErrorContext(c.Request.Context(), "Failed to create entity", "error", err)
+        response := model.NewErrorResponse("INTERNAL_ERROR", "Failed to create entity", err.Error())
+        c.JSON(http.StatusInternalServerError, response)
+        return
+    }
+    
+    response := model.NewSuccessResponse(entity, "Entity created successfully")
+    c.JSON(http.StatusCreated, response)
+}
+
+// UpdateEntity 更新实体
+func (h *DomainHandler) UpdateEntity(c *gin.Context) {
+    id := c.Param("id")
+    if id == "" {
+        response := model.NewErrorResponse("INVALID_PARAMETER", "ID parameter is required", "")
+        c.JSON(http.StatusBadRequest, response)
+        return
+    }
+    
+    var req servicev1.UpdateEntityRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        response := model.NewErrorResponse("INVALID_REQUEST", "Invalid request body", err.Error())
+        c.JSON(http.StatusBadRequest, response)
+        return
+    }
+    
+    entity, err := h.service.UpdateEntity(c.Request.Context(), id, &req)
+    if err != nil {
+        h.logger.ErrorContext(c.Request.Context(), "Failed to update entity", "id", id, "error", err)
+        response := model.NewErrorResponse("INTERNAL_ERROR", "Failed to update entity", err.Error())
+        c.JSON(http.StatusInternalServerError, response)
+        return
+    }
+    
+    response := model.NewSuccessResponse(entity, "Entity updated successfully")
+    c.JSON(http.StatusOK, response)
+}
+
+// DeleteEntity 删除实体
+func (h *DomainHandler) DeleteEntity(c *gin.Context) {
+    id := c.Param("id")
+    if id == "" {
+        response := model.NewErrorResponse("INVALID_PARAMETER", "ID parameter is required", "")
+        c.JSON(http.StatusBadRequest, response)
+        return
+    }
+    
+    if err := h.service.DeleteEntity(c.Request.Context(), id); err != nil {
+        h.logger.ErrorContext(c.Request.Context(), "Failed to delete entity", "id", id, "error", err)
+        response := model.NewErrorResponse("INTERNAL_ERROR", "Failed to delete entity", err.Error())
+        c.JSON(http.StatusInternalServerError, response)
+        return
+    }
+    
+    response := model.NewSuccessResponse(nil, "Entity deleted successfully")
+    c.JSON(http.StatusOK, response)
+}
+```
+
+### 6. ServiceRegistry 实现
 
 **注意：必须包含并发安全保护**
 
@@ -361,6 +871,7 @@ func (gt *GRPCTransport) GetServer() *grpc.Server {
 package transport
 
 import (
+    "fmt"
     "sync"
     
     "github.com/gin-gonic/gin"
@@ -700,7 +1211,7 @@ func (c *Config) Validate() error {
 
 1. **创建项目目录结构**
    ```bash
-   mkdir -p internal/new-service/{cmd,config,db,handler/http,model,repository,service,transport}
+   mkdir -p internal/new-service/{cmd,config,db,handler/http/v1,model,repository,service/v1,transport}
    mkdir -p cmd/new-service
    ```
 
@@ -728,23 +1239,47 @@ func (c *Config) Validate() error {
 
 ### 第二阶段：服务层开发
 
-1. **定义业务接口**
+1. **按领域划分服务结构**
+    - 在 `service/` 目录下按业务领域创建子目录（如 `{domain-a}/`、`{domain-b}/` 等）
+    - 对于需要版本化的业务服务，在领域目录下创建版本子目录（如 `v1/`）
+    - 对于通用服务（如 `health/`、监控、停止等），可直接在领域目录下实现，无需版本化
+    - 在每个领域目录下实现 `registrar.go` 负责服务注册
+
+2. **定义版本化业务接口**
    ```go
-   type ExampleService interface {
-       GetExample(ctx context.Context, id string) (*model.Example, error)
-       CreateExample(ctx context.Context, example *model.Example) error
-       UpdateExample(ctx context.Context, example *model.Example) error
-       DeleteExample(ctx context.Context, id string) error
+   // internal/new-service/service/{domain-name}/v1/service.go
+   type DomainSrv interface {
+       GetEntity(ctx context.Context, id string) (*EntityResponse, error)
+       ListEntities(ctx context.Context, limit, offset int) ([]*EntityResponse, error)
+       CreateEntity(ctx context.Context, req *CreateEntityRequest) (*EntityResponse, error)
+       UpdateEntity(ctx context.Context, id string, req *UpdateEntityRequest) (*EntityResponse, error)
+       DeleteEntity(ctx context.Context, id string) error
    }
    ```
 
-2. **实现 ServiceRegistrar**
-   - 每个服务一个 registrar
-   - 支持 HTTP 和 gRPC 双协议
-   - 包含依赖注入逻辑
+3. **实现统一响应格式**
+   - 基于 `switauth` v1.0 的 `StandardResponse` 格式
+   - 统一的错误码和消息结构
+   - 包含时间戳和成功标识
 
-3. **实现处理器层**
-   - HTTP 处理器使用 Gin
+4. **实现选项模式依赖注入**
+   - 使用函数选项模式进行依赖注入
+   - 支持灵活的配置和扩展
+   - 便于单元测试和模块替换
+
+5. **配置中间件使用**
+   - 优先使用 `pkg/middleware` 中的通用中间件
+   - 使用 `GlobalMiddlewareRegistrar` 注册全局中间件
+   - 根据需要配置认证中间件的白名单和服务发现
+   - 仅在必要时创建项目特定中间件
+
+6. **实现 ServiceRegistrar**
+   - 每个领域服务一个 registrar
+   - 支持 HTTP 和 gRPC 双协议
+   - 包含版本化路由注册
+
+7. **实现处理器层**
+   - HTTP 处理器使用 Gin 和版本化路由
    - gRPC 处理器实现 protobuf 接口
    - 统一错误处理和响应格式
 
@@ -796,6 +1331,10 @@ func (c *Config) Validate() error {
 
 ### ✅ 必须遵循的规范
 
+- [ ] 使用版本化设计模式（v1、v2 等）
+- [ ] 实现统一的 `StandardResponse` 响应格式
+- [ ] 使用选项模式进行依赖注入
+- [ ] 优先使用 `pkg/middleware` 中的通用中间件
 - [ ] 使用统一的 `ServiceRegistrar` 接口
 - [ ] 实现线程安全的 `ServiceRegistry`
 - [ ] 支持 HTTP 和 gRPC 双协议
@@ -803,30 +1342,36 @@ func (c *Config) Validate() error {
 - [ ] 实现优雅关闭
 - [ ] 添加配置验证
 - [ ] 包含健康检查端点
-- [ ] 使用依赖注入模式
-- [ ] 实现统一错误处理
-- [ ] 添加结构化日志
+- [ ] 实现统一错误处理和错误码
+- [ ] 添加结构化日志（使用 `slog`）
+- [ ] 包含完整的单元测试覆盖
 
 ### ✅ 推荐的增强功能
 
-- [ ] 添加 Prometheus 指标
-- [ ] 实现链路追踪
-- [ ] 配置熔断器
-- [ ] 添加缓存层
-- [ ] 实现数据库迁移
-- [ ] 配置 API 文档生成
-- [ ] 添加性能测试
+- [ ] 添加 Prometheus 指标监控
+- [ ] 实现分布式链路追踪
+- [ ] 配置熔断器和限流
+- [ ] 添加多级缓存层
+- [ ] 实现数据库迁移和版本管理
+- [ ] 配置 Swagger/OpenAPI 文档生成
+- [ ] 添加性能测试和压力测试
 - [ ] 实现配置热重载
+- [ ] 添加请求验证中间件
+- [ ] 实现 API 版本兼容性检查
 
 ### ⚠️ 常见陷阱避免
 
+- **版本兼容性**: 确保 API 版本变更时保持向后兼容
+- **响应格式一致性**: 严格遵循 `StandardResponse` 格式，避免不一致的响应结构
+- **选项模式误用**: 正确使用函数选项模式，避免过度复杂化
 - **并发安全**: 确保所有共享资源都有适当的锁保护
 - **资源泄漏**: 正确关闭数据库连接、HTTP 客户端等资源
-- **错误处理**: 不要忽略错误，使用包装错误提供上下文
+- **错误处理**: 使用统一的错误码和消息格式，提供有意义的错误上下文
 - **配置管理**: 不要硬编码配置，使用环境变量或配置文件
-- **测试覆盖**: 确保关键路径都有测试覆盖
+- **测试覆盖**: 确保关键路径都有测试覆盖，特别是错误处理路径
 - **依赖循环**: 避免包之间的循环依赖
-- **接口设计**: 保持接口简单和专注
+- **接口设计**: 保持接口简单和专注，遵循单一职责原则
+- **日志记录**: 使用结构化日志，避免敏感信息泄露
 
 ## 示例项目模板
 
@@ -857,10 +1402,21 @@ cp cmd/swit-serve/swit-serve.go cmd/new-service/new-service.go
 
 遵循本指导方案可以确保新项目：
 
-1. **架构一致性**: 与现有项目保持相同的设计模式
-2. **代码复用**: 最大化利用现有的基础设施代码
-3. **可维护性**: 清晰的分层和职责分离
-4. **可扩展性**: 易于添加新功能和服务
-5. **生产就绪**: 包含监控、日志、健康检查等生产环境必需功能
+1. **架构一致性**: 与现有项目保持相同的设计模式，特别是基于 `switauth` v1.0 重构后的成熟架构
+2. **版本化设计**: 采用统一的版本化接口设计，支持 API 演进和向后兼容
+3. **标准化响应**: 使用统一的 `StandardResponse` 格式，确保 API 响应的一致性
+4. **现代化依赖注入**: 采用选项模式进行依赖注入，提高代码的灵活性和可测试性
+5. **代码复用**: 最大化利用现有的基础设施代码和最佳实践
+6. **可维护性**: 清晰的分层和职责分离，遵循 SOLID 原则
+7. **可扩展性**: 易于添加新功能和服务，支持水平扩展
+8. **生产就绪**: 包含监控、日志、健康检查、错误处理等生产环境必需功能
+9. **测试友好**: 完整的测试覆盖和易于测试的架构设计
 
-建议在开始新项目开发前，先阅读现有项目的代码，理解其设计思路，然后按照本指南逐步实施。如有疑问，可以参考 `switauth` 和 `switserve` 的具体实现。
+### 关键优势
+
+- **基于成熟实践**: 基于 `switauth` v1.0 重构后的成熟架构模式
+- **统一标准**: 统一的接口设计、响应格式和错误处理机制
+- **现代化模式**: 采用最新的 Go 语言最佳实践和设计模式
+- **完整覆盖**: 从项目初始化到生产部署的完整指导
+
+建议在开始新项目开发前，先深入研究 `switauth` v1.0 重构后的代码，理解其版本化设计思路和选项模式实现，然后按照本指南逐步实施。如有疑问，可以参考 `switauth` 和 `switserve` 的具体实现，特别关注 `switauth` 的最新架构模式。

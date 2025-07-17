@@ -172,12 +172,12 @@ func TestAuthService_Login_Success(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	accessToken, refreshToken, err := service.Login(context.Background(), "testuser", "testpass")
+	response, err := v1Service.Login(context.Background(), "testuser", "testpass")
 
 	assert.NoError(t, err)
-	assert.NotEmpty(t, accessToken)
-	assert.NotEmpty(t, refreshToken)
+	assert.NotNil(t, response)
+	assert.NotEmpty(t, response.AccessToken)
+	assert.NotEmpty(t, response.RefreshToken)
 
 	mockUserClient.AssertExpectations(t)
 	mockTokenRepo.AssertExpectations(t)
@@ -195,12 +195,10 @@ func TestAuthService_Login_InvalidCredentials(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	accessToken, refreshToken, err := service.Login(context.Background(), "testuser", "wrongpass")
+	response, err := v1Service.Login(context.Background(), "testuser", "wrongpass")
 
 	assert.Error(t, err)
-	assert.Empty(t, accessToken)
-	assert.Empty(t, refreshToken)
+	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid credentials")
 
 	mockUserClient.AssertExpectations(t)
@@ -225,12 +223,10 @@ func TestAuthService_Login_InactiveUser(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	accessToken, refreshToken, err := service.Login(context.Background(), "testuser", "testpass")
+	response, err := v1Service.Login(context.Background(), "testuser", "testpass")
 
 	assert.Error(t, err)
-	assert.Empty(t, accessToken)
-	assert.Empty(t, refreshToken)
+	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "not active")
 
 	mockUserClient.AssertExpectations(t)
@@ -263,13 +259,13 @@ func TestAuthService_RefreshToken_Success(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	newAccessToken, newRefreshToken, err := service.RefreshToken(context.Background(), refreshToken)
+	response, err := v1Service.RefreshToken(context.Background(), refreshToken)
 
 	assert.NoError(t, err)
-	assert.NotEmpty(t, newAccessToken)
-	assert.NotEmpty(t, newRefreshToken)
-	assert.NotEqual(t, "old-access", newAccessToken)
+	assert.NotNil(t, response)
+	assert.NotEmpty(t, response.AccessToken)
+	assert.NotEmpty(t, response.RefreshToken)
+	assert.NotEqual(t, "old-access", response.AccessToken)
 
 	mockTokenRepo.AssertExpectations(t)
 }
@@ -291,12 +287,10 @@ func TestAuthService_RefreshToken_InvalidToken(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	newAccessToken, newRefreshToken, err := service.RefreshToken(context.Background(), invalidToken)
+	response, err := v1Service.RefreshToken(context.Background(), invalidToken)
 
 	assert.Error(t, err)
-	assert.Empty(t, newAccessToken)
-	assert.Empty(t, newRefreshToken)
+	assert.Nil(t, response)
 
 	mockTokenRepo.AssertExpectations(t)
 }
@@ -312,8 +306,7 @@ func TestAuthService_Logout_Success(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	err := service.Logout(context.Background(), "valid-token")
+	err := v1Service.Logout(context.Background(), "valid-token")
 
 	assert.NoError(t, err)
 	mockTokenRepo.AssertExpectations(t)
@@ -331,8 +324,7 @@ func TestAuthService_Logout_InvalidToken(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	err := service.Logout(context.Background(), "invalid-token")
+	err := v1Service.Logout(context.Background(), "invalid-token")
 
 	assert.Error(t, err)
 	mockTokenRepo.AssertExpectations(t)
@@ -361,8 +353,7 @@ func TestAuthService_ValidateToken_Success(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	result, err := service.ValidateToken(context.Background(), accessToken)
+	result, err := v1Service.ValidateToken(context.Background(), accessToken)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -395,8 +386,7 @@ func TestAuthService_ValidateToken_Expired(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	result, err := service.ValidateToken(context.Background(), accessToken)
+	result, err := v1Service.ValidateToken(context.Background(), accessToken)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -421,8 +411,7 @@ func TestAuthService_ValidateToken_Invalid(t *testing.T) {
 		v1.WithTokenRepository(mockTokenRepo),
 	)
 	assert.NoError(t, authErr)
-	service := auth.NewAuthServiceAdapter(v1Service)
-	result, err := service.ValidateToken(context.Background(), invalidToken)
+	result, err := v1Service.ValidateToken(context.Background(), invalidToken)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)

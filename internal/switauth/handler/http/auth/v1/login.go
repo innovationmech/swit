@@ -48,14 +48,14 @@ func (c *Controller) Login(ctx *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := c.authService.Login(ctx.Request.Context(), loginData.Username, loginData.Password)
+	response, err := c.authService.Login(ctx.Request.Context(), loginData.Username, loginData.Password)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, model.LoginResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		AccessToken:  response.AccessToken,
+		RefreshToken: response.RefreshToken,
 	})
 }

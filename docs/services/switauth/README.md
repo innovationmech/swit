@@ -132,6 +132,26 @@ curl -X GET http://localhost:9001/health
 }
 ```
 
+## 🏗️ 架构设计
+
+### 核心架构特点
+- **版本化设计**: 按 v1、v2 等版本组织代码，便于API演进
+- **分层架构**: Handler → Service → Repository 清晰分层
+- **接口驱动**: 使用 `v1.AuthSrv` 接口统一认证服务
+- **依赖注入**: 通过 Registrar 模式管理服务依赖
+- **测试友好**: 每个组件都有对应的单元测试
+
+### 服务接口
+```go
+// v1.AuthSrv 统一认证服务接口
+type AuthSrv interface {
+    Login(ctx context.Context, username, password string) (*AuthResponse, error)
+    RefreshToken(ctx context.Context, refreshToken string) (*AuthResponse, error)
+    ValidateToken(ctx context.Context, token string) (*model.Token, error)
+    Logout(ctx context.Context, token string) (*AuthResponse, error)
+}
+```
+
 ## 🛠 开发状态
 
 ### 已完成功能
@@ -139,15 +159,18 @@ curl -X GET http://localhost:9001/health
 - ✅ JWT Token生成和验证
 - ✅ 用户登录/登出
 - ✅ Token刷新机制
+- ✅ 版本化API设计
+- ✅ 统一服务接口
+- ✅ 完整的单元测试覆盖
 - ✅ Swagger文档生成
 - ✅ OpenAPI 3.0支持
-- ✅ 完整的API文档
 
 ### 待扩展功能
 - ⏳ 用户注册接口
 - ⏳ 权限管理
 - ⏳ 密码重置
 - ⏳ 多因子认证
+- ⏳ API v2版本
 
 ## 📁 源码结构
 
@@ -160,17 +183,31 @@ internal/switauth/
 │   ├── cmd.go
 │   ├── cmd_test.go
 │   └── start/      # 启动命令
+│       ├── start.go
+│       └── start_test.go
 ├── config/         # 配置管理
 │   ├── config.go
 │   └── config_test.go
 ├── db/             # 数据库连接
 │   ├── db.go
 │   └── db_test.go
-├── handler/        # API处理器
+├── handler/        # API处理器（按版本组织）
 │   ├── grpc/       # gRPC处理器
 │   │   └── auth/
+│   │       └── v1/ # v1版本gRPC认证处理器
+│   │           └── auth.go
 │   └── http/       # HTTP处理器
 │       ├── auth/   # 认证相关API
+│       │   └── v1/ # v1版本HTTP认证处理器
+│       │       ├── auth.go
+│       │       ├── login.go
+│       │       ├── login_test.go
+│       │       ├── logout.go
+│       │       ├── logout_test.go
+│       │       ├── refresh_token.go
+│       │       ├── refresh_token_test.go
+│       │       ├── validate_token.go
+│       │       └── validate_token_test.go
 │       └── health/ # 健康检查
 ├── model/          # 数据模型
 │   ├── token.go    # Token模型
@@ -180,17 +217,24 @@ internal/switauth/
 │   └── token_repository_test.go
 ├── service/        # 业务逻辑层
 │   ├── auth/       # 认证服务
-│   │   ├── adapter.go
-│   │   ├── registrar.go
-│   │   └── v1/
-│   ├── auth.go
-│   ├── auth_test.go
+│   │   ├── registrar.go      # 服务注册器
+│   │   ├── registrar_test.go # 注册器测试
+│   │   └── v1/               # v1版本认证服务
+│   │       ├── auth.go       # 认证服务实现
+│   │       └── auth_test.go  # 认证服务测试
 │   └── health/     # 健康检查服务
+│       ├── registrar.go
+│       ├── registrar_test.go
+│       └── service.go
 ├── transport/      # 传输层
 │   ├── grpc.go     # gRPC传输
+│   ├── grpc_test.go
 │   ├── http.go     # HTTP传输
+│   ├── http_test.go
 │   ├── registrar.go
-│   └── transport.go
+│   ├── registrar_test.go
+│   ├── transport.go
+│   └── transport_test.go
 ├── server.go       # 服务器主文件
 └── server_test.go
 ```
@@ -212,13 +256,25 @@ go test ./internal/switauth/... -cover
 
 # 运行竞态条件检测
 go test ./internal/switauth/... -race
+
+# 运行特定版本的测试
+go test ./internal/switauth/service/auth/v1/... -v
+go test ./internal/switauth/handler/http/auth/v1/... -v
 ```
 
 ### 测试覆盖
-- ✅ Handler 层单元测试
+- ✅ Handler 层单元测试（按版本组织）
+  - ✅ HTTP v1 认证处理器测试
+  - ✅ 登录、登出、刷新、验证功能测试
 - ✅ Service 层业务逻辑测试
+  - ✅ v1 认证服务核心逻辑测试
+  - ✅ 服务注册器测试
 - ✅ Transport 层集成测试
+  - ✅ HTTP 传输层测试
+  - ✅ gRPC 传输层测试
 - ✅ Repository 层数据访问测试
+- ✅ 配置和数据库连接测试
+- ✅ 服务器启动和健康检查测试
 
 ## 📖 文档
 
@@ -292,3 +348,35 @@ curl -X POST http://localhost:9001/auth/logout \
 ### 开发指南
 - [快速开始指南](../../quick-start-example.md)
 - [开发环境配置](../../development-setup.md)
+
+## 🔄 最近更新
+
+### v1.0 架构重构 (2024)
+
+#### 主要改进
+- **移除适配器模式**: 删除了 `AuthServiceAdapter`，直接使用 `v1.AuthSrv` 接口
+- **统一接口设计**: 所有认证方法返回统一的 `*v1.AuthResponse` 结构
+- **版本化组织**: Handler 和 Service 按版本（v1）组织，便于未来扩展
+- **简化依赖**: 减少了中间层，提高了代码可读性和维护性
+
+#### 重构内容
+- 删除了 `service/auth.go` 和 `service/auth_test.go`
+- 更新了所有测试用例以使用新的接口
+- 重构了 HTTP 处理器的 Mock 服务
+- 统一了错误处理和响应格式
+
+#### 迁移指南
+如果你在其他地方引用了旧的 `AuthService` 接口：
+```go
+// 旧方式
+service := auth.NewAuthService(userClient, tokenRepo)
+token, refreshToken, err := service.Login(ctx, username, password)
+
+// 新方式
+service := v1.NewAuthService(userClient, tokenRepo)
+response, err := service.Login(ctx, username, password)
+if err == nil {
+    token := response.AccessToken
+    refreshToken := response.RefreshToken
+}
+```

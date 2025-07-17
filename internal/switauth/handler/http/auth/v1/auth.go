@@ -22,17 +22,17 @@
 package v1
 
 import (
-	"github.com/innovationmech/swit/internal/switauth/service"
+	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 )
 
 // Controller handles HTTP requests for authentication operations
 // including login, logout, token refresh, and token validation
 type Controller struct {
-	authService service.AuthService
+	authService v1.AuthSrv
 }
 
 // NewAuthController creates a new auth Controller instance
 // with the provided authentication service
-func NewAuthController(authService service.AuthService) *Controller {
+func NewAuthController(authService v1.AuthSrv) *Controller {
 	return &Controller{authService: authService}
 }

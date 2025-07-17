@@ -48,14 +48,14 @@ func (c *Controller) RefreshToken(ctx *gin.Context) {
 		return
 	}
 
-	newAccessToken, newRefreshToken, err := c.authService.RefreshToken(ctx.Request.Context(), data.RefreshToken)
+	response, err := c.authService.RefreshToken(ctx.Request.Context(), data.RefreshToken)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, model.ErrorResponse{Error: err.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, model.RefreshTokenResponse{
-		AccessToken:  newAccessToken,
-		RefreshToken: newRefreshToken,
+		AccessToken:  response.AccessToken,
+		RefreshToken: response.RefreshToken,
 	})
 }
