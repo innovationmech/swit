@@ -22,6 +22,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -35,14 +36,21 @@ type RateLimiter struct {
 	mutex    sync.RWMutex
 	limit    int
 	window   time.Duration
+	ctx      context.Context
+	cancel   context.CancelFunc
+	done     chan struct{}
 }
 
 // NewRateLimiter creates a new rate limiter with specified limit and time window
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+	ctx, cancel := context.WithCancel(context.Background())
 	rl := &RateLimiter{
 		requests: make(map[string][]time.Time),
 		limit:    limit,
 		window:   window,
+		ctx:      ctx,
+		cancel:   cancel,
+		done:     make(chan struct{}),
 	}
 
 	// Start cleanup goroutine to prevent memory leaks
@@ -100,29 +108,43 @@ func (rl *RateLimiter) allow(ip string) bool {
 // cleanup removes old entries to prevent memory leaks
 func (rl *RateLimiter) cleanup() {
 	ticker := time.NewTicker(time.Minute * 5)
-	defer ticker.Stop()
+	defer func() {
+		ticker.Stop()
+		close(rl.done)
+	}()
 
-	for range ticker.C {
-		rl.mutex.Lock()
-		now := time.Now()
+	for {
+		select {
+		case <-rl.ctx.Done():
+			return
+		case <-ticker.C:
+			rl.mutex.Lock()
+			now := time.Now()
 
-		for ip, requests := range rl.requests {
-			var validRequests []time.Time
-			for _, reqTime := range requests {
-				if now.Sub(reqTime) <= rl.window {
-					validRequests = append(validRequests, reqTime)
+			for ip, requests := range rl.requests {
+				var validRequests []time.Time
+				for _, reqTime := range requests {
+					if now.Sub(reqTime) <= rl.window {
+						validRequests = append(validRequests, reqTime)
+					}
+				}
+
+				if len(validRequests) == 0 {
+					delete(rl.requests, ip)
+				} else {
+					rl.requests[ip] = validRequests
 				}
 			}
 
-			if len(validRequests) == 0 {
-				delete(rl.requests, ip)
-			} else {
-				rl.requests[ip] = validRequests
-			}
+			rl.mutex.Unlock()
 		}
-
-		rl.mutex.Unlock()
 	}
+}
+
+// Stop gracefully shuts down the rate limiter and stops the cleanup goroutine
+func (rl *RateLimiter) Stop() {
+	rl.cancel()
+	<-rl.done
 }
 
 // NewAuthRateLimiter creates a rate limiter specifically for authentication endpoints
