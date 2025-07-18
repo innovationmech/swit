@@ -109,6 +109,14 @@ func TestNewStartCmd_VersionOutput(t *testing.T) {
 }
 
 func TestInitConfig(t *testing.T) {
+	// Set required environment variables for testing
+	os.Setenv("JWT_SECRET", "test-jwt-secret-key-that-is-32-chars-long")
+	os.Setenv("TOKEN_ENCRYPTION_KEY", "test-token-encryption-key-32-chars")
+	defer func() {
+		os.Unsetenv("JWT_SECRET")
+		os.Unsetenv("TOKEN_ENCRYPTION_KEY")
+	}()
+
 	// Create a temporary config file for testing
 	tempDir := createTempDir(t)
 	defer os.RemoveAll(tempDir)
@@ -149,20 +157,17 @@ serviceDiscovery:
 }
 
 func TestInitConfig_MissingConfigFile(t *testing.T) {
-	// This test simulates what happens when no config file is found
-	// Due to the singleton pattern in the config package, we cannot easily test
-	// this in isolation, so we'll test the behavior conceptually
+	// Set up environment variables required by initConfig
+	os.Setenv("JWT_SECRET", "test-jwt-secret-for-testing-with-32-chars")
+	os.Setenv("TOKEN_ENCRYPTION_KEY", "test-encryption-key-for-testing")
+	defer os.Unsetenv("JWT_SECRET")
+	defer os.Unsetenv("TOKEN_ENCRYPTION_KEY")
 
-	// The initConfig function should call config.GetConfig() which panics
-	// when no config file is found. Since config has already been loaded
-	// in previous tests, we just verify the function exists and is callable
+	// This test verifies that initConfig can be called without panicking
+	// when environment variables are properly set
 	assert.NotPanics(t, func() {
-		// Just ensure the function can be called without runtime errors
-		// The actual panic behavior is tested in the config package tests
-		if cfg != nil {
-			// Config already loaded, so initConfig won't panic
-			initConfig()
-		}
+		// The function should not panic when environment variables are set
+		initConfig()
 	})
 }
 
@@ -314,6 +319,12 @@ func TestStartCmd_ConfigurationDependency(t *testing.T) {
 
 	// Ensure config is initialized (it should be from previous tests)
 	if cfg == nil {
+		// Set up environment variables required by initConfig
+		os.Setenv("JWT_SECRET", "test-jwt-secret-for-testing-with-32-chars")
+		os.Setenv("TOKEN_ENCRYPTION_KEY", "test-encryption-key-for-testing")
+		defer os.Unsetenv("JWT_SECRET")
+		defer os.Unsetenv("TOKEN_ENCRYPTION_KEY")
+
 		// Create a basic config file for this test
 		tempDir := createTempDir(t)
 		defer os.RemoveAll(tempDir)

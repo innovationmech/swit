@@ -31,6 +31,7 @@ import (
 
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/utils"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -111,5 +112,16 @@ func NewStartCmd() *cobra.Command {
 // initConfig initializes the global configuration for the application.
 func initConfig() {
 	logger.InitLogger()
+
+	// Initialize JWT secret from environment variable
+	if err := config.InitJwtSecret(); err != nil {
+		logger.Logger.Fatal("Failed to initialize JWT secret", zap.Error(err))
+	}
+
+	// Initialize encryption key from environment variable
+	if err := utils.InitEncryptionKey(); err != nil {
+		logger.Logger.Fatal("Failed to initialize encryption key", zap.Error(err))
+	}
+
 	cfg = config.GetConfig()
 }

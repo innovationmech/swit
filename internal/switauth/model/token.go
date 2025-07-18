@@ -22,9 +22,11 @@
 package model
 
 import (
+	"os"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/innovationmech/swit/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -40,6 +42,10 @@ type Token struct {
 	IsValid          bool      `json:"is_valid" gorm:"type:boolean;not null;default:true"`
 	CreatedAt        time.Time `json:"created_at" gorm:"type:timestamp;default:CURRENT_TIMESTAMP"`
 	UpdatedAt        time.Time `json:"updated_at" gorm:"type:timestamp;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+
+	// Internal fields to track encryption state (not stored in database)
+	accessTokenEncrypted  bool `gorm:"-"`
+	refreshTokenEncrypted bool `gorm:"-"`
 }
 
 // TableName specifies the database table name
@@ -52,5 +58,87 @@ func (token *Token) BeforeCreate(tx *gorm.DB) (err error) {
 	if token.ID == uuid.Nil {
 		token.ID = uuid.New()
 	}
-	return
+	return nil
+}
+
+// BeforeSave is a GORM hook, called before saving a record
+func (token *Token) BeforeSave(tx *gorm.DB) (err error) {
+	// Only encrypt if tokens are not already encrypted
+	if !token.accessTokenEncrypted || !token.refreshTokenEncrypted {
+		return token.encryptTokens()
+	}
+	return nil
+}
+
+// AfterFind is a GORM hook, called after finding a record
+func (token *Token) AfterFind(tx *gorm.DB) (err error) {
+	// Initialize encryption state - tokens loaded from DB are encrypted by default
+	// unless encryption is disabled
+	if os.Getenv("DISABLE_TOKEN_ENCRYPTION") != "true" {
+		token.accessTokenEncrypted = true
+		token.refreshTokenEncrypted = true
+	}
+
+	// Decrypt the tokens
+	return token.decryptTokens()
+}
+
+// encryptTokens encrypts the access and refresh tokens before saving to database
+func (token *Token) encryptTokens() error {
+	// Skip encryption in test environment
+	if os.Getenv("DISABLE_TOKEN_ENCRYPTION") == "true" {
+		token.accessTokenEncrypted = true
+		token.refreshTokenEncrypted = true
+		return nil
+	}
+
+	if token.AccessToken != "" && !token.accessTokenEncrypted {
+		encrypted, err := utils.EncryptToken(token.AccessToken)
+		if err != nil {
+			return err
+		}
+		token.AccessToken = encrypted
+		token.accessTokenEncrypted = true
+	}
+
+	if token.RefreshToken != "" && !token.refreshTokenEncrypted {
+		encrypted, err := utils.EncryptToken(token.RefreshToken)
+		if err != nil {
+			return err
+		}
+		token.RefreshToken = encrypted
+		token.refreshTokenEncrypted = true
+	}
+
+	return nil
+}
+
+// decryptTokens decrypts the access and refresh tokens after loading from database
+func (token *Token) decryptTokens() error {
+	// Skip decryption in test environment
+	if os.Getenv("DISABLE_TOKEN_ENCRYPTION") == "true" {
+		token.accessTokenEncrypted = false
+		token.refreshTokenEncrypted = false
+		return nil
+	}
+
+	if token.AccessToken != "" && token.accessTokenEncrypted {
+		decrypted, err := utils.DecryptToken(token.AccessToken)
+		if err != nil {
+			return err
+		}
+		token.AccessToken = decrypted
+		token.accessTokenEncrypted = false
+	}
+
+	if token.RefreshToken != "" && token.refreshTokenEncrypted {
+		decrypted, err := utils.DecryptToken(token.RefreshToken)
+		if err != nil {
+			return err
+		}
+		token.RefreshToken = decrypted
+		token.refreshTokenEncrypted = false
+	}
+
+	return nil
 }

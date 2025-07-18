@@ -34,7 +34,15 @@ import (
 )
 
 func TestJwtSecret(t *testing.T) {
-	expectedSecret := []byte("my-256-bit-secret")
+	// Set up environment variable for testing - must be at least 32 characters
+	os.Setenv("JWT_SECRET", "my-256-bit-secret-for-testing-12345")
+	defer os.Unsetenv("JWT_SECRET")
+
+	// Initialize JWT secret
+	err := InitJwtSecret()
+	assert.NoError(t, err)
+
+	expectedSecret := []byte("my-256-bit-secret-for-testing-12345")
 	assert.Equal(t, expectedSecret, JwtSecret)
 	assert.NotEmpty(t, JwtSecret)
 }
