@@ -75,7 +75,7 @@ func (a *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
 func (a *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 	// Create rate limiter for authentication endpoints
 	authRateLimiter := middleware.NewAuthRateLimiter()
-	
+
 	// Create API v1 group
 	v1Group := router.Group("/api/v1")
 

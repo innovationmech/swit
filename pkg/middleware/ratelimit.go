@@ -44,10 +44,10 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 		limit:    limit,
 		window:   window,
 	}
-	
+
 	// Start cleanup goroutine to prevent memory leaks
 	go rl.cleanup()
-	
+
 	return rl
 }
 
@@ -55,7 +55,7 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		
+
 		if !rl.allow(ip) {
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": "Rate limit exceeded. Please try again later.",
@@ -63,7 +63,7 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		
+
 		c.Next()
 	}
 }
@@ -72,9 +72,9 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 func (rl *RateLimiter) allow(ip string) bool {
 	rl.mutex.Lock()
 	defer rl.mutex.Unlock()
-	
+
 	now := time.Now()
-	
+
 	// Get existing requests for this IP
 	if requests, exists := rl.requests[ip]; exists {
 		// Filter out requests outside the time window
@@ -85,13 +85,13 @@ func (rl *RateLimiter) allow(ip string) bool {
 			}
 		}
 		rl.requests[ip] = validRequests
-		
+
 		// Check if limit is exceeded
 		if len(validRequests) >= rl.limit {
 			return false
 		}
 	}
-	
+
 	// Add current request
 	rl.requests[ip] = append(rl.requests[ip], now)
 	return true
@@ -101,11 +101,11 @@ func (rl *RateLimiter) allow(ip string) bool {
 func (rl *RateLimiter) cleanup() {
 	ticker := time.NewTicker(time.Minute * 5)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		rl.mutex.Lock()
 		now := time.Now()
-		
+
 		for ip, requests := range rl.requests {
 			var validRequests []time.Time
 			for _, reqTime := range requests {
@@ -113,14 +113,14 @@ func (rl *RateLimiter) cleanup() {
 					validRequests = append(validRequests, reqTime)
 				}
 			}
-			
+
 			if len(validRequests) == 0 {
 				delete(rl.requests, ip)
 			} else {
 				rl.requests[ip] = validRequests
 			}
 		}
-		
+
 		rl.mutex.Unlock()
 	}
 }

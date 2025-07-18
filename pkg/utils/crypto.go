@@ -40,7 +40,7 @@ func InitEncryptionKey() error {
 	if key == "" {
 		return fmt.Errorf("TOKEN_ENCRYPTION_KEY environment variable is required")
 	}
-	
+
 	// Use SHA256 to create a consistent 32-byte key
 	hash := sha256.Sum256([]byte(key))
 	encryptionKey = hash[:]
@@ -52,28 +52,28 @@ func EncryptToken(token string) (string, error) {
 	if encryptionKey == nil {
 		return "", fmt.Errorf("encryption key not initialized")
 	}
-	
+
 	// Create AES cipher
 	block, err := aes.NewCipher(encryptionKey)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Create GCM mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Generate random nonce
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
-	
+
 	// Encrypt the token
 	ciphertext := gcm.Seal(nonce, nonce, []byte(token), nil)
-	
+
 	// Encode to base64 for storage
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
@@ -83,38 +83,38 @@ func DecryptToken(encryptedToken string) (string, error) {
 	if encryptionKey == nil {
 		return "", fmt.Errorf("encryption key not initialized")
 	}
-	
+
 	// Decode from base64
 	ciphertext, err := base64.StdEncoding.DecodeString(encryptedToken)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Create AES cipher
 	block, err := aes.NewCipher(encryptionKey)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Create GCM mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Extract nonce
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
 		return "", fmt.Errorf("ciphertext too short")
 	}
-	
+
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	
+
 	// Decrypt
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return string(plaintext), nil
 }

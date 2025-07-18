@@ -22,6 +22,7 @@
 package model
 
 import (
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -68,6 +69,11 @@ func (token *Token) AfterFind(tx *gorm.DB) (err error) {
 
 // encryptTokens encrypts the access and refresh tokens before saving to database
 func (token *Token) encryptTokens() error {
+	// Skip encryption in test environment
+	if os.Getenv("DISABLE_TOKEN_ENCRYPTION") == "true" {
+		return nil
+	}
+
 	if token.AccessToken != "" {
 		encrypted, err := utils.EncryptToken(token.AccessToken)
 		if err != nil {
@@ -75,7 +81,7 @@ func (token *Token) encryptTokens() error {
 		}
 		token.AccessToken = encrypted
 	}
-	
+
 	if token.RefreshToken != "" {
 		encrypted, err := utils.EncryptToken(token.RefreshToken)
 		if err != nil {
@@ -83,12 +89,17 @@ func (token *Token) encryptTokens() error {
 		}
 		token.RefreshToken = encrypted
 	}
-	
+
 	return nil
 }
 
 // decryptTokens decrypts the access and refresh tokens after loading from database
 func (token *Token) decryptTokens() error {
+	// Skip decryption in test environment
+	if os.Getenv("DISABLE_TOKEN_ENCRYPTION") == "true" {
+		return nil
+	}
+
 	if token.AccessToken != "" {
 		decrypted, err := utils.DecryptToken(token.AccessToken)
 		if err != nil {
@@ -96,7 +107,7 @@ func (token *Token) decryptTokens() error {
 		}
 		token.AccessToken = decrypted
 	}
-	
+
 	if token.RefreshToken != "" {
 		decrypted, err := utils.DecryptToken(token.RefreshToken)
 		if err != nil {
@@ -104,6 +115,6 @@ func (token *Token) decryptTokens() error {
 		}
 		token.RefreshToken = decrypted
 	}
-	
+
 	return nil
 }

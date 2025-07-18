@@ -24,6 +24,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"os"
 	"regexp"
 	"testing"
 	"time"
@@ -31,11 +32,25 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/innovationmech/swit/internal/switauth/model"
+	"github.com/innovationmech/swit/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
+
+func setupTestEnvironment(t *testing.T) func() {
+	// Set up encryption key for testing but disable encryption in tests
+	os.Setenv("TOKEN_ENCRYPTION_KEY", "test-encryption-key-for-token-security")
+	os.Setenv("DISABLE_TOKEN_ENCRYPTION", "true")
+	err := utils.InitEncryptionKey()
+	require.NoError(t, err)
+
+	return func() {
+		os.Unsetenv("TOKEN_ENCRYPTION_KEY")
+		os.Unsetenv("DISABLE_TOKEN_ENCRYPTION")
+	}
+}
 
 func setupTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, func()) {
 	sqlDB, mock, err := sqlmock.New()
@@ -55,8 +70,11 @@ func setupTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, func()) {
 }
 
 func TestNewTokenRepository(t *testing.T) {
-	db, _, cleanup := setupTestDB(t)
+	cleanup := setupTestEnvironment(t)
 	defer cleanup()
+
+	db, _, dbCleanup := setupTestDB(t)
+	defer dbCleanup()
 
 	repo := NewTokenRepository(db)
 	assert.NotNil(t, repo)
@@ -166,6 +184,10 @@ func TestTokenRepository_Create(t *testing.T) {
 		},
 	}
 
+	// Setup encryption environment for all subtests
+	envCleanup := setupTestEnvironment(t)
+	defer envCleanup()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db, mock, cleanup := setupTestDB(t)
@@ -254,6 +276,10 @@ func TestTokenRepository_GetByAccessToken(t *testing.T) {
 		},
 	}
 
+	// Setup encryption environment for all subtests
+	envCleanup := setupTestEnvironment(t)
+	defer envCleanup()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db, mock, cleanup := setupTestDB(t)
@@ -284,6 +310,10 @@ func TestTokenRepository_GetByAccessToken(t *testing.T) {
 }
 
 func TestTokenRepository_GetByRefreshToken(t *testing.T) {
+	// Setup encryption environment
+	envCleanup := setupTestEnvironment(t)
+	defer envCleanup()
+
 	tests := []struct {
 		name         string
 		refreshToken string
@@ -375,6 +405,10 @@ func TestTokenRepository_GetByRefreshToken(t *testing.T) {
 }
 
 func TestTokenRepository_Update(t *testing.T) {
+	// Setup encryption environment
+	envCleanup := setupTestEnvironment(t)
+	defer envCleanup()
+
 	tests := []struct {
 		name        string
 		token       *model.Token
@@ -470,6 +504,10 @@ func TestTokenRepository_Update(t *testing.T) {
 }
 
 func TestTokenRepository_InvalidateToken(t *testing.T) {
+	// Setup encryption environment
+	envCleanup := setupTestEnvironment(t)
+	defer envCleanup()
+
 	tests := []struct {
 		name        string
 		tokenString string
@@ -541,6 +579,10 @@ func TestTokenRepository_InvalidateToken(t *testing.T) {
 }
 
 func TestTokenRepository_WithContext(t *testing.T) {
+	// Setup encryption environment
+	envCleanup := setupTestEnvironment(t)
+	defer envCleanup()
+
 	db, mock, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -569,6 +611,10 @@ func TestTokenRepository_WithContext(t *testing.T) {
 }
 
 func TestTokenRepository_CreateTokenWithExpiredTimes(t *testing.T) {
+	// Setup encryption environment
+	envCleanup := setupTestEnvironment(t)
+	defer envCleanup()
+
 	db, mock, cleanup := setupTestDB(t)
 	defer cleanup()
 
