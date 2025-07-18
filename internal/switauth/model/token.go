@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/innovationmech/swit/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -53,4 +54,52 @@ func (token *Token) BeforeCreate(tx *gorm.DB) (err error) {
 		token.ID = uuid.New()
 	}
 	return
+}
+
+// BeforeSave is a GORM hook, called before saving a record
+// It encrypts the tokens before storing them in the database
+func (token *Token) BeforeSave(tx *gorm.DB) (err error) {
+	// Encrypt access token if it's not already encrypted
+	if token.AccessToken != "" {
+		encrypted, err := utils.EncryptToken(token.AccessToken)
+		if err != nil {
+			return err
+		}
+		token.AccessToken = encrypted
+	}
+	
+	// Encrypt refresh token if it's not already encrypted
+	if token.RefreshToken != "" {
+		encrypted, err := utils.EncryptToken(token.RefreshToken)
+		if err != nil {
+			return err
+		}
+		token.RefreshToken = encrypted
+	}
+	
+	return nil
+}
+
+// AfterFind is a GORM hook, called after loading a record from database
+// It decrypts the tokens after loading them from the database
+func (token *Token) AfterFind(tx *gorm.DB) (err error) {
+	// Decrypt access token
+	if token.AccessToken != "" {
+		decrypted, err := utils.DecryptToken(token.AccessToken)
+		if err != nil {
+			return err
+		}
+		token.AccessToken = decrypted
+	}
+	
+	// Decrypt refresh token
+	if token.RefreshToken != "" {
+		decrypted, err := utils.DecryptToken(token.RefreshToken)
+		if err != nil {
+			return err
+		}
+		token.RefreshToken = decrypted
+	}
+	
+	return nil
 }

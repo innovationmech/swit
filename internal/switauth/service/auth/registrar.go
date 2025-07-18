@@ -32,6 +32,7 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/middleware"
 	"go.uber.org/zap"
 )
 
@@ -70,7 +71,7 @@ func (a *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
 }
 
 // RegisterHTTP implements the ServiceRegistrar interface for HTTP
-// Registers all authentication-related HTTP routes
+// Registers all authentication-related HTTP routes with rate limiting
 func (a *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 	// Create API v1 group
 	v1Group := router.Group("/api/v1")
@@ -78,14 +79,18 @@ func (a *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 	// Register authentication routes
 	authGroup := v1Group.Group("/auth")
 	{
-		authGroup.POST("/login", a.controller.Login)
+		// Apply rate limiting to login and refresh endpoints (most vulnerable to brute force)
+		authGroup.POST("/login", middleware.AuthRateLimitMiddleware(), a.controller.Login)
+		authGroup.POST("/refresh", middleware.AuthRateLimitMiddleware(), a.controller.RefreshToken)
+		
+		// Other endpoints don't need rate limiting as they are less vulnerable
 		authGroup.POST("/logout", a.controller.Logout)
-		authGroup.POST("/refresh", a.controller.RefreshToken)
 		authGroup.GET("/validate", a.controller.ValidateToken)
 	}
 
-	logger.Logger.Info("Registered Authentication HTTP routes",
-		zap.String("base_path", "/api/v1/auth"))
+	logger.Logger.Info("Registered Authentication HTTP routes with rate limiting",
+		zap.String("base_path", "/api/v1/auth"),
+		zap.String("rate_limit", "5 requests/minute for login/refresh"))
 	return nil
 }
 

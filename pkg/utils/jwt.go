@@ -67,6 +67,14 @@ func ValidateRefreshToken(tokenString string) (jwt.MapClaims, error) {
 
 func validateToken(tokenString, tokenType string) (jwt.MapClaims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// Validate the signing method to prevent algorithm confusion attacks
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("invalid signing method")
+		}
+		// Explicitly check for HMAC-SHA256
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected signing method")
+		}
 		return config.JwtSecret, nil
 	})
 
