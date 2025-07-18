@@ -22,6 +22,8 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -29,7 +31,7 @@ import (
 
 var (
 	// JwtSecret contains the secret key used for JWT token signing and verification
-	JwtSecret = []byte("my-256-bit-secret")
+	JwtSecret []byte
 	config    *AuthConfig
 	once      sync.Once
 )
@@ -51,6 +53,20 @@ type AuthConfig struct {
 	ServiceDiscovery struct {
 		Address string `json:"address" yaml:"address"`
 	} `json:"serviceDiscovery" yaml:"serviceDiscovery"`
+}
+
+// InitJwtSecret initializes the JWT secret from environment variable
+// The secret must be at least 32 characters for security
+func InitJwtSecret() error {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return fmt.Errorf("JWT_SECRET environment variable is required")
+	}
+	if len(secret) < 32 {
+		return fmt.Errorf("JWT_SECRET must be at least 32 characters long for security")
+	}
+	JwtSecret = []byte(secret)
+	return nil
 }
 
 // GetConfig returns the singleton instance of AuthConfig
