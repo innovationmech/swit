@@ -109,6 +109,14 @@ func TestNewStartCmd_VersionOutput(t *testing.T) {
 }
 
 func TestInitConfig(t *testing.T) {
+	// Set required environment variables for testing
+	os.Setenv("JWT_SECRET", "test-jwt-secret-key-that-is-32-chars-long")
+	os.Setenv("TOKEN_ENCRYPTION_KEY", "test-token-encryption-key-32-chars")
+	defer func() {
+		os.Unsetenv("JWT_SECRET")
+		os.Unsetenv("TOKEN_ENCRYPTION_KEY")
+	}()
+
 	// Create a temporary config file for testing
 	tempDir := createTempDir(t)
 	defer os.RemoveAll(tempDir)

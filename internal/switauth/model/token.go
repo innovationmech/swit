@@ -53,7 +53,7 @@ func (token *Token) BeforeCreate(tx *gorm.DB) (err error) {
 	if token.ID == uuid.Nil {
 		token.ID = uuid.New()
 	}
-	return token.encryptTokens()
+	return nil
 }
 
 // BeforeSave is a GORM hook, called before saving a record
