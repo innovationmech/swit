@@ -32,6 +32,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	notificationv1 "github.com/innovationmech/swit/internal/switserve/service/notification/v1"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,8 @@ func TestNewServiceRegistrar(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registrar := NewServiceRegistrar()
+			mockService := notificationv1.NewService()
+			registrar := NewServiceRegistrar(mockService)
 
 			assert.NotNil(t, registrar)
 			assert.NotNil(t, registrar.service)
@@ -84,7 +86,8 @@ func TestServiceRegistrar_GetName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registrar := NewServiceRegistrar()
+			mockService := notificationv1.NewService()
+			registrar := NewServiceRegistrar(mockService)
 
 			name := registrar.GetName()
 			assert.Equal(t, tt.expectedName, name)
@@ -107,7 +110,8 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registrar := NewServiceRegistrar()
+			mockService := notificationv1.NewService()
+			registrar := NewServiceRegistrar(mockService)
 			server := grpc.NewServer()
 
 			err := registrar.RegisterGRPC(server)
@@ -136,7 +140,8 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registrar := NewServiceRegistrar()
+			mockService := notificationv1.NewService()
+			registrar := NewServiceRegistrar(mockService)
 			router := gin.New()
 
 			err := registrar.RegisterHTTP(router)
@@ -203,7 +208,8 @@ func TestServiceRegistrar_CreateNotificationHTTP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registrar := NewServiceRegistrar()
+			mockService := notificationv1.NewService()
+			registrar := NewServiceRegistrar(mockService)
 			router := gin.New()
 			registrar.RegisterHTTP(router)
 
@@ -274,7 +280,8 @@ func TestServiceRegistrar_GetNotificationsHTTP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registrar := NewServiceRegistrar()
+			mockService := notificationv1.NewService()
+			registrar := NewServiceRegistrar(mockService)
 			router := gin.New()
 			registrar.RegisterHTTP(router)
 
@@ -307,7 +314,8 @@ func TestServiceRegistrar_GetNotificationsHTTP(t *testing.T) {
 }
 
 func TestServiceRegistrar_MarkAsReadHTTP(t *testing.T) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -375,7 +383,8 @@ func TestServiceRegistrar_MarkAsReadHTTP(t *testing.T) {
 }
 
 func TestServiceRegistrar_DeleteNotificationHTTP(t *testing.T) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -443,7 +452,8 @@ func TestServiceRegistrar_DeleteNotificationHTTP(t *testing.T) {
 }
 
 func TestServiceRegistrar_Integration(t *testing.T) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -505,7 +515,8 @@ func TestServiceRegistrar_Integration(t *testing.T) {
 }
 
 func TestServiceRegistrar_ConcurrentAccess(t *testing.T) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	const numGoroutines = 10
 	results := make([]string, numGoroutines)
@@ -532,7 +543,8 @@ func TestServiceRegistrar_ConcurrentAccess(t *testing.T) {
 
 // Benchmark tests
 func BenchmarkServiceRegistrar_GetName(b *testing.B) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -541,7 +553,8 @@ func BenchmarkServiceRegistrar_GetName(b *testing.B) {
 }
 
 func BenchmarkServiceRegistrar_CreateNotification(b *testing.B) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -551,7 +564,8 @@ func BenchmarkServiceRegistrar_CreateNotification(b *testing.B) {
 }
 
 func BenchmarkServiceRegistrar_RegisterHTTP(b *testing.B) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -561,7 +575,8 @@ func BenchmarkServiceRegistrar_RegisterHTTP(b *testing.B) {
 }
 
 func BenchmarkServiceRegistrar_RegisterGRPC(b *testing.B) {
-	registrar := NewServiceRegistrar()
+	mockService := notificationv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

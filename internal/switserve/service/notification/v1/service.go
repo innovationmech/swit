@@ -43,6 +43,14 @@ type Notification struct {
 	UpdatedAt int64
 }
 
+// NotificationService defines the interface for notification business logic
+type NotificationService interface {
+	CreateNotification(ctx context.Context, userID, title, content string) (*Notification, error)
+	GetNotifications(ctx context.Context, userID string, limit, offset int) ([]*Notification, error)
+	MarkAsRead(ctx context.Context, notificationID string) error
+	DeleteNotification(ctx context.Context, notificationID string) error
+}
+
 // Service implements the notification business logic
 type Service struct {
 	// In-memory storage for demo purposes
@@ -53,7 +61,7 @@ type Service struct {
 }
 
 // NewService creates a new notification service implementation
-func NewService() *Service {
+func NewService() NotificationService {
 	return &Service{
 		notifications: make(map[string]*Notification),
 		userNotifs:    make(map[string][]string),

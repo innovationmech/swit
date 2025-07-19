@@ -39,14 +39,14 @@ type ServiceDiscovery struct {
 
 // NewServiceDiscovery creates a new service discovery client
 func NewServiceDiscovery(address string) (*ServiceDiscovery, error) {
-        config := api.DefaultConfig()
-        // If no address is provided use the default address from the Consul
-        // client configuration. Previously we overwrote the default with an
-        // empty string which caused client creation to fail when tests passed an
-        // empty address expecting the default to be used.
-        if address != "" {
-                config.Address = address
-        }
+	config := api.DefaultConfig()
+	// If no address is provided use the default address from the Consul
+	// client configuration. Previously we overwrote the default with an
+	// empty string which caused client creation to fail when tests passed an
+	// empty address expecting the default to be used.
+	if address != "" {
+		config.Address = address
+	}
 	client, err := api.NewClient(config)
 	if err != nil {
 		return nil, err

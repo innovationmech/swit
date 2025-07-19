@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	greeterv1 "github.com/innovationmech/swit/internal/switserve/service/greeter/v1"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,17 +44,21 @@ func setupTest() {
 func TestNewServiceRegistrar(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	// Create a mock service for testing
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	assert.NotNil(t, registrar)
 	assert.NotNil(t, registrar.service)
 	assert.NotNil(t, registrar.grpcHandler)
+	assert.Equal(t, mockService, registrar.service)
 }
 
 func TestServiceRegistrar_GetName(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	assert.Equal(t, "greeter", registrar.GetName())
 }
@@ -61,7 +66,8 @@ func TestServiceRegistrar_GetName(t *testing.T) {
 func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	server := grpc.NewServer()
 
 	err := registrar.RegisterGRPC(server)
@@ -74,7 +80,8 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)
@@ -96,7 +103,8 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 func TestServiceRegistrar_sayHelloHTTP_Success(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -164,7 +172,8 @@ func TestServiceRegistrar_sayHelloHTTP_Success(t *testing.T) {
 func TestServiceRegistrar_sayHelloHTTP_BadRequest(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -226,7 +235,8 @@ func TestServiceRegistrar_sayHelloHTTP_BadRequest(t *testing.T) {
 func TestServiceRegistrar_sayHelloHTTP_WithoutRequestID(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -260,7 +270,8 @@ func TestServiceRegistrar_sayHelloHTTP_WithoutRequestID(t *testing.T) {
 func TestServiceRegistrar_sayHelloHTTP_ContentTypeVariations(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -318,7 +329,8 @@ func TestServiceRegistrar_sayHelloHTTP_ContentTypeVariations(t *testing.T) {
 func TestServiceRegistrar_sayHelloHTTP_SpecialCharacters(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -376,7 +388,8 @@ func TestServiceRegistrar_sayHelloHTTP_SpecialCharacters(t *testing.T) {
 func TestServiceRegistrar_sayHelloHTTP_ConcurrentRequests(t *testing.T) {
 	setupTest()
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -416,7 +429,8 @@ func TestServiceRegistrar_Integration(t *testing.T) {
 	setupTest()
 
 	// Test that both gRPC and HTTP registration work together
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	// Test gRPC registration
 	grpcServer := grpc.NewServer()
@@ -454,7 +468,8 @@ func BenchmarkServiceRegistrar_sayHelloHTTP(b *testing.B) {
 	logger.InitLogger()
 	gin.SetMode(gin.TestMode)
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 
@@ -477,7 +492,8 @@ func BenchmarkServiceRegistrar_sayHelloHTTP_WithLanguage(b *testing.B) {
 	logger.InitLogger()
 	gin.SetMode(gin.TestMode)
 
-	registrar := NewServiceRegistrar()
+	mockService := greeterv1.NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	registrar.RegisterHTTP(router)
 

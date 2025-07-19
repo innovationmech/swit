@@ -37,7 +37,7 @@ import (
 func TestNewGRPCHandler(t *testing.T) {
 	tests := []struct {
 		name        string
-		service     *Service
+		service     GreeterService
 		description string
 	}{
 		{

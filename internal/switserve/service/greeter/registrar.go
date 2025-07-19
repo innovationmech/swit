@@ -34,12 +34,23 @@ import (
 
 // ServiceRegistrar implements unified service registration
 type ServiceRegistrar struct {
-	service     *v1.Service
+	service     v1.GreeterService
 	grpcHandler *v1.GRPCHandler
 }
 
-// NewServiceRegistrar creates a new service registrar
-func NewServiceRegistrar() *ServiceRegistrar {
+// NewServiceRegistrar creates a new service registrar with dependency injection
+func NewServiceRegistrar(service v1.GreeterService) *ServiceRegistrar {
+	grpcHandler := v1.NewGRPCHandler(service)
+
+	return &ServiceRegistrar{
+		service:     service,
+		grpcHandler: grpcHandler,
+	}
+}
+
+// NewServiceRegistrarLegacy creates a new service registrar using the old pattern.
+// Deprecated: Use NewServiceRegistrar with dependency injection instead.
+func NewServiceRegistrarLegacy() *ServiceRegistrar {
 	service := v1.NewService()
 	grpcHandler := v1.NewGRPCHandler(service)
 

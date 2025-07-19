@@ -32,11 +32,19 @@ import (
 
 // ServiceRegistrar implements unified service registration for server shutdown
 type ServiceRegistrar struct {
-	service *Service
+	service StopService
 }
 
-// NewServiceRegistrar creates a new stop service registrar
-func NewServiceRegistrar(shutdownFunc func()) *ServiceRegistrar {
+// NewServiceRegistrar creates a new stop service registrar with dependency injection
+func NewServiceRegistrar(service StopService) *ServiceRegistrar {
+	return &ServiceRegistrar{
+		service: service,
+	}
+}
+
+// NewServiceRegistrarLegacy creates a new stop service registrar using the old pattern.
+// Deprecated: Use NewServiceRegistrar with dependency injection instead.
+func NewServiceRegistrarLegacy(shutdownFunc func()) *ServiceRegistrar {
 	service := NewService(shutdownFunc)
 
 	return &ServiceRegistrar{

@@ -39,8 +39,20 @@ type ServiceRegistrar struct {
 	userSrv    v1.UserSrv
 }
 
-// NewServiceRegistrar creates a new user service registrar
-func NewServiceRegistrar() *ServiceRegistrar {
+// NewServiceRegistrar creates a new user service registrar with dependency injection
+func NewServiceRegistrar(userSrv v1.UserSrv) *ServiceRegistrar {
+	// Create controller with injected user service
+	controller := v2.NewUserController(userSrv)
+
+	return &ServiceRegistrar{
+		controller: controller,
+		userSrv:    userSrv,
+	}
+}
+
+// NewServiceRegistrarLegacy creates a new user service registrar using the old pattern.
+// Deprecated: Use NewServiceRegistrar with dependency injection instead.
+func NewServiceRegistrarLegacy() *ServiceRegistrar {
 	// Create user service with repository
 	userSrv, err := v1.NewUserSrv(
 		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
@@ -50,8 +62,8 @@ func NewServiceRegistrar() *ServiceRegistrar {
 		return nil
 	}
 
-	// Create controller
-	controller := v2.NewUserController()
+	// Create controller using legacy method
+	controller := v2.NewUserControllerLegacy()
 
 	return &ServiceRegistrar{
 		controller: controller,

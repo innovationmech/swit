@@ -34,8 +34,16 @@ type Controller struct {
 	userSrv v1.UserSrv
 }
 
-// NewUserController creates a new user handler.
-func NewUserController() *Controller {
+// NewUserController creates a new user controller with dependency injection.
+func NewUserController(userSrv v1.UserSrv) *Controller {
+	return &Controller{
+		userSrv: userSrv,
+	}
+}
+
+// NewUserControllerLegacy creates a new user handler using the old pattern.
+// Deprecated: Use NewUserController with dependency injection instead.
+func NewUserControllerLegacy() *Controller {
 	userSrv, err := v1.NewUserSrv(
 		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
 	)

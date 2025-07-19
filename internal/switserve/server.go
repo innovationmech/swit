@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/internal/switserve/config"
+	"github.com/innovationmech/swit/internal/switserve/deps"
 	"github.com/innovationmech/swit/internal/switserve/service/greeter"
 	"github.com/innovationmech/swit/internal/switserve/service/health"
 	"github.com/innovationmech/swit/internal/switserve/service/notification"
@@ -46,6 +47,7 @@ type Server struct {
 	sd               *discovery.ServiceDiscovery
 	httpTransport    *transport.HTTPTransport
 	grpcTransport    *transport.GRPCTransport
+	deps             *deps.Dependencies
 }
 
 // NewServer creates a new server instance
@@ -54,6 +56,18 @@ func NewServer() (*Server, error) {
 		transportManager: transport.NewManager(),
 		serviceRegistry:  transport.NewServiceRegistry(),
 	}
+
+	// Initialize dependencies with shutdown callback
+	dependencies, err := deps.NewDependencies(func() {
+		if err := server.Shutdown(); err != nil {
+			logger.Logger.Error("Failed to shutdown server during dependency cleanup", zap.Error(err))
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize dependencies: %v", err)
+	}
+
+	server.deps = dependencies
 
 	// Setup service discovery
 	cfg := config.GetConfig()
@@ -79,31 +93,25 @@ func NewServer() (*Server, error) {
 
 // registerServices registers all services with both transports
 func (s *Server) registerServices() {
-	// Register Greeter service
-	greeterRegistrar := greeter.NewServiceRegistrar()
+	// Register Greeter service with dependency injection
+	greeterRegistrar := greeter.NewServiceRegistrar(s.deps.GreeterSrv)
 	s.serviceRegistry.Register(greeterRegistrar)
 
-	// Register Notification service
-	notificationRegistrar := notification.NewServiceRegistrar()
+	// Register Notification service with dependency injection
+	notificationRegistrar := notification.NewServiceRegistrar(s.deps.NotificationSrv)
 	s.serviceRegistry.Register(notificationRegistrar)
 
-	// Register Health service
-	healthRegistrar := health.NewServiceRegistrar()
+	// Register Health service with dependency injection
+	healthRegistrar := health.NewServiceRegistrar(s.deps.HealthSrv)
 	s.serviceRegistry.Register(healthRegistrar)
 
-	// Register Stop service
-	stopRegistrar := stop.NewServiceRegistrar(func() {
-		if err := s.Shutdown(); err != nil {
-			logger.Logger.Error("Failed to shutdown server", zap.Error(err))
-		}
-	})
+	// Register Stop service with dependency injection
+	stopRegistrar := stop.NewServiceRegistrar(s.deps.StopSrv)
 	s.serviceRegistry.Register(stopRegistrar)
 
-	// Register User service
-	userRegistrar := user.NewServiceRegistrar()
-	if userRegistrar != nil {
-		s.serviceRegistry.Register(userRegistrar)
-	}
+	// Register User service with dependency injection
+	userRegistrar := user.NewServiceRegistrar(s.deps.UserSrv)
+	s.serviceRegistry.Register(userRegistrar)
 
 	// Register Debug service (needs access to service registry and gin engine)
 	// We'll register this after HTTP transport is created
@@ -179,6 +187,13 @@ func (s *Server) Stop() error {
 
 // Shutdown provides a graceful shutdown method for the stop service
 func (s *Server) Shutdown() error {
+	// Close dependencies before stopping the server
+	if s.deps != nil {
+		if err := s.deps.Close(); err != nil {
+			logger.Logger.Error("Failed to close dependencies", zap.Error(err))
+		}
+	}
+
 	return s.Stop()
 }
 
