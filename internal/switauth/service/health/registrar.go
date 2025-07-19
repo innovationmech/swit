@@ -38,8 +38,16 @@ type ServiceRegistrar struct {
 	service Service
 }
 
-// NewServiceRegistrar creates a new health service registrar
-func NewServiceRegistrar() *ServiceRegistrar {
+// NewServiceRegistrar creates a new health service registrar with dependency injection
+func NewServiceRegistrar(healthSrv Service) *ServiceRegistrar {
+	return &ServiceRegistrar{
+		service: healthSrv,
+	}
+}
+
+// NewServiceRegistrarWithDefaults creates a new health service registrar with default service (legacy)
+// Deprecated: Use NewServiceRegistrar with pre-constructed Service instead
+func NewServiceRegistrarWithDefaults() *ServiceRegistrar {
 	return &ServiceRegistrar{
 		service: NewHealthService(),
 	}

@@ -41,7 +41,8 @@ import (
 )
 
 func TestNewServiceRegistrar(t *testing.T) {
-	registrar := health.NewServiceRegistrar()
+	healthSrv := health.NewHealthService()
+	registrar := health.NewServiceRegistrar(healthSrv)
 	assert.NotNil(t, registrar)
 	assert.Equal(t, "health", registrar.GetName())
 }
@@ -50,7 +51,8 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 	// Initialize logger to prevent nil pointer panic
 	logger.InitLogger()
 
-	registrar := health.NewServiceRegistrar()
+	healthSrv := health.NewHealthService()
+	registrar := health.NewServiceRegistrar(healthSrv)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)
@@ -76,7 +78,8 @@ func TestHealthServiceRegistrar_RegisterHTTP_Detailed(t *testing.T) {
 	// Initialize logger to prevent nil pointer panic
 	logger.InitLogger()
 
-	registrar := health.NewServiceRegistrar()
+	healthSrv := health.NewHealthService()
+	registrar := health.NewServiceRegistrar(healthSrv)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)
@@ -103,7 +106,8 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 	// Initialize logger to prevent nil pointer panic
 	logger.InitLogger()
 
-	registrar := health.NewServiceRegistrar()
+	healthSrv := health.NewHealthService()
+	registrar := health.NewServiceRegistrar(healthSrv)
 
 	// Create test gRPC server
 	lis := bufconn.Listen(1024 * 1024)
@@ -168,7 +172,8 @@ func TestHealthService_GetHealthDetails(t *testing.T) {
 
 func TestHealthServiceIntegration(t *testing.T) {
 	// Test full integration with HTTP server
-	registrar := health.NewServiceRegistrar()
+	healthSrv := health.NewHealthService()
+	registrar := health.NewServiceRegistrar(healthSrv)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)
@@ -194,7 +199,8 @@ func TestHealthServiceIntegration(t *testing.T) {
 }
 
 func TestHealthServiceRegistrar_RegisterHTTP_Routes(t *testing.T) {
-	registrar := health.NewServiceRegistrar()
+	healthSrv := health.NewHealthService()
+	registrar := health.NewServiceRegistrar(healthSrv)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)

@@ -25,10 +25,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/config"
-	"github.com/innovationmech/swit/internal/switauth/db"
-	"github.com/innovationmech/swit/internal/switauth/repository"
+	"github.com/innovationmech/swit/internal/switauth/deps"
 	"github.com/innovationmech/swit/internal/switauth/service/auth"
 	"github.com/innovationmech/swit/internal/switauth/service/health"
 	"github.com/innovationmech/swit/internal/switauth/transport"
@@ -47,12 +45,16 @@ type Server struct {
 	grpcTransport    *transport.GRPCTransport
 	sd               *discovery.ServiceDiscovery
 	config           *config.AuthConfig
+	deps             *deps.Dependencies
 }
 
 // NewServer creates a new server instance with transport manager
 func NewServer() (*Server, error) {
-	// Initialize configuration
-	cfg := config.GetConfig()
+	// Initialize dependencies
+	dependencies, err := deps.NewDependencies()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dependencies: %w", err)
+	}
 
 	// Create transport manager
 	transportManager := transport.NewManager()
@@ -62,11 +64,11 @@ func NewServer() (*Server, error) {
 
 	// Create HTTP transport
 	httpTransport := transport.NewHTTPTransport()
-	httpTransport.SetAddress(":" + cfg.Server.Port)
+	httpTransport.SetAddress(":" + dependencies.Config.Server.Port)
 
 	// Create gRPC transport
 	grpcTransport := transport.NewGRPCTransport()
-	grpcPort := cfg.Server.GRPCPort
+	grpcPort := dependencies.Config.Server.GRPCPort
 	if grpcPort == "" {
 		grpcPort = "50051" // Default fallback
 	}
@@ -76,20 +78,15 @@ func NewServer() (*Server, error) {
 	transportManager.Register(httpTransport)
 	transportManager.Register(grpcTransport)
 
-	// Initialize dependencies
-	sd, err := discovery.GetServiceDiscoveryByAddress(cfg.ServiceDiscovery.Address)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create service discovery client: %w", err)
-	}
-
 	// Create server
 	server := &Server{
 		transportManager: transportManager,
 		serviceRegistry:  serviceRegistry,
 		httpTransport:    httpTransport,
 		grpcTransport:    grpcTransport,
-		sd:               sd,
-		config:           cfg,
+		sd:               dependencies.SD,
+		config:           dependencies.Config,
+		deps:             dependencies,
 	}
 
 	// Register services
@@ -105,19 +102,12 @@ func NewServer() (*Server, error) {
 
 // registerServices registers all services with the service registry
 func (s *Server) registerServices() error {
-	// Initialize dependencies
-	userClient := client.NewUserClient(s.sd)
-	tokenRepo := repository.NewTokenRepository(db.GetDB())
-
-	// Register authentication service
-	authService, err := auth.NewServiceRegistrar(userClient, tokenRepo)
-	if err != nil {
-		return fmt.Errorf("failed to create auth service: %w", err)
-	}
+	// Register authentication service using dependency injection
+	authService := auth.NewServiceRegistrar(s.deps.AuthSrv)
 	s.serviceRegistry.Register(authService)
 
-	// Register health service
-	healthService := health.NewServiceRegistrar()
+	// Register health service using dependency injection
+	healthService := health.NewServiceRegistrar(s.deps.HealthSrv)
 	s.serviceRegistry.Register(healthService)
 
 	logger.Logger.Info("All services registered successfully",
