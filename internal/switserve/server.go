@@ -166,19 +166,23 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) Stop() error {
 	shutdownTimeout := 5 * time.Second
 
-	// Deregister from service discovery
-	cfg := config.GetConfig()
-	port, _ := strconv.Atoi(cfg.Server.Port)
-	if err := s.sd.DeregisterService("swit-serve", "localhost", port); err != nil {
-		logger.Logger.Error("Deregister service error", zap.Error(err))
-	} else {
-		logger.Logger.Info("Service deregistered successfully", zap.String("service", "swit-serve"))
+	// Deregister from service discovery if available
+	if s.sd != nil {
+		cfg := config.GetConfig()
+		port, _ := strconv.Atoi(cfg.Server.Port)
+		if err := s.sd.DeregisterService("swit-serve", "localhost", port); err != nil {
+			logger.Logger.Error("Deregister service error", zap.Error(err))
+		} else {
+			logger.Logger.Info("Service deregistered successfully", zap.String("service", "swit-serve"))
+		}
 	}
 
-	// Stop all transports
-	if err := s.transportManager.Stop(shutdownTimeout); err != nil {
-		logger.Logger.Error("Failed to stop transports", zap.Error(err))
-		return err
+	// Stop all transports if available
+	if s.transportManager != nil {
+		if err := s.transportManager.Stop(shutdownTimeout); err != nil {
+			logger.Logger.Error("Failed to stop transports", zap.Error(err))
+			return err
+		}
 	}
 
 	logger.Logger.Info("Server stopped successfully")

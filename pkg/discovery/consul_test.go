@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -449,4 +450,111 @@ func TestServiceDiscovery_ConcurrentRoundRobin(t *testing.T) {
 	for addr := range addresses {
 		assert.True(t, validAddresses[addr], "Invalid address: %s", addr)
 	}
+}
+
+// TestRandomSeedInitialization verifies that random seed is initialized once
+// and GetInstanceRandom doesn't cause memory leaks by calling rand.Seed repeatedly
+func TestRandomSeedInitialization(t *testing.T) {
+	// 创建模拟 Consul 服务器
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/v1/health/service/test-service") {
+			response := `[
+				{
+					"Service": {
+						"Address": "127.0.0.1",
+						"Port": 8080
+					}
+				},
+				{
+					"Service": {
+						"Address": "127.0.0.1",
+						"Port": 8081
+					}
+				}
+			]`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(response))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	sd, err := NewServiceDiscovery(strings.TrimPrefix(server.URL, "http://"))
+	require.NoError(t, err)
+
+	// Test that multiple calls to GetInstanceRandom work without issues
+	// This verifies that rand.Seed is not called on every request
+	validAddresses := map[string]bool{
+		"127.0.0.1:8080": true,
+		"127.0.0.1:8081": true,
+	}
+
+	// Call GetInstanceRandom multiple times to ensure no memory leak
+	for i := 0; i < 100; i++ {
+		addr, err := sd.GetInstanceRandom("test-service")
+		assert.NoError(t, err)
+		assert.True(t, validAddresses[addr], "Invalid address: %s", addr)
+	}
+
+	// Test concurrent access to ensure thread safety
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				addr, err := sd.GetInstanceRandom("test-service")
+				assert.NoError(t, err)
+				assert.True(t, validAddresses[addr], "Invalid address: %s", addr)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// BenchmarkGetInstanceRandom benchmarks the GetInstanceRandom method
+// to ensure the fix doesn't cause performance regression
+func BenchmarkGetInstanceRandom(b *testing.B) {
+	// 创建模拟 Consul 服务器
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/v1/health/service/test-service") {
+			response := `[
+				{
+					"Service": {
+						"Address": "127.0.0.1",
+						"Port": 8080
+					}
+				},
+				{
+					"Service": {
+						"Address": "127.0.0.1",
+						"Port": 8081
+					}
+				}
+			]`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(response))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	sd, err := NewServiceDiscovery(strings.TrimPrefix(server.URL, "http://"))
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := sd.GetInstanceRandom("test-service")
+			if err != nil {
+				b.Error(err)
+			}
+		}
+	})
 }

@@ -92,9 +92,16 @@ func NewDependencies(shutdownFunc func()) (*Dependencies, error) {
 
 // Close gracefully closes all dependencies
 func (d *Dependencies) Close() error {
-	// Close database connections and other resources if needed
-	if sqlDB, err := d.DB.DB(); err == nil {
-		return sqlDB.Close()
+	// Check if database is nil
+	if d.DB == nil {
+		return nil // Nothing to close
 	}
-	return nil
+
+	// Close database connections and other resources if needed
+	sqlDB, err := d.DB.DB()
+	if err != nil {
+		return err // Return error from d.DB.DB()
+	}
+
+	return sqlDB.Close()
 }

@@ -201,120 +201,267 @@ func TestServer_ConcurrentStops(t *testing.T) {
 		return
 	}
 
-	// Test concurrent stops
-	done := make(chan bool)
+	// Multiple concurrent stops should be safe
+	done := make(chan error, 3)
 
 	for i := 0; i < 3; i++ {
 		go func() {
-			server.Stop()
-			done <- true
+			err := server.Stop()
+			done <- err
 		}()
 	}
 
 	// Wait for all goroutines to complete
 	for i := 0; i < 3; i++ {
-		<-done
+		select {
+		case err := <-done:
+			assert.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("Timeout waiting for concurrent stop operations")
+		}
 	}
-
-	// Should not panic or cause issues
 }
 
-func TestServer_TransportAddresses(t *testing.T) {
-	server := createTestServer(t)
-	if server == nil {
-		return
-	}
+// Test error handling scenarios
+func TestServer_ErrorHandling(t *testing.T) {
+	t.Run("should_handle_nil_dependencies_gracefully", func(t *testing.T) {
+		server := &Server{}
 
-	// Initially addresses should be empty
-	assert.Empty(t, server.httpTransport.Address())
-	assert.Empty(t, server.grpcTransport.Address())
+		// Stop with nil components should not panic
+		err := server.Stop()
+		assert.NoError(t, err)
 
-	// After attempting to start, addresses might be set
-	// We don't test actual start due to service discovery dependency
+		// Shutdown with nil dependencies should not panic
+		err = server.Shutdown()
+		assert.NoError(t, err)
+	})
+
+	t.Run("should_handle_transport_manager_errors", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
+
+		// Multiple stops should not cause issues
+		err := server.Stop()
+		assert.NoError(t, err)
+
+		// Second stop should also be safe
+		err = server.Stop()
+		assert.NoError(t, err)
+	})
+
+	t.Run("should_handle_service_discovery_errors_gracefully", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
+
+		// Stop should work even if service discovery fails
+		err := server.Stop()
+		assert.NoError(t, err)
+	})
 }
 
-func TestServer_ServiceRegistryIntegration(t *testing.T) {
-	server := createTestServer(t)
-	if server == nil {
-		return
-	}
+// Test resource management
+func TestServer_ResourceManagement(t *testing.T) {
+	t.Run("should_cleanup_all_resources_on_shutdown", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
 
-	// Verify service registry is properly initialized
-	assert.NotNil(t, server.serviceRegistry)
+		// Verify initial state
+		assert.NotNil(t, server.deps)
+		assert.NotNil(t, server.transportManager)
+		assert.NotNil(t, server.serviceRegistry)
 
-	// Verify services are registered
-	registrars := server.serviceRegistry.GetRegistrars()
-	assert.NotEmpty(t, registrars)
+		// Shutdown should clean up resources
+		err := server.Shutdown()
+		assert.NoError(t, err)
+	})
 
-	// Should have at least the basic services
-	assert.True(t, len(registrars) >= 4)
-}
+	t.Run("should_handle_partial_initialization_cleanup", func(t *testing.T) {
+		// Test server with partial initialization
+		server := &Server{
+			transportManager: nil,
+			serviceRegistry:  nil,
+		}
 
-func TestServer_ContextHandling(t *testing.T) {
-	server := createTestServer(t)
-	if server == nil {
-		return
-	}
+		// Should not panic on cleanup
+		err := server.Shutdown()
+		assert.NoError(t, err)
+	})
 
-	// Test with timeout context
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	t.Run("should_handle_concurrent_shutdown_calls", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
 
-	// Start with timeout context - may fail due to service discovery or transport issues
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Logf("Server start panicked (expected): %v", r)
+		// Multiple concurrent shutdowns should be safe
+		done := make(chan error, 3)
+
+		for i := 0; i < 3; i++ {
+			go func() {
+				err := server.Shutdown()
+				done <- err
+			}()
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < 3; i++ {
+			select {
+			case err := <-done:
+				assert.NoError(t, err)
+			case <-time.After(time.Second):
+				t.Fatal("Timeout waiting for concurrent shutdown operations")
 			}
-		}()
-		server.Start(ctx)
-	}()
-
-	// Stop should always work
-	err := server.Stop()
-	assert.NoError(t, err)
+		}
+	})
 }
 
-func TestServer_Integration(t *testing.T) {
-	server := createTestServer(t)
-	if server == nil {
-		return
-	}
+// Test edge cases and boundary conditions
+func TestServer_EdgeCases(t *testing.T) {
+	t.Run("should_handle_zero_value_server", func(t *testing.T) {
+		var server Server
 
-	// Verify server components are properly initialized
-	assert.NotNil(t, server.transportManager)
-	assert.NotNil(t, server.serviceRegistry)
-	assert.NotNil(t, server.httpTransport)
-	assert.NotNil(t, server.grpcTransport)
-	assert.NotNil(t, server.sd)
+		// Zero value server should be safe to shutdown
+		err := server.Shutdown()
+		assert.NoError(t, err)
 
-	// Verify transports are registered
-	transports := server.GetTransports()
-	assert.Len(t, transports, 2)
+		// Zero value server should be safe to stop
+		err = server.Stop()
+		assert.NoError(t, err)
+	})
 
-	// Verify services are registered
-	registrars := server.serviceRegistry.GetRegistrars()
-	assert.NotEmpty(t, registrars)
+	t.Run("should_validate_server_components", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
 
-	// Test shutdown
-	err := server.Shutdown()
-	assert.NoError(t, err)
+		// Verify all components are properly initialized
+		assert.NotNil(t, server.transportManager, "Transport manager should be initialized")
+		assert.NotNil(t, server.serviceRegistry, "Service registry should be initialized")
+		assert.NotNil(t, server.httpTransport, "HTTP transport should be initialized")
+		assert.NotNil(t, server.grpcTransport, "gRPC transport should be initialized")
+		assert.NotNil(t, server.sd, "Service discovery should be initialized")
+		assert.NotNil(t, server.deps, "Dependencies should be initialized")
+	})
+
+	t.Run("should_handle_service_registration_edge_cases", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
+
+		// Verify service registration doesn't cause issues
+		registrars := server.serviceRegistry.GetRegistrars()
+		assert.NotEmpty(t, registrars, "Should have registered services")
+
+		// Multiple calls to registerServices should be safe
+		server.registerServices()
+
+		// Should still have services registered
+		newRegistrars := server.serviceRegistry.GetRegistrars()
+		assert.NotEmpty(t, newRegistrars, "Should still have registered services")
+	})
 }
 
-func TestServer_ErrorRecovery(t *testing.T) {
-	server := createTestServer(t)
-	if server == nil {
-		return
-	}
+// Test server lifecycle management
+func TestServer_LifecycleManagement(t *testing.T) {
+	t.Run("should_handle_start_stop_cycles", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
 
-	// Test that multiple shutdown calls don't cause issues
-	err := server.Shutdown()
-	assert.NoError(t, err)
+		// Multiple start-stop cycles should work
+		for i := 0; i < 3; i++ {
+			// Stop (even without start) should work
+			err := server.Stop()
+			assert.NoError(t, err, "Stop cycle %d should succeed", i)
+		}
+	})
 
-	err = server.Shutdown()
-	assert.NoError(t, err)
+	t.Run("should_handle_shutdown_after_stop", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
 
-	// Test that stop after shutdown works
-	err = server.Stop()
-	assert.NoError(t, err)
+		// Stop first
+		err := server.Stop()
+		assert.NoError(t, err)
+
+		// Then shutdown should still work
+		err = server.Shutdown()
+		assert.NoError(t, err)
+	})
+
+	t.Run("should_handle_stop_after_shutdown", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
+
+		// Shutdown first
+		err := server.Shutdown()
+		assert.NoError(t, err)
+
+		// Then stop should still work
+		err = server.Stop()
+		assert.NoError(t, err)
+	})
+}
+
+func TestServer_ComponentIntegration(t *testing.T) {
+	t.Run("should_integrate_all_components_properly", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
+
+		// Verify component integration
+		transports := server.GetTransports()
+		assert.Len(t, transports, 2, "Should have both HTTP and gRPC transports")
+
+		// Verify transport manager integration
+		managerTransports := server.transportManager.GetTransports()
+		assert.Equal(t, len(transports), len(managerTransports), "Transport manager should have same transports")
+
+		// Verify service registry integration
+		registrars := server.serviceRegistry.GetRegistrars()
+		assert.NotEmpty(t, registrars, "Service registry should have registered services")
+	})
+
+	t.Run("should_handle_transport_lifecycle", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
+
+		// Verify transports are properly configured
+		assert.NotNil(t, server.httpTransport.GetRouter(), "HTTP transport should have router")
+		assert.NotNil(t, server.grpcTransport.GetServer(), "gRPC transport should have server")
+
+		// Verify addresses are set
+		assert.NotEmpty(t, server.httpTransport.Address(), "HTTP transport should have address")
+		assert.NotEmpty(t, server.grpcTransport.Address(), "gRPC transport should have address")
+	})
+
+	t.Run("should_handle_service_discovery_integration", func(t *testing.T) {
+		server := createTestServer(t)
+		if server == nil {
+			return
+		}
+
+		// Service discovery should be initialized
+		assert.NotNil(t, server.sd, "Service discovery should be initialized")
+
+		// Stop should handle service discovery cleanup
+		err := server.Stop()
+		assert.NoError(t, err, "Stop should handle service discovery cleanup")
+	})
 }

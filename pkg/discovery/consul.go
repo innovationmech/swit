@@ -30,6 +30,11 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
+// Initialize random seed once at package level
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 // ServiceDiscovery handles service discovery using Consul
 type ServiceDiscovery struct {
 	client          *api.Client
@@ -105,7 +110,6 @@ func (sd *ServiceDiscovery) GetInstanceRandom(name string) (string, error) {
 		return "", fmt.Errorf("no healthy service instances found: %s", name)
 	}
 
-	rand.Seed(time.Now().UnixNano())
 	idx := rand.Intn(len(services))
 	service := services[idx].Service
 	return fmt.Sprintf("%s:%d", service.Address, service.Port), nil

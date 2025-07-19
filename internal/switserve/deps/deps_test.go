@@ -199,6 +199,115 @@ func TestNewDependencies_ErrorScenarios(t *testing.T) {
 	})
 }
 
+// Test error handling and resource management
+func TestDependencies_ErrorHandling(t *testing.T) {
+	t.Run("should_handle_database_connection_errors", func(t *testing.T) {
+		// Test that ErrDatabaseConnection is properly defined
+		assert.NotNil(t, ErrDatabaseConnection)
+		assert.Contains(t, ErrDatabaseConnection.Error(), "database connection")
+	})
+
+	t.Run("should_handle_service_initialization_errors", func(t *testing.T) {
+		// Test that ErrServiceInitialization is properly defined
+		assert.NotNil(t, ErrServiceInitialization)
+		assert.Contains(t, ErrServiceInitialization.Error(), "service")
+	})
+}
+
+// Test resource cleanup scenarios
+func TestDependencies_ResourceCleanup(t *testing.T) {
+	t.Run("should_cleanup_resources_on_failure", func(t *testing.T) {
+		// Test that partial initialization doesn't leak resources
+		deps := &Dependencies{}
+
+		// Simulate partial initialization
+		mockRepo := &MockUserRepository{}
+		deps.UserRepo = mockRepo
+
+		// Close should handle partial state gracefully
+		err := deps.Close()
+		assert.NoError(t, err)
+	})
+
+	t.Run("should_handle_concurrent_close_calls", func(t *testing.T) {
+		deps := &Dependencies{}
+
+		// Multiple concurrent close calls should be safe
+		done := make(chan bool, 3)
+
+		for i := 0; i < 3; i++ {
+			go func() {
+				err := deps.Close()
+				assert.NoError(t, err)
+				done <- true
+			}()
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < 3; i++ {
+			select {
+			case <-done:
+				// Success
+			case <-time.After(time.Second):
+				t.Fatal("Timeout waiting for concurrent close operations")
+			}
+		}
+	})
+}
+
+// Test edge cases and boundary conditions
+func TestDependencies_EdgeCases(t *testing.T) {
+	t.Run("should_handle_zero_value_dependencies", func(t *testing.T) {
+		var deps Dependencies
+
+		// Zero value should be safe to close
+		err := deps.Close()
+		assert.NoError(t, err)
+	})
+
+	t.Run("should_validate_dependency_interfaces", func(t *testing.T) {
+		// Ensure all mock implementations satisfy their interfaces
+		var _ repository.UserRepository = (*MockUserRepository)(nil)
+		var _ userv1.UserSrv = (*MockUserSrv)(nil)
+		var _ greeterv1.GreeterService = (*MockGreeterService)(nil)
+		var _ notificationv1.NotificationService = (*MockNotificationService)(nil)
+		var _ health.HealthService = (*MockHealthService)(nil)
+		var _ stop.StopService = (*MockStopService)(nil)
+	})
+
+	t.Run("should_handle_service_dependency_chains", func(t *testing.T) {
+		// Test that services can depend on each other properly
+		mockRepo := &MockUserRepository{}
+		mockUserSrv := &MockUserSrv{}
+
+		deps := &Dependencies{
+			UserRepo: mockRepo,
+			UserSrv:  mockUserSrv,
+		}
+
+		// Verify dependency chain is established
+		assert.NotNil(t, deps.UserRepo)
+		assert.NotNil(t, deps.UserSrv)
+
+		// Services should be able to interact
+		ctx := context.Background()
+		user := &model.User{Username: "testuser", Email: "test@example.com"}
+
+		mockRepo.On("CreateUser", ctx, user).Return(nil)
+		mockUserSrv.On("CreateUser", ctx, user).Return(nil)
+
+		// Both should work independently
+		err := deps.UserRepo.CreateUser(ctx, user)
+		assert.NoError(t, err)
+
+		err = deps.UserSrv.CreateUser(ctx, user)
+		assert.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+		mockUserSrv.AssertExpectations(t)
+	})
+}
+
 // Test Dependencies mock integration
 func TestDependencies_MockIntegration(t *testing.T) {
 	t.Run("UserRepository_mock_functionality", func(t *testing.T) {
@@ -487,16 +596,21 @@ func TestDependencies_Validation(t *testing.T) {
 
 // Test Dependencies Close method
 func TestDependencies_Close(t *testing.T) {
-	t.Run("should_handle_close_gracefully", func(t *testing.T) {
-		// This test is skipped because it requires a real database connection
-		// to properly test the Close method functionality
-		t.Skip("Requires real database connection to test Close method")
+	t.Run("should_handle_nil_db_gracefully", func(t *testing.T) {
+		deps := &Dependencies{}
+
+		// Close should not panic with nil DB and should return nil
+		assert.NotPanics(t, func() {
+			err := deps.Close()
+			assert.NoError(t, err, "Close should return nil when DB is nil")
+		})
 	})
 
-	t.Run("should_handle_nil_db_gracefully", func(t *testing.T) {
-		// This test is skipped because the Close method implementation
-		// doesn't handle nil DB gracefully and would panic
-		t.Skip("Close method doesn't handle nil DB gracefully")
+	t.Run("should_return_error_when_db_connection_fails", func(t *testing.T) {
+		// This test is skipped because properly testing gorm.DB error scenarios
+		// requires complex mocking that's beyond the scope of unit tests
+		// The fix ensures errors are properly returned instead of silently ignored
+		t.Skip("Requires complex gorm.DB mocking to test error scenarios")
 	})
 }
 
