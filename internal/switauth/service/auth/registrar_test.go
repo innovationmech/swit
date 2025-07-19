@@ -90,8 +90,15 @@ func TestNewServiceRegistrar(t *testing.T) {
 	mockUserClient := new(MockUserClient)
 	mockTokenRepo := new(MockTokenRepository)
 
-	registrar, err := auth.NewServiceRegistrar(mockUserClient, mockTokenRepo)
+	// Create auth service with mocks
+	authSrv, err := v1.NewAuthSrv(
+		v1.WithUserClient(mockUserClient),
+		v1.WithTokenRepository(mockTokenRepo),
+	)
 	assert.NoError(t, err)
+
+	// Create registrar with auth service
+	registrar := auth.NewServiceRegistrar(authSrv)
 	assert.NotNil(t, registrar)
 	assert.Equal(t, "auth", registrar.GetName())
 }
@@ -102,8 +109,16 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 
 	mockUserClient := new(MockUserClient)
 	mockTokenRepo := new(MockTokenRepository)
-	registrar, err := auth.NewServiceRegistrar(mockUserClient, mockTokenRepo)
+
+	// Create auth service with mocks
+	authSrv, err := v1.NewAuthSrv(
+		v1.WithUserClient(mockUserClient),
+		v1.WithTokenRepository(mockTokenRepo),
+	)
 	assert.NoError(t, err)
+
+	// Create registrar with auth service
+	registrar := auth.NewServiceRegistrar(authSrv)
 
 	router := gin.New()
 	httpErr := registrar.RegisterHTTP(router)
@@ -131,8 +146,16 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 
 	mockUserClient := new(MockUserClient)
 	mockTokenRepo := new(MockTokenRepository)
-	registrar, err := auth.NewServiceRegistrar(mockUserClient, mockTokenRepo)
+
+	// Create auth service with mocks
+	authSrv, err := v1.NewAuthSrv(
+		v1.WithUserClient(mockUserClient),
+		v1.WithTokenRepository(mockTokenRepo),
+	)
 	assert.NoError(t, err)
+
+	// Create registrar with auth service
+	registrar := auth.NewServiceRegistrar(authSrv)
 
 	server := grpc.NewServer()
 	grpcErr := registrar.RegisterGRPC(server)
@@ -145,8 +168,16 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 func TestServiceRegistrar_GetService(t *testing.T) {
 	mockUserClient := new(MockUserClient)
 	mockTokenRepo := new(MockTokenRepository)
-	registrar, err := auth.NewServiceRegistrar(mockUserClient, mockTokenRepo)
+
+	// Create auth service with mocks
+	authSrv, err := v1.NewAuthSrv(
+		v1.WithUserClient(mockUserClient),
+		v1.WithTokenRepository(mockTokenRepo),
+	)
 	assert.NoError(t, err)
+
+	// Create registrar with auth service
+	registrar := auth.NewServiceRegistrar(authSrv)
 
 	service := registrar.GetService()
 	assert.NotNil(t, service)
@@ -427,8 +458,16 @@ func TestHTTPHandler_Login_Route(t *testing.T) {
 func TestHTTPHandler_RegisterRoutes(t *testing.T) {
 	mockUserClient := new(MockUserClient)
 	mockTokenRepo := new(MockTokenRepository)
-	registrar, err := auth.NewServiceRegistrar(mockUserClient, mockTokenRepo)
+
+	// Create auth service with mocks
+	authSrv, err := v1.NewAuthSrv(
+		v1.WithUserClient(mockUserClient),
+		v1.WithTokenRepository(mockTokenRepo),
+	)
 	assert.NoError(t, err)
+
+	// Create registrar with auth service
+	registrar := auth.NewServiceRegistrar(authSrv)
 
 	router := gin.New()
 	httpErr := registrar.RegisterHTTP(router)

@@ -30,6 +30,11 @@ import (
 	"github.com/hashicorp/consul/api"
 )
 
+// Initialize random seed once at package level
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 // ServiceDiscovery handles service discovery using Consul
 type ServiceDiscovery struct {
 	client          *api.Client
@@ -39,14 +44,14 @@ type ServiceDiscovery struct {
 
 // NewServiceDiscovery creates a new service discovery client
 func NewServiceDiscovery(address string) (*ServiceDiscovery, error) {
-        config := api.DefaultConfig()
-        // If no address is provided use the default address from the Consul
-        // client configuration. Previously we overwrote the default with an
-        // empty string which caused client creation to fail when tests passed an
-        // empty address expecting the default to be used.
-        if address != "" {
-                config.Address = address
-        }
+	config := api.DefaultConfig()
+	// If no address is provided use the default address from the Consul
+	// client configuration. Previously we overwrote the default with an
+	// empty string which caused client creation to fail when tests passed an
+	// empty address expecting the default to be used.
+	if address != "" {
+		config.Address = address
+	}
 	client, err := api.NewClient(config)
 	if err != nil {
 		return nil, err
@@ -105,7 +110,6 @@ func (sd *ServiceDiscovery) GetInstanceRandom(name string) (string, error) {
 		return "", fmt.Errorf("no healthy service instances found: %s", name)
 	}
 
-	rand.Seed(time.Now().UnixNano())
 	idx := rand.Intn(len(services))
 	service := services[idx].Service
 	return fmt.Sprintf("%s:%d", service.Address, service.Port), nil

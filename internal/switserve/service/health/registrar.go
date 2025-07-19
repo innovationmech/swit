@@ -32,11 +32,19 @@ import (
 
 // ServiceRegistrar implements unified service registration for health checks
 type ServiceRegistrar struct {
-	service *Service
+	service HealthService
 }
 
-// NewServiceRegistrar creates a new health service registrar
-func NewServiceRegistrar() *ServiceRegistrar {
+// NewServiceRegistrar creates a new health service registrar with dependency injection
+func NewServiceRegistrar(service HealthService) *ServiceRegistrar {
+	return &ServiceRegistrar{
+		service: service,
+	}
+}
+
+// NewServiceRegistrarLegacy creates a new health service registrar using the old pattern.
+// Deprecated: Use NewServiceRegistrar with dependency injection instead.
+func NewServiceRegistrarLegacy() *ServiceRegistrar {
 	service := NewService()
 
 	return &ServiceRegistrar{

@@ -42,7 +42,8 @@ func TestNewServiceRegistrar(t *testing.T) {
 		shutdownCalled = true
 	}
 
-	registrar := NewServiceRegistrar(shutdownFunc)
+	mockService := NewService(shutdownFunc)
+	registrar := NewServiceRegistrar(mockService)
 
 	assert.NotNil(t, registrar)
 	assert.NotNil(t, registrar.service)
@@ -51,7 +52,8 @@ func TestNewServiceRegistrar(t *testing.T) {
 }
 
 func TestServiceRegistrar_GetName(t *testing.T) {
-	registrar := NewServiceRegistrar(func() {})
+	mockService := NewService(func() {})
+	registrar := NewServiceRegistrar(mockService)
 
 	name := registrar.GetName()
 
@@ -61,7 +63,8 @@ func TestServiceRegistrar_GetName(t *testing.T) {
 func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 	logger.Logger = zap.NewNop()
 
-	registrar := NewServiceRegistrar(func() {})
+	mockService := NewService(func() {})
+	registrar := NewServiceRegistrar(mockService)
 	server := grpc.NewServer()
 
 	err := registrar.RegisterGRPC(server)
@@ -72,7 +75,8 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 	logger.Logger = zap.NewNop()
 
-	registrar := NewServiceRegistrar(func() {})
+	mockService := NewService(func() {})
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)
@@ -88,7 +92,8 @@ func TestServiceRegistrar_stopServerHTTP_Success(t *testing.T) {
 		atomic.StoreInt32(&shutdownCalled, 1)
 	}
 
-	registrar := NewServiceRegistrar(shutdownFunc)
+	mockService := NewService(shutdownFunc)
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	router.POST("/stop", registrar.stopServerHTTP)
 
@@ -109,7 +114,8 @@ func TestServiceRegistrar_stopServerHTTP_Success(t *testing.T) {
 func TestServiceRegistrar_stopServerHTTP_NilShutdownFunc(t *testing.T) {
 	logger.Logger = zap.NewNop()
 
-	registrar := NewServiceRegistrar(nil)
+	mockService := NewService(nil)
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	router.POST("/stop", registrar.stopServerHTTP)
 
@@ -131,7 +137,8 @@ func TestServiceRegistrar_stopServerHTTP_Integration(t *testing.T) {
 		atomic.StoreInt32(&shutdownCalled, 1)
 	}
 
-	registrar := NewServiceRegistrar(shutdownFunc)
+	mockService := NewService(shutdownFunc)
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)

@@ -38,11 +38,11 @@ import (
 // GreeterHandler handles gRPC requests for Greeter service
 type GreeterHandler struct {
 	greeterv1.UnimplementedGreeterServiceServer
-	service *greeterv1svc.Service
+	service greeterv1svc.GreeterService
 }
 
 // NewGreeterHandler creates a new GreeterHandler
-func NewGreeterHandler(svc *greeterv1svc.Service) *GreeterHandler {
+func NewGreeterHandler(svc greeterv1svc.GreeterService) *GreeterHandler {
 	return &GreeterHandler{
 		service: svc,
 	}

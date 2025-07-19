@@ -35,7 +35,8 @@ import (
 )
 
 func TestNewServiceRegistrar(t *testing.T) {
-	registrar := NewServiceRegistrar()
+	mockService := NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	assert.NotNil(t, registrar)
 	assert.NotNil(t, registrar.service)
@@ -43,7 +44,8 @@ func TestNewServiceRegistrar(t *testing.T) {
 }
 
 func TestServiceRegistrar_GetName(t *testing.T) {
-	registrar := NewServiceRegistrar()
+	mockService := NewService()
+	registrar := NewServiceRegistrar(mockService)
 
 	name := registrar.GetName()
 
@@ -53,7 +55,8 @@ func TestServiceRegistrar_GetName(t *testing.T) {
 func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 	logger.Logger = zap.NewNop()
 
-	registrar := NewServiceRegistrar()
+	mockService := NewService()
+	registrar := NewServiceRegistrar(mockService)
 	server := grpc.NewServer()
 
 	err := registrar.RegisterGRPC(server)
@@ -64,7 +67,8 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 	logger.Logger = zap.NewNop()
 
-	registrar := NewServiceRegistrar()
+	mockService := NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)
@@ -73,7 +77,8 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 }
 
 func TestServiceRegistrar_healthCheckHTTP_Success(t *testing.T) {
-	registrar := NewServiceRegistrar()
+	mockService := NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 	router.GET("/health", registrar.healthCheckHTTP)
 
@@ -90,7 +95,8 @@ func TestServiceRegistrar_healthCheckHTTP_Success(t *testing.T) {
 func TestServiceRegistrar_healthCheckHTTP_Integration(t *testing.T) {
 	logger.Logger = zap.NewNop()
 
-	registrar := NewServiceRegistrar()
+	mockService := NewService()
+	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
 
 	err := registrar.RegisterHTTP(router)

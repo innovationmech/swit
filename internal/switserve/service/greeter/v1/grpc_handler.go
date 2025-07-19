@@ -36,11 +36,11 @@ import (
 // GRPCHandler implements the gRPC server interface using business logic
 type GRPCHandler struct {
 	greeterv1.UnimplementedGreeterServiceServer
-	service *Service
+	service GreeterService
 }
 
 // NewGRPCHandler creates a new gRPC handler with business logic service
-func NewGRPCHandler(service *Service) *GRPCHandler {
+func NewGRPCHandler(service GreeterService) *GRPCHandler {
 	return &GRPCHandler{
 		service: service,
 	}

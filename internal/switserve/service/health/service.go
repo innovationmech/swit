@@ -33,13 +33,18 @@ type Status struct {
 	Details   map[string]string `json:"details,omitempty"`
 }
 
+// HealthService defines the interface for health check business logic
+type HealthService interface {
+	CheckHealth(ctx context.Context) (*Status, error)
+}
+
 // Service implements health check business logic
 type Service struct {
 	// Add dependencies here (database, external services, etc.)
 }
 
 // NewService creates a new health service instance
-func NewService() *Service {
+func NewService() HealthService {
 	return &Service{}
 }
 

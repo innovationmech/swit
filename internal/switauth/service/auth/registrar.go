@@ -42,8 +42,19 @@ type ServiceRegistrar struct {
 	controller *v1handler.Controller
 }
 
-// NewServiceRegistrar creates a new authentication service registrar
-func NewServiceRegistrar(userClient client.UserClient, tokenRepo repository.TokenRepository) (*ServiceRegistrar, error) {
+// NewServiceRegistrar creates a new authentication service registrar with dependency injection
+func NewServiceRegistrar(authSrv v1.AuthSrv) *ServiceRegistrar {
+	controller := v1handler.NewAuthController(authSrv)
+
+	return &ServiceRegistrar{
+		service:    authSrv,
+		controller: controller,
+	}
+}
+
+// NewServiceRegistrarWithDeps creates a new authentication service registrar with dependencies (legacy)
+// Deprecated: Use NewServiceRegistrar with pre-constructed AuthSrv instead
+func NewServiceRegistrarWithDeps(userClient client.UserClient, tokenRepo repository.TokenRepository) (*ServiceRegistrar, error) {
 	service, err := v1.NewAuthSrv(
 		v1.WithUserClient(userClient),
 		v1.WithTokenRepository(tokenRepo),

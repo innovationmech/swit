@@ -30,13 +30,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// GreeterService defines the interface for greeter business logic
+type GreeterService interface {
+	GenerateGreeting(ctx context.Context, name, language string) (string, error)
+}
+
 // Service implements the greeter business logic
 type Service struct {
 	// Add dependencies here if needed (e.g., repositories, external services)
 }
 
 // NewService creates a new greeter service implementation
-func NewService() *Service {
+func NewService() GreeterService {
 	return &Service{}
 }
 

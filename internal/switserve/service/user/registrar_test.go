@@ -22,14 +22,42 @@
 package user
 
 import (
+	"context"
 	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/model"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
 )
+
+// MockUserSrv is a mock implementation of UserSrv for testing
+type MockUserSrv struct {
+	mock.Mock
+}
+
+func (m *MockUserSrv) CreateUser(ctx context.Context, user *model.User) error {
+	args := m.Called(ctx, user)
+	return args.Error(0)
+}
+
+func (m *MockUserSrv) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
+	args := m.Called(ctx, username)
+	return args.Get(0).(*model.User), args.Error(1)
+}
+
+func (m *MockUserSrv) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	args := m.Called(ctx, email)
+	return args.Get(0).(*model.User), args.Error(1)
+}
+
+func (m *MockUserSrv) DeleteUser(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
 
 func setupTest() {
 	logger.InitLogger()
@@ -58,24 +86,17 @@ func TestNewServiceRegistrar(t *testing.T) {
 			// This test verifies that the NewServiceRegistrar function exists
 			// It may panic on database connection failure, which is acceptable behavior
 
-			defer func() {
-				if r := recover(); r != nil {
-					// Database connection failure is expected in test environment
-					t.Logf("NewServiceRegistrar panicked as expected: %v", r)
-				}
-			}()
+			// Create a mock user service
+			mockUserSrv := &MockUserSrv{}
 
-			// Try to create a registrar - it may panic or return nil due to database connection issues
-			registrar := NewServiceRegistrar()
+			// Create a registrar with the mock service
+			registrar := NewServiceRegistrar(mockUserSrv)
 
-			// If registrar is created successfully, verify its structure
-			if registrar != nil {
-				t.Log("NewServiceRegistrar succeeded, verifying structure")
-				assert.NotNil(t, registrar.controller)
-				assert.NotNil(t, registrar.userSrv)
-			} else {
-				t.Log("NewServiceRegistrar returned nil, which is expected without database connection")
-			}
+			// Verify the registrar structure
+			assert.NotNil(t, registrar)
+			assert.NotNil(t, registrar.controller)
+			assert.NotNil(t, registrar.userSrv)
+			assert.Equal(t, mockUserSrv, registrar.userSrv)
 		})
 	}
 }
@@ -93,8 +114,10 @@ func TestServiceRegistrar_GetName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a dummy registrar to test the GetName method
-			registrar := &ServiceRegistrar{}
+			// Create a mock user service
+			mockUserSrv := &MockUserSrv{}
+			// Create a registrar with the mock service
+			registrar := NewServiceRegistrar(mockUserSrv)
 
 			name := registrar.GetName()
 			assert.Equal(t, tt.expectedName, name)
@@ -117,8 +140,10 @@ func TestServiceRegistrar_RegisterGRPC(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a dummy registrar to test the RegisterGRPC method
-			registrar := &ServiceRegistrar{}
+			// Create a mock user service
+			mockUserSrv := &MockUserSrv{}
+			// Create a registrar with the mock service
+			registrar := NewServiceRegistrar(mockUserSrv)
 
 			server := grpc.NewServer()
 			err := registrar.RegisterGRPC(server)
@@ -147,13 +172,14 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a dummy registrar to test the RegisterHTTP method
-			registrar := &ServiceRegistrar{}
+			// Create a mock user service
+			mockUserSrv := &MockUserSrv{}
+			// Create a registrar with the mock service
+			registrar := NewServiceRegistrar(mockUserSrv)
 
 			router := gin.New()
 
-			// The method should handle nil controller gracefully
-			// and still register the route structure
+			// The method should register routes without error
 			defer func() {
 				if r := recover(); r != nil {
 					t.Errorf("RegisterHTTP panicked: %v", r)
@@ -173,7 +199,10 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 
 func TestServiceRegistrar_Methods_Exist(t *testing.T) {
 	// This test verifies that the registrar methods exist and can be called
-	registrar := &ServiceRegistrar{}
+	// Create a mock user service
+	mockUserSrv := &MockUserSrv{}
+	// Create a registrar with the mock service
+	registrar := NewServiceRegistrar(mockUserSrv)
 
 	// Test that GetName method exists and returns expected value
 	t.Run("GetName method exists", func(t *testing.T) {
