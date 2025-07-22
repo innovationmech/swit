@@ -45,14 +45,6 @@ func NewServiceRegistrar(healthSrv Service) *ServiceRegistrar {
 	}
 }
 
-// NewServiceRegistrarWithDefaults creates a new health service registrar with default service (legacy)
-// Deprecated: Use NewServiceRegistrar with pre-constructed Service instead
-func NewServiceRegistrarWithDefaults() *ServiceRegistrar {
-	return &ServiceRegistrar{
-		service: NewHealthService(),
-	}
-}
-
 // RegisterGRPC implements the ServiceRegistrar interface for gRPC
 // Registers the gRPC health check service
 func (h *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {

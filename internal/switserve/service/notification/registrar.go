@@ -50,18 +50,6 @@ func NewServiceRegistrar(service v1.NotificationService) *ServiceRegistrar {
 	}
 }
 
-// NewServiceRegistrarLegacy creates a new service registrar using the old pattern.
-// Deprecated: Use NewServiceRegistrar with dependency injection instead.
-func NewServiceRegistrarLegacy() *ServiceRegistrar {
-	service := v1.NewService()
-	grpcHandler := v1.NewGRPCHandler(service)
-
-	return &ServiceRegistrar{
-		service:     service,
-		grpcHandler: grpcHandler,
-	}
-}
-
 // RegisterGRPC implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
 	notificationv1.RegisterNotificationServiceServer(server, sr.grpcHandler)

@@ -42,16 +42,6 @@ func NewServiceRegistrar(service StopService) *ServiceRegistrar {
 	}
 }
 
-// NewServiceRegistrarLegacy creates a new stop service registrar using the old pattern.
-// Deprecated: Use NewServiceRegistrar with dependency injection instead.
-func NewServiceRegistrarLegacy(shutdownFunc func()) *ServiceRegistrar {
-	service := NewService(shutdownFunc)
-
-	return &ServiceRegistrar{
-		service: service,
-	}
-}
-
 // RegisterGRPC implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
 	// gRPC shutdown can be implemented as a service method if needed

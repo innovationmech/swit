@@ -22,36 +22,17 @@
 package v1
 
 import (
-	"github.com/innovationmech/swit/internal/switserve/db"
-	"github.com/innovationmech/swit/internal/switserve/repository"
 	v1 "github.com/innovationmech/swit/internal/switserve/service/user/v1"
-	"github.com/innovationmech/swit/pkg/logger"
-	"go.uber.org/zap"
 )
 
-// Controller handles user-related HTTP requests
-type Controller struct {
+// Handler handles user-related HTTP requests
+type Handler struct {
 	userSrv v1.UserSrv
 }
 
 // NewUserController creates a new user controller with dependency injection.
-func NewUserController(userSrv v1.UserSrv) *Controller {
-	return &Controller{
-		userSrv: userSrv,
-	}
-}
-
-// NewUserControllerLegacy creates a new user handler using the old pattern.
-// Deprecated: Use NewUserController with dependency injection instead.
-func NewUserControllerLegacy() *Controller {
-	userSrv, err := v1.NewUserSrv(
-		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
-	)
-	if err != nil {
-		logger.Logger.Error("failed to create user service", zap.Error(err))
-	}
-
-	return &Controller{
+func NewUserController(userSrv v1.UserSrv) *Handler {
+	return &Handler{
 		userSrv: userSrv,
 	}
 }

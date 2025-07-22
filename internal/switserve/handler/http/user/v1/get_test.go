@@ -97,7 +97,7 @@ func TestGetUserByUsername(t *testing.T) {
 			mockSrv := &MockUserService{}
 			tt.setupMocks(mockSrv)
 
-			uc := &Controller{
+			uc := &Handler{
 				userSrv: mockSrv,
 			}
 
@@ -200,7 +200,7 @@ func TestGetUserByEmail(t *testing.T) {
 			mockSrv := &MockUserService{}
 			tt.setupMocks(mockSrv)
 
-			uc := &Controller{
+			uc := &Handler{
 				userSrv: mockSrv,
 			}
 

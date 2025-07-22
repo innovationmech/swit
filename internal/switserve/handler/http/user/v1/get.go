@@ -40,7 +40,7 @@ import (
 //	@Failure		500			{object}	map[string]interface{}	"Internal server error"
 //	@Security		BearerAuth
 //	@Router			/users/username/{username} [get]
-func (uc *Controller) GetUserByUsername(c *gin.Context) {
+func (uc *Handler) GetUserByUsername(c *gin.Context) {
 	username := c.Param("username")
 	user, err := uc.userSrv.GetUserByUsername(c.Request.Context(), username)
 	if err != nil {
@@ -64,7 +64,7 @@ func (uc *Controller) GetUserByUsername(c *gin.Context) {
 //	@Failure		500		{object}	map[string]interface{}	"Internal server error"
 //	@Security		BearerAuth
 //	@Router			/users/email/{email} [get]
-func (uc *Controller) GetUserByEmail(c *gin.Context) {
+func (uc *Handler) GetUserByEmail(c *gin.Context) {
 	email := c.Param("email")
 	user, err := uc.userSrv.GetUserByEmail(c.Request.Context(), email)
 	if err != nil {
