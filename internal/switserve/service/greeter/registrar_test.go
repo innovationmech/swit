@@ -49,9 +49,8 @@ func TestNewServiceRegistrar(t *testing.T) {
 	registrar := NewServiceRegistrar(mockService)
 
 	assert.NotNil(t, registrar)
-	assert.NotNil(t, registrar.service)
+	assert.NotNil(t, registrar.httpHandler)
 	assert.NotNil(t, registrar.grpcHandler)
-	assert.Equal(t, mockService, registrar.service)
 }
 
 func TestServiceRegistrar_GetName(t *testing.T) {

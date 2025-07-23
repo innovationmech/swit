@@ -33,7 +33,6 @@ import (
 // ServiceRegistrar implements unified service registration for user management
 type ServiceRegistrar struct {
 	handler *v2.Handler
-	userSrv v1.UserSrv
 }
 
 // NewServiceRegistrar creates a new user service registrar with dependency injection
@@ -43,7 +42,6 @@ func NewServiceRegistrar(userSrv v1.UserSrv) *ServiceRegistrar {
 
 	return &ServiceRegistrar{
 		handler: controller,
-		userSrv: userSrv,
 	}
 }
 

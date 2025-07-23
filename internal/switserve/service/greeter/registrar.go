@@ -22,28 +22,27 @@
 package greeter
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	greeterv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/interaction/v1"
+	httpv1 "github.com/innovationmech/swit/internal/switserve/handler/http/greeter/v1"
 	v1 "github.com/innovationmech/swit/internal/switserve/service/greeter/v1"
 	"github.com/innovationmech/swit/pkg/logger"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
 // ServiceRegistrar implements unified service registration
 type ServiceRegistrar struct {
-	service     v1.GreeterService
+	httpHandler *httpv1.Handler
 	grpcHandler *v1.GRPCHandler
 }
 
 // NewServiceRegistrar creates a new service registrar with dependency injection
 func NewServiceRegistrar(service v1.GreeterService) *ServiceRegistrar {
+	httpHandler := httpv1.NewHandler(service)
 	grpcHandler := v1.NewGRPCHandler(service)
 
 	return &ServiceRegistrar{
-		service:     service,
+		httpHandler: httpHandler,
 		grpcHandler: grpcHandler,
 	}
 }
@@ -62,7 +61,7 @@ func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 	{
 		greeter := v1.Group("/greeter")
 		{
-			greeter.POST("/hello", sr.sayHelloHTTP)
+			greeter.POST("/hello", sr.httpHandler.SayHello)
 			// Add more HTTP endpoints as needed
 		}
 	}
@@ -74,35 +73,4 @@ func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 // GetName implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) GetName() string {
 	return "greeter"
-}
-
-// sayHelloHTTP handles HTTP version of SayHello
-func (sr *ServiceRegistrar) sayHelloHTTP(c *gin.Context) {
-	var req struct {
-		Name     string `json:"name" binding:"required"`
-		Language string `json:"language,omitempty"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Logger.Warn("Invalid request body", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	greeting, err := sr.service.GenerateGreeting(c.Request.Context(), req.Name, req.Language)
-	if err != nil {
-		logger.Logger.Error("Failed to generate greeting", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	response := gin.H{
-		"message": greeting,
-		"metadata": gin.H{
-			"request_id": c.GetHeader("X-Request-ID"),
-			"server_id":  "swit-serve-1",
-		},
-	}
-
-	c.JSON(http.StatusOK, response)
 }

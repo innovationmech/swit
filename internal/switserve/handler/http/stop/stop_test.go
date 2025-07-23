@@ -22,64 +22,82 @@
 package stop
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
-func TestNewStopHandler(t *testing.T) {
-	var called bool
-	h := NewHandler(func() { called = true })
-	assert.NotNil(t, h)
-	assert.False(t, called)
+// mockStopService implements StopService for testing
+type mockStopService struct {
+	shouldFail bool
+	called     bool
 }
 
-func TestStopHandler_Stop(t *testing.T) {
+func (m *mockStopService) InitiateShutdown(ctx context.Context) (*ShutdownStatus, error) {
+	m.called = true
+	if m.shouldFail {
+		return nil, assert.AnError
+	}
+	return &ShutdownStatus{
+		Status:    "stopping",
+		Message:   "Server is shutting down",
+		Timestamp: time.Now().Unix(),
+	}, nil
+}
+
+func TestNewStopHandler(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
+	service := &mockStopService{}
+	h := NewHandler(service)
+	assert.NotNil(t, h)
+	assert.False(t, service.called)
+}
+
+func TestStopHandler_StopServer(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
 	gin.SetMode(gin.TestMode)
-	shutdownCalled := make(chan bool, 1)
-	h := NewHandler(func() {
-		select {
-		case shutdownCalled <- true:
-		default:
-		}
-	})
+	service := &mockStopService{}
+	h := NewHandler(service)
 
 	r := gin.New()
-	r.POST("/stop", h.Stop)
+	r.POST("/stop", h.StopServer)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/stop", nil)
 
 	r.ServeHTTP(w, req)
 
-	// 检查响应
+	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Server is stopping")
+	assert.Contains(t, w.Body.String(), "stopping")
 
-	// 检查 shutdownFunc 是否被调用
-	select {
-	case <-shutdownCalled:
-		// ok
-	case <-time.After(2 * time.Second):
-		t.Fatal("shutdownFunc not called")
-	}
+	// Check service was called
+	assert.True(t, service.called)
 }
 
 func TestStopRouteRegistration(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
 	gin.SetMode(gin.TestMode)
-	shutdownCalled := make(chan bool, 1)
+	service := &mockStopService{}
 	r := gin.New()
-	handler := NewHandler(func() {
-		select {
-		case shutdownCalled <- true:
-		default:
-		}
-	})
-	r.POST("/stop", handler.Stop)
+	handler := NewHandler(service)
+	r.POST("/stop", handler.StopServer)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodPost, "/stop", nil)
@@ -87,12 +105,29 @@ func TestStopRouteRegistration(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Server is stopping")
+	assert.Contains(t, w.Body.String(), "stopping")
+	assert.True(t, service.called)
+}
 
-	select {
-	case <-shutdownCalled:
-		// ok
-	case <-time.After(2 * time.Second):
-		t.Fatal("shutdownFunc not called")
-	}
+func TestStopHandler_ServiceError(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
+	gin.SetMode(gin.TestMode)
+	service := &mockStopService{shouldFail: true}
+	h := NewHandler(service)
+
+	r := gin.New()
+	r.POST("/stop", h.StopServer)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/stop", nil)
+
+	r.ServeHTTP(w, req)
+
+	// Should return error response
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "error")
+	assert.True(t, service.called)
 }

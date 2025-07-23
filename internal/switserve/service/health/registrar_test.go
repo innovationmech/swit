@@ -39,7 +39,7 @@ func TestNewServiceRegistrar(t *testing.T) {
 	registrar := NewServiceRegistrar(mockService)
 
 	assert.NotNil(t, registrar)
-	assert.NotNil(t, registrar.service)
+	assert.NotNil(t, registrar.httpHandler)
 	assert.Equal(t, "health", registrar.GetName())
 }
 
@@ -80,7 +80,7 @@ func TestServiceRegistrar_healthCheckHTTP_Success(t *testing.T) {
 	mockService := NewService()
 	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
-	router.GET("/health", registrar.healthCheckHTTP)
+	router.GET("/health", registrar.httpHandler.HealthCheck)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()

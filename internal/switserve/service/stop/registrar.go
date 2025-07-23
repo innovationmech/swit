@@ -22,23 +22,46 @@
 package stop
 
 import (
-	"net/http"
+	"context"
 
 	"github.com/gin-gonic/gin"
+	httphandler "github.com/innovationmech/swit/internal/switserve/handler/http/stop"
 	"github.com/innovationmech/swit/pkg/logger"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
 // ServiceRegistrar implements unified service registration for server shutdown
 type ServiceRegistrar struct {
+	httpHandler *httphandler.Handler
+}
+
+// stopServiceAdapter adapts service layer StopService to handler layer StopService
+// This is necessary to avoid circular dependency between service and handler packages
+// The adapter converts between the two different ShutdownStatus types
+type stopServiceAdapter struct {
 	service StopService
+}
+
+func (a *stopServiceAdapter) InitiateShutdown(ctx context.Context) (*httphandler.ShutdownStatus, error) {
+	status, err := a.service.InitiateShutdown(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Convert service.ShutdownStatus to handler.ShutdownStatus
+	return &httphandler.ShutdownStatus{
+		Status:    status.Status,
+		Message:   status.Message,
+		Timestamp: status.Timestamp,
+	}, nil
 }
 
 // NewServiceRegistrar creates a new stop service registrar with dependency injection
 func NewServiceRegistrar(service StopService) *ServiceRegistrar {
+	// Use adapter to bridge service and handler interfaces
+	adapter := &stopServiceAdapter{service: service}
+	httpHandler := httphandler.NewHandler(adapter)
 	return &ServiceRegistrar{
-		service: service,
+		httpHandler: httpHandler,
 	}
 }
 
@@ -53,7 +76,7 @@ func (sr *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
 // RegisterHTTP implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 	// Register stop endpoint at root level
-	router.POST("/stop", sr.stopServerHTTP)
+	router.POST("/stop", sr.httpHandler.StopServer)
 
 	logger.Logger.Info("Registered Stop HTTP routes")
 	return nil
@@ -62,21 +85,4 @@ func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 // GetName implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) GetName() string {
 	return "stop"
-}
-
-// stopServerHTTP handles HTTP server shutdown requests
-func (sr *ServiceRegistrar) stopServerHTTP(c *gin.Context) {
-	logger.Logger.Info("Shutdown request received via HTTP")
-
-	status, err := sr.service.InitiateShutdown(c.Request.Context())
-	if err != nil {
-		logger.Logger.Error("Failed to initiate shutdown", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "error",
-			"error":  "failed to initiate shutdown",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, status)
 }

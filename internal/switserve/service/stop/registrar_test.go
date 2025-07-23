@@ -46,7 +46,7 @@ func TestNewServiceRegistrar(t *testing.T) {
 	registrar := NewServiceRegistrar(mockService)
 
 	assert.NotNil(t, registrar)
-	assert.NotNil(t, registrar.service)
+	assert.NotNil(t, registrar.httpHandler)
 	assert.Equal(t, "stop", registrar.GetName())
 	assert.False(t, shutdownCalled)
 }
@@ -95,7 +95,7 @@ func TestServiceRegistrar_stopServerHTTP_Success(t *testing.T) {
 	mockService := NewService(shutdownFunc)
 	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
-	router.POST("/stop", registrar.stopServerHTTP)
+	router.POST("/stop", registrar.httpHandler.StopServer)
 
 	req := httptest.NewRequest(http.MethodPost, "/stop", nil)
 	w := httptest.NewRecorder()
@@ -117,7 +117,7 @@ func TestServiceRegistrar_stopServerHTTP_NilShutdownFunc(t *testing.T) {
 	mockService := NewService(nil)
 	registrar := NewServiceRegistrar(mockService)
 	router := gin.New()
-	router.POST("/stop", registrar.stopServerHTTP)
+	router.POST("/stop", registrar.httpHandler.StopServer)
 
 	req := httptest.NewRequest(http.MethodPost, "/stop", nil)
 	w := httptest.NewRecorder()

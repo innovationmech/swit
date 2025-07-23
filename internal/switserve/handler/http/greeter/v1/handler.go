@@ -19,40 +19,56 @@
 // THE SOFTWARE.
 //
 
-package stop
+package v1
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	v1 "github.com/innovationmech/swit/internal/switserve/service/greeter/v1"
+	"github.com/innovationmech/swit/pkg/logger"
+	"go.uber.org/zap"
 )
 
-// Handler is the handler for the stop endpoint.
+// Handler handles HTTP requests for greeter service
 type Handler struct {
-	shutdownFunc func()
+	service v1.GreeterService
 }
 
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
+// NewHandler creates a new greeter HTTP handler
+func NewHandler(service v1.GreeterService) *Handler {
 	return &Handler{
-		shutdownFunc: shutdownFunc,
+		service: service,
 	}
 }
 
-// Stop stops the server.
-//
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
+// SayHello handles HTTP version of SayHello
+func (h *Handler) SayHello(c *gin.Context) {
+	var req struct {
+		Name     string `json:"name" binding:"required"`
+		Language string `json:"language,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Logger.Warn("Invalid request body", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	greeting, err := h.service.GenerateGreeting(c.Request.Context(), req.Name, req.Language)
+	if err != nil {
+		logger.Logger.Error("Failed to generate greeting", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	response := gin.H{
+		"message": greeting,
+		"metadata": gin.H{
+			"request_id": c.GetHeader("X-Request-ID"),
+			"server_id":  "swit-serve-1",
+		},
+	}
+
+	c.JSON(http.StatusOK, response)
 }

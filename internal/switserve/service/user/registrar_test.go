@@ -95,8 +95,6 @@ func TestNewServiceRegistrar(t *testing.T) {
 			// Verify the registrar structure
 			assert.NotNil(t, registrar)
 			assert.NotNil(t, registrar.handler)
-			assert.NotNil(t, registrar.userSrv)
-			assert.Equal(t, mockUserSrv, registrar.userSrv)
 		})
 	}
 }

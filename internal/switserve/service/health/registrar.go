@@ -22,23 +22,46 @@
 package health
 
 import (
-	"net/http"
+	"context"
 
 	"github.com/gin-gonic/gin"
+	httphandler "github.com/innovationmech/swit/internal/switserve/handler/http/health"
 	"github.com/innovationmech/swit/pkg/logger"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
 // ServiceRegistrar implements unified service registration for health checks
 type ServiceRegistrar struct {
+	httpHandler *httphandler.Handler
+}
+
+// healthServiceAdapter adapts service layer HealthService to handler layer HealthService
+// This is necessary to avoid circular dependency between service and handler packages
+// The adapter converts between the two different Status types
+type healthServiceAdapter struct {
 	service HealthService
+}
+
+func (a *healthServiceAdapter) CheckHealth(ctx context.Context) (*httphandler.Status, error) {
+	status, err := a.service.CheckHealth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Convert service.Status to handler.Status
+	return &httphandler.Status{
+		Status:    status.Status,
+		Timestamp: status.Timestamp,
+		Details:   status.Details,
+	}, nil
 }
 
 // NewServiceRegistrar creates a new health service registrar with dependency injection
 func NewServiceRegistrar(service HealthService) *ServiceRegistrar {
+	// Use adapter to bridge service and handler interfaces
+	adapter := &healthServiceAdapter{service: service}
+	httpHandler := httphandler.NewHandler(adapter)
 	return &ServiceRegistrar{
-		service: service,
+		httpHandler: httpHandler,
 	}
 }
 
@@ -53,7 +76,7 @@ func (sr *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
 // RegisterHTTP implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 	// Register health check endpoint at root level
-	router.GET("/health", sr.healthCheckHTTP)
+	router.GET("/health", sr.httpHandler.HealthCheck)
 
 	logger.Logger.Info("Registered Health HTTP routes")
 	return nil
@@ -62,19 +85,4 @@ func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 // GetName implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) GetName() string {
 	return "health"
-}
-
-// healthCheckHTTP handles HTTP health check requests
-func (sr *ServiceRegistrar) healthCheckHTTP(c *gin.Context) {
-	status, err := sr.service.CheckHealth(c.Request.Context())
-	if err != nil {
-		logger.Logger.Error("Health check failed", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "unhealthy",
-			"error":  "health check failed",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, status)
 }
