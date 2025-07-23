@@ -23,51 +23,27 @@ package user
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switserve/db"
 	v2 "github.com/innovationmech/swit/internal/switserve/handler/http/user/v1"
-	"github.com/innovationmech/swit/internal/switserve/repository"
 	v1 "github.com/innovationmech/swit/internal/switserve/service/user/v1"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
 // ServiceRegistrar implements unified service registration for user management
 type ServiceRegistrar struct {
-	controller *v2.Controller
-	userSrv    v1.UserSrv
+	handler *v2.Handler
+	userSrv v1.UserSrv
 }
 
 // NewServiceRegistrar creates a new user service registrar with dependency injection
 func NewServiceRegistrar(userSrv v1.UserSrv) *ServiceRegistrar {
-	// Create controller with injected user service
+	// Create handler with injected user service
 	controller := v2.NewUserController(userSrv)
 
 	return &ServiceRegistrar{
-		controller: controller,
-		userSrv:    userSrv,
-	}
-}
-
-// NewServiceRegistrarLegacy creates a new user service registrar using the old pattern.
-// Deprecated: Use NewServiceRegistrar with dependency injection instead.
-func NewServiceRegistrarLegacy() *ServiceRegistrar {
-	// Create user service with repository
-	userSrv, err := v1.NewUserSrv(
-		v1.WithUserRepository(repository.NewUserRepository(db.GetDB())),
-	)
-	if err != nil {
-		logger.Logger.Error("failed to create user service", zap.Error(err))
-		return nil
-	}
-
-	// Create controller using legacy method
-	controller := v2.NewUserControllerLegacy()
-
-	return &ServiceRegistrar{
-		controller: controller,
-		userSrv:    userSrv,
+		handler: controller,
+		userSrv: userSrv,
 	}
 }
 
@@ -89,16 +65,16 @@ func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
 		authWhiteList := []string{"/users/create", "/health", "/stop"}
 		userGroup.Use(middleware.AuthMiddlewareWithWhiteList(authWhiteList))
 		{
-			userGroup.POST("/create", sr.controller.CreateUser)
-			userGroup.GET("/username/:username", sr.controller.GetUserByUsername)
-			userGroup.GET("/email/:email", sr.controller.GetUserByEmail)
-			userGroup.DELETE("/:id", sr.controller.DeleteUser)
+			userGroup.POST("/create", sr.handler.CreateUser)
+			userGroup.GET("/username/:username", sr.handler.GetUserByUsername)
+			userGroup.GET("/email/:email", sr.handler.GetUserByEmail)
+			userGroup.DELETE("/:id", sr.handler.DeleteUser)
 		}
 
 		// Internal user endpoints (no auth required)
 		internalGroup := v1Group.Group("/internal")
 		{
-			internalGroup.POST("/validate-user", sr.controller.ValidateUserCredentials)
+			internalGroup.POST("/validate-user", sr.handler.ValidateUserCredentials)
 		}
 	}
 

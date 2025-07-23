@@ -40,7 +40,7 @@ import (
 //	@Failure		500	{object}	map[string]interface{}	"Internal server error"
 //	@Security		BearerAuth
 //	@Router			/users/{id} [delete]
-func (uc *Controller) DeleteUser(c *gin.Context) {
+func (uc *Handler) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
 
 	err := uc.userSrv.DeleteUser(c.Request.Context(), id)

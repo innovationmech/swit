@@ -42,16 +42,6 @@ func NewServiceRegistrar(service HealthService) *ServiceRegistrar {
 	}
 }
 
-// NewServiceRegistrarLegacy creates a new health service registrar using the old pattern.
-// Deprecated: Use NewServiceRegistrar with dependency injection instead.
-func NewServiceRegistrarLegacy() *ServiceRegistrar {
-	service := NewService()
-
-	return &ServiceRegistrar{
-		service: service,
-	}
-}
-
 // RegisterGRPC implements ServiceRegistrar interface
 func (sr *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
 	// gRPC health check can be implemented using grpc_health_v1 if needed

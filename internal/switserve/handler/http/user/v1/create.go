@@ -40,7 +40,7 @@ import (
 //	@Failure		400		{object}	map[string]interface{}	"Bad request"
 //	@Failure		500		{object}	map[string]interface{}	"Internal server error"
 //	@Router			/users/create [post]
-func (uc *Controller) CreateUser(c *gin.Context) {
+func (uc *Handler) CreateUser(c *gin.Context) {
 	var req model.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

@@ -26,9 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 
-	"github.com/innovationmech/swit/internal/switauth/client"
 	v1handler "github.com/innovationmech/swit/internal/switauth/handler/http/auth/v1"
-	"github.com/innovationmech/swit/internal/switauth/repository"
 	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -50,25 +48,6 @@ func NewServiceRegistrar(authSrv v1.AuthSrv) *ServiceRegistrar {
 		service:    authSrv,
 		controller: controller,
 	}
-}
-
-// NewServiceRegistrarWithDeps creates a new authentication service registrar with dependencies (legacy)
-// Deprecated: Use NewServiceRegistrar with pre-constructed AuthSrv instead
-func NewServiceRegistrarWithDeps(userClient client.UserClient, tokenRepo repository.TokenRepository) (*ServiceRegistrar, error) {
-	service, err := v1.NewAuthSrv(
-		v1.WithUserClient(userClient),
-		v1.WithTokenRepository(tokenRepo),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	controller := v1handler.NewAuthController(service)
-
-	return &ServiceRegistrar{
-		service:    service,
-		controller: controller,
-	}, nil
 }
 
 // RegisterGRPC implements the ServiceRegistrar interface for gRPC

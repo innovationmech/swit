@@ -94,7 +94,7 @@ func TestNewServiceRegistrar(t *testing.T) {
 
 			// Verify the registrar structure
 			assert.NotNil(t, registrar)
-			assert.NotNil(t, registrar.controller)
+			assert.NotNil(t, registrar.handler)
 			assert.NotNil(t, registrar.userSrv)
 			assert.Equal(t, mockUserSrv, registrar.userSrv)
 		})
@@ -166,7 +166,7 @@ func TestServiceRegistrar_RegisterHTTP(t *testing.T) {
 		{
 			name:        "register_http_with_nil_controller",
 			expectError: false,
-			description: "Should handle RegisterHTTP call with nil controller gracefully",
+			description: "Should handle RegisterHTTP call with nil handler gracefully",
 		},
 	}
 

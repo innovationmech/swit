@@ -201,7 +201,7 @@ func TestValidateUserCredentials(t *testing.T) {
 			mockSrv := &MockUserService{}
 			tt.setupMocks(mockSrv)
 
-			uc := &Controller{
+			uc := &Handler{
 				userSrv: mockSrv,
 			}
 

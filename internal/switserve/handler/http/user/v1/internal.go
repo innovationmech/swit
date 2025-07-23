@@ -42,7 +42,7 @@ import (
 //	@Failure		401			{object}	map[string]interface{}	"Invalid credentials"
 //	@Failure		500			{object}	map[string]interface{}	"Internal server error"
 //	@Router			/internal/validate-user [post]
-func (uc *Controller) ValidateUserCredentials(c *gin.Context) {
+func (uc *Handler) ValidateUserCredentials(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
