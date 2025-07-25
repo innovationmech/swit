@@ -71,9 +71,9 @@ func (uc *Handler) CreateUser(c *gin.Context) {
 	}
 
 	user := &model.User{
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: req.Password, // 注意: 这里假设您的CreateUser方法会处理密码哈希
+		Username: req.Username,
+		Email:    req.Email,
+		Password: req.Password, // 原始密码，服务层会进行哈希处理
 	}
 
 	err := uc.userSrv.CreateUser(c.Request.Context(), user)

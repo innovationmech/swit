@@ -36,6 +36,7 @@ type User struct {
 	Username     string    `gorm:"unique;not null" json:"username" example:"john_doe"`
 	Email        string    `gorm:"unique;not null" json:"email" example:"john@example.com"`
 	PasswordHash string    `gorm:"not null" json:"-"`
+	Password     string    `gorm:"-" json:"-"` // 临时字段，用于传递原始密码到服务层，不存储到数据库
 	Role         string    `gorm:"default:'user'" json:"role" example:"user"`
 	IsActive     bool      `gorm:"default:true" json:"is_active" example:"true"`
 	CreatedAt    time.Time `json:"created_at" example:"2023-01-01T00:00:00Z"`

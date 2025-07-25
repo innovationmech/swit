@@ -110,11 +110,13 @@ func (s *userService) CreateUser(ctx context.Context, user *model.User) error {
 		return types.ErrValidation("username and email cannot be empty")
 	}
 
-	hashedPassword, err := utils.HashPassword(user.PasswordHash)
+	hashedPassword, err := utils.HashPassword(user.Password)
 	if err != nil {
 		return types.ErrInternalWithCause("failed to hash password", err)
 	}
 	user.PasswordHash = hashedPassword
+	// Clear the plain text password for security
+	user.Password = ""
 
 	// attempt to create the user directly, letting the database handle uniqueness constraints
 	err = s.config.UserRepo.CreateUser(ctx, user)

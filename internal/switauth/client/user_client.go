@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/innovationmech/swit/pkg/discovery"
 
@@ -40,13 +41,27 @@ type UserClient interface {
 }
 
 type userClient struct {
-	sd *discovery.ServiceDiscovery
+	sd         *discovery.ServiceDiscovery
+	httpClient *http.Client
 }
 
 // NewUserClient creates a new UserClient instance with service discovery
 // for communicating with the user service
 func NewUserClient(sd *discovery.ServiceDiscovery) UserClient {
-	return &userClient{sd: sd}
+	// Create a shared HTTP client with optimized settings
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	return &userClient{
+		sd:         sd,
+		httpClient: httpClient,
+	}
 }
 
 func (c *userClient) ValidateUserCredentials(ctx context.Context, username, password string) (*model.User, error) {
@@ -76,8 +91,7 @@ func (c *userClient) ValidateUserCredentials(ctx context.Context, username, pass
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
