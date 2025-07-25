@@ -84,35 +84,49 @@ func NewServer() (*Server, error) {
 	server.transportManager.Register(server.grpcTransport)
 
 	// Register services
-	server.registerServices()
+	if err := server.registerServices(); err != nil {
+		return nil, fmt.Errorf("failed to register services: %w", err)
+	}
 
 	return server, nil
 }
 
 // registerServices registers all services with the service registry
-func (s *Server) registerServices() {
+func (s *Server) registerServices() error {
 	// Register services with the HTTP transport's service registry
 	// This uses the new ServiceHandler interface for unified service management
 
 	// Register Greeter service with dependency injection
 	greeterHandler := greeterv1.NewGreeterHandler(s.deps.GreeterSrv)
-	s.httpTransport.RegisterService(greeterHandler)
+	if err := s.httpTransport.RegisterService(greeterHandler); err != nil {
+		return fmt.Errorf("failed to register greeter service: %w", err)
+	}
 
 	// Register Notification service with dependency injection
 	notificationHandler := notificationv1.NewHandler(s.deps.NotificationSrv)
-	s.httpTransport.RegisterService(notificationHandler)
+	if err := s.httpTransport.RegisterService(notificationHandler); err != nil {
+		return fmt.Errorf("failed to register notification service: %w", err)
+	}
 
 	// Register Health service with dependency injection
 	healthHandler := health.NewHandler(s.deps.HealthSrv)
-	s.httpTransport.RegisterService(healthHandler)
+	if err := s.httpTransport.RegisterService(healthHandler); err != nil {
+		return fmt.Errorf("failed to register health service: %w", err)
+	}
 
 	// Register Stop service with dependency injection
 	stopHandler := stop.NewHandler(s.deps.StopSrv)
-	s.httpTransport.RegisterService(stopHandler)
+	if err := s.httpTransport.RegisterService(stopHandler); err != nil {
+		return fmt.Errorf("failed to register stop service: %w", err)
+	}
 
 	// Register User service with dependency injection
 	userHandler := userv1.NewUserController(s.deps.UserSrv)
-	s.httpTransport.RegisterService(userHandler)
+	if err := s.httpTransport.RegisterService(userHandler); err != nil {
+		return fmt.Errorf("failed to register user service: %w", err)
+	}
+
+	return nil
 }
 
 // Start starts the server with all transports

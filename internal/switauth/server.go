@@ -83,13 +83,15 @@ func NewServer() (*Server, error) {
 	}
 
 	// Register services
-	server.registerServices()
+	if err := server.registerServices(); err != nil {
+		return nil, fmt.Errorf("failed to register services: %w", err)
+	}
 
 	return server, nil
 }
 
 // registerServices registers all services with the HTTP transport's enhanced service registry
-func (s *Server) registerServices() {
+func (s *Server) registerServices() error {
 	// Register services with the HTTP transport's enhanced service registry
 	// This uses the new ServiceHandler interface for unified service management
 
@@ -97,13 +99,17 @@ func (s *Server) registerServices() {
 	authHandler := auth.NewAuthController(s.deps.AuthSrv)
 	if err := s.httpTransport.RegisterService(authHandler); err != nil {
 		logger.Logger.Error("Failed to register auth service", zap.Error(err))
+		return fmt.Errorf("failed to register auth service: %w", err)
 	}
 
 	// Register health service with dependency injection
 	healthHandler := health.NewHandler()
 	if err := s.httpTransport.RegisterService(healthHandler); err != nil {
 		logger.Logger.Error("Failed to register health service", zap.Error(err))
+		return fmt.Errorf("failed to register health service: %w", err)
 	}
+
+	return nil
 }
 
 // configureMiddleware configures global middleware for HTTP transport
