@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/innovationmech/swit/internal/switserve/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,9 +62,9 @@ func TestService_InitiateShutdown(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotNil(t, status)
-	assert.Equal(t, "shutdown_initiated", status.Status)
+	assert.Equal(t, "shutdown_initiated", status.Status.String())
 	assert.Equal(t, "Server shutdown initiated successfully", status.Message)
-	assert.NotZero(t, status.Timestamp)
+	assert.NotZero(t, status.InitiatedAt)
 
 	assert.Eventually(t, func() bool {
 		return atomic.LoadInt32(&shutdownCalled) == 1
@@ -78,9 +79,9 @@ func TestService_InitiateShutdown_NilFunction(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotNil(t, status)
-	assert.Equal(t, "shutdown_initiated", status.Status)
+	assert.Equal(t, "shutdown_initiated", status.Status.String())
 	assert.Equal(t, "Server shutdown initiated successfully", status.Message)
-	assert.NotZero(t, status.Timestamp)
+	assert.NotZero(t, status.InitiatedAt)
 }
 
 func TestService_InitiateShutdown_StatusStructure(t *testing.T) {
@@ -90,9 +91,9 @@ func TestService_InitiateShutdown_StatusStructure(t *testing.T) {
 	status, err := service.InitiateShutdown(ctx)
 
 	require.NoError(t, err)
-	assert.Equal(t, "shutdown_initiated", status.Status)
+	assert.Equal(t, "shutdown_initiated", status.Status.String())
 	assert.Equal(t, "Server shutdown initiated successfully", status.Message)
-	assert.IsType(t, int64(0), status.Timestamp)
+	assert.IsType(t, int64(0), status.InitiatedAt)
 }
 
 func TestService_InitiateShutdown_Timestamp(t *testing.T) {
@@ -104,8 +105,8 @@ func TestService_InitiateShutdown_Timestamp(t *testing.T) {
 	afterTime := time.Now().Unix()
 
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, status.Timestamp, beforeTime)
-	assert.LessOrEqual(t, status.Timestamp, afterTime)
+	assert.GreaterOrEqual(t, status.InitiatedAt, beforeTime)
+	assert.LessOrEqual(t, status.InitiatedAt, afterTime)
 }
 
 func TestService_InitiateShutdown_WithContext(t *testing.T) {
@@ -117,7 +118,7 @@ func TestService_InitiateShutdown_WithContext(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotNil(t, status)
-	assert.Equal(t, "shutdown_initiated", status.Status)
+	assert.Equal(t, "shutdown_initiated", status.Status.String())
 }
 
 func TestService_InitiateShutdown_WithCancelledContext(t *testing.T) {
@@ -129,7 +130,7 @@ func TestService_InitiateShutdown_WithCancelledContext(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotNil(t, status)
-	assert.Equal(t, "shutdown_initiated", status.Status)
+	assert.Equal(t, "shutdown_initiated", status.Status.String())
 }
 
 func TestService_InitiateShutdown_Concurrent(t *testing.T) {
@@ -149,7 +150,7 @@ func TestService_InitiateShutdown_Concurrent(t *testing.T) {
 			status, err := service.InitiateShutdown(ctx)
 			assert.NoError(t, err)
 			assert.NotNil(t, status)
-			assert.Equal(t, "shutdown_initiated", status.Status)
+			assert.Equal(t, "shutdown_initiated", status.Status.String())
 		}()
 	}
 	wg.Wait()
@@ -167,7 +168,7 @@ func TestShutdownStatus_JSONStructure(t *testing.T) {
 
 	require.NoError(t, err)
 
-	assert.IsType(t, "", status.Status)
+	assert.IsType(t, types.Status(""), status.Status)
 	assert.IsType(t, "", status.Message)
-	assert.IsType(t, int64(0), status.Timestamp)
+	assert.IsType(t, int64(0), status.InitiatedAt)
 }

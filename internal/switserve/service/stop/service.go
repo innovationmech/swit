@@ -24,19 +24,10 @@ package stop
 import (
 	"context"
 	"time"
+
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
+	"github.com/innovationmech/swit/internal/switserve/types"
 )
-
-// ShutdownStatus represents shutdown response
-type ShutdownStatus struct {
-	Status    string `json:"status"`
-	Message   string `json:"message"`
-	Timestamp int64  `json:"timestamp"`
-}
-
-// StopService defines the interface for shutdown business logic
-type StopService interface {
-	InitiateShutdown(ctx context.Context) (*ShutdownStatus, error)
-}
 
 // Service implements server shutdown business logic
 type Service struct {
@@ -44,23 +35,23 @@ type Service struct {
 }
 
 // NewService creates a new stop service instance
-func NewService(shutdownFunc func()) StopService {
+func NewService(shutdownFunc func()) interfaces.StopService {
 	return &Service{
 		shutdownFunc: shutdownFunc,
 	}
 }
 
 // InitiateShutdown initiates graceful server shutdown
-func (s *Service) InitiateShutdown(ctx context.Context) (*ShutdownStatus, error) {
+func (s *Service) InitiateShutdown(ctx context.Context) (*interfaces.ShutdownStatus, error) {
 	// Initiate graceful shutdown
 	if s.shutdownFunc != nil {
 		go s.shutdownFunc() // Non-blocking call
 	}
 
-	status := &ShutdownStatus{
-		Status:    "shutdown_initiated",
-		Message:   "Server shutdown initiated successfully",
-		Timestamp: time.Now().Unix(),
+	status := &interfaces.ShutdownStatus{
+		Status:      types.StatusShutdownInitiated,
+		Message:     "Server shutdown initiated successfully",
+		InitiatedAt: time.Now().Unix(),
 	}
 
 	return status, nil

@@ -25,6 +25,7 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/db"
+	"github.com/innovationmech/swit/internal/switauth/interfaces"
 	"github.com/innovationmech/swit/internal/switauth/repository"
 	authv1 "github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 	"github.com/innovationmech/swit/internal/switauth/service/health"
@@ -46,8 +47,8 @@ type Dependencies struct {
 	UserClient client.UserClient
 
 	// Service layer
-	AuthSrv   authv1.AuthSrv
-	HealthSrv health.Service
+	AuthSrv   interfaces.AuthService
+	HealthSrv interfaces.HealthService
 }
 
 // NewDependencies creates and initializes all service dependencies

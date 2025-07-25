@@ -24,24 +24,10 @@ package health
 import (
 	"context"
 	"time"
+
+	"github.com/innovationmech/swit/internal/switauth/interfaces"
+	"github.com/innovationmech/swit/internal/switauth/types"
 )
-
-// Service defines the interface for health check operations
-type Service interface {
-	// CheckHealth returns the current health status
-	CheckHealth(ctx context.Context) *Status
-	// GetHealthDetails returns detailed health information
-	GetHealthDetails(ctx context.Context) map[string]interface{}
-}
-
-// Status represents the health check response
-type Status struct {
-	Status    string            `json:"status"`
-	Timestamp int64             `json:"timestamp"`
-	Service   string            `json:"service"`
-	Version   string            `json:"version"`
-	Details   map[string]string `json:"details,omitempty"`
-}
 
 // healthService implements the Service interface
 type healthService struct {
@@ -50,7 +36,7 @@ type healthService struct {
 }
 
 // NewHealthService creates a new health service instance
-func NewHealthService() Service {
+func NewHealthService() interfaces.HealthService {
 	return &healthService{
 		name:    "switauth",
 		version: "1.0.0",
@@ -58,16 +44,18 @@ func NewHealthService() Service {
 }
 
 // CheckHealth returns the basic health status
-func (h *healthService) CheckHealth(ctx context.Context) *Status {
-	return &Status{
-		Status:    "healthy",
-		Timestamp: time.Now().Unix(),
-		Service:   h.name,
-		Version:   h.version,
-		Details: map[string]string{
-			"uptime": "running",
-		},
-	}
+func (h *healthService) CheckHealth(ctx context.Context) *types.HealthStatus {
+	return types.NewHealthStatus(types.HealthStatusHealthy, h.version, 0)
+}
+
+// GetServiceInfo returns basic service information
+func (h *healthService) GetServiceInfo(ctx context.Context) *types.ServiceInfo {
+	return types.NewServiceInfo(h.name, h.version, "Authentication service", "production", time.Now())
+}
+
+// IsHealthy returns true if the service is healthy
+func (h *healthService) IsHealthy(ctx context.Context) bool {
+	return true
 }
 
 // GetHealthDetails returns comprehensive health information

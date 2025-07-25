@@ -2,7 +2,7 @@
 
 ## 概述
 
-本文档基于 `switauth` v1.0 重构后的成熟架构和 `switserve` 项目的架构分析，为新增子项目提供标准化的架构指导方案。遵循本指南可以确保新项目与现有项目保持架构一致性，采用版本化设计模式，提高代码复用性和可维护性。
+本文档基于最新的 ServiceHandler 架构模式，为新增子项目提供标准化的架构指导方案。新架构采用统一的 ServiceHandler 接口，提供完整的服务生命周期管理，包括初始化、健康检查、优雅关闭等功能。遵循本指南可以确保新项目与现有项目保持架构一致性，提高代码复用性和可维护性。
 
 ## 架构设计原则
 
@@ -36,15 +36,16 @@
 
 ### 2. 核心设计原则
 
+- **ServiceHandler 模式**: 所有服务必须实现统一的 ServiceHandler 接口
+- **接口分离**: 业务接口定义在独立的 interfaces 包中，避免循环依赖
+- **共享类型系统**: 使用 types 包定义共享的数据模型和错误类型
+- **生命周期管理**: 支持服务初始化、健康检查和优雅关闭
 - **领域驱动设计**: 按业务领域划分服务目录结构
 - **版本化设计**: 需要版本化的服务接口采用版本化设计（如 v1、v2），支持向后兼容的 API 演进
-- **统一响应格式**: 采用标准化的 API 响应格式和错误处理机制
-- **选项模式依赖注入**: 使用函数选项模式进行依赖注入，支持灵活配置
-- **服务注册器**: 每个领域服务必须有独立的注册器
+- **统一错误处理**: 采用标准化的 ServiceError 类型和错误处理机制
+- **依赖注入优化**: 使用 EnhancedServiceRegistry 进行服务注册和管理
 - **单一职责**: 每个组件只负责一个明确的功能
-- **接口隔离**: 定义清晰的接口边界
 - **配置外部化**: 所有配置通过配置文件管理
-- **优雅关闭**: 支持优雅的服务关闭
 - **并发安全**: 所有共享资源必须线程安全
 
 ## 项目结构模板
@@ -61,61 +62,53 @@ internal/new-service/
 ├── db/
 │   ├── db.go               # 数据库连接管理
 │   └── migrations/         # 数据库迁移文件
+├── interfaces/              # 业务接口定义（新增）
+│   ├── user.go             # 用户服务接口
+│   ├── auth.go             # 认证服务接口
+│   └── health.go           # 健康检查接口
+├── types/                   # 共享类型定义（新增）
+│   ├── user.go             # 用户相关类型
+│   ├── auth.go             # 认证相关类型
+│   ├── common.go           # 通用类型
+│   └── errors.go           # 错误类型定义
 ├── handler/
-│   └── http/
-│       ├── v1/
-│       │   ├── service1/
-│       │   │   ├── service1.go      # v1 HTTP 处理器
-│       │   │   └── service1_test.go # 处理器测试
-│       │   └── health/
-│       │       ├── health.go        # 健康检查处理器
-│       │       └── health_test.go   # 健康检查测试
-│       └── middleware/             # 项目特定中间件（可选）
-│           └── custom.go           # 自定义业务中间件
+│   ├── http/
+│   │   ├── user.go         # 用户HTTP处理器
+│   │   ├── auth.go         # 认证HTTP处理器
+│   │   └── health.go       # 健康检查HTTP处理器
+│   ├── grpc/               # gRPC处理器（可选）
+│   │   ├── user.go         # 用户gRPC处理器
+│   │   └── auth.go         # 认证gRPC处理器
+│   ├── user_service_handler.go      # 用户ServiceHandler实现
+│   ├── auth_service_handler.go      # 认证ServiceHandler实现
+│   ├── health_service_handler.go    # 健康检查ServiceHandler实现
+│   └── middleware/         # 项目特定中间件（可选）
+│       └── custom.go       # 自定义业务中间件
 │
 │   注意：通用中间件（如认证、CORS、日志等）统一放在 `/pkg/middleware/` 目录下，
 │         供所有子项目复用。项目内的 middleware 目录仅用于项目特定的业务中间件。
-├── model/
-│   ├── entity.go           # 数据模型定义
-│   └── dto.go              # 数据传输对象
 ├── repository/
-│   ├── interface.go        # 仓储接口定义
-│   ├── impl.go             # 仓储实现
-│   └── impl_test.go        # 仓储测试
-├── service/                         # 按领域划分的服务层
-│   ├── {domain-a}/                  # 业务领域 A（需要版本化）
-│   │   ├── registrar.go             # 服务注册器
-│   │   ├── registrar_test.go        # 注册器测试
-│   │   └── v1/                      # v1 版本实现
-│   │       ├── service.go           # 业务逻辑实现
-│   │       ├── service_test.go      # 服务测试
-│   │       ├── grpc_handler.go      # gRPC 处理器（可选）
-│   │       ├── grpc_handler_test.go # gRPC 测试（可选）
-│   │       └── errors.go            # 领域错误定义（可选）
-│   ├── {domain-b}/                  # 业务领域 B（需要版本化）
-│   │   ├── registrar.go             # 服务注册器
-│   │   ├── registrar_test.go        # 注册器测试
-│   │   └── v1/                      # v1 版本实现
-│   │       ├── service.go           # 业务逻辑实现
-│   │       ├── service_test.go      # 服务测试
-│   │       └── ...
-│   ├── health/                      # 健康检查服务（通用服务，无版本）
-│   │   ├── registrar.go             # 服务注册器
-│   │   ├── registrar_test.go        # 注册器测试
-│   │   ├── service.go               # 健康检查实现
-│   │   └── service_test.go          # 健康检查测试
-│   └── {common-service}/            # 其他通用服务（如停止服务等）
-│       ├── registrar.go             # 服务注册器
-│       ├── registrar_test.go        # 注册器测试
-│       ├── service.go               # 服务实现
-│       └── service_test.go          # 服务测试
+│   ├── user.go             # 用户仓储实现
+│   ├── auth.go             # 认证仓储实现
+│   └── interfaces.go       # 仓储接口定义
+├── service/                # 业务服务实现
+│   ├── user/
+│   │   ├── service.go      # 用户服务实现
+│   │   ├── service_test.go # 用户服务测试
+│   │   └── options.go      # 服务选项配置
+│   ├── auth/
+│   │   ├── service.go      # 认证服务实现
+│   │   ├── service_test.go # 认证服务测试
+│   │   └── options.go      # 服务选项配置
+│   └── health/
+│       ├── service.go      # 健康检查服务实现
+│       └── service_test.go # 健康检查服务测试
 ├── transport/
-│   ├── transport.go        # 传输层接口
-│   ├── http.go             # HTTP 传输实现
-│   ├── grpc.go             # gRPC 传输实现
-│   ├── manager.go          # 传输管理器
-│   ├── registrar.go        # 服务注册器接口
-│   └── registry.go         # 服务注册表
+│   ├── service_handler.go  # ServiceHandler接口定义
+│   ├── registry.go         # EnhancedServiceRegistry实现
+│   ├── http.go             # HTTP传输实现
+│   ├── grpc.go             # gRPC传输实现
+│   └── manager.go          # 传输管理器
 ├── server.go               # 服务器主文件
 └── server_test.go          # 服务器测试
 ```
@@ -182,94 +175,385 @@ func ProjectSpecificMiddleware() gin.HandlerFunc {
 }
 ```
 
-### 2. ServiceRegistrar 接口实现
+### 2. ServiceHandler 接口实现
 
-每个服务必须实现 `ServiceRegistrar` 接口：
+每个服务必须实现 `ServiceHandler` 接口（新架构模式）：
 
 ```go
-type ServiceRegistrar interface {
-    RegisterGRPC(server *grpc.Server) error
+type ServiceHandler interface {
+    // RegisterHTTP registers HTTP routes with the given router
     RegisterHTTP(router *gin.Engine) error
-    GetName() string
+
+    // RegisterGRPC registers gRPC services with the given server
+    RegisterGRPC(server *grpc.Server) error
+
+    // GetMetadata returns service metadata information
+    GetMetadata() *ServiceMetadata
+
+    // GetHealthEndpoint returns the health check endpoint path
+    GetHealthEndpoint() string
+
+    // IsHealthy performs a health check and returns the current status
+    IsHealthy(ctx context.Context) (*types.HealthStatus, error)
+
+    // Initialize performs any necessary initialization before service registration
+    Initialize(ctx context.Context) error
+
+    // Shutdown performs graceful shutdown of the service
+    Shutdown(ctx context.Context) error
+}
+
+type ServiceMetadata struct {
+    // Name is the service name
+    Name string `json:"name"`
+    // Version is the service version
+    Version string `json:"version"`
+    // Description is a brief description of the service
+    Description string `json:"description"`
+    // HealthEndpoint is the health check endpoint path
+    HealthEndpoint string `json:"health_endpoint"`
+    // Tags are optional tags for service categorization
+    Tags []string `json:"tags,omitempty"`
+    // Dependencies are the services this service depends on
+    Dependencies []string `json:"dependencies,omitempty"`
 }
 ```
 
 **实现模板：**
 
 ```go
-// internal/new-service/service/{domain-name}/registrar.go
-package domain
+// internal/new-service/handler/{domain-name}_service_handler.go
+package handler
 
 import (
+    "context"
+    "fmt"
+    "log/slog"
+    "time"
+    
     "google.golang.org/grpc"
     "github.com/gin-gonic/gin"
-    "your-project/internal/new-service/handler/http/{domain-name}"
+    
+    "your-project/internal/new-service/interfaces"
+    "your-project/internal/new-service/transport"
+    "your-project/internal/new-service/types"
+    httpv1 "your-project/internal/new-service/handler/http/v1"
 )
 
-type ServiceRegistrar struct {
-    service DomainService
+// DomainServiceHandler 实现 ServiceHandler 接口
+type DomainServiceHandler struct {
+    service   interfaces.DomainService
+    logger    *slog.Logger
+    healthy   bool
+    startTime time.Time
 }
 
-type ServiceRegistrarOption func(*ServiceRegistrar)
-
-func WithDomainRepository(repo repository.DomainRepository) ServiceRegistrarOption {
-    return func(sr *ServiceRegistrar) {
-        sr.repository = repo
+// NewDomainServiceHandler 创建新的领域服务处理器
+func NewDomainServiceHandler(service interfaces.DomainService, logger *slog.Logger) *DomainServiceHandler {
+    return &DomainServiceHandler{
+        service:   service,
+        logger:    logger,
+        healthy:   false,
+        startTime: time.Now(),
     }
 }
 
-func WithLogger(logger *slog.Logger) ServiceRegistrarOption {
-    return func(sr *ServiceRegistrar) {
-        sr.logger = logger
+// GetMetadata 返回服务元数据
+func (h *DomainServiceHandler) GetMetadata() *transport.ServiceMetadata {
+    return &transport.ServiceMetadata{
+        Name:           "domain-service",
+        Version:        "v1.0.0",
+        Description:    "Domain service for managing entities",
+        HealthEndpoint: "/api/v1/domain/health",
+        Tags:           []string{"api", "domain"},
+        Dependencies:   []string{"database", "cache"},
     }
 }
 
-func NewServiceRegistrar(opts ...ServiceRegistrarOption) *ServiceRegistrar {
-    sr := &ServiceRegistrar{}
-    
-    for _, opt := range opts {
-        opt(sr)
-    }
-    
-    sr.service = NewDomainService(
-        WithRepository(sr.repository),
-        WithServiceLogger(sr.logger),
-    )
-    
-    return sr
+// GetHealthEndpoint 返回健康检查端点
+func (h *DomainServiceHandler) GetHealthEndpoint() string {
+    return "/api/v1/domain/health"
 }
 
-func (sr *ServiceRegistrar) RegisterHTTP(router *gin.Engine) error {
-    handler := v1.NewDomainHandler(
-        v1.WithDomainService(sr.service),
-        v1.WithHandlerLogger(sr.logger),
-    )
+// Initialize 初始化服务
+func (h *DomainServiceHandler) Initialize(ctx context.Context) error {
+    h.logger.Info("Initializing domain service handler")
     
-    v1Group := router.Group("/api/v1")
+    // 执行初始化逻辑
+    if err := h.service.Initialize(ctx); err != nil {
+        h.logger.Error("Failed to initialize domain service", "error", err)
+        return fmt.Errorf("failed to initialize domain service: %w", err)
+    }
+    
+    h.healthy = true
+    h.logger.Info("Domain service handler initialized successfully")
+    return nil
+}
+
+// RegisterHTTP 注册HTTP路由
+func (h *DomainServiceHandler) RegisterHTTP(router *gin.Engine) error {
+    h.logger.Info("Registering HTTP routes for domain service")
+    
+    // 创建HTTP处理器
+    httpHandler := httpv1.NewDomainHandler(h.service, h.logger)
+    
+    // 注册API路由
+    v1Group := router.Group("/api/v1/domain")
     {
-        v1Group.GET("/entities", handler.ListEntities)
-        v1Group.GET("/entities/:id", handler.GetEntity)
-        v1Group.POST("/entities", handler.CreateEntity)
-        v1Group.PUT("/entities/:id", handler.UpdateEntity)
-        v1Group.DELETE("/entities/:id", handler.DeleteEntity)
+        v1Group.GET("/health", httpHandler.HealthCheck)
+        v1Group.GET("/entities", httpHandler.ListEntities)
+        v1Group.GET("/entities/:id", httpHandler.GetEntity)
+        v1Group.POST("/entities", httpHandler.CreateEntity)
+        v1Group.PUT("/entities/:id", httpHandler.UpdateEntity)
+        v1Group.DELETE("/entities/:id", httpHandler.DeleteEntity)
     }
     
+    h.logger.Info("HTTP routes registered successfully")
     return nil
 }
 
-func (sr *ServiceRegistrar) RegisterGRPC(server *grpc.Server) error {
-    // gRPC 服务注册实现
-    // grpcHandler := NewDomainGRPCHandler(sr.service)
+// RegisterGRPC 注册gRPC服务
+func (h *DomainServiceHandler) RegisterGRPC(server *grpc.Server) error {
+    h.logger.Info("Registering gRPC service for domain service")
+    
+    // 如果需要gRPC支持，在这里注册
+    // grpcHandler := grpcv1.NewDomainGRPCHandler(h.service, h.logger)
     // pb.RegisterDomainServiceServer(server, grpcHandler)
+    
+    h.logger.Info("gRPC service registered successfully")
     return nil
 }
 
-func (sr *ServiceRegistrar) GetName() string {
-    return "{domain-name}"
+// IsHealthy 执行健康检查并返回健康状态
+func (h *DomainServiceHandler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
+    if !h.healthy {
+        return &types.HealthStatus{
+            Status:    "unhealthy",
+            Timestamp: time.Now(),
+            Version:   "v1.0.0",
+            Message:   "service not initialized",
+        }, fmt.Errorf("service not initialized")
+    }
+    
+    // 检查依赖服务的健康状态
+    if err := h.service.HealthCheck(ctx); err != nil {
+        h.logger.Error("Domain service health check failed", "error", err)
+        return &types.HealthStatus{
+            Status:    "unhealthy",
+            Timestamp: time.Now(),
+            Version:   "v1.0.0",
+            Message:   fmt.Sprintf("health check failed: %v", err),
+        }, fmt.Errorf("domain service health check failed: %w", err)
+    }
+    
+    return &types.HealthStatus{
+        Status:       "healthy",
+        Timestamp:    time.Now(),
+        Version:      "v1.0.0",
+        Uptime:       time.Since(h.startTime),
+        Dependencies: make(map[string]types.DependencyStatus),
+    }, nil
+}
+
+// Shutdown 优雅关闭服务
+func (h *DomainServiceHandler) Shutdown(ctx context.Context) error {
+    h.logger.Info("Shutting down domain service handler")
+    
+    h.healthy = false
+    
+    // 关闭服务资源
+    if err := h.service.Shutdown(ctx); err != nil {
+        h.logger.Error("Failed to shutdown domain service", "error", err)
+        return fmt.Errorf("failed to shutdown domain service: %w", err)
+    }
+    
+    h.logger.Info("Domain service handler shutdown completed")
+    return nil
 }
 ```
 
-### 2. 统一响应格式定义
+### 3. 依赖注入和服务注册
+
+#### 3.1 依赖管理器
+
+创建统一的依赖管理器来管理所有服务依赖：
+
+```go
+// internal/new-service/deps/deps.go
+package deps
+
+import (
+    "fmt"
+    "log/slog"
+    
+    "gorm.io/gorm"
+    
+    "your-project/internal/new-service/interfaces"
+    "your-project/internal/new-service/repository"
+    "your-project/internal/new-service/service/domain/v1"
+    "your-project/internal/new-service/db"
+)
+
+// Dependencies 管理所有服务依赖
+type Dependencies struct {
+    // 基础设施
+    DB     *gorm.DB
+    Logger *slog.Logger
+    
+    // 仓储层
+    DomainRepo repository.DomainRepository
+    
+    // 服务层
+    DomainSrv interfaces.DomainService
+}
+
+// NewDependencies 创建新的依赖管理器
+func NewDependencies(logger *slog.Logger) (*Dependencies, error) {
+    // 1. 初始化基础设施
+    database := db.GetDB()
+    if database == nil {
+        return nil, fmt.Errorf("failed to initialize database")
+    }
+    
+    // 2. 初始化仓储层
+    domainRepo := repository.NewDomainRepository(database, logger)
+    
+    // 3. 初始化服务层
+    domainSrv, err := v1.NewDomainService(
+        v1.WithRepository(domainRepo),
+        v1.WithLogger(logger),
+    )
+    if err != nil {
+        return nil, fmt.Errorf("failed to create domain service: %w", err)
+    }
+    
+    return &Dependencies{
+        DB:        database,
+        Logger:    logger,
+        DomainRepo: domainRepo,
+        DomainSrv: domainSrv,
+    }, nil
+}
+
+// Close 关闭所有资源
+func (d *Dependencies) Close() error {
+    if d.DB != nil {
+        sqlDB, err := d.DB.DB()
+        if err == nil {
+            sqlDB.Close()
+        }
+    }
+    return nil
+}
+```
+
+#### 3.2 服务注册和启动
+
+在服务器初始化中使用EnhancedServiceRegistry：
+
+```go
+// internal/new-service/server.go
+package newservice
+
+import (
+    "context"
+    "fmt"
+    "log/slog"
+    
+    "your-project/internal/new-service/deps"
+    "your-project/internal/new-service/handler"
+    "your-project/internal/new-service/transport"
+)
+
+type Server struct {
+    transportManager *transport.Manager
+    serviceRegistry  *transport.EnhancedServiceRegistry
+    deps             *deps.Dependencies
+    logger           *slog.Logger
+}
+
+// NewServer 创建新的服务器实例
+func NewServer(logger *slog.Logger) (*Server, error) {
+    // 1. 初始化依赖
+    dependencies, err := deps.NewDependencies(logger)
+    if err != nil {
+        return nil, fmt.Errorf("failed to initialize dependencies: %w", err)
+    }
+    
+    server := &Server{
+        transportManager: transport.NewManager(),
+        serviceRegistry:  transport.NewEnhancedServiceRegistry(logger),
+        deps:             dependencies,
+        logger:           logger,
+    }
+    
+    // 2. 注册服务
+    if err := server.registerServices(); err != nil {
+        return nil, fmt.Errorf("failed to register services: %w", err)
+    }
+    
+    return server, nil
+}
+
+// registerServices 注册所有服务
+func (s *Server) registerServices() error {
+    // 注册领域服务
+    domainHandler := handler.NewDomainServiceHandler(s.deps.DomainSrv, s.logger)
+    if err := s.serviceRegistry.Register(domainHandler); err != nil {
+        return fmt.Errorf("failed to register domain service: %w", err)
+    }
+    
+    // 注册健康检查服务
+    healthHandler := handler.NewHealthServiceHandler(s.logger)
+    if err := s.serviceRegistry.Register(healthHandler); err != nil {
+        return fmt.Errorf("failed to register health service: %w", err)
+    }
+    
+    return nil
+}
+
+// Start 启动服务器
+func (s *Server) Start(ctx context.Context) error {
+    // 初始化所有注册的服务
+    if err := s.serviceRegistry.InitializeAll(ctx); err != nil {
+        return fmt.Errorf("failed to initialize services: %w", err)
+    }
+    
+    // 启动传输层
+    httpTransport := transport.NewHTTPTransport(":8080", s.logger)
+    s.transportManager.AddTransport(httpTransport)
+    
+    // 注册HTTP路由
+    if err := s.serviceRegistry.RegisterAllHTTP(httpTransport.GetRouter()); err != nil {
+        return fmt.Errorf("failed to register HTTP routes: %w", err)
+    }
+    
+    // 启动所有传输层
+    return s.transportManager.StartAll()
+}
+
+// Stop 停止服务器
+func (s *Server) Stop(ctx context.Context) error {
+    // 优雅关闭所有服务
+    if err := s.serviceRegistry.ShutdownAll(ctx); err != nil {
+        s.logger.Error("Failed to shutdown services", "error", err)
+    }
+    
+    // 停止传输层
+    if err := s.transportManager.StopAll(ctx); err != nil {
+        s.logger.Error("Failed to stop transports", "error", err)
+    }
+    
+    // 关闭依赖
+    if err := s.deps.Close(); err != nil {
+        s.logger.Error("Failed to close dependencies", "error", err)
+    }
+    
+    return nil
+}
+```
+
+### 4. 统一响应格式定义
 
 **基于 `switauth` v1.0 的标准响应格式：**
 
@@ -862,7 +1146,214 @@ func (h *DomainHandler) DeleteEntity(c *gin.Context) {
 }
 ```
 
-### 6. ServiceRegistry 实现
+### 6. ServiceHandler接口实现
+
+每个服务都需要实现`ServiceHandler`接口来支持统一的服务管理：
+
+```go
+// internal/new-service/handler/domain_handler.go
+package handler
+
+import (
+    "context"
+    "log/slog"
+    "net/http"
+    
+    "github.com/gin-gonic/gin"
+    "google.golang.org/grpc"
+    
+    "your-project/internal/new-service/interfaces"
+    "your-project/internal/switserve/transport"
+)
+
+// DomainServiceHandler 实现ServiceHandler接口
+type DomainServiceHandler struct {
+    service interfaces.DomainService
+    logger  *slog.Logger
+}
+
+// NewDomainServiceHandler 创建新的领域服务处理器
+func NewDomainServiceHandler(service interfaces.DomainService, logger *slog.Logger) *DomainServiceHandler {
+    return &DomainServiceHandler{
+        service: service,
+        logger:  logger,
+    }
+}
+
+// GetMetadata 返回服务元数据
+func (h *DomainServiceHandler) GetMetadata() *transport.ServiceMetadata {
+    return &transport.ServiceMetadata{
+        Name:        "domain-service",
+        Version:     "v1.0.0",
+        Description: "Domain business logic service",
+        Tags:        []string{"domain", "business"},
+    }
+}
+
+// Initialize 初始化服务
+func (h *DomainServiceHandler) Initialize() error {
+    h.logger.Info("Initializing domain service handler")
+    // 执行服务初始化逻辑
+    return nil
+}
+
+// RegisterHTTP 注册HTTP路由
+func (h *DomainServiceHandler) RegisterHTTP(router *gin.Engine) error {
+    v1 := router.Group("/api/v1/domain")
+    {
+        v1.GET("/entities", h.listEntities)
+        v1.POST("/entities", h.createEntity)
+        v1.GET("/entities/:id", h.getEntity)
+        v1.PUT("/entities/:id", h.updateEntity)
+        v1.DELETE("/entities/:id", h.deleteEntity)
+    }
+    
+    h.logger.Info("Domain service HTTP routes registered")
+    return nil
+}
+
+// RegisterGRPC 注册gRPC服务
+func (h *DomainServiceHandler) RegisterGRPC(server *grpc.Server) error {
+    // 注册gRPC服务实现
+    // pb.RegisterDomainServiceServer(server, h)
+    
+    h.logger.Info("Domain service gRPC handlers registered")
+    return nil
+}
+
+// HealthCheck 执行健康检查
+func (h *DomainServiceHandler) HealthCheck(ctx context.Context) error {
+    // 检查服务依赖的健康状态
+    return h.service.HealthCheck(ctx)
+}
+
+// IsHealthy 返回服务健康状态
+func (h *DomainServiceHandler) IsHealthy() bool {
+    return h.service.IsHealthy()
+}
+
+// Shutdown 优雅关闭服务
+func (h *DomainServiceHandler) Shutdown() error {
+    h.logger.Info("Shutting down domain service handler")
+    return h.service.Shutdown()
+}
+
+// HTTP处理器方法
+func (h *DomainServiceHandler) listEntities(c *gin.Context) {
+    // 实现列表查询逻辑
+}
+
+func (h *DomainServiceHandler) createEntity(c *gin.Context) {
+    // 实现创建逻辑
+}
+
+func (h *DomainServiceHandler) getEntity(c *gin.Context) {
+    // 实现单个查询逻辑
+}
+
+func (h *DomainServiceHandler) updateEntity(c *gin.Context) {
+    // 实现更新逻辑
+}
+
+func (h *DomainServiceHandler) deleteEntity(c *gin.Context) {
+    // 实现删除逻辑
+}
+```
+
+#### 健康检查服务Handler示例
+
+```go
+// internal/new-service/handler/health_handler.go
+package handler
+
+import (
+    "context"
+    "log/slog"
+    "net/http"
+    
+    "github.com/gin-gonic/gin"
+    "google.golang.org/grpc"
+    
+    "your-project/internal/switserve/transport"
+)
+
+// HealthServiceHandler 健康检查服务处理器
+type HealthServiceHandler struct {
+    logger *slog.Logger
+}
+
+// NewHealthServiceHandler 创建健康检查服务处理器
+func NewHealthServiceHandler(logger *slog.Logger) *HealthServiceHandler {
+    return &HealthServiceHandler{
+        logger: logger,
+    }
+}
+
+// GetMetadata 返回服务元数据
+func (h *HealthServiceHandler) GetMetadata() *transport.ServiceMetadata {
+    return &transport.ServiceMetadata{
+        Name:        "health-service",
+        Version:     "v1.0.0",
+        Description: "Health check service",
+        Tags:        []string{"health", "monitoring"},
+    }
+}
+
+// Initialize 初始化服务
+func (h *HealthServiceHandler) Initialize() error {
+    h.logger.Info("Initializing health service handler")
+    return nil
+}
+
+// RegisterHTTP 注册HTTP路由
+func (h *HealthServiceHandler) RegisterHTTP(router *gin.Engine) error {
+    router.GET("/health", h.healthCheck)
+    router.GET("/ready", h.readinessCheck)
+    
+    h.logger.Info("Health service HTTP routes registered")
+    return nil
+}
+
+// RegisterGRPC 注册gRPC服务
+func (h *HealthServiceHandler) RegisterGRPC(server *grpc.Server) error {
+    // 健康检查服务通常不需要gRPC接口
+    return nil
+}
+
+// HealthCheck 执行健康检查
+func (h *HealthServiceHandler) HealthCheck(ctx context.Context) error {
+    // 检查系统健康状态
+    return nil
+}
+
+// IsHealthy 返回服务健康状态
+func (h *HealthServiceHandler) IsHealthy() bool {
+    return true
+}
+
+// Shutdown 优雅关闭服务
+func (h *HealthServiceHandler) Shutdown() error {
+    h.logger.Info("Shutting down health service handler")
+    return nil
+}
+
+// HTTP处理器方法
+func (h *HealthServiceHandler) healthCheck(c *gin.Context) {
+    c.JSON(http.StatusOK, gin.H{
+        "status": "healthy",
+        "timestamp": time.Now(),
+    })
+}
+
+func (h *HealthServiceHandler) readinessCheck(c *gin.Context) {
+    c.JSON(http.StatusOK, gin.H{
+        "status": "ready",
+        "timestamp": time.Now(),
+    })
+}
+```
+
+### 7. ServiceRegistry 实现
 
 **注意：必须包含并发安全保护**
 
@@ -929,7 +1420,7 @@ func (sr *ServiceRegistry) GetRegistrars() []ServiceRegistrar {
 }
 ```
 
-### 4. Server 主文件实现
+### 8. Server 主文件实现
 
 ```go
 // internal/new-service/server.go
@@ -1273,15 +1764,17 @@ func (c *Config) Validate() error {
    - 根据需要配置认证中间件的白名单和服务发现
    - 仅在必要时创建项目特定中间件
 
-6. **实现 ServiceRegistrar**
-   - 每个领域服务一个 registrar
-   - 支持 HTTP 和 gRPC 双协议
-   - 包含版本化路由注册
+6. **实现 ServiceHandler 接口**
+   - 每个服务实现 ServiceHandler 接口
+   - 支持 HTTP 和 gRPC 双协议注册
+   - 包含服务元数据、初始化、健康检查和优雅关闭
+   - 使用 EnhancedServiceRegistry 进行统一管理
 
 7. **实现处理器层**
    - HTTP 处理器使用 Gin 和版本化路由
    - gRPC 处理器实现 protobuf 接口
    - 统一错误处理和响应格式
+   - 集成到 ServiceHandler 接口中
 
 ### 第三阶段：集成和测试
 

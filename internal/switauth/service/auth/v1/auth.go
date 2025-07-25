@@ -28,34 +28,16 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/internal/switauth/client"
+	"github.com/innovationmech/swit/internal/switauth/interfaces"
 	"github.com/innovationmech/swit/internal/switauth/model"
 	"github.com/innovationmech/swit/internal/switauth/repository"
+	"github.com/innovationmech/swit/internal/switauth/types"
 	"github.com/innovationmech/swit/pkg/utils"
 )
 
-// AuthResponse represents the authentication response with tokens
-// Used for both login and token refresh responses
-type AuthResponse struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	TokenType    string    `json:"token_type"`
-}
-
-// AuthSrv defines the interface for authentication business logic
-// including login, logout, token refresh, and token validation operations
-type AuthSrv interface {
-	// Login authenticates a user and returns access and refresh tokens
-	Login(ctx context.Context, username, password string) (*AuthResponse, error)
-
-	// RefreshToken generates new tokens using a refresh token
-	RefreshToken(ctx context.Context, refreshToken string) (*AuthResponse, error)
-
-	// ValidateToken validates an access token and returns token details
-	ValidateToken(ctx context.Context, tokenString string) (*model.Token, error)
-
-	// Logout invalidates a token and logs out the user
-	Logout(ctx context.Context, tokenString string) error
+// authService implements the interfaces.AuthService interface
+type authService struct {
+	config *AuthServiceConfig
 }
 
 // AuthServiceConfig auth service config
@@ -70,11 +52,6 @@ type AuthServiceConfig struct {
 
 // AuthServiceOption auth service option function type
 type AuthServiceOption func(*AuthServiceConfig)
-
-// authService implements the AuthSrv interface
-type authService struct {
-	config *AuthServiceConfig
-}
 
 // WithUserClient set the user client dependency
 func WithUserClient(userClient client.UserClient) AuthServiceOption {
@@ -104,7 +81,7 @@ func WithTokenRepository(tokenRepo repository.TokenRepository) AuthServiceOption
 // }
 
 // NewAuthSrv creates a new auth service using options pattern.
-func NewAuthSrv(opts ...AuthServiceOption) (AuthSrv, error) {
+func NewAuthSrv(opts ...AuthServiceOption) (interfaces.AuthService, error) {
 	config := &AuthServiceConfig{}
 
 	// apply options
@@ -126,7 +103,7 @@ func NewAuthSrv(opts ...AuthServiceOption) (AuthSrv, error) {
 }
 
 // NewAuthSrvWithConfig creates a new auth service using config struct
-func NewAuthSrvWithConfig(config *AuthServiceConfig) (AuthSrv, error) {
+func NewAuthSrvWithConfig(config *AuthServiceConfig) (interfaces.AuthService, error) {
 	if config.UserClient == nil {
 		return nil, errors.New("user client is required")
 	}
@@ -140,7 +117,7 @@ func NewAuthSrvWithConfig(config *AuthServiceConfig) (AuthSrv, error) {
 }
 
 // Login authenticates a user with username and password
-func (s *authService) Login(ctx context.Context, username, password string) (*AuthResponse, error) {
+func (s *authService) Login(ctx context.Context, username, password string) (*types.AuthResponse, error) {
 	// Validate user credentials
 	user, err := s.config.UserClient.ValidateUserCredentials(ctx, username, password)
 	if err != nil {
@@ -178,7 +155,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*Au
 		return nil, err
 	}
 
-	return &AuthResponse{
+	return &types.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresAt:    accessExpiresAt,
@@ -187,7 +164,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*Au
 }
 
 // RefreshToken generates new access and refresh tokens
-func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*AuthResponse, error) {
+func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*types.AuthResponse, error) {
 	// Validate refresh token
 	claims, err := utils.ValidateRefreshToken(refreshToken)
 	if err != nil {
@@ -231,7 +208,7 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*A
 		return nil, err
 	}
 
-	return &AuthResponse{
+	return &types.AuthResponse{
 		AccessToken:  newAccessToken,
 		RefreshToken: newRefreshToken,
 		ExpiresAt:    accessExpiresAt,

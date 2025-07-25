@@ -37,16 +37,18 @@ import (
 // HTTPTransport handles HTTP transport using Gin
 // Implements the Transport interface for HTTP protocol
 type HTTPTransport struct {
-	server *http.Server
-	router *gin.Engine
-	addr   string
-	mu     sync.RWMutex
+	server          *http.Server
+	router          *gin.Engine
+	addr            string
+	serviceRegistry *EnhancedServiceRegistry
+	mu              sync.RWMutex
 }
 
 // NewHTTPTransport creates a new HTTP transport instance
 func NewHTTPTransport() *HTTPTransport {
 	return &HTTPTransport{
-		router: gin.New(),
+		router:          gin.New(),
+		serviceRegistry: NewEnhancedServiceRegistry(),
 	}
 }
 
@@ -94,6 +96,12 @@ func (h *HTTPTransport) Stop(ctx context.Context) error {
 	}
 
 	logger.Logger.Info("Stopping HTTP transport")
+
+	// Shutdown all services first
+	if err := h.serviceRegistry.ShutdownAll(ctx); err != nil {
+		logger.Logger.Error("Failed to shutdown services", zap.Error(err))
+	}
+
 	return h.server.Shutdown(ctx)
 }
 
@@ -143,4 +151,32 @@ func (h *HTTPTransport) GetPort() int {
 	}
 
 	return port
+}
+
+// GetServiceRegistry returns the enhanced service registry
+func (h *HTTPTransport) GetServiceRegistry() *EnhancedServiceRegistry {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.serviceRegistry
+}
+
+// RegisterService registers a service handler with the transport
+func (h *HTTPTransport) RegisterService(handler ServiceHandler) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.serviceRegistry.Register(handler)
+}
+
+// InitializeServices initializes all registered services
+func (h *HTTPTransport) InitializeServices(ctx context.Context) error {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.serviceRegistry.InitializeAll(ctx)
+}
+
+// RegisterAllRoutes registers HTTP routes for all registered services
+func (h *HTTPTransport) RegisterAllRoutes() error {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.serviceRegistry.RegisterAllHTTP(h.router)
 }

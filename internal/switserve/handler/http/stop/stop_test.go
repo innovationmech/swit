@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
+	"github.com/innovationmech/swit/internal/switserve/types"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -40,15 +42,15 @@ type mockStopService struct {
 	called     bool
 }
 
-func (m *mockStopService) InitiateShutdown(ctx context.Context) (*ShutdownStatus, error) {
+func (m *mockStopService) InitiateShutdown(ctx context.Context) (*interfaces.ShutdownStatus, error) {
 	m.called = true
 	if m.shouldFail {
 		return nil, assert.AnError
 	}
-	return &ShutdownStatus{
-		Status:    "stopping",
-		Message:   "Server is shutting down",
-		Timestamp: time.Now().Unix(),
+	return &interfaces.ShutdownStatus{
+		Status:      types.StatusShutdownInitiated,
+		Message:     "Server is shutting down",
+		InitiatedAt: time.Now().Unix(),
 	}, nil
 }
 
@@ -82,7 +84,7 @@ func TestStopHandler_StopServer(t *testing.T) {
 
 	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "stopping")
+	assert.Contains(t, w.Body.String(), "shutdown_initiated")
 
 	// Check service was called
 	assert.True(t, service.called)
@@ -105,7 +107,7 @@ func TestStopRouteRegistration(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "stopping")
+	assert.Contains(t, w.Body.String(), "shutdown_initiated")
 	assert.True(t, service.called)
 }
 

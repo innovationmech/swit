@@ -28,16 +28,33 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
+	"github.com/innovationmech/swit/internal/switserve/types"
 )
 
-func TestNewService(t *testing.T) {
-	service := NewService()
+func TestNewHealthSrv(t *testing.T) {
+	service := NewHealthSrv()
+
+	assert.NotNil(t, service)
+	// Verify that the service implements the HealthService interface
+	var _ interfaces.HealthService = service
+	assert.IsType(t, &Service{}, service)
+}
+
+func TestNewHealthSrvWithConfig(t *testing.T) {
+	config := &HealthServiceConfig{
+		ServiceName: "test-service",
+		Version:     "2.0.0",
+		StartTime:   time.Now(),
+	}
+	service := NewHealthSrvWithConfig(config)
 
 	assert.NotNil(t, service)
 }
 
-func TestService_CheckHealth(t *testing.T) {
-	service := NewService()
+func TestHealthService_CheckHealth(t *testing.T) {
+	service := NewHealthSrv()
 	ctx := context.Background()
 
 	status, err := service.CheckHealth(ctx)
@@ -49,8 +66,8 @@ func TestService_CheckHealth(t *testing.T) {
 	assert.NotNil(t, status.Details)
 }
 
-func TestService_CheckHealth_StatusStructure(t *testing.T) {
-	service := NewService()
+func TestHealthService_CheckHealth_StatusStructure(t *testing.T) {
+	service := NewHealthSrv()
 	ctx := context.Background()
 
 	status, err := service.CheckHealth(ctx)
@@ -59,12 +76,13 @@ func TestService_CheckHealth_StatusStructure(t *testing.T) {
 	assert.Equal(t, "healthy", status.Status)
 	assert.Contains(t, status.Details, "server")
 	assert.Contains(t, status.Details, "version")
+	assert.Contains(t, status.Details, "uptime")
 	assert.Equal(t, "swit-serve", status.Details["server"])
 	assert.Equal(t, "1.0.0", status.Details["version"])
 }
 
-func TestService_CheckHealth_Timestamp(t *testing.T) {
-	service := NewService()
+func TestHealthService_CheckHealth_Timestamp(t *testing.T) {
+	service := NewHealthSrv()
 	ctx := context.Background()
 
 	beforeTime := time.Now().Unix()
@@ -76,8 +94,8 @@ func TestService_CheckHealth_Timestamp(t *testing.T) {
 	assert.LessOrEqual(t, status.Timestamp, afterTime)
 }
 
-func TestService_CheckHealth_WithContext(t *testing.T) {
-	service := NewService()
+func TestHealthService_CheckHealth_WithContext(t *testing.T) {
+	service := NewHealthSrv()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -88,8 +106,8 @@ func TestService_CheckHealth_WithContext(t *testing.T) {
 	assert.Equal(t, "healthy", status.Status)
 }
 
-func TestService_CheckHealth_WithCancelledContext(t *testing.T) {
-	service := NewService()
+func TestHealthService_CheckHealth_WithCancelledContext(t *testing.T) {
+	service := NewHealthSrv()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -100,8 +118,34 @@ func TestService_CheckHealth_WithCancelledContext(t *testing.T) {
 	assert.Equal(t, "healthy", status.Status)
 }
 
+func TestHealthService_CheckHealth_NilContext(t *testing.T) {
+	service := NewHealthSrv()
+
+	status, err := service.CheckHealth(nil)
+
+	assert.Nil(t, status)
+	assert.Error(t, err)
+	assert.True(t, types.IsServiceError(err))
+	serviceErr := err.(*types.ServiceError)
+	assert.Equal(t, types.ErrCodeValidation, serviceErr.Code)
+}
+
+func TestHealthService_CheckHealth_WithOptions(t *testing.T) {
+	service := NewHealthSrv(
+		WithServiceName("test-service"),
+		WithVersion("2.0.0"),
+	)
+	ctx := context.Background()
+
+	status, err := service.CheckHealth(ctx)
+
+	require.NoError(t, err)
+	assert.Equal(t, "test-service", status.Details["server"])
+	assert.Equal(t, "2.0.0", status.Details["version"])
+}
+
 func TestHealthStatus_JSONStructure(t *testing.T) {
-	service := NewService()
+	service := NewHealthSrv()
 	ctx := context.Background()
 
 	status, err := service.CheckHealth(ctx)

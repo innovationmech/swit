@@ -24,45 +24,127 @@ package health
 import (
 	"context"
 	"time"
+
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
+	"github.com/innovationmech/swit/internal/switserve/types"
 )
 
-// Status represents health check response
-type Status struct {
-	Status    string            `json:"status"`
-	Timestamp int64             `json:"timestamp"`
-	Details   map[string]string `json:"details,omitempty"`
+// HealthSrv is an alias for the HealthService interface
+type HealthSrv = interfaces.HealthService
+
+// HealthServiceConfig holds configuration for the health service
+type HealthServiceConfig struct {
+	ServiceName string
+	Version     string
+	StartTime   time.Time
 }
 
-// HealthService defines the interface for health check business logic
-type HealthService interface {
-	CheckHealth(ctx context.Context) (*Status, error)
-}
+// HealthServiceOption is a function type for configuring the health service
+type HealthServiceOption func(*HealthServiceConfig)
 
 // Service implements health check business logic
 type Service struct {
-	// Add dependencies here (database, external services, etc.)
+	config    *HealthServiceConfig
+	startTime time.Time
 }
 
-// NewService creates a new health service instance
-func NewService() HealthService {
-	return &Service{}
+// NewHealthSrv creates a new health service instance
+func NewHealthSrv(opts ...HealthServiceOption) interfaces.HealthService {
+	config := &HealthServiceConfig{
+		ServiceName: "swit-serve",
+		Version:     "1.0.0",
+		StartTime:   time.Now(),
+	}
+
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	return &Service{
+		config:    config,
+		startTime: config.StartTime,
+	}
+}
+
+// NewHealthSrvWithConfig creates a new health service instance with configuration
+func NewHealthSrvWithConfig(config *HealthServiceConfig) interfaces.HealthService {
+	if config == nil {
+		config = &HealthServiceConfig{
+			ServiceName: "swit-serve",
+			Version:     "1.0.0",
+			StartTime:   time.Now(),
+		}
+	}
+
+	return &Service{
+		config:    config,
+		startTime: config.StartTime,
+	}
 }
 
 // CheckHealth performs health checks and returns status
-func (s *Service) CheckHealth(ctx context.Context) (*Status, error) {
-	// Perform health checks here
+func (s *Service) CheckHealth(ctx context.Context) (*interfaces.HealthStatus, error) {
+	// Validate context
+	if ctx == nil {
+		return nil, types.ErrValidation("context cannot be nil")
+	}
+
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		// Context is cancelled, but we still return health status
+		// This allows graceful handling of cancelled requests
+	default:
+	}
+
+	// Create health status using shared types
+	status := types.NewHealthStatus(
+		types.HealthStatusHealthy,
+		s.config.Version,
+		time.Since(s.startTime),
+	)
+
+	// Add basic service dependencies check
+	// In a real implementation, you would check:
 	// - Database connectivity
 	// - External service availability
 	// - Resource usage checks
 
-	status := &Status{
-		Status:    "healthy",
-		Timestamp: time.Now().Unix(),
+	// Example: Add a mock database dependency
+	dbStatus := types.NewDependencyStatus(types.DependencyStatusUp, 5*time.Millisecond)
+	status.AddDependency("database", dbStatus)
+
+	// Convert to interface type
+	interfaceStatus := &interfaces.HealthStatus{
+		Status:    status.Status,
+		Timestamp: status.Timestamp.Unix(),
 		Details: map[string]string{
-			"server":  "swit-serve",
-			"version": "1.0.0",
+			"server":  s.config.ServiceName,
+			"version": s.config.Version,
+			"uptime":  status.Uptime.String(),
 		},
 	}
 
-	return status, nil
+	return interfaceStatus, nil
+}
+
+// WithServiceName sets the service name
+func WithServiceName(name string) HealthServiceOption {
+	return func(config *HealthServiceConfig) {
+		config.ServiceName = name
+	}
+}
+
+// WithVersion sets the service version
+func WithVersion(version string) HealthServiceOption {
+	return func(config *HealthServiceConfig) {
+		config.Version = version
+	}
+}
+
+// WithStartTime sets the service start time
+func WithStartTime(startTime time.Time) HealthServiceOption {
+	return func(config *HealthServiceConfig) {
+		config.StartTime = startTime
+	}
 }

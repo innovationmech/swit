@@ -26,14 +26,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 )
-
-// GreeterService defines the interface for greeter business logic
-type GreeterService interface {
-	GenerateGreeting(ctx context.Context, name, language string) (string, error)
-}
 
 // Service implements the greeter business logic
 type Service struct {
@@ -41,7 +37,7 @@ type Service struct {
 }
 
 // NewService creates a new greeter service implementation
-func NewService() GreeterService {
+func NewService() interfaces.GreeterService {
 	return &Service{}
 }
 

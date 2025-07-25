@@ -32,10 +32,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/config"
+	"github.com/innovationmech/swit/internal/switauth/interfaces"
 	"github.com/innovationmech/swit/internal/switauth/model"
 	"github.com/innovationmech/swit/internal/switauth/repository"
-	authv1 "github.com/innovationmech/swit/internal/switauth/service/auth/v1"
-	"github.com/innovationmech/swit/internal/switauth/service/health"
+	"github.com/innovationmech/swit/internal/switauth/types"
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -87,25 +87,25 @@ func (m *MockUserClient) ValidateUserCredentials(ctx context.Context, username, 
 	return args.Get(0).(*model.User), args.Error(1)
 }
 
-// MockAuthSrv implements authv1.AuthSrv
+// MockAuthSrv implements interfaces.AuthService
 type MockAuthSrv struct {
 	mock.Mock
 }
 
-func (m *MockAuthSrv) Login(ctx context.Context, username, password string) (*authv1.AuthResponse, error) {
+func (m *MockAuthSrv) Login(ctx context.Context, username, password string) (*types.AuthResponse, error) {
 	args := m.Called(ctx, username, password)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*authv1.AuthResponse), args.Error(1)
+	return args.Get(0).(*types.AuthResponse), args.Error(1)
 }
 
-func (m *MockAuthSrv) RefreshToken(ctx context.Context, refreshToken string) (*authv1.AuthResponse, error) {
+func (m *MockAuthSrv) RefreshToken(ctx context.Context, refreshToken string) (*types.AuthResponse, error) {
 	args := m.Called(ctx, refreshToken)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*authv1.AuthResponse), args.Error(1)
+	return args.Get(0).(*types.AuthResponse), args.Error(1)
 }
 
 func (m *MockAuthSrv) ValidateToken(ctx context.Context, tokenString string) (*model.Token, error) {
@@ -121,19 +121,29 @@ func (m *MockAuthSrv) Logout(ctx context.Context, tokenString string) error {
 	return args.Error(0)
 }
 
-// MockHealthService implements health.Service
+// MockHealthService implements interfaces.HealthService
 type MockHealthService struct {
 	mock.Mock
 }
 
-func (m *MockHealthService) CheckHealth(ctx context.Context) *health.Status {
+func (m *MockHealthService) CheckHealth(ctx context.Context) *types.HealthStatus {
 	args := m.Called(ctx)
-	return args.Get(0).(*health.Status)
+	return args.Get(0).(*types.HealthStatus)
 }
 
 func (m *MockHealthService) GetHealthDetails(ctx context.Context) map[string]interface{} {
 	args := m.Called(ctx)
 	return args.Get(0).(map[string]interface{})
+}
+
+func (m *MockHealthService) GetServiceInfo(ctx context.Context) *types.ServiceInfo {
+	args := m.Called(ctx)
+	return args.Get(0).(*types.ServiceInfo)
+}
+
+func (m *MockHealthService) IsHealthy(ctx context.Context) bool {
+	args := m.Called(ctx)
+	return args.Bool(0)
 }
 
 // Test Dependencies struct
@@ -170,8 +180,8 @@ func TestDependencies_StructFields(t *testing.T) {
 	// Verify interface compliance
 	assert.Implements(t, (*repository.TokenRepository)(nil), deps.TokenRepo)
 	assert.Implements(t, (*client.UserClient)(nil), deps.UserClient)
-	assert.Implements(t, (*authv1.AuthSrv)(nil), deps.AuthSrv)
-	assert.Implements(t, (*health.Service)(nil), deps.HealthSrv)
+	assert.Implements(t, (*interfaces.AuthService)(nil), deps.AuthSrv)
+	assert.Implements(t, (*interfaces.HealthService)(nil), deps.HealthSrv)
 }
 
 // Test NewDependencies function structure and logic
@@ -304,7 +314,7 @@ func TestDependencies_MockIntegration(t *testing.T) {
 	// Test AuthSrv mock
 	t.Run("AuthSrv mock functionality", func(t *testing.T) {
 		ctx := context.Background()
-		testAuthResponse := &authv1.AuthResponse{
+		testAuthResponse := &types.AuthResponse{
 			AccessToken:  "access_token_123",
 			RefreshToken: "refresh_token_123",
 			ExpiresAt:    time.Now().Add(time.Hour),
@@ -329,11 +339,12 @@ func TestDependencies_MockIntegration(t *testing.T) {
 	// Test HealthService mock
 	t.Run("HealthService mock functionality", func(t *testing.T) {
 		ctx := context.Background()
-		testStatus := &health.Status{
-			Status:    "healthy",
-			Timestamp: time.Now().Unix(),
-			Service:   "switauth",
-			Version:   "1.0.0",
+		testStatus := &types.HealthStatus{
+			Status:       "healthy",
+			Timestamp:    time.Now(),
+			Version:      "1.0.0",
+			Uptime:       time.Hour,
+			Dependencies: make(map[string]types.DependencyStatus),
 		}
 
 		testDetails := map[string]interface{}{

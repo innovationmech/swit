@@ -29,11 +29,11 @@ import (
 
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/internal/switserve/deps"
-	"github.com/innovationmech/swit/internal/switserve/service/greeter"
-	"github.com/innovationmech/swit/internal/switserve/service/health"
-	"github.com/innovationmech/swit/internal/switserve/service/notification"
-	"github.com/innovationmech/swit/internal/switserve/service/stop"
-	"github.com/innovationmech/swit/internal/switserve/service/user"
+	greeterv1 "github.com/innovationmech/swit/internal/switserve/handler/http/greeter/v1"
+	"github.com/innovationmech/swit/internal/switserve/handler/http/health"
+	notificationv1 "github.com/innovationmech/swit/internal/switserve/handler/http/notification/v1"
+	"github.com/innovationmech/swit/internal/switserve/handler/http/stop"
+	userv1 "github.com/innovationmech/swit/internal/switserve/handler/http/user/v1"
 	"github.com/innovationmech/swit/internal/switserve/transport"
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -43,7 +43,6 @@ import (
 // Server represents the SWIT server implementation
 type Server struct {
 	transportManager *transport.Manager
-	serviceRegistry  *transport.ServiceRegistry
 	sd               *discovery.ServiceDiscovery
 	httpTransport    *transport.HTTPTransport
 	grpcTransport    *transport.GRPCTransport
@@ -54,7 +53,6 @@ type Server struct {
 func NewServer() (*Server, error) {
 	server := &Server{
 		transportManager: transport.NewManager(),
-		serviceRegistry:  transport.NewServiceRegistry(),
 	}
 
 	// Initialize dependencies with shutdown callback
@@ -91,30 +89,30 @@ func NewServer() (*Server, error) {
 	return server, nil
 }
 
-// registerServices registers all services with both transports
+// registerServices registers all services with the service registry
 func (s *Server) registerServices() {
+	// Register services with the HTTP transport's service registry
+	// This uses the new ServiceHandler interface for unified service management
+
 	// Register Greeter service with dependency injection
-	greeterRegistrar := greeter.NewServiceRegistrar(s.deps.GreeterSrv)
-	s.serviceRegistry.Register(greeterRegistrar)
+	greeterHandler := greeterv1.NewGreeterHandler(s.deps.GreeterSrv)
+	s.httpTransport.RegisterService(greeterHandler)
 
 	// Register Notification service with dependency injection
-	notificationRegistrar := notification.NewServiceRegistrar(s.deps.NotificationSrv)
-	s.serviceRegistry.Register(notificationRegistrar)
+	notificationHandler := notificationv1.NewHandler(s.deps.NotificationSrv)
+	s.httpTransport.RegisterService(notificationHandler)
 
 	// Register Health service with dependency injection
-	healthRegistrar := health.NewServiceRegistrar(s.deps.HealthSrv)
-	s.serviceRegistry.Register(healthRegistrar)
+	healthHandler := health.NewHandler(s.deps.HealthSrv)
+	s.httpTransport.RegisterService(healthHandler)
 
 	// Register Stop service with dependency injection
-	stopRegistrar := stop.NewServiceRegistrar(s.deps.StopSrv)
-	s.serviceRegistry.Register(stopRegistrar)
+	stopHandler := stop.NewHandler(s.deps.StopSrv)
+	s.httpTransport.RegisterService(stopHandler)
 
 	// Register User service with dependency injection
-	userRegistrar := user.NewServiceRegistrar(s.deps.UserSrv)
-	s.serviceRegistry.Register(userRegistrar)
-
-	// Register Debug service (needs access to service registry and gin engine)
-	// We'll register this after HTTP transport is created
+	userHandler := userv1.NewUserController(s.deps.UserSrv)
+	s.httpTransport.RegisterService(userHandler)
 }
 
 // Start starts the server with all transports
@@ -128,14 +126,15 @@ func (s *Server) Start(ctx context.Context) error {
 		// Add HTTP middleware here if needed
 	}
 
-	// Register all gRPC services
-	if err := s.serviceRegistry.RegisterAllGRPC(grpcServer); err != nil {
-		return fmt.Errorf("failed to register gRPC services: %v", err)
+	// Register all HTTP routes through HTTP transport
+	if err := s.httpTransport.RegisterAllRoutes(); err != nil {
+		return fmt.Errorf("failed to register HTTP routes: %v", err)
 	}
 
-	// Register all HTTP routes
-	if err := s.serviceRegistry.RegisterAllHTTP(httpRouter); err != nil {
-		return fmt.Errorf("failed to register HTTP routes: %v", err)
+	// Register all gRPC services through HTTP transport's service registry
+	serviceRegistry := s.httpTransport.GetServiceRegistry()
+	if err := serviceRegistry.RegisterAllGRPC(grpcServer); err != nil {
+		return fmt.Errorf("failed to register gRPC services: %v", err)
 	}
 
 	// Start all transports

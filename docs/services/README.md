@@ -1,26 +1,43 @@
 # SWIT 服务API文档导航
 
-本目录包含 SWIT 项目中各个微服务的API文档和使用指南。
+本目录包含 SWIT 项目中各个微服务的API文档和使用指南。所有服务都基于统一的 ServiceHandler 架构模式，提供完整的服务生命周期管理。
 
 ## 服务架构
 
 ```mermaid
 graph TB
     A[客户端应用] --> B[API网关]
-    B --> C[SwitAuth 认证服务]
-    B --> D[SwitServe 用户服务]
+    B --> C[SwitAuth ServiceHandler]
+    B --> D[SwitServe ServiceHandler]
     
-    C --> E[Auth Database]
-    D --> F[User Database]
+    C --> E[Auth Service Layer]
+    D --> F[User Service Layer]
     
-    C -.-> G[JWT Token验证]
-    D -.-> G
+    E --> G[Auth Database]
+    F --> H[User Database]
+    
+    I[EnhancedServiceRegistry] --> C
+    I --> D
+    
+    C -.-> J[JWT Token验证]
+    D -.-> J
+    
+    K[Health Monitoring] --> C
+    K --> D
 ```
+
+### ServiceHandler 架构特性
+- **统一接口**: 所有服务实现 ServiceHandler 接口
+- **生命周期管理**: 支持初始化、健康检查、优雅关闭
+- **服务注册**: 使用 EnhancedServiceRegistry 管理服务
+- **接口分离**: 业务接口与实现完全分离
+- **类型安全**: 共享 types 包确保类型一致性
 
 ## 可用服务
 
 ### 🔐 SwitAuth - 认证授权服务
 - **功能**: 用户登录、Token管理、权限验证
+- **架构**: 基于 ServiceHandler 模式，支持完整生命周期管理
 - **端口**: 9001
 - **文档**: [详细文档](./switauth/README.md)
 - **API**: http://localhost:9001/swagger/index.html
@@ -33,6 +50,7 @@ graph TB
 
 ### 👥 SwitServe - 用户管理服务
 - **功能**: 用户CRUD操作、用户信息管理
+- **架构**: 基于 ServiceHandler 模式，实现接口分离和依赖注入优化
 - **端口**: 9000  
 - **文档**: [详细文档](./switserve/README.md)
 - **API**: http://localhost:9000/swagger/index.html
