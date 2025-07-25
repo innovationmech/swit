@@ -27,8 +27,8 @@ import (
 
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/deps"
-	"github.com/innovationmech/swit/internal/switauth/service/auth"
-	"github.com/innovationmech/swit/internal/switauth/service/health"
+	auth "github.com/innovationmech/swit/internal/switauth/handler/http/auth/v1"
+	health "github.com/innovationmech/swit/internal/switauth/handler/http/health"
 	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -37,10 +37,9 @@ import (
 )
 
 // Server represents the server structure with transport manager
-// Uses the service-centric architecture
+// Uses the service-centric architecture with ServiceHandler pattern
 type Server struct {
 	transportManager *transport.Manager
-	serviceRegistry  *transport.ServiceRegistry
 	httpTransport    *transport.HTTPTransport
 	grpcTransport    *transport.GRPCTransport
 	sd               *discovery.ServiceDiscovery
@@ -56,12 +55,6 @@ func NewServer() (*Server, error) {
 		return nil, fmt.Errorf("failed to create dependencies: %w", err)
 	}
 
-	// Create transport manager
-	transportManager := transport.NewManager()
-
-	// Create service registry
-	serviceRegistry := transport.NewServiceRegistry()
-
 	// Create HTTP transport
 	httpTransport := transport.NewHTTPTransport()
 	httpTransport.SetAddress(":" + dependencies.Config.Server.Port)
@@ -74,14 +67,14 @@ func NewServer() (*Server, error) {
 	}
 	grpcTransport.SetAddress(":" + grpcPort)
 
-	// Register transports with manager
+	// Create transport manager
+	transportManager := transport.NewManager()
 	transportManager.Register(httpTransport)
 	transportManager.Register(grpcTransport)
 
 	// Create server
 	server := &Server{
 		transportManager: transportManager,
-		serviceRegistry:  serviceRegistry,
 		httpTransport:    httpTransport,
 		grpcTransport:    grpcTransport,
 		sd:               dependencies.SD,
@@ -94,24 +87,27 @@ func NewServer() (*Server, error) {
 		return nil, fmt.Errorf("failed to register services: %w", err)
 	}
 
-	// Configure middleware
-	server.configureMiddleware()
-
 	return server, nil
 }
 
-// registerServices registers all services with the service registry
+// registerServices registers all services with the HTTP transport's enhanced service registry
 func (s *Server) registerServices() error {
-	// Register authentication service using dependency injection
-	authService := auth.NewServiceRegistrar(s.deps.AuthSrv)
-	s.serviceRegistry.Register(authService)
+	// Register services with the HTTP transport's enhanced service registry
+	// This uses the new ServiceHandler interface for unified service management
 
-	// Register health service using dependency injection
-	healthService := health.NewServiceRegistrar(s.deps.HealthSrv)
-	s.serviceRegistry.Register(healthService)
+	// Register authentication service with dependency injection
+	authHandler := auth.NewAuthController(s.deps.AuthSrv)
+	if err := s.httpTransport.RegisterService(authHandler); err != nil {
+		logger.Logger.Error("Failed to register auth service", zap.Error(err))
+		return fmt.Errorf("failed to register auth service: %w", err)
+	}
 
-	logger.Logger.Info("All services registered successfully",
-		zap.Strings("services", s.serviceRegistry.GetServices()))
+	// Register health service with dependency injection
+	healthHandler := health.NewHandler()
+	if err := s.httpTransport.RegisterService(healthHandler); err != nil {
+		logger.Logger.Error("Failed to register health service", zap.Error(err))
+		return fmt.Errorf("failed to register health service: %w", err)
+	}
 
 	return nil
 }
@@ -127,12 +123,22 @@ func (s *Server) configureMiddleware() {
 
 // Start starts the server with all registered services
 func (s *Server) Start(ctx context.Context) error {
-	// Register services on transports
-	if err := s.serviceRegistry.RegisterAllHTTP(s.httpTransport.GetRouter()); err != nil {
-		return fmt.Errorf("failed to register HTTP services: %w", err)
+	// Configure middleware
+	s.configureMiddleware()
+
+	// Initialize all services
+	if err := s.httpTransport.InitializeServices(ctx); err != nil {
+		return fmt.Errorf("failed to initialize services: %w", err)
 	}
 
-	if err := s.serviceRegistry.RegisterAllGRPC(s.grpcTransport.GetServer()); err != nil {
+	// Register all HTTP routes through HTTP transport
+	if err := s.httpTransport.RegisterAllRoutes(); err != nil {
+		return fmt.Errorf("failed to register HTTP routes: %w", err)
+	}
+
+	// Register all gRPC services through HTTP transport's service registry
+	serviceRegistry := s.httpTransport.GetServiceRegistry()
+	if err := serviceRegistry.RegisterAllGRPC(s.grpcTransport.GetServer()); err != nil {
 		return fmt.Errorf("failed to register gRPC services: %w", err)
 	}
 
@@ -160,7 +166,7 @@ func (s *Server) Stop(ctx context.Context) error {
 		logger.Logger.Error("Failed to deregister from discovery", zap.Error(err))
 	}
 
-	// Stop all transports
+	// Stop all transports (this will shutdown services through HTTP transport)
 	if err := s.transportManager.Stop(ctx); err != nil {
 		return fmt.Errorf("failed to stop transports: %w", err)
 	}
@@ -221,5 +227,5 @@ func (s *Server) GetGRPCAddress() string {
 
 // GetServices returns the list of registered services
 func (s *Server) GetServices() []string {
-	return s.serviceRegistry.GetServices()
+	return s.httpTransport.GetServiceRegistry().GetServiceNames()
 }

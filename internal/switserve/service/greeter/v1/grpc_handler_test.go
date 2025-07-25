@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 	commonv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/common/v1"
 	greeterv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/interaction/v1"
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
@@ -37,7 +38,7 @@ import (
 func TestNewGRPCHandler(t *testing.T) {
 	tests := []struct {
 		name        string
-		service     GreeterService
+		service     interfaces.GreeterService
 		description string
 	}{
 		{

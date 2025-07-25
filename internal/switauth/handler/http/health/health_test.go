@@ -34,8 +34,9 @@ import (
 func TestHealthHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
+	handler := NewHandler()
 	router := gin.New()
-	router.GET("/health", Handler)
+	router.GET("/health", handler.HealthCheck)
 
 	req, err := http.NewRequest("GET", "/health", nil)
 	assert.NoError(t, err)

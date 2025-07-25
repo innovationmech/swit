@@ -22,19 +22,19 @@
 package v1
 
 import (
-	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
+	"github.com/innovationmech/swit/internal/switauth/interfaces"
 )
 
 // Server handles gRPC requests for authentication operations
 // This is a placeholder for future gRPC authentication service implementation
 type Server struct {
 	// UnimplementedAuthServiceServer should be embedded when protobuf is available
-	authService v1.AuthSrv
+	authService interfaces.AuthService
 }
 
 // NewAuthServer creates a new gRPC auth server instance
 // with the provided authentication service
-func NewAuthServer(authService v1.AuthSrv) *Server {
+func NewAuthServer(authService interfaces.AuthService) *Server {
 	return &Server{authService: authService}
 }
 

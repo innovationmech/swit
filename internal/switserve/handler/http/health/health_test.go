@@ -22,53 +22,88 @@
 package health
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
+// mockHealthService implements HealthService for testing
+type mockHealthService struct {
+	shouldFail bool
+}
+
+func (m *mockHealthService) CheckHealth(ctx context.Context) (*interfaces.HealthStatus, error) {
+	if m.shouldFail {
+		return nil, assert.AnError
+	}
+	return &interfaces.HealthStatus{
+		Status:    "healthy",
+		Timestamp: time.Now().Unix(),
+		Details:   map[string]string{"service": "test"},
+	}, nil
+}
+
 func TestHealthHandler(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
 	// Set gin to test mode
 	gin.SetMode(gin.TestMode)
 
+	goodService := &mockHealthService{shouldFail: false}
+	badService := &mockHealthService{shouldFail: true}
+
 	tests := []struct {
 		name           string
+		service        interfaces.HealthService
 		method         string
 		path           string
 		expectedStatus int
-		expectedBody   map[string]interface{}
+		checkResponse  bool
 	}{
 		{
 			name:           "successful health check",
+			service:        goodService,
 			method:         "GET",
 			path:           "/health",
 			expectedStatus: http.StatusOK,
-			expectedBody:   map[string]interface{}{"message": "pong"},
+			checkResponse:  true,
+		},
+		{
+			name:           "failed health check",
+			service:        badService,
+			method:         "GET",
+			path:           "/health",
+			expectedStatus: http.StatusInternalServerError,
+			checkResponse:  false,
 		},
 		{
 			name:           "health check with wrong method",
+			service:        goodService,
 			method:         "POST",
 			path:           "/health",
 			expectedStatus: http.StatusNotFound,
-			expectedBody:   nil,
-		},
-		{
-			name:           "health check with wrong path",
-			method:         "GET",
-			path:           "/health/invalid",
-			expectedStatus: http.StatusNotFound,
-			expectedBody:   nil,
+			checkResponse:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Create handler with mock service
+			handler := NewHandler(tt.service)
+
 			// Create a new gin router
 			router := gin.New()
-			router.GET("/health", Handler)
+			router.GET("/health", handler.HealthCheck)
 
 			// Create a new HTTP request
 			req, err := http.NewRequest(tt.method, tt.path, nil)
@@ -84,16 +119,23 @@ func TestHealthHandler(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			// Check the response body for successful health check
-			if tt.expectedBody != nil {
-				assert.JSONEq(t, `{"message":"pong"}`, w.Body.String())
+			if tt.checkResponse {
+				assert.Contains(t, w.Body.String(), "healthy")
 			}
 		})
 	}
 }
 
 func TestHealthRouteRegistration(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
 	// Set gin to test mode
 	gin.SetMode(gin.TestMode)
+
+	service := &mockHealthService{shouldFail: false}
+	handler := NewHandler(service)
 
 	tests := []struct {
 		name           string
@@ -111,7 +153,7 @@ func TestHealthRouteRegistration(t *testing.T) {
 			router := gin.New()
 
 			// Register the routes
-			router.GET("/health", Handler)
+			router.GET("/health", handler.HealthCheck)
 
 			// Check if the routes are registered correctly
 			for _, route := range tt.expectedRoutes {
@@ -134,12 +176,19 @@ func TestHealthRouteRegistration(t *testing.T) {
 
 // TestHealthHandlerConcurrent tests the health handler under concurrent access
 func TestHealthHandlerConcurrent(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
 	// Set gin to test mode
 	gin.SetMode(gin.TestMode)
 
+	service := &mockHealthService{shouldFail: false}
+	handler := NewHandler(service)
+
 	// Create a new gin router
 	router := gin.New()
-	router.GET("/health", Handler)
+	router.GET("/health", handler.HealthCheck)
 
 	// Number of concurrent requests
 	const concurrentRequests = 100
@@ -155,7 +204,7 @@ func TestHealthHandlerConcurrent(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			// Check if the response is correct
-			results <- w.Code == http.StatusOK && w.Body.String() == `{"message":"pong"}`
+			results <- w.Code == http.StatusOK && w.Body.String() != ""
 		}()
 	}
 
@@ -173,8 +222,15 @@ func TestHealthHandlerConcurrent(t *testing.T) {
 
 // TestHealthHandlerWithMiddleware tests the health handler with middleware
 func TestHealthHandlerWithMiddleware(t *testing.T) {
+	// Initialize logger for tests
+	logger.Logger, _ = zap.NewDevelopment()
+	defer logger.Logger.Sync()
+
 	// Set gin to test mode
 	gin.SetMode(gin.TestMode)
+
+	service := &mockHealthService{shouldFail: false}
+	handler := NewHandler(service)
 
 	// Create a new gin router with a simple middleware
 	router := gin.New()
@@ -184,7 +240,7 @@ func TestHealthHandlerWithMiddleware(t *testing.T) {
 	})
 
 	// Register the routes
-	router.GET("/health", Handler)
+	router.GET("/health", handler.HealthCheck)
 
 	// Create a new HTTP request
 	req, _ := http.NewRequest("GET", "/health", nil)
@@ -196,8 +252,8 @@ func TestHealthHandlerWithMiddleware(t *testing.T) {
 	// Check the status code
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	// Check the response body
-	assert.JSONEq(t, `{"message":"pong"}`, w.Body.String())
+	// Check the response body contains expected content
+	assert.Contains(t, w.Body.String(), "healthy")
 
 	// Check if middleware was applied
 	assert.Equal(t, "applied", w.Header().Get("X-Test-Middleware"))

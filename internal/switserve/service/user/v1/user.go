@@ -23,21 +23,18 @@ package v1
 
 import (
 	"context"
-	"errors"
-	"github.com/innovationmech/swit/pkg/utils"
 	"strings"
 
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/internal/switserve/model"
 	"github.com/innovationmech/swit/internal/switserve/repository"
+	"github.com/innovationmech/swit/internal/switserve/types"
+	"github.com/innovationmech/swit/pkg/utils"
 )
 
-// UserSrv is the service for the user model
-type UserSrv interface {
-	CreateUser(ctx context.Context, user *model.User) error
-	GetUserByUsername(ctx context.Context, username string) (*model.User, error)
-	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
-	DeleteUser(ctx context.Context, id string) error
-}
+// UserSrv is the legacy interface for backward compatibility
+// Deprecated: Use interfaces.UserService instead
+type UserSrv = interfaces.UserService
 
 // UserServiceConfig user service config
 type UserServiceConfig struct {
@@ -77,7 +74,7 @@ func WithUserRepository(repo repository.UserRepository) UserServiceOption {
 // }
 
 // NewUserSrv creates a new user service using options pattern.
-func NewUserSrv(opts ...UserServiceOption) (UserSrv, error) {
+func NewUserSrv(opts ...UserServiceOption) (interfaces.UserService, error) {
 	config := &UserServiceConfig{}
 
 	// apply options
@@ -87,7 +84,7 @@ func NewUserSrv(opts ...UserServiceOption) (UserSrv, error) {
 
 	// check if the user repository is required
 	if config.UserRepo == nil {
-		return nil, errors.New("user repository is required")
+		return nil, types.ErrValidation("user repository is required")
 	}
 
 	return &userService{
@@ -96,9 +93,9 @@ func NewUserSrv(opts ...UserServiceOption) (UserSrv, error) {
 }
 
 // NewUserSrvWithConfig creates a new user service using config struct
-func NewUserSrvWithConfig(config *UserServiceConfig) (UserSrv, error) {
+func NewUserSrvWithConfig(config *UserServiceConfig) (interfaces.UserService, error) {
 	if config.UserRepo == nil {
-		return nil, errors.New("user repository is required")
+		return nil, types.ErrValidation("user repository is required")
 	}
 
 	return &userService{
@@ -110,23 +107,25 @@ func NewUserSrvWithConfig(config *UserServiceConfig) (UserSrv, error) {
 func (s *userService) CreateUser(ctx context.Context, user *model.User) error {
 	// add validation
 	if user.Username == "" || user.Email == "" {
-		return errors.New("username and email cannot be empty")
+		return types.ErrValidation("username and email cannot be empty")
 	}
 
-	hashedPassword, err := utils.HashPassword(user.PasswordHash)
+	hashedPassword, err := utils.HashPassword(user.Password)
 	if err != nil {
-		return err
+		return types.ErrInternalWithCause("failed to hash password", err)
 	}
 	user.PasswordHash = hashedPassword
+	// Clear the plain text password for security
+	user.Password = ""
 
 	// attempt to create the user directly, letting the database handle uniqueness constraints
 	err = s.config.UserRepo.CreateUser(ctx, user)
 	if err != nil {
 		// check if it's a uniqueness constraint error
 		if strings.Contains(err.Error(), "Duplicate entry") {
-			return errors.New("this email is already in use")
+			return types.ErrConflict("this email is already in use")
 		}
-		return err
+		return types.ErrInternalWithCause("failed to create user", err)
 	}
 
 	return nil
@@ -134,15 +133,54 @@ func (s *userService) CreateUser(ctx context.Context, user *model.User) error {
 
 // GetUserByUsername gets a user by username
 func (s *userService) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
-	return s.config.UserRepo.GetUserByUsername(ctx, username)
+	if username == "" {
+		return nil, types.ErrValidation("username cannot be empty")
+	}
+
+	user, err := s.config.UserRepo.GetUserByUsername(ctx, username)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, types.ErrNotFound("user")
+		}
+		return nil, types.ErrInternalWithCause("failed to get user by username", err)
+	}
+	if user == nil {
+		return nil, types.ErrNotFound("user")
+	}
+	return user, nil
 }
 
 // GetUserByEmail gets a user by email
 func (s *userService) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
-	return s.config.UserRepo.GetUserByEmail(ctx, email)
+	if email == "" {
+		return nil, types.ErrValidation("email cannot be empty")
+	}
+
+	user, err := s.config.UserRepo.GetUserByEmail(ctx, email)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, types.ErrNotFound("user")
+		}
+		return nil, types.ErrInternalWithCause("failed to get user by email", err)
+	}
+	if user == nil {
+		return nil, types.ErrNotFound("user")
+	}
+	return user, nil
 }
 
 // DeleteUser deletes a user by ID
 func (s *userService) DeleteUser(ctx context.Context, id string) error {
-	return s.config.UserRepo.DeleteUser(ctx, id)
+	if id == "" {
+		return types.ErrValidation("user ID cannot be empty")
+	}
+
+	err := s.config.UserRepo.DeleteUser(ctx, id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return types.ErrNotFound("user")
+		}
+		return types.ErrInternalWithCause("failed to delete user", err)
+	}
+	return nil
 }

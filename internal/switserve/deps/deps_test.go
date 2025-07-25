@@ -27,13 +27,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/internal/switserve/model"
 	"github.com/innovationmech/swit/internal/switserve/repository"
-	greeterv1 "github.com/innovationmech/swit/internal/switserve/service/greeter/v1"
-	"github.com/innovationmech/swit/internal/switserve/service/health"
 	notificationv1 "github.com/innovationmech/swit/internal/switserve/service/notification/v1"
-	"github.com/innovationmech/swit/internal/switserve/service/stop"
 	userv1 "github.com/innovationmech/swit/internal/switserve/service/user/v1"
+	"github.com/innovationmech/swit/internal/switserve/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"gorm.io/gorm"
@@ -96,7 +95,7 @@ func (m *MockUserSrv) DeleteUser(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
-// MockGreeterService implements greeterv1.GreeterService interface
+// MockGreeterService implements interfaces.GreeterService interface
 type MockGreeterService struct {
 	mock.Mock
 }
@@ -136,9 +135,9 @@ type MockHealthService struct {
 	mock.Mock
 }
 
-func (m *MockHealthService) CheckHealth(ctx context.Context) (*health.Status, error) {
+func (m *MockHealthService) CheckHealth(ctx context.Context) (*interfaces.HealthStatus, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(*health.Status), args.Error(1)
+	return args.Get(0).(*interfaces.HealthStatus), args.Error(1)
 }
 
 // MockStopService implements stop.StopService interface
@@ -146,9 +145,9 @@ type MockStopService struct {
 	mock.Mock
 }
 
-func (m *MockStopService) InitiateShutdown(ctx context.Context) (*stop.ShutdownStatus, error) {
+func (m *MockStopService) InitiateShutdown(ctx context.Context) (*interfaces.ShutdownStatus, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(*stop.ShutdownStatus), args.Error(1)
+	return args.Get(0).(*interfaces.ShutdownStatus), args.Error(1)
 }
 
 // Test Dependencies struct fields
@@ -166,11 +165,11 @@ func TestDependencies_StructFields(t *testing.T) {
 		fields := map[string]string{
 			"DB":              "*gorm.DB",
 			"UserRepo":        "repository.UserRepository",
-			"UserSrv":         "v1.UserSrv",
-			"GreeterSrv":      "v1.GreeterService",
+			"UserSrv":         "interfaces.UserService",
+			"GreeterSrv":      "interfaces.GreeterService",
 			"NotificationSrv": "v1.NotificationService",
-			"HealthSrv":       "health.HealthService",
-			"StopSrv":         "stop.StopService",
+			"HealthSrv":       "interfaces.HealthService",
+			"StopSrv":         "interfaces.StopService",
 		}
 
 		for fieldName, expectedType := range fields {
@@ -269,10 +268,10 @@ func TestDependencies_EdgeCases(t *testing.T) {
 		// Ensure all mock implementations satisfy their interfaces
 		var _ repository.UserRepository = (*MockUserRepository)(nil)
 		var _ userv1.UserSrv = (*MockUserSrv)(nil)
-		var _ greeterv1.GreeterService = (*MockGreeterService)(nil)
+		var _ interfaces.GreeterService = (*MockGreeterService)(nil)
 		var _ notificationv1.NotificationService = (*MockNotificationService)(nil)
-		var _ health.HealthService = (*MockHealthService)(nil)
-		var _ stop.StopService = (*MockStopService)(nil)
+		var _ interfaces.HealthService = (*MockHealthService)(nil)
+		var _ interfaces.StopService = (*MockStopService)(nil)
 	})
 
 	t.Run("should_handle_service_dependency_chains", func(t *testing.T) {
@@ -393,7 +392,7 @@ func TestDependencies_MockIntegration(t *testing.T) {
 	t.Run("HealthService_mock_functionality", func(t *testing.T) {
 		mockSrv := &MockHealthService{}
 		ctx := context.Background()
-		status := &health.Status{
+		status := &interfaces.HealthStatus{
 			Status:    "healthy",
 			Timestamp: time.Now().Unix(),
 		}
@@ -412,10 +411,10 @@ func TestDependencies_MockIntegration(t *testing.T) {
 	t.Run("StopService_mock_functionality", func(t *testing.T) {
 		mockSrv := &MockStopService{}
 		ctx := context.Background()
-		shutdownStatus := &stop.ShutdownStatus{
-			Status:    "shutdown_initiated",
-			Message:   "Server shutdown initiated successfully",
-			Timestamp: time.Now().Unix(),
+		shutdownStatus := &interfaces.ShutdownStatus{
+			Status:      types.StatusShutdownInitiated,
+			Message:     "Server shutdown initiated successfully",
+			InitiatedAt: time.Now().Unix(),
 		}
 
 		// Setup mock expectations
@@ -516,7 +515,7 @@ func TestDependencies_Behavior(t *testing.T) {
 		// Verify they implement the expected interfaces
 		assert.Implements(t, (*repository.UserRepository)(nil), deps.UserRepo)
 		assert.Implements(t, (*userv1.UserSrv)(nil), deps.UserSrv)
-		assert.Implements(t, (*greeterv1.GreeterService)(nil), deps.GreeterSrv)
+		assert.Implements(t, (*interfaces.GreeterService)(nil), deps.GreeterSrv)
 	})
 
 	t.Run("should_allow_runtime_dependency_replacement", func(t *testing.T) {

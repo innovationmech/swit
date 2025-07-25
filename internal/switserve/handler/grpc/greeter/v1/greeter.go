@@ -28,7 +28,7 @@ import (
 	"github.com/google/uuid"
 	commonv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/common/v1"
 	greeterv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/interaction/v1"
-	greeterv1svc "github.com/innovationmech/swit/internal/switserve/service/greeter/v1"
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -38,11 +38,11 @@ import (
 // GreeterHandler handles gRPC requests for Greeter service
 type GreeterHandler struct {
 	greeterv1.UnimplementedGreeterServiceServer
-	service greeterv1svc.GreeterService
+	service interfaces.GreeterService
 }
 
 // NewGreeterHandler creates a new GreeterHandler
-func NewGreeterHandler(svc greeterv1svc.GreeterService) *GreeterHandler {
+func NewGreeterHandler(svc interfaces.GreeterService) *GreeterHandler {
 	return &GreeterHandler{
 		service: svc,
 	}

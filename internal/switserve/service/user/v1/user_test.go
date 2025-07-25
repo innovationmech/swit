@@ -27,7 +27,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/internal/switserve/model"
+	"github.com/innovationmech/swit/internal/switserve/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -97,7 +99,7 @@ func TestNewUserSrv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := tt.setupMocks()
 
-			var srv UserSrv
+			var srv interfaces.UserService
 			var err error
 
 			if mockRepo != nil {
@@ -108,7 +110,9 @@ func TestNewUserSrv(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				assert.True(t, types.IsServiceError(err))
+				serviceErr := types.GetServiceError(err)
+				assert.Equal(t, types.ErrCodeValidation, serviceErr.Code)
 				assert.Nil(t, srv)
 			} else {
 				assert.NoError(t, err)
@@ -148,7 +152,9 @@ func TestNewUserSrvWithConfig(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				assert.True(t, types.IsServiceError(err))
+				serviceErr := types.GetServiceError(err)
+				assert.Equal(t, types.ErrCodeValidation, serviceErr.Code)
 				assert.Nil(t, srv)
 			} else {
 				assert.NoError(t, err)
@@ -187,7 +193,7 @@ func TestUserService_CreateUser(t *testing.T) {
 			},
 			setupMocks:  func(mockRepo *MockUserRepository) {},
 			expectError: true,
-			errorMsg:    "username and email cannot be empty",
+			errorMsg:    "VALIDATION_ERROR",
 		},
 		{
 			name: "error_empty_email",
@@ -198,7 +204,7 @@ func TestUserService_CreateUser(t *testing.T) {
 			},
 			setupMocks:  func(mockRepo *MockUserRepository) {},
 			expectError: true,
-			errorMsg:    "username and email cannot be empty",
+			errorMsg:    "VALIDATION_ERROR",
 		},
 		{
 			name: "error_duplicate_email",
@@ -211,7 +217,7 @@ func TestUserService_CreateUser(t *testing.T) {
 				mockRepo.On("CreateUser", mock.Anything, mock.AnythingOfType("*model.User")).Return(errors.New("Duplicate entry"))
 			},
 			expectError: true,
-			errorMsg:    "this email is already in use",
+			errorMsg:    "CONFLICT",
 		},
 		{
 			name: "error_repository_failure",
@@ -224,7 +230,7 @@ func TestUserService_CreateUser(t *testing.T) {
 				mockRepo.On("CreateUser", mock.Anything, mock.AnythingOfType("*model.User")).Return(errors.New("database error"))
 			},
 			expectError: true,
-			errorMsg:    "database error",
+			errorMsg:    "INTERNAL_ERROR",
 		},
 	}
 
@@ -241,7 +247,9 @@ func TestUserService_CreateUser(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				assert.True(t, types.IsServiceError(err))
+				serviceErr := types.GetServiceError(err)
+				assert.Equal(t, tt.errorMsg, serviceErr.Code)
 			} else {
 				assert.NoError(t, err)
 				// Verify that password was hashed
@@ -284,7 +292,7 @@ func TestUserService_GetUserByUsername(t *testing.T) {
 				return nil
 			},
 			expectError: true,
-			errorMsg:    "user not found",
+			errorMsg:    "NOT_FOUND",
 		},
 	}
 
@@ -301,7 +309,9 @@ func TestUserService_GetUserByUsername(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				assert.True(t, types.IsServiceError(err))
+				serviceErr := types.GetServiceError(err)
+				assert.Equal(t, tt.errorMsg, serviceErr.Code)
 				assert.Nil(t, user)
 			} else {
 				assert.NoError(t, err)
@@ -346,7 +356,7 @@ func TestUserService_GetUserByEmail(t *testing.T) {
 				return nil
 			},
 			expectError: true,
-			errorMsg:    "user not found",
+			errorMsg:    "NOT_FOUND",
 		},
 	}
 
@@ -363,7 +373,9 @@ func TestUserService_GetUserByEmail(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				assert.True(t, types.IsServiceError(err))
+				serviceErr := types.GetServiceError(err)
+				assert.Equal(t, tt.errorMsg, serviceErr.Code)
 				assert.Nil(t, user)
 			} else {
 				assert.NoError(t, err)
@@ -400,7 +412,7 @@ func TestUserService_DeleteUser(t *testing.T) {
 				mockRepo.On("DeleteUser", mock.Anything, "nonexistent-id").Return(errors.New("user not found"))
 			},
 			expectError: true,
-			errorMsg:    "user not found",
+			errorMsg:    "NOT_FOUND",
 		},
 		{
 			name:   "error_database_failure",
@@ -409,7 +421,7 @@ func TestUserService_DeleteUser(t *testing.T) {
 				mockRepo.On("DeleteUser", mock.Anything, "test-user-id").Return(errors.New("database error"))
 			},
 			expectError: true,
-			errorMsg:    "database error",
+			errorMsg:    "INTERNAL_ERROR",
 		},
 	}
 
@@ -426,7 +438,9 @@ func TestUserService_DeleteUser(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
+				assert.True(t, types.IsServiceError(err))
+				serviceErr := types.GetServiceError(err)
+				assert.Equal(t, tt.errorMsg, serviceErr.Code)
 			} else {
 				assert.NoError(t, err)
 			}

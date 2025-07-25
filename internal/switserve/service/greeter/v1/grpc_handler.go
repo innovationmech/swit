@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	commonv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/common/v1"
 	greeterv1 "github.com/innovationmech/swit/api/gen/go/proto/swit/interaction/v1"
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -36,11 +37,11 @@ import (
 // GRPCHandler implements the gRPC server interface using business logic
 type GRPCHandler struct {
 	greeterv1.UnimplementedGreeterServiceServer
-	service GreeterService
+	service interfaces.GreeterService
 }
 
 // NewGRPCHandler creates a new gRPC handler with business logic service
-func NewGRPCHandler(service GreeterService) *GRPCHandler {
+func NewGRPCHandler(service interfaces.GreeterService) *GRPCHandler {
 	return &GRPCHandler{
 		service: service,
 	}

@@ -22,37 +22,127 @@
 package stop
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switserve/interfaces"
+	"github.com/innovationmech/swit/internal/switserve/transport"
+	"github.com/innovationmech/swit/internal/switserve/types"
+	"github.com/innovationmech/swit/pkg/logger"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
-// Handler is the handler for the stop endpoint.
+// Handler handles HTTP requests for stop service and implements ServiceHandler interface
 type Handler struct {
-	shutdownFunc func()
+	service   interfaces.StopService
+	startTime time.Time
 }
 
-// NewHandler creates a new stop handler.
-func NewHandler(shutdownFunc func()) *Handler {
+// NewHandler creates a new stop HTTP handler
+func NewHandler(service interfaces.StopService) *Handler {
 	return &Handler{
-		shutdownFunc: shutdownFunc,
+		service:   service,
+		startTime: time.Now(),
 	}
 }
 
-// Stop stops the server.
-//
-//	@Summary		Stop the server
-//	@Description	Gracefully shutdown the server
-//	@Tags			admin
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Server is stopping"
-//	@Router			/stop [post]
-func (h *Handler) Stop(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Server is stopping"})
-	go func() {
-		time.Sleep(time.Second) // Give some time for the response to be sent
-		h.shutdownFunc()
-	}()
+// StopServer handles HTTP server shutdown requests
+func (h *Handler) StopServer(c *gin.Context) {
+	logger.Logger.Info("Shutdown request received via HTTP")
+
+	status, err := h.service.InitiateShutdown(c.Request.Context())
+	if err != nil {
+		logger.Logger.Error("Failed to initiate shutdown", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"error":  "failed to initiate shutdown",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+
+// ServiceHandler interface implementation
+
+// RegisterHTTP registers HTTP routes for the Stop service
+func (h *Handler) RegisterHTTP(router *gin.Engine) error {
+	// Create API v1 group
+	v1Group := router.Group("/api/v1")
+
+	// Stop endpoints
+	stopGroup := v1Group.Group("/stop")
+	{
+		stopGroup.POST("/shutdown", h.StopServer)
+	}
+
+	if logger.Logger != nil {
+		logger.Logger.Info("Registered Stop HTTP routes")
+	}
+	return nil
+}
+
+// RegisterGRPC registers gRPC services for the Stop service
+func (h *Handler) RegisterGRPC(server *grpc.Server) error {
+	// TODO: Implement gRPC registration when stop gRPC service is available
+	if logger.Logger != nil {
+		logger.Logger.Info("Registered Stop gRPC services")
+	}
+	return nil
+}
+
+// GetMetadata returns service metadata information
+func (h *Handler) GetMetadata() *transport.ServiceMetadata {
+	return &transport.ServiceMetadata{
+		Name:           "stop-service",
+		Version:        "v1.0.0",
+		Description:    "Stop service for handling server shutdown requests",
+		HealthEndpoint: "/api/v1/stop/health",
+		Tags:           []string{"stop", "shutdown"},
+		Dependencies:   []string{},
+	}
+}
+
+// GetHealthEndpoint returns the health check endpoint path
+func (h *Handler) GetHealthEndpoint() string {
+	return "/api/v1/stop/health"
+}
+
+// IsHealthy performs a health check and returns the current status
+func (h *Handler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
+	// Check if stop service is healthy
+	if h.service == nil {
+		return types.NewHealthStatus(
+			types.HealthStatusUnhealthy,
+			"v1",
+			time.Since(h.startTime),
+		), nil
+	}
+
+	return types.NewHealthStatus(
+		types.HealthStatusHealthy,
+		"v1",
+		time.Since(h.startTime),
+	), nil
+}
+
+// Initialize performs any necessary initialization before service registration
+func (h *Handler) Initialize(ctx context.Context) error {
+	// Perform any initialization logic for the stop service
+	if logger.Logger != nil {
+		logger.Logger.Info("Initializing Stop service handler")
+	}
+	return nil
+}
+
+// Shutdown performs graceful shutdown of the service
+func (h *Handler) Shutdown(ctx context.Context) error {
+	// Perform any cleanup logic for the stop service
+	if logger.Logger != nil {
+		logger.Logger.Info("Shutting down Stop service handler")
+	}
+	return nil
 }

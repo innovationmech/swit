@@ -22,17 +22,245 @@
 package v1
 
 import (
-	"github.com/innovationmech/swit/internal/switauth/service/auth/v1"
+	"context"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/internal/switauth/interfaces"
+	"github.com/innovationmech/swit/internal/switauth/transport"
+	"github.com/innovationmech/swit/internal/switauth/types"
+	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/middleware"
+	"google.golang.org/grpc"
 )
 
 // Controller handles HTTP requests for authentication operations
 // including login, logout, token refresh, and token validation
+// and implements ServiceHandler interface
 type Controller struct {
-	authService v1.AuthSrv
+	authService interfaces.AuthService
+	startTime   time.Time
 }
 
 // NewAuthController creates a new auth Controller instance
 // with the provided authentication service
-func NewAuthController(authService v1.AuthSrv) *Controller {
-	return &Controller{authService: authService}
+func NewAuthController(authService interfaces.AuthService) *Controller {
+	return &Controller{
+		authService: authService,
+		startTime:   time.Now(),
+	}
+}
+
+// ServiceHandler interface implementation
+
+// RegisterHTTP registers HTTP routes for authentication
+func (c *Controller) RegisterHTTP(router *gin.Engine) error {
+	logger.Logger.Info("Registering auth HTTP routes")
+
+	// Create auth group
+	auth := router.Group("/auth")
+
+	// Apply rate limiting middleware
+	auth.Use(c.rateLimitMiddleware())
+
+	// Register routes using the existing auth controller
+	auth.POST("/login", c.Login)
+	auth.POST("/logout", c.Logout)
+	auth.POST("/refresh", c.RefreshToken)
+	auth.GET("/validate", c.ValidateToken)
+
+	return nil
+}
+
+// RegisterGRPC registers gRPC services for authentication
+func (c *Controller) RegisterGRPC(server *grpc.Server) error {
+	logger.Logger.Info("Registering auth gRPC services")
+	// TODO: Implement gRPC service registration when needed
+	return nil
+}
+
+// GetMetadata returns service metadata
+func (c *Controller) GetMetadata() *transport.ServiceMetadata {
+	return &transport.ServiceMetadata{
+		Name:           "auth-service",
+		Version:        "v1.0.0",
+		Description:    "Authentication service providing login, logout, refresh, and token validation",
+		HealthEndpoint: "/auth/health",
+		Tags:           []string{"auth", "authentication"},
+		Dependencies:   []string{"database", "user-service"},
+	}
+}
+
+// GetHealthEndpoint returns the health check endpoint
+func (c *Controller) GetHealthEndpoint() string {
+	return "/auth/health"
+}
+
+// IsHealthy performs a health check
+func (c *Controller) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
+	// Check if auth service is healthy
+	if c.authService == nil {
+		return types.NewHealthStatus(
+			types.HealthStatusUnhealthy,
+			"v1",
+			time.Since(c.startTime),
+		), nil
+	}
+
+	return types.NewHealthStatus(
+		types.HealthStatusHealthy,
+		"v1",
+		time.Since(c.startTime),
+	), nil
+}
+
+// Initialize initializes the service
+func (c *Controller) Initialize(ctx context.Context) error {
+	logger.Logger.Info("Initializing auth service handler")
+	// Perform any initialization logic here
+	return nil
+}
+
+// Shutdown gracefully shuts down the service
+func (c *Controller) Shutdown(ctx context.Context) error {
+	logger.Logger.Info("Shutting down auth service handler")
+	// Perform any cleanup logic here
+	return nil
+}
+
+// rateLimitMiddleware applies rate limiting to auth endpoints
+func (c *Controller) rateLimitMiddleware() gin.HandlerFunc {
+	// Use the auth-specific rate limiting middleware
+	return middleware.NewAuthRateLimiter().Middleware()
+}
+
+// HTTP Handler Methods
+
+// Login authenticates a user and returns access and refresh tokens
+//
+//	@Summary		User login
+//	@Description	Authenticate a user with username and password, returns access and refresh tokens
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			login	body		types.LoginRequest	true	"User login credentials"
+//	@Success		200		{object}	types.AuthResponse	"Login successful"
+//	@Failure		400		{object}	types.AuthError		"Bad request"
+//	@Failure		401		{object}	types.AuthError		"Invalid credentials"
+//	@Router			/auth/login [post]
+func (c *Controller) Login(ctx *gin.Context) {
+	var loginData types.LoginRequest
+
+	if err := ctx.ShouldBindJSON(&loginData); err != nil {
+		ctx.JSON(http.StatusBadRequest, types.NewAuthError(types.ErrorCodeInvalidRequest, "Invalid request format", err))
+		return
+	}
+
+	response, err := c.authService.Login(ctx.Request.Context(), loginData.Username, loginData.Password)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, types.NewAuthError(types.ErrorCodeInvalidCredentials, "Authentication failed", err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// Logout invalidates the user's access token and logs them out
+//
+//	@Summary		User logout
+//	@Description	Invalidate the user's access token and log them out
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	types.ResponseStatus	"Logout successful"
+//	@Failure		400	{object}	types.AuthError			"Authorization header is missing"
+//	@Failure		500	{object}	types.AuthError			"Internal server error"
+//	@Router			/auth/logout [post]
+func (c *Controller) Logout(ctx *gin.Context) {
+	tokenString := ctx.GetHeader("Authorization")
+	if tokenString == "" {
+		ctx.JSON(http.StatusBadRequest, types.NewAuthError(types.ErrorCodeInvalidRequest, "Authorization header is missing", nil))
+		return
+	}
+
+	if err := c.authService.Logout(ctx.Request.Context(), tokenString); err != nil {
+		ctx.JSON(http.StatusInternalServerError, types.NewAuthError(types.ErrorCodeInternalError, "Logout failed", err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, types.NewSuccessStatus("Logged out successfully"))
+}
+
+// RefreshToken generates new access and refresh tokens using a valid refresh token
+//
+//	@Summary		Refresh access token
+//	@Description	Generate new access and refresh tokens using a valid refresh token
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			refresh	body		types.RefreshTokenRequest	true	"Refresh token"
+//	@Success		200		{object}	types.AuthResponse			"Token refresh successful"
+//	@Failure		400		{object}	types.AuthError				"Bad request"
+//	@Failure		401		{object}	types.AuthError				"Invalid or expired refresh token"
+//	@Router			/auth/refresh [post]
+func (c *Controller) RefreshToken(ctx *gin.Context) {
+	var data types.RefreshTokenRequest
+
+	if err := ctx.ShouldBindJSON(&data); err != nil {
+		ctx.JSON(http.StatusBadRequest, types.NewAuthError(types.ErrorCodeInvalidRequest, "Invalid request format", err))
+		return
+	}
+
+	response, err := c.authService.RefreshToken(ctx.Request.Context(), data.RefreshToken)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, types.NewAuthError(types.ErrorCodeTokenInvalid, "Token refresh failed", err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// ValidateToken validates an access token and returns token information
+//
+//	@Summary		Validate access token
+//	@Description	Validate an access token and return token information including user ID
+//	@Tags			authentication
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	types.ValidateTokenResponse	"Token is valid"
+//	@Failure		401	{object}	types.AuthError				"Invalid or expired token"
+//	@Router			/auth/validate [get]
+func (c *Controller) ValidateToken(ctx *gin.Context) {
+	// Get Authorization header
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader == "" {
+		ctx.JSON(http.StatusUnauthorized, types.NewAuthError(types.ErrorCodeTokenInvalid, "Missing Authorization header", nil))
+		return
+	}
+
+	// Split the Bearer token
+	parts := strings.SplitN(authHeader, " ", 2)
+	if !(len(parts) == 2 && parts[0] == "Bearer") {
+		ctx.JSON(http.StatusUnauthorized, types.NewAuthError(types.ErrorCodeTokenInvalid, "Invalid Authorization header format", nil))
+		return
+	}
+
+	// Extract the actual token
+	tokenString := parts[1]
+
+	// Validate token
+	token, err := c.authService.ValidateToken(ctx.Request.Context(), tokenString)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, types.NewAuthError(types.ErrorCodeTokenInvalid, "Token validation failed", err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, &types.ValidateTokenResponse{
+		Message: "Token is valid",
+		UserID:  token.UserID.String(),
+	})
 }

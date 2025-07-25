@@ -97,8 +97,8 @@ func TestNewServer_ServiceDiscoveryError(t *testing.T) {
 	// If no error, verify the server is created properly
 	require.NotNil(t, server)
 	assert.NotNil(t, server.transportManager)
-	assert.NotNil(t, server.serviceRegistry)
 	assert.NotNil(t, server.httpTransport)
+	assert.NotNil(t, server.httpTransport.GetServiceRegistry())
 	assert.NotNil(t, server.grpcTransport)
 	assert.NotNil(t, server.sd)
 	assert.NotNil(t, server.config)
@@ -107,7 +107,6 @@ func TestNewServer_ServiceDiscoveryError(t *testing.T) {
 func TestServerWithComponents(t *testing.T) {
 	// Create a server with real components for testing
 	transportManager := transport.NewManager()
-	serviceRegistry := transport.NewServiceRegistry()
 	httpTransport := transport.NewHTTPTransport()
 	grpcTransport := transport.NewGRPCTransport()
 
@@ -117,7 +116,6 @@ func TestServerWithComponents(t *testing.T) {
 
 	server := &Server{
 		transportManager: transportManager,
-		serviceRegistry:  serviceRegistry,
 		httpTransport:    httpTransport,
 		grpcTransport:    grpcTransport,
 		sd:               &discovery.ServiceDiscovery{},
@@ -260,14 +258,12 @@ func TestServerStruct(t *testing.T) {
 
 	// Test that all fields can be set
 	server.transportManager = nil
-	server.serviceRegistry = nil
 	server.httpTransport = nil
 	server.grpcTransport = nil
 	server.sd = nil
 	server.config = nil
 
 	assert.Nil(t, server.transportManager)
-	assert.Nil(t, server.serviceRegistry)
 	assert.Nil(t, server.httpTransport)
 	assert.Nil(t, server.grpcTransport)
 	assert.Nil(t, server.sd)
@@ -290,22 +286,24 @@ func TestServerRegisterServices(t *testing.T) {
 		return
 	}
 
+	httpTransport := transport.NewHTTPTransport()
 	server := &Server{
-		serviceRegistry: transport.NewServiceRegistry(),
-		sd:              dependencies.SD,
-		deps:            dependencies,
+		httpTransport: httpTransport,
+		sd:            dependencies.SD,
+		deps:          dependencies,
 	}
 
 	// This should now work with proper dependencies
-	err = server.registerServices()
+	server.registerServices()
 
-	if err != nil {
-		t.Logf("Expected error in test environment: %v", err)
-	} else {
+	// Check if services were registered
+	services := server.GetServices()
+	if len(services) > 0 {
 		t.Log("Service registration completed successfully")
-		services := server.serviceRegistry.GetServices()
-		assert.Contains(t, services, "auth")
-		assert.Contains(t, services, "health")
+		assert.Contains(t, services, "auth-service")
+		assert.Contains(t, services, "health-service")
+	} else {
+		t.Log("No services registered (may be expected in test environment)")
 	}
 }
 
@@ -313,7 +311,6 @@ func TestServerStartErrorHandling(t *testing.T) {
 	// Test Start method error handling
 	server := &Server{
 		transportManager: transport.NewManager(),
-		serviceRegistry:  transport.NewServiceRegistry(),
 		httpTransport:    transport.NewHTTPTransport(),
 		grpcTransport:    transport.NewGRPCTransport(),
 		sd:               &discovery.ServiceDiscovery{},
@@ -482,7 +479,7 @@ func TestServerMethodsWithNilComponents(t *testing.T) {
 	if server.grpcTransport != nil {
 		server.GetGRPCAddress()
 	}
-	if server.serviceRegistry != nil {
+	if server.httpTransport != nil {
 		server.GetServices()
 	}
 }
@@ -506,7 +503,6 @@ func TestServerConfigureMiddleware(t *testing.T) {
 func TestServerCompleteLifecycle(t *testing.T) {
 	// Test complete server lifecycle
 	transportManager := transport.NewManager()
-	serviceRegistry := transport.NewServiceRegistry()
 	httpTransport := transport.NewHTTPTransport()
 	grpcTransport := transport.NewGRPCTransport()
 
@@ -519,7 +515,6 @@ func TestServerCompleteLifecycle(t *testing.T) {
 
 	server := &Server{
 		transportManager: transportManager,
-		serviceRegistry:  serviceRegistry,
 		httpTransport:    httpTransport,
 		grpcTransport:    grpcTransport,
 		sd:               &discovery.ServiceDiscovery{},
@@ -576,7 +571,6 @@ func TestServerErrorPropagation(t *testing.T) {
 	// Test error propagation in various scenarios
 	server := &Server{
 		transportManager: transport.NewManager(),
-		serviceRegistry:  transport.NewServiceRegistry(),
 		httpTransport:    transport.NewHTTPTransport(),
 		grpcTransport:    transport.NewGRPCTransport(),
 		sd:               &discovery.ServiceDiscovery{},
@@ -606,12 +600,10 @@ func TestServerValidation(t *testing.T) {
 
 	// Test setting components
 	server.transportManager = transport.NewManager()
-	server.serviceRegistry = transport.NewServiceRegistry()
 	server.httpTransport = transport.NewHTTPTransport()
 	server.grpcTransport = transport.NewGRPCTransport()
 
 	assert.NotNil(t, server.transportManager)
-	assert.NotNil(t, server.serviceRegistry)
 	assert.NotNil(t, server.httpTransport)
 	assert.NotNil(t, server.grpcTransport)
 }

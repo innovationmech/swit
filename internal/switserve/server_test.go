@@ -68,7 +68,6 @@ func TestNewServer(t *testing.T) {
 
 	assert.NotNil(t, server)
 	assert.NotNil(t, server.transportManager)
-	assert.NotNil(t, server.serviceRegistry)
 	assert.NotNil(t, server.httpTransport)
 	assert.NotNil(t, server.grpcTransport)
 	assert.NotNil(t, server.sd)
@@ -109,12 +108,13 @@ func TestServer_ServiceRegistration(t *testing.T) {
 		return
 	}
 
-	// Verify services were registered
-	registrars := server.serviceRegistry.GetRegistrars()
-	assert.NotEmpty(t, registrars)
+	// Verify services were registered through HTTP transport
+	serviceRegistry := server.httpTransport.GetServiceRegistry()
+	assert.NotNil(t, serviceRegistry)
 
 	// We should have multiple services registered
-	assert.True(t, len(registrars) >= 4) // At least Greeter, Notification, Health, Stop
+	handlers := serviceRegistry.GetAllHandlers()
+	assert.True(t, len(handlers) >= 4) // At least Greeter, Notification, Health, Stop
 }
 
 func TestServer_TransportManagerIntegration(t *testing.T) {
@@ -274,7 +274,6 @@ func TestServer_ResourceManagement(t *testing.T) {
 		// Verify initial state
 		assert.NotNil(t, server.deps)
 		assert.NotNil(t, server.transportManager)
-		assert.NotNil(t, server.serviceRegistry)
 
 		// Shutdown should clean up resources
 		err := server.Shutdown()
@@ -285,7 +284,6 @@ func TestServer_ResourceManagement(t *testing.T) {
 		// Test server with partial initialization
 		server := &Server{
 			transportManager: nil,
-			serviceRegistry:  nil,
 		}
 
 		// Should not panic on cleanup
@@ -343,7 +341,6 @@ func TestServer_EdgeCases(t *testing.T) {
 
 		// Verify all components are properly initialized
 		assert.NotNil(t, server.transportManager, "Transport manager should be initialized")
-		assert.NotNil(t, server.serviceRegistry, "Service registry should be initialized")
 		assert.NotNil(t, server.httpTransport, "HTTP transport should be initialized")
 		assert.NotNil(t, server.grpcTransport, "gRPC transport should be initialized")
 		assert.NotNil(t, server.sd, "Service discovery should be initialized")
@@ -357,15 +354,16 @@ func TestServer_EdgeCases(t *testing.T) {
 		}
 
 		// Verify service registration doesn't cause issues
-		registrars := server.serviceRegistry.GetRegistrars()
-		assert.NotEmpty(t, registrars, "Should have registered services")
+		serviceRegistry := server.httpTransport.GetServiceRegistry()
+		handlers := serviceRegistry.GetAllHandlers()
+		assert.NotEmpty(t, handlers, "Should have registered services")
 
 		// Multiple calls to registerServices should be safe
 		server.registerServices()
 
 		// Should still have services registered
-		newRegistrars := server.serviceRegistry.GetRegistrars()
-		assert.NotEmpty(t, newRegistrars, "Should still have registered services")
+		newHandlers := serviceRegistry.GetAllHandlers()
+		assert.NotEmpty(t, newHandlers, "Should still have registered services")
 	})
 }
 
@@ -432,8 +430,9 @@ func TestServer_ComponentIntegration(t *testing.T) {
 		assert.Equal(t, len(transports), len(managerTransports), "Transport manager should have same transports")
 
 		// Verify service registry integration
-		registrars := server.serviceRegistry.GetRegistrars()
-		assert.NotEmpty(t, registrars, "Service registry should have registered services")
+		serviceRegistry := server.httpTransport.GetServiceRegistry()
+		handlers := serviceRegistry.GetAllHandlers()
+		assert.NotEmpty(t, handlers, "Service registry should have registered services")
 	})
 
 	t.Run("should_handle_transport_lifecycle", func(t *testing.T) {

@@ -12,8 +12,13 @@ SWIT 是一个现代化的微服务框架，提供用户认证、内容管理等
 
 ## 架构文档
 
+### 🏗️ 核心架构
+- [服务开发指南](./service-development-guide.md) - **ServiceHandler 模式开发指南**
 - [新服务架构指南](./new-service-architecture-guide.md) - 新子项目的标准化架构指南
-- [服务架构分析](./service-architecture-analysis.md) - 现有服务架构深度分析
+- [服务架构分析](./service-architecture-analysis.md) - ServiceHandler 架构深度分析
+
+### 📋 架构设计
+- [依赖注入重构](./architecture/dependency-injection-refactoring.md) - ServiceHandler 架构迁移指南
 - [gRPC架构优化](./grpc-architecture-optimization.md) - gRPC服务架构优化建议
 - [路由注册优化](./route-registration-optimization.md) - 路由注册系统优化方案
 - [SwitAuth重构指南](./switauth-refactoring-guide.md) - SwitAuth服务重构指导
