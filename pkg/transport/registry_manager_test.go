@@ -417,7 +417,8 @@ func TestServiceRegistryManager_EdgeCases(t *testing.T) {
 
 		handler := NewMockHandlerRegister("test-service", "v1.0.0")
 		err := manager.RegisterHandler("", handler)
-		assert.NoError(t, err)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "transport name cannot be empty")
 	})
 
 	t.Run("nil context operations", func(t *testing.T) {

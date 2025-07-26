@@ -25,6 +25,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
@@ -36,6 +37,23 @@ import (
 type ServiceRegistryManager struct {
 	mu         sync.RWMutex
 	registries map[string]*EnhancedHandlerRegistry // Transport name -> registry
+}
+
+// validateTransportName validates transport name
+func validateTransportName(name string) error {
+	if name == "" {
+		return fmt.Errorf("transport name cannot be empty")
+	}
+	if len(name) > 50 {
+		return fmt.Errorf("transport name too long (max 50 characters)")
+	}
+	// Only allow alphanumeric characters and hyphens
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '-' {
+			return fmt.Errorf("transport name can only contain letters, numbers, and hyphens")
+		}
+	}
+	return nil
 }
 
 // NewServiceRegistryManager creates a new service registry manager
@@ -69,6 +87,12 @@ func (srm *ServiceRegistryManager) GetRegistry(transportName string) *EnhancedHa
 
 // RegisterHandler registers a service handler with a specific transport
 func (srm *ServiceRegistryManager) RegisterHandler(transportName string, handler HandlerRegister) error {
+	if err := validateTransportName(transportName); err != nil {
+		return fmt.Errorf("invalid transport name: %w", err)
+	}
+	if handler == nil {
+		return fmt.Errorf("handler cannot be nil")
+	}
 	registry := srm.GetOrCreateRegistry(transportName)
 	return registry.Register(handler)
 }
@@ -116,9 +140,20 @@ func (srm *ServiceRegistryManager) RegisterAllGRPC(server *grpc.Server) error {
 // InitializeAll initializes all services across all transports
 func (srm *ServiceRegistryManager) InitializeAll(ctx context.Context) error {
 	srm.mu.RLock()
-	defer srm.mu.RUnlock()
+	registriesCopy := make(map[string]*EnhancedHandlerRegistry)
+	for name, registry := range srm.registries {
+		registriesCopy[name] = registry
+	}
+	srm.mu.RUnlock()
 
-	for transportName, registry := range srm.registries {
+	// Use default timeout if no deadline is set
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+
+	for transportName, registry := range registriesCopy {
 		if err := registry.InitializeAll(ctx); err != nil {
 			return fmt.Errorf("failed to initialize services for transport '%s': %w", transportName, err)
 		}
@@ -130,11 +165,22 @@ func (srm *ServiceRegistryManager) InitializeAll(ctx context.Context) error {
 // CheckAllHealth performs health checks on all services across all transports
 func (srm *ServiceRegistryManager) CheckAllHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
 	srm.mu.RLock()
-	defer srm.mu.RUnlock()
+	registriesCopy := make(map[string]*EnhancedHandlerRegistry)
+	for name, registry := range srm.registries {
+		registriesCopy[name] = registry
+	}
+	srm.mu.RUnlock()
+
+	// Use default timeout if no deadline is set
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
 
 	results := make(map[string]map[string]*types.HealthStatus)
 
-	for transportName, registry := range srm.registries {
+	for transportName, registry := range registriesCopy {
 		transportResults := registry.CheckAllHealth(ctx)
 		if len(transportResults) > 0 {
 			results[transportName] = transportResults
@@ -147,28 +193,48 @@ func (srm *ServiceRegistryManager) CheckAllHealth(ctx context.Context) map[strin
 // ShutdownAll gracefully shuts down all services across all transports
 func (srm *ServiceRegistryManager) ShutdownAll(ctx context.Context) error {
 	srm.mu.RLock()
-	defer srm.mu.RUnlock()
+
+	// Make a copy of registries to avoid race condition after unlock
+	registriesCopy := make(map[string]*EnhancedHandlerRegistry)
+	for name, registry := range srm.registries {
+		registriesCopy[name] = registry
+	}
+	srm.mu.RUnlock()
 
 	var shutdownErrors []error
 
+	// Use default timeout if no deadline is set
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+
 	// Shutdown in reverse order for proper cleanup
-	transportNames := make([]string, 0, len(srm.registries))
-	for name := range srm.registries {
+	transportNames := make([]string, 0, len(registriesCopy))
+	for name := range registriesCopy {
 		transportNames = append(transportNames, name)
 	}
 
 	// Reverse the slice
 	for i := len(transportNames) - 1; i >= 0; i-- {
 		transportName := transportNames[i]
-		registry := srm.registries[transportName]
+		registry := registriesCopy[transportName]
 		if err := registry.ShutdownAll(ctx); err != nil {
 			shutdownErrors = append(shutdownErrors, fmt.Errorf("failed to shutdown services for transport '%s': %w", transportName, err))
 		}
 	}
 
 	if len(shutdownErrors) > 0 {
-		// Return the first error, but log all errors
-		return shutdownErrors[0]
+		// Return all errors aggregated
+		var transportErrors []TransportError
+		for _, err := range shutdownErrors {
+			transportErrors = append(transportErrors, TransportError{
+				TransportName: "registry",
+				Err:           err,
+			})
+		}
+		return &MultiError{Errors: transportErrors}
 	}
 
 	return nil
