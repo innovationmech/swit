@@ -28,7 +28,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -123,16 +127,18 @@ type Transport interface {
 	GetAddress() string
 }
 
-// Manager manages multiple transport instances
+// Manager manages multiple transport instances and their service registries
 type Manager struct {
-	transports []Transport
-	mu         sync.RWMutex
+	transports      []Transport
+	registryManager *ServiceRegistryManager
+	mu              sync.RWMutex
 }
 
 // NewManager creates a new transport manager
 func NewManager() *Manager {
 	return &Manager{
-		transports: make([]Transport, 0),
+		transports:      make([]Transport, 0),
+		registryManager: NewServiceRegistryManager(),
 	}
 }
 
@@ -215,4 +221,61 @@ func (m *Manager) GetTransports() []Transport {
 	transports := make([]Transport, len(m.transports))
 	copy(transports, m.transports)
 	return transports
+}
+
+// GetServiceRegistryManager returns the service registry manager
+func (m *Manager) GetServiceRegistryManager() *ServiceRegistryManager {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.registryManager
+}
+
+// RegisterHTTPHandler registers a service handler with HTTP transport
+func (m *Manager) RegisterHTTPHandler(handler HandlerRegister) error {
+	return m.registryManager.RegisterHTTPHandler(handler)
+}
+
+// RegisterGRPCHandler registers a service handler with gRPC transport
+func (m *Manager) RegisterGRPCHandler(handler HandlerRegister) error {
+	return m.registryManager.RegisterGRPCHandler(handler)
+}
+
+// RegisterHandler registers a service handler with a specific transport
+func (m *Manager) RegisterHandler(transportName string, handler HandlerRegister) error {
+	return m.registryManager.RegisterHandler(transportName, handler)
+}
+
+// InitializeAllServices initializes all services across all transports
+func (m *Manager) InitializeAllServices(ctx context.Context) error {
+	return m.registryManager.InitializeAll(ctx)
+}
+
+// RegisterAllHTTPRoutes registers HTTP routes for all services across all transports
+func (m *Manager) RegisterAllHTTPRoutes(router *gin.Engine) error {
+	return m.registryManager.RegisterAllHTTP(router)
+}
+
+// RegisterAllGRPCServices registers gRPC services for all services across all transports
+func (m *Manager) RegisterAllGRPCServices(server *grpc.Server) error {
+	return m.registryManager.RegisterAllGRPC(server)
+}
+
+// CheckAllServicesHealth performs health checks on all services across all transports
+func (m *Manager) CheckAllServicesHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
+	return m.registryManager.CheckAllHealth(ctx)
+}
+
+// ShutdownAllServices gracefully shuts down all services across all transports
+func (m *Manager) ShutdownAllServices(ctx context.Context) error {
+	return m.registryManager.ShutdownAll(ctx)
+}
+
+// GetAllServiceMetadata returns metadata for all services across all transports
+func (m *Manager) GetAllServiceMetadata() map[string][]*HandlerMetadata {
+	return m.registryManager.GetAllServiceMetadata()
+}
+
+// GetTotalServiceCount returns the total number of services across all transports
+func (m *Manager) GetTotalServiceCount() int {
+	return m.registryManager.GetTotalServiceCount()
 }

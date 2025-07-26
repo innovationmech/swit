@@ -81,11 +81,12 @@ func DefaultGRPCConfig() *GRPCTransportConfig {
 
 // GRPCTransport implements Transport interface for gRPC
 type GRPCTransport struct {
-	server   *grpc.Server
-	listener net.Listener
-	address  string
-	config   *GRPCTransportConfig
-	mu       sync.RWMutex
+	server          *grpc.Server
+	listener        net.Listener
+	address         string
+	config          *GRPCTransportConfig
+	serviceRegistry *EnhancedHandlerRegistry
+	mu              sync.RWMutex
 }
 
 // NewGRPCTransport creates a new gRPC transport with default configuration
@@ -100,7 +101,8 @@ func NewGRPCTransportWithConfig(config *GRPCTransportConfig) *GRPCTransport {
 	}
 
 	return &GRPCTransport{
-		config: config,
+		config:          config,
+		serviceRegistry: NewEnhancedServiceRegistry(),
 	}
 }
 
@@ -147,6 +149,12 @@ func (g *GRPCTransport) Stop(ctx context.Context) error {
 	}
 
 	logger.Logger.Info("Stopping gRPC transport")
+
+	// First shutdown all services
+	if err := g.serviceRegistry.ShutdownAll(ctx); err != nil {
+		logger.Logger.Error("Failed to shutdown gRPC services", zap.Error(err))
+		// Continue with server shutdown even if service shutdown fails
+	}
 
 	// Channel to signal when graceful shutdown is complete
 	done := make(chan struct{})
@@ -374,4 +382,57 @@ func parsePort(portStr string) int {
 
 func isValidPort(port int) bool {
 	return port > 0 && port <= 65535
+}
+
+// RegisterHandler registers a service handler with the gRPC transport
+func (g *GRPCTransport) RegisterHandler(handler HandlerRegister) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Register the service with the registry
+	if err := g.serviceRegistry.Register(handler); err != nil {
+		return fmt.Errorf("failed to register gRPC service: %w", err)
+	}
+
+	return nil
+}
+
+// RegisterService is an alias for RegisterHandler for backward compatibility
+func (g *GRPCTransport) RegisterService(handler HandlerRegister) error {
+	return g.RegisterHandler(handler)
+}
+
+// InitializeServices initializes all registered services
+func (g *GRPCTransport) InitializeServices(ctx context.Context) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	return g.serviceRegistry.InitializeAll(ctx)
+}
+
+// RegisterAllServices registers gRPC services for all registered services
+func (g *GRPCTransport) RegisterAllServices() error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.server == nil {
+		return fmt.Errorf("gRPC server not initialized")
+	}
+
+	return g.serviceRegistry.RegisterAllGRPC(g.server)
+}
+
+// GetServiceRegistry returns the service registry
+func (g *GRPCTransport) GetServiceRegistry() *EnhancedHandlerRegistry {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.serviceRegistry
+}
+
+// ShutdownServices gracefully shuts down all registered services
+func (g *GRPCTransport) ShutdownServices(ctx context.Context) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	return g.serviceRegistry.ShutdownAll(ctx)
 }

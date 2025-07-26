@@ -29,9 +29,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"github.com/innovationmech/swit/pkg/logger"
 )
@@ -132,6 +134,7 @@ func TestNewManager(t *testing.T) {
 
 	assert.NotNil(t, manager)
 	assert.NotNil(t, manager.transports)
+	assert.NotNil(t, manager.registryManager)
 	assert.Equal(t, 0, len(manager.transports))
 }
 
@@ -652,5 +655,298 @@ func BenchmarkManager_Start(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = manager.Start(ctx)
+	}
+}
+
+// Tests for new service registry functionality
+
+func TestManager_GetServiceRegistryManager(t *testing.T) {
+	manager := NewManager()
+
+	registryManager := manager.GetServiceRegistryManager()
+	assert.NotNil(t, registryManager)
+	assert.True(t, registryManager.IsEmpty())
+}
+
+func TestManager_RegisterHTTPHandler(t *testing.T) {
+	manager := NewManager()
+	handler := NewMockHandlerRegister("http-service", "v1.0.0")
+
+	err := manager.RegisterHTTPHandler(handler)
+	assert.NoError(t, err)
+
+	registryManager := manager.GetServiceRegistryManager()
+	httpRegistry := registryManager.GetRegistry("http")
+	assert.NotNil(t, httpRegistry)
+	assert.Equal(t, 1, httpRegistry.Count())
+}
+
+func TestManager_RegisterGRPCHandler(t *testing.T) {
+	manager := NewManager()
+	handler := NewMockHandlerRegister("grpc-service", "v1.0.0")
+
+	err := manager.RegisterGRPCHandler(handler)
+	assert.NoError(t, err)
+
+	registryManager := manager.GetServiceRegistryManager()
+	grpcRegistry := registryManager.GetRegistry("grpc")
+	assert.NotNil(t, grpcRegistry)
+	assert.Equal(t, 1, grpcRegistry.Count())
+}
+
+func TestManager_RegisterHandler(t *testing.T) {
+	manager := NewManager()
+	handler := NewMockHandlerRegister("websocket-service", "v1.0.0")
+
+	err := manager.RegisterHandler("websocket", handler)
+	assert.NoError(t, err)
+
+	registryManager := manager.GetServiceRegistryManager()
+	wsRegistry := registryManager.GetRegistry("websocket")
+	assert.NotNil(t, wsRegistry)
+	assert.Equal(t, 1, wsRegistry.Count())
+}
+
+func TestManager_InitializeAllServices(t *testing.T) {
+	manager := NewManager()
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+
+	manager.RegisterHTTPHandler(handler1)
+	manager.RegisterGRPCHandler(handler2)
+
+	ctx := context.Background()
+	err := manager.InitializeAllServices(ctx)
+	assert.NoError(t, err)
+	assert.True(t, handler1.IsInitialized())
+	assert.True(t, handler2.IsInitialized())
+}
+
+func TestManager_RegisterAllHTTPRoutes(t *testing.T) {
+	manager := NewManager()
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+
+	manager.RegisterHTTPHandler(handler1)
+	manager.RegisterHTTPHandler(handler2)
+
+	router := gin.New()
+	err := manager.RegisterAllHTTPRoutes(router)
+	assert.NoError(t, err)
+	assert.True(t, handler1.IsHTTPRegistered())
+	assert.True(t, handler2.IsHTTPRegistered())
+}
+
+func TestManager_RegisterAllGRPCServices(t *testing.T) {
+	manager := NewManager()
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+
+	manager.RegisterGRPCHandler(handler1)
+	manager.RegisterGRPCHandler(handler2)
+
+	server := grpc.NewServer()
+	err := manager.RegisterAllGRPCServices(server)
+	assert.NoError(t, err)
+	assert.True(t, handler1.IsGRPCRegistered())
+	assert.True(t, handler2.IsGRPCRegistered())
+}
+
+func TestManager_CheckAllServicesHealth(t *testing.T) {
+	manager := NewManager()
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+
+	manager.RegisterHTTPHandler(handler1)
+	manager.RegisterGRPCHandler(handler2)
+
+	ctx := context.Background()
+	results := manager.CheckAllServicesHealth(ctx)
+
+	assert.Equal(t, 2, len(results))
+	assert.Contains(t, results, "http")
+	assert.Contains(t, results, "grpc")
+}
+
+func TestManager_ShutdownAllServices(t *testing.T) {
+	manager := NewManager()
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+
+	manager.RegisterHTTPHandler(handler1)
+	manager.RegisterGRPCHandler(handler2)
+
+	ctx := context.Background()
+	err := manager.ShutdownAllServices(ctx)
+	assert.NoError(t, err)
+	assert.True(t, handler1.IsShutdown())
+	assert.True(t, handler2.IsShutdown())
+}
+
+func TestManager_GetAllServiceMetadata(t *testing.T) {
+	manager := NewManager()
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+
+	manager.RegisterHTTPHandler(handler1)
+	manager.RegisterGRPCHandler(handler2)
+
+	metadata := manager.GetAllServiceMetadata()
+
+	assert.Equal(t, 2, len(metadata))
+	assert.Contains(t, metadata, "http")
+	assert.Contains(t, metadata, "grpc")
+	assert.Equal(t, "service1", metadata["http"][0].Name)
+	assert.Equal(t, "service2", metadata["grpc"][0].Name)
+}
+
+func TestManager_GetTotalServiceCount(t *testing.T) {
+	manager := NewManager()
+
+	// Test empty manager
+	assert.Equal(t, 0, manager.GetTotalServiceCount())
+
+	// Add services
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+	handler3 := NewMockHandlerRegister("service3", "v1.2.0")
+
+	manager.RegisterHTTPHandler(handler1)
+	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterHandler("websocket", handler3)
+
+	assert.Equal(t, 3, manager.GetTotalServiceCount())
+}
+
+func TestManager_ServiceRegistryIntegration(t *testing.T) {
+	manager := NewManager()
+
+	// Register multiple services across different transports
+	httpHandler := NewMockHandlerRegister("http-service", "v1.0.0")
+	grpcHandler := NewMockHandlerRegister("grpc-service", "v1.1.0")
+	wsHandler := NewMockHandlerRegister("websocket-service", "v1.2.0")
+
+	err := manager.RegisterHTTPHandler(httpHandler)
+	require.NoError(t, err)
+	err = manager.RegisterGRPCHandler(grpcHandler)
+	require.NoError(t, err)
+	err = manager.RegisterHandler("websocket", wsHandler)
+	require.NoError(t, err)
+
+	// Verify total count
+	assert.Equal(t, 3, manager.GetTotalServiceCount())
+
+	// Initialize all services
+	ctx := context.Background()
+	err = manager.InitializeAllServices(ctx)
+	assert.NoError(t, err)
+	assert.True(t, httpHandler.IsInitialized())
+	assert.True(t, grpcHandler.IsInitialized())
+	assert.True(t, wsHandler.IsInitialized())
+
+	// Register HTTP routes (only HTTP handler will be registered)
+	router := gin.New()
+	err = manager.RegisterAllHTTPRoutes(router)
+	assert.NoError(t, err)
+	assert.True(t, httpHandler.IsHTTPRegistered())
+	assert.False(t, grpcHandler.IsHTTPRegistered()) // Not in HTTP registry
+	assert.False(t, wsHandler.IsHTTPRegistered())   // Not in HTTP registry
+
+	// Register gRPC services (only gRPC handler will be registered)
+	server := grpc.NewServer()
+	err = manager.RegisterAllGRPCServices(server)
+	assert.NoError(t, err)
+	assert.False(t, httpHandler.IsGRPCRegistered()) // Not in gRPC registry
+	assert.True(t, grpcHandler.IsGRPCRegistered())
+	assert.False(t, wsHandler.IsGRPCRegistered()) // Not in gRPC registry
+
+	// Check health
+	healthResults := manager.CheckAllServicesHealth(ctx)
+	assert.Equal(t, 3, len(healthResults))
+
+	// Shutdown all services
+	err = manager.ShutdownAllServices(ctx)
+	assert.NoError(t, err)
+	assert.True(t, httpHandler.IsShutdown())
+	assert.True(t, grpcHandler.IsShutdown())
+	assert.True(t, wsHandler.IsShutdown())
+}
+
+func TestManager_ServiceRegistryConcurrency(t *testing.T) {
+	manager := NewManager()
+	const numGoroutines = 30
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines * 3) // HTTP, gRPC, and custom transport handlers
+
+	// Concurrent handler registration
+	for i := 0; i < numGoroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
+			handler := NewMockHandlerRegister(fmt.Sprintf("http-service-%d", i), "v1.0.0")
+			err := manager.RegisterHTTPHandler(handler)
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
+			handler := NewMockHandlerRegister(fmt.Sprintf("grpc-service-%d", i), "v1.0.0")
+			err := manager.RegisterGRPCHandler(handler)
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
+			handler := NewMockHandlerRegister(fmt.Sprintf("custom-service-%d", i), "v1.0.0")
+			err := manager.RegisterHandler("custom", handler)
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify no race conditions
+	assert.Equal(t, numGoroutines*3, manager.GetTotalServiceCount())
+
+	registryManager := manager.GetServiceRegistryManager()
+	transportNames := registryManager.GetTransportNames()
+	assert.Equal(t, 3, len(transportNames))
+}
+
+// Benchmark tests for service registry operations
+func BenchmarkManager_RegisterHTTPHandler(b *testing.B) {
+	manager := NewManager()
+	handlers := make([]HandlerRegister, b.N)
+
+	for i := 0; i < b.N; i++ {
+		handlers[i] = NewMockHandlerRegister(fmt.Sprintf("service-%d", i), "v1.0.0")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		manager.RegisterHTTPHandler(handlers[i])
+	}
+}
+
+func BenchmarkManager_GetTotalServiceCount(b *testing.B) {
+	manager := NewManager()
+
+	// Setup: register 100 services
+	for i := 0; i < 100; i++ {
+		handler := NewMockHandlerRegister(fmt.Sprintf("service-%d", i), "v1.0.0")
+		if i%2 == 0 {
+			manager.RegisterHTTPHandler(handler)
+		} else {
+			manager.RegisterGRPCHandler(handler)
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		manager.GetTotalServiceCount()
 	}
 }

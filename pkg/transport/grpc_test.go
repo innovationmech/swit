@@ -23,6 +23,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -49,6 +50,7 @@ func TestNewGRPCTransport(t *testing.T) {
 
 	assert.NotNil(t, transport)
 	assert.NotNil(t, transport.config)
+	assert.NotNil(t, transport.serviceRegistry)
 	assert.Equal(t, "grpc", transport.GetName())
 }
 
@@ -65,6 +67,7 @@ func TestNewGRPCTransportWithConfig(t *testing.T) {
 
 	assert.NotNil(t, transport)
 	assert.Equal(t, config, transport.config)
+	assert.NotNil(t, transport.serviceRegistry)
 	assert.Equal(t, "grpc", transport.GetName())
 }
 
@@ -497,5 +500,187 @@ func BenchmarkGRPCTransport_determineAddress(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = transport.determineAddress()
+	}
+}
+
+func TestGRPCTransport_RegisterHandler(t *testing.T) {
+	transport := NewGRPCTransport()
+	handler := NewMockHandlerRegister("test-service", "v1.0.0")
+
+	err := transport.RegisterHandler(handler)
+	assert.NoError(t, err)
+
+	registry := transport.GetServiceRegistry()
+	assert.Equal(t, 1, registry.Count())
+
+	retrieved, err := registry.GetHandler("test-service")
+	assert.NoError(t, err)
+	assert.Equal(t, handler, retrieved)
+}
+
+func TestGRPCTransport_RegisterService(t *testing.T) {
+	transport := NewGRPCTransport()
+	handler := NewMockHandlerRegister("test-service", "v1.0.0")
+
+	err := transport.RegisterService(handler)
+	assert.NoError(t, err)
+
+	registry := transport.GetServiceRegistry()
+	assert.Equal(t, 1, registry.Count())
+}
+
+func TestGRPCTransport_InitializeServices(t *testing.T) {
+	transport := NewGRPCTransport()
+	handler := NewMockHandlerRegister("test-service", "v1.0.0")
+
+	transport.RegisterHandler(handler)
+
+	ctx := context.Background()
+	err := transport.InitializeServices(ctx)
+	assert.NoError(t, err)
+	assert.True(t, handler.IsInitialized())
+}
+
+func TestGRPCTransport_RegisterAllServices(t *testing.T) {
+	transport := NewGRPCTransport()
+	handler := NewMockHandlerRegister("test-service", "v1.0.0")
+
+	transport.RegisterHandler(handler)
+
+	// Start transport first to create gRPC server
+	ctx := context.Background()
+	err := transport.Start(ctx)
+	require.NoError(t, err)
+	defer transport.Stop(context.Background())
+
+	// Now register all services
+	err = transport.RegisterAllServices()
+	assert.NoError(t, err)
+	assert.True(t, handler.IsGRPCRegistered())
+}
+
+func TestGRPCTransport_RegisterAllServices_NotStarted(t *testing.T) {
+	transport := NewGRPCTransport()
+	handler := NewMockHandlerRegister("test-service", "v1.0.0")
+
+	transport.RegisterHandler(handler)
+
+	// Try to register services without starting transport
+	err := transport.RegisterAllServices()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "gRPC server not initialized")
+}
+
+func TestGRPCTransport_GetServiceRegistry(t *testing.T) {
+	transport := NewGRPCTransport()
+
+	registry := transport.GetServiceRegistry()
+	assert.NotNil(t, registry)
+	assert.Equal(t, 0, registry.Count())
+}
+
+func TestGRPCTransport_ShutdownServices(t *testing.T) {
+	transport := NewGRPCTransport()
+	handler := NewMockHandlerRegister("test-service", "v1.0.0")
+
+	transport.RegisterHandler(handler)
+
+	ctx := context.Background()
+	err := transport.ShutdownServices(ctx)
+	assert.NoError(t, err)
+	assert.True(t, handler.IsShutdown())
+}
+
+func TestGRPCTransport_ServiceRegistryLifecycle(t *testing.T) {
+	transport := NewGRPCTransport()
+	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
+	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
+
+	// Register handlers
+	err := transport.RegisterHandler(handler1)
+	require.NoError(t, err)
+	err = transport.RegisterHandler(handler2)
+	require.NoError(t, err)
+
+	registry := transport.GetServiceRegistry()
+	assert.Equal(t, 2, registry.Count())
+
+	// Initialize services
+	ctx := context.Background()
+	err = transport.InitializeServices(ctx)
+	assert.NoError(t, err)
+	assert.True(t, handler1.IsInitialized())
+	assert.True(t, handler2.IsInitialized())
+
+	// Start transport and register gRPC services
+	err = transport.Start(ctx)
+	require.NoError(t, err)
+
+	err = transport.RegisterAllServices()
+	assert.NoError(t, err)
+	assert.True(t, handler1.IsGRPCRegistered())
+	assert.True(t, handler2.IsGRPCRegistered())
+
+	// Stop transport (should also shutdown services)
+	err = transport.Stop(ctx)
+	assert.NoError(t, err)
+	assert.True(t, handler1.IsShutdown())
+	assert.True(t, handler2.IsShutdown())
+}
+
+func TestGRPCTransport_ConcurrentServiceOperations(t *testing.T) {
+	transport := NewGRPCTransport()
+	const numGoroutines = 20
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines * 2) // Register and GetServiceRegistry operations
+
+	// Concurrent handler registration
+	for i := 0; i < numGoroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
+			handler := NewMockHandlerRegister(fmt.Sprintf("service-%d", i), "v1.0.0")
+			err := transport.RegisterHandler(handler)
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	// Concurrent GetServiceRegistry operations
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			registry := transport.GetServiceRegistry()
+			assert.NotNil(t, registry)
+		}()
+	}
+
+	wg.Wait()
+
+	// Verify no race conditions
+	registry := transport.GetServiceRegistry()
+	assert.Equal(t, numGoroutines, registry.Count())
+}
+
+// Benchmark tests for service registry operations
+func BenchmarkGRPCTransport_RegisterHandler(b *testing.B) {
+	transport := NewGRPCTransport()
+	handlers := make([]HandlerRegister, b.N)
+
+	for i := 0; i < b.N; i++ {
+		handlers[i] = NewMockHandlerRegister(fmt.Sprintf("service-%d", i), "v1.0.0")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		transport.RegisterHandler(handlers[i])
+	}
+}
+
+func BenchmarkGRPCTransport_GetServiceRegistry(b *testing.B) {
+	transport := NewGRPCTransport()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = transport.GetServiceRegistry()
 	}
 }
