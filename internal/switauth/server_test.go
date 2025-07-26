@@ -132,14 +132,14 @@ func TestServerWithComponents(t *testing.T) {
 
 	t.Run("GetHTTPAddress", func(t *testing.T) {
 		address := server.GetHTTPAddress()
-		// Address is empty until transport starts
-		assert.Equal(t, "", address)
+		// Address should return configured address even before transport starts
+		assert.NotEmpty(t, address)
 	})
 
 	t.Run("GetGRPCAddress", func(t *testing.T) {
 		address := server.GetGRPCAddress()
-		// Address is empty until transport starts
-		assert.Equal(t, "", address)
+		// Address should return configured address even before transport starts
+		assert.NotEmpty(t, address)
 	})
 
 	t.Run("GetServices", func(t *testing.T) {
@@ -240,9 +240,9 @@ func TestServerPortConfiguration(t *testing.T) {
 				grpcTransport: grpcTransport,
 			}
 
-			// Address is empty until transport starts
-			assert.Equal(t, "", server.GetHTTPAddress())
-			assert.Equal(t, "", server.GetGRPCAddress())
+			// Address should return configured address even before transport starts
+			assert.NotEmpty(t, server.GetHTTPAddress())
+			assert.NotEmpty(t, server.GetGRPCAddress())
 		})
 	}
 }
@@ -614,15 +614,15 @@ func TestServerAddressDefaults(t *testing.T) {
 		grpcTransport: grpcTransport,
 	}
 
-	// Initially addresses should be empty (not started yet)
-	assert.Equal(t, "", server.GetHTTPAddress())
-	assert.Equal(t, "", server.GetGRPCAddress())
+	// Initially addresses should return default values (consistent with GetPort behavior)
+	assert.Equal(t, ":8080", server.GetHTTPAddress())  // Default HTTP address
+	assert.Equal(t, ":50051", server.GetGRPCAddress()) // Default GRPC address
 
 	// Set addresses
 	httpTransport.SetAddress(":8090")
 	grpcTransport.SetAddress(":50051")
 
-	// Addresses are still empty until transport starts
-	assert.Equal(t, "", server.GetHTTPAddress())
-	assert.Equal(t, "", server.GetGRPCAddress())
+	// Addresses should now return configured values even before transport starts
+	assert.Equal(t, ":8090", server.GetHTTPAddress())
+	assert.Equal(t, ":50051", server.GetGRPCAddress())
 }

@@ -24,6 +24,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -160,7 +161,7 @@ func TestManager_Register_Concurrent(t *testing.T) {
 	for i := 0; i < numTransports; i++ {
 		go func(i int) {
 			defer wg.Done()
-			transport := NewMockTransport("transport-"+string(rune(i)), ":"+string(rune(8000+i)))
+			transport := NewMockTransport(fmt.Sprintf("transport-%d", i), fmt.Sprintf(":%d", 8000+i))
 			manager.Register(transport)
 		}(i)
 	}
@@ -257,11 +258,61 @@ func TestManager_Stop_WithError(t *testing.T) {
 	err := manager.Start(ctx)
 	require.NoError(t, err)
 
-	// Stop transports - should continue even with error
+	// Stop transports - should continue even with error and return errors
 	err = manager.Stop(5 * time.Second)
-	assert.NoError(t, err)                  // Stop method logs errors but doesn't return them
+	assert.Error(t, err) // Stop method now returns errors
+
+	// Check that it's a MultiError with the expected error
+	multiErr, ok := err.(*MultiError)
+	assert.True(t, ok, "Error should be a MultiError")
+	assert.Equal(t, 1, len(multiErr.Errors))
+	assert.Equal(t, "http", multiErr.Errors[0].TransportName)
+	assert.Contains(t, multiErr.Errors[0].Error(), "failed to stop http transport")
+
 	assert.False(t, transport1.IsStopped()) // Failed to stop
 	assert.True(t, transport2.IsStopped())  // Should still stop
+}
+
+func TestManager_Stop_WithMultipleErrors(t *testing.T) {
+	manager := NewManager()
+	transport1 := NewMockTransport("http", ":8080")
+	transport2 := NewMockTransport("grpc", ":9090")
+	transport3 := NewMockTransport("websocket", ":8081")
+
+	// Set errors for first two transports
+	err1 := errors.New("failed to stop http transport")
+	err2 := errors.New("failed to stop grpc transport")
+	transport1.SetStopError(err1)
+	transport2.SetStopError(err2)
+
+	manager.Register(transport1)
+	manager.Register(transport2)
+	manager.Register(transport3)
+
+	// Start transports first
+	ctx := context.Background()
+	err := manager.Start(ctx)
+	require.NoError(t, err)
+
+	// Stop transports - should collect all errors
+	err = manager.Stop(5 * time.Second)
+	assert.Error(t, err)
+
+	// Check that it's a MultiError with both expected errors
+	multiErr, ok := err.(*MultiError)
+	assert.True(t, ok, "Error should be a MultiError")
+	assert.Equal(t, 2, len(multiErr.Errors))
+
+	// Check error details
+	assert.Equal(t, "http", multiErr.Errors[0].TransportName)
+	assert.Contains(t, multiErr.Errors[0].Error(), "failed to stop http transport")
+	assert.Equal(t, "grpc", multiErr.Errors[1].TransportName)
+	assert.Contains(t, multiErr.Errors[1].Error(), "failed to stop grpc transport")
+
+	// Check transport states
+	assert.False(t, transport1.IsStopped()) // Failed to stop
+	assert.False(t, transport2.IsStopped()) // Failed to stop
+	assert.True(t, transport3.IsStopped())  // Should still stop successfully
 }
 
 func TestManager_Stop_WithTimeout(t *testing.T) {
@@ -369,7 +420,7 @@ func TestManager_ThreadSafety(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(i int) {
 			defer wg.Done()
-			transport := NewMockTransport("transport-"+string(rune(i)), ":"+string(rune(8000+i)))
+			transport := NewMockTransport(fmt.Sprintf("transport-%d", i), fmt.Sprintf(":%d", 8000+i))
 			manager.Register(transport)
 		}(i)
 	}
@@ -396,6 +447,169 @@ func TestManager_ThreadSafety(t *testing.T) {
 	// Verify no race conditions occurred
 	transports := manager.GetTransports()
 	assert.Equal(t, numGoroutines, len(transports))
+}
+
+func TestTransportError_Error(t *testing.T) {
+	err := &TransportError{
+		TransportName: "http",
+		Err:           errors.New("connection failed"),
+	}
+
+	expected := "transport 'http': connection failed"
+	assert.Equal(t, expected, err.Error())
+}
+
+func TestMultiError_Error(t *testing.T) {
+	tests := []struct {
+		name     string
+		errors   []TransportError
+		expected string
+	}{
+		{
+			name:     "no errors",
+			errors:   []TransportError{},
+			expected: "no errors",
+		},
+		{
+			name: "single error",
+			errors: []TransportError{
+				{TransportName: "http", Err: errors.New("failed")},
+			},
+			expected: "transport 'http': failed",
+		},
+		{
+			name: "multiple errors",
+			errors: []TransportError{
+				{TransportName: "http", Err: errors.New("http failed")},
+				{TransportName: "grpc", Err: errors.New("grpc failed")},
+			},
+			expected: "multiple transport errors: transport 'http': http failed; transport 'grpc': grpc failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			multiErr := &MultiError{Errors: tt.errors}
+			assert.Equal(t, tt.expected, multiErr.Error())
+		})
+	}
+}
+
+func TestMultiError_HasErrors(t *testing.T) {
+	// Empty MultiError
+	multiErr := &MultiError{Errors: []TransportError{}}
+	assert.False(t, multiErr.HasErrors())
+
+	// MultiError with errors
+	multiErr = &MultiError{
+		Errors: []TransportError{
+			{TransportName: "http", Err: errors.New("failed")},
+		},
+	}
+	assert.True(t, multiErr.HasErrors())
+}
+
+func TestMultiError_Unwrap(t *testing.T) {
+	// Empty MultiError
+	multiErr := &MultiError{Errors: []TransportError{}}
+	assert.Nil(t, multiErr.Unwrap())
+
+	// Single error
+	originalErr := errors.New("original error")
+	multiErr = &MultiError{
+		Errors: []TransportError{
+			{TransportName: "http", Err: originalErr},
+		},
+	}
+	assert.Equal(t, originalErr, multiErr.Unwrap())
+
+	// Multiple errors
+	multiErr = &MultiError{
+		Errors: []TransportError{
+			{TransportName: "http", Err: errors.New("error1")},
+			{TransportName: "grpc", Err: errors.New("error2")},
+		},
+	}
+	assert.Nil(t, multiErr.Unwrap())
+}
+
+func TestMultiError_GetErrorByTransport(t *testing.T) {
+	httpErr := errors.New("http error")
+	grpcErr := errors.New("grpc error")
+
+	multiErr := &MultiError{
+		Errors: []TransportError{
+			{TransportName: "http", Err: httpErr},
+			{TransportName: "grpc", Err: grpcErr},
+		},
+	}
+
+	// Found transport error
+	transportErr := multiErr.GetErrorByTransport("http")
+	assert.NotNil(t, transportErr)
+	assert.Equal(t, "http", transportErr.TransportName)
+	assert.Equal(t, httpErr, transportErr.Err)
+
+	// Not found transport error
+	transportErr = multiErr.GetErrorByTransport("websocket")
+	assert.Nil(t, transportErr)
+
+	// Empty MultiError
+	emptyMultiErr := &MultiError{Errors: []TransportError{}}
+	transportErr = emptyMultiErr.GetErrorByTransport("http")
+	assert.Nil(t, transportErr)
+}
+
+func TestIsStopError(t *testing.T) {
+	// Non-error case
+	assert.False(t, IsStopError(nil))
+
+	// Regular error
+	assert.False(t, IsStopError(errors.New("regular error")))
+
+	// TransportError
+	transportErr := &TransportError{
+		TransportName: "http",
+		Err:           errors.New("stop failed"),
+	}
+	assert.True(t, IsStopError(transportErr))
+
+	// MultiError
+	multiErr := &MultiError{
+		Errors: []TransportError{*transportErr},
+	}
+	assert.True(t, IsStopError(multiErr))
+}
+
+func TestExtractStopErrors(t *testing.T) {
+	// Nil error
+	stopErrors := ExtractStopErrors(nil)
+	assert.Nil(t, stopErrors)
+
+	// Regular error
+	stopErrors = ExtractStopErrors(errors.New("regular error"))
+	assert.Nil(t, stopErrors)
+
+	// TransportError
+	transportErr := &TransportError{
+		TransportName: "http",
+		Err:           errors.New("stop failed"),
+	}
+	stopErrors = ExtractStopErrors(transportErr)
+	assert.Equal(t, 1, len(stopErrors))
+	assert.Equal(t, "http", stopErrors[0].TransportName)
+
+	// MultiError
+	multiErr := &MultiError{
+		Errors: []TransportError{
+			{TransportName: "http", Err: errors.New("http failed")},
+			{TransportName: "grpc", Err: errors.New("grpc failed")},
+		},
+	}
+	stopErrors = ExtractStopErrors(multiErr)
+	assert.Equal(t, 2, len(stopErrors))
+	assert.Equal(t, "http", stopErrors[0].TransportName)
+	assert.Equal(t, "grpc", stopErrors[1].TransportName)
 }
 
 // Benchmark tests

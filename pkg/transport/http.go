@@ -181,7 +181,15 @@ func (h *HTTPTransport) GetName() string {
 func (h *HTTPTransport) GetAddress() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.address
+
+	// Try actual address first (set when server is running)
+	address := h.address
+	// If not running, try configured address
+	if address == "" && h.config != nil && h.config.Address != "" {
+		address = h.config.Address
+	}
+
+	return address
 }
 
 // GetRouter returns the Gin router for route registration

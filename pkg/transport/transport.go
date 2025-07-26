@@ -24,12 +24,92 @@ package transport
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 )
+
+// TransportError represents an error from a specific transport
+type TransportError struct {
+	TransportName string
+	Err           error
+}
+
+func (te *TransportError) Error() string {
+	return fmt.Sprintf("transport '%s': %v", te.TransportName, te.Err)
+}
+
+// MultiError represents multiple transport errors
+type MultiError struct {
+	Errors []TransportError
+}
+
+func (me *MultiError) Error() string {
+	if len(me.Errors) == 0 {
+		return "no errors"
+	}
+	if len(me.Errors) == 1 {
+		return me.Errors[0].Error()
+	}
+
+	var errStrs []string
+	for _, err := range me.Errors {
+		errStrs = append(errStrs, err.Error())
+	}
+	return fmt.Sprintf("multiple transport errors: %s", strings.Join(errStrs, "; "))
+}
+
+func (me *MultiError) HasErrors() bool {
+	return len(me.Errors) > 0
+}
+
+// Unwrap returns the first error if there's only one error, otherwise returns nil
+func (me *MultiError) Unwrap() error {
+	if len(me.Errors) == 1 {
+		return me.Errors[0].Err
+	}
+	return nil
+}
+
+// GetErrorByTransport returns the error for a specific transport, if any
+func (me *MultiError) GetErrorByTransport(transportName string) *TransportError {
+	for _, err := range me.Errors {
+		if err.TransportName == transportName {
+			return &err
+		}
+	}
+	return nil
+}
+
+// IsStopError checks if an error is a transport stop error
+func IsStopError(err error) bool {
+	if err == nil {
+		return false
+	}
+	_, isMultiError := err.(*MultiError)
+	_, isTransportError := err.(*TransportError)
+	return isMultiError || isTransportError
+}
+
+// ExtractStopErrors extracts transport stop errors from an error
+func ExtractStopErrors(err error) []TransportError {
+	if err == nil {
+		return nil
+	}
+
+	if multiErr, ok := err.(*MultiError); ok {
+		return multiErr.Errors
+	}
+
+	if transportErr, ok := err.(*TransportError); ok {
+		return []TransportError{*transportErr}
+	}
+
+	return nil
+}
 
 // Transport defines the interface for different transport mechanisms
 type Transport interface {
@@ -86,6 +166,7 @@ func (m *Manager) Start(ctx context.Context) error {
 }
 
 // Stop gracefully stops all registered transports
+// Returns a MultiError containing all errors encountered during shutdown
 func (m *Manager) Stop(timeout time.Duration) error {
 	m.mu.RLock()
 	transports := make([]Transport, len(m.transports))
@@ -95,18 +176,34 @@ func (m *Manager) Stop(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	var stopErrors []TransportError
+
 	for _, transport := range transports {
 		logger.Logger.Info("Stopping transport",
 			zap.String("transport", transport.GetName()))
 		if err := transport.Stop(ctx); err != nil {
+			stopError := TransportError{
+				TransportName: transport.GetName(),
+				Err:           err,
+			}
+			stopErrors = append(stopErrors, stopError)
 			logger.Logger.Error("Failed to stop transport",
 				zap.String("transport", transport.GetName()),
 				zap.Error(err))
-			// Continue stopping other transports
+			// Continue stopping other transports even if one fails
 		}
 	}
 
-	logger.Logger.Info("All transports stopped")
+	if len(stopErrors) > 0 {
+		multiErr := &MultiError{Errors: stopErrors}
+		logger.Logger.Error("Transport shutdown completed with errors",
+			zap.Int("failed_count", len(stopErrors)),
+			zap.Int("total_count", len(transports)),
+			zap.Error(multiErr))
+		return multiErr
+	}
+
+	logger.Logger.Info("All transports stopped successfully")
 	return nil
 }
 

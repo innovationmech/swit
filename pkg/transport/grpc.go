@@ -184,7 +184,15 @@ func (g *GRPCTransport) GetName() string {
 func (g *GRPCTransport) GetAddress() string {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.address
+
+	// Try actual address first (set when server is running)
+	address := g.address
+	// If not running, try configured address
+	if address == "" && g.config != nil && g.config.Address != "" {
+		address = g.config.Address
+	}
+
+	return address
 }
 
 // GetServer returns the gRPC server instance for service registration
