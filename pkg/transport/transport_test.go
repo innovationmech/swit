@@ -635,7 +635,7 @@ func BenchmarkManager_GetTransports(b *testing.B) {
 
 	// Setup: register 100 transports
 	for i := 0; i < 100; i++ {
-		transport := NewMockTransport("transport-"+string(rune(i)), ":"+string(rune(8000+i)))
+		transport := NewMockTransport(fmt.Sprintf("transport-%d", i), fmt.Sprintf(":%d", 8000+i))
 		manager.Register(transport)
 	}
 
