@@ -30,7 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 
-	"github.com/innovationmech/swit/internal/switauth/types"
+	"github.com/innovationmech/swit/pkg/types"
 )
 
 // HandlerMetadata contains metadata information about a service
@@ -50,7 +50,6 @@ type HandlerMetadata struct {
 }
 
 // HandlerRegister defines the unified interface for service registration and management
-// This interface provides enhanced service management with metadata and lifecycle methods
 type HandlerRegister interface {
 	// RegisterHTTP registers HTTP routes with the given router
 	RegisterHTTP(router *gin.Engine) error
@@ -75,7 +74,6 @@ type HandlerRegister interface {
 }
 
 // EnhancedHandlerRegistry manages service handlers with thread-safe operations
-// This is an enhanced version of the existing ServiceRegistry that works with HandlerRegister interface
 type EnhancedHandlerRegistry struct {
 	mu       sync.RWMutex
 	handlers map[string]HandlerRegister
@@ -238,32 +236,39 @@ func (sr *EnhancedHandlerRegistry) RegisterAllGRPC(server *grpc.Server) error {
 	return nil
 }
 
-// CheckAllHealth checks the health of all registered services
+// CheckAllHealth performs health checks on all registered services
 func (sr *EnhancedHandlerRegistry) CheckAllHealth(ctx context.Context) map[string]*types.HealthStatus {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
 	results := make(map[string]*types.HealthStatus)
+
 	for _, name := range sr.order {
 		if handler, exists := sr.handlers[name]; exists {
-			if health, err := handler.IsHealthy(ctx); err == nil {
-				results[name] = health
-			} else {
-				// Create unhealthy status on error
-				results[name] = &types.HealthStatus{
-					Status:    types.HealthStatusUnhealthy,
-					Timestamp: time.Now(),
-					Version:   "unknown",
-					Uptime:    0,
+			// Create a timeout context for each health check
+			healthCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			status, err := handler.IsHealthy(healthCtx)
+			cancel()
+
+			if err != nil {
+				// Create an unhealthy status if health check failed
+				status = &types.HealthStatus{
+					Status:       types.HealthStatusUnhealthy,
+					Timestamp:    time.Now(),
+					Version:      "unknown",
+					Uptime:       0,
+					Dependencies: make(map[string]types.DependencyStatus),
 				}
 			}
+
+			results[name] = status
 		}
 	}
 
 	return results
 }
 
-// ShutdownAll performs graceful shutdown of all services in reverse order
+// ShutdownAll gracefully shuts down all registered services in reverse order
 func (sr *EnhancedHandlerRegistry) ShutdownAll(ctx context.Context) error {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()

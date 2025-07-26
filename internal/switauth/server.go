@@ -24,15 +24,16 @@ package switauth
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/deps"
 	auth "github.com/innovationmech/swit/internal/switauth/handler/http/auth/v1"
 	"github.com/innovationmech/swit/internal/switauth/handler/http/health"
-	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/pkg/transport"
 	"go.uber.org/zap"
 )
 
@@ -55,17 +56,29 @@ func NewServer() (*Server, error) {
 		return nil, fmt.Errorf("failed to create dependencies: %w", err)
 	}
 
-	// Create HTTP transport
-	httpTransport := transport.NewHTTPTransport()
-	httpTransport.SetAddress(":" + dependencies.Config.Server.Port)
+	// Create HTTP transport for auth service
+	httpPort := dependencies.Config.Server.Port
+	if httpPort == "" {
+		httpPort = "8090" // Default port for auth service
+	}
+	httpConfig := &transport.HTTPTransportConfig{
+		Address:     fmt.Sprintf(":%s", httpPort),
+		Port:        httpPort,
+		EnableReady: false, // Simpler configuration for auth service
+	}
+	httpTransport := transport.NewHTTPTransportWithConfig(httpConfig)
 
-	// Create gRPC transport
-	grpcTransport := transport.NewGRPCTransport()
+	// Create gRPC transport for auth service
 	grpcPort := dependencies.Config.Server.GRPCPort
 	if grpcPort == "" {
-		grpcPort = "50051" // Default fallback
+		grpcPort = "50051" // Default gRPC port
 	}
-	grpcTransport.SetAddress(":" + grpcPort)
+	grpcConfig := transport.DefaultGRPCConfig()
+	grpcConfig.Address = fmt.Sprintf(":%s", grpcPort)
+	grpcConfig.EnableKeepalive = false    // Basic configuration for auth
+	grpcConfig.EnableReflection = true    // Keep reflection for debugging
+	grpcConfig.EnableHealthService = true // Keep health service
+	grpcTransport := transport.NewGRPCTransportWithConfig(grpcConfig)
 
 	// Create transport manager
 	transportManager := transport.NewManager()
@@ -167,7 +180,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	// Stop all transports (this will shutdown services through HTTP transport)
-	if err := s.transportManager.Stop(ctx); err != nil {
+	if err := s.transportManager.Stop(5 * time.Second); err != nil {
 		return fmt.Errorf("failed to stop transports: %w", err)
 	}
 

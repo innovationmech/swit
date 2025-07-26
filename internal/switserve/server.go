@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/internal/switserve/deps"
 	greeterv1 "github.com/innovationmech/swit/internal/switserve/handler/http/greeter/v1"
@@ -34,9 +36,10 @@ import (
 	notificationv1 "github.com/innovationmech/swit/internal/switserve/handler/http/notification/v1"
 	"github.com/innovationmech/swit/internal/switserve/handler/http/stop"
 	userv1 "github.com/innovationmech/swit/internal/switserve/handler/http/user/v1"
-	"github.com/innovationmech/swit/internal/switserve/transport"
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/pkg/transport"
 	"go.uber.org/zap"
 )
 
@@ -75,9 +78,36 @@ func NewServer() (*Server, error) {
 	}
 	server.sd = sd
 
-	// Initialize transports
-	server.httpTransport = transport.NewHTTPTransport()
-	server.grpcTransport = transport.NewGRPCTransport()
+	// Initialize HTTP transport for switserve
+	httpPort := cfg.Server.Port
+	if httpPort == "" {
+		httpPort = "8080"
+	}
+	httpConfig := &transport.HTTPTransportConfig{
+		Address:     fmt.Sprintf(":%s", httpPort),
+		Port:        httpPort,
+		EnableReady: true, // Enable ready channel for testing
+	}
+	server.httpTransport = transport.NewHTTPTransportWithConfig(httpConfig)
+
+	// Initialize gRPC transport for switserve
+	grpcPort := cfg.Server.GRPCPort
+	if grpcPort == "" {
+		// Fallback: use HTTP port + 1000 for gRPC (e.g., 8080 -> 9080)
+		grpcPort = transport.CalculateGRPCPort(cfg.Server.Port)
+	}
+	grpcConfig := transport.DefaultGRPCConfig()
+	grpcConfig.Address = fmt.Sprintf(":%s", grpcPort)
+	grpcConfig.EnableKeepalive = true
+	grpcConfig.EnableReflection = true
+	grpcConfig.EnableHealthService = true
+	// Add switserve-specific middleware
+	grpcConfig.UnaryInterceptors = []grpc.UnaryServerInterceptor{
+		middleware.GRPCRecoveryInterceptor(),
+		middleware.GRPCLoggingInterceptor(),
+		middleware.GRPCValidationInterceptor(),
+	}
+	server.grpcTransport = transport.NewGRPCTransportWithConfig(grpcConfig)
 
 	// HandlerRegister transports
 	server.transportManager.Register(server.httpTransport)
@@ -168,8 +198,8 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	logger.Logger.Info("Server started successfully",
-		zap.String("http_address", s.httpTransport.Address()),
-		zap.String("grpc_address", s.grpcTransport.Address()),
+		zap.String("http_address", s.httpTransport.GetAddress()),
+		zap.String("grpc_address", s.grpcTransport.GetAddress()),
 	)
 
 	return nil

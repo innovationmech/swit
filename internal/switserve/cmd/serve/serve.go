@@ -86,8 +86,8 @@ func runServer() error {
 
 		for _, transport := range transports {
 			logger.Logger.Info("Transport registered",
-				zap.String("name", transport.Name()),
-				zap.String("address", transport.Address()),
+				zap.String("name", transport.GetName()),
+				zap.String("address", transport.GetAddress()),
 			)
 		}
 

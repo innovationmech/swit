@@ -28,9 +28,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switserve/interfaces"
-	"github.com/innovationmech/swit/internal/switserve/transport"
 	"github.com/innovationmech/swit/internal/switserve/types"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/transport"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )

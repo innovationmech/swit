@@ -79,7 +79,7 @@ func TestNewServer(t *testing.T) {
 	// Verify transport types
 	transportNames := make([]string, len(transports))
 	for i, transport := range transports {
-		transportNames[i] = transport.Name()
+		transportNames[i] = transport.GetName()
 	}
 	assert.Contains(t, transportNames, "http")
 	assert.Contains(t, transportNames, "grpc")
@@ -130,7 +130,7 @@ func TestServer_TransportManagerIntegration(t *testing.T) {
 	// Verify both HTTP and gRPC transports are registered
 	names := make([]string, len(transports))
 	for i, transport := range transports {
-		names[i] = transport.Name()
+		names[i] = transport.GetName()
 	}
 	assert.Contains(t, names, "http")
 	assert.Contains(t, names, "grpc")
@@ -446,8 +446,8 @@ func TestServer_ComponentIntegration(t *testing.T) {
 		assert.NotNil(t, server.grpcTransport.GetServer(), "gRPC transport should have server")
 
 		// Verify addresses are set
-		assert.NotEmpty(t, server.httpTransport.Address(), "HTTP transport should have address")
-		assert.NotEmpty(t, server.grpcTransport.Address(), "gRPC transport should have address")
+		assert.NotEmpty(t, server.httpTransport.GetAddress(), "HTTP transport should have address")
+		assert.NotEmpty(t, server.grpcTransport.GetAddress(), "gRPC transport should have address")
 	})
 
 	t.Run("should_handle_service_discovery_integration", func(t *testing.T) {

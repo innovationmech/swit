@@ -23,8 +23,12 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/innovationmech/swit/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // Transport defines the interface for different transport mechanisms
@@ -33,10 +37,10 @@ type Transport interface {
 	Start(ctx context.Context) error
 	// Stop gracefully stops the transport server
 	Stop(ctx context.Context) error
-	// Name returns the transport name
-	Name() string
-	// Address returns the listening address
-	Address() string
+	// GetName returns the transport name
+	GetName() string
+	// GetAddress returns the listening address
+	GetAddress() string
 }
 
 // Manager manages multiple transport instances
@@ -56,67 +60,62 @@ func NewManager() *Manager {
 func (m *Manager) Register(transport Transport) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	m.transports = append(m.transports, transport)
+	logger.Logger.Info("Transport registered",
+		zap.String("transport", transport.GetName()))
 }
 
 // Start starts all registered transports
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
+	transports := make([]Transport, len(m.transports))
+	copy(transports, m.transports)
+	m.mu.RUnlock()
 
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(m.transports))
-
-	for _, transport := range m.transports {
-		wg.Add(1)
-		go func(t Transport) {
-			defer wg.Done()
-			if err := t.Start(ctx); err != nil {
-				errChan <- err
-			}
-		}(transport)
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	// Return first error if any
-	for err := range errChan {
-		if err != nil {
-			return err
+	for _, transport := range transports {
+		logger.Logger.Info("Starting transport",
+			zap.String("transport", transport.GetName()))
+		if err := transport.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start %s transport: %w", transport.GetName(), err)
 		}
 	}
 
+	logger.Logger.Info("All transports started successfully")
 	return nil
 }
 
-// Stop gracefully stops all transports
+// Stop gracefully stops all registered transports
 func (m *Manager) Stop(timeout time.Duration) error {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
+	transports := make([]Transport, len(m.transports))
+	copy(transports, m.transports)
+	m.mu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	for _, transport := range m.transports {
-		wg.Add(1)
-		go func(t Transport) {
-			defer wg.Done()
-			_ = t.Stop(ctx)
-		}(transport)
+	for _, transport := range transports {
+		logger.Logger.Info("Stopping transport",
+			zap.String("transport", transport.GetName()))
+		if err := transport.Stop(ctx); err != nil {
+			logger.Logger.Error("Failed to stop transport",
+				zap.String("transport", transport.GetName()),
+				zap.Error(err))
+			// Continue stopping other transports
+		}
 	}
 
-	wg.Wait()
+	logger.Logger.Info("All transports stopped")
 	return nil
 }
 
-// GetTransports returns all registered transports
+// GetTransports returns a list of all registered transports
 func (m *Manager) GetTransports() []Transport {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	result := make([]Transport, len(m.transports))
-	copy(result, m.transports)
-	return result
+	transports := make([]Transport, len(m.transports))
+	copy(transports, m.transports)
+	return transports
 }

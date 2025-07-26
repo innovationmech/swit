@@ -24,55 +24,72 @@ package transport
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 )
+
+// HTTPTransportConfig contains configuration for HTTP transport
+type HTTPTransportConfig struct {
+	Address     string
+	Port        string
+	TestMode    bool   // Enables test-specific features
+	TestPort    string // Override port for testing
+	EnableReady bool   // Enables ready channel for testing
+}
 
 // HTTPTransport implements Transport interface for HTTP
 type HTTPTransport struct {
 	server          *http.Server
 	router          *gin.Engine
 	address         string
-	testPort        string // Override port for testing (empty means use config)
+	config          *HTTPTransportConfig
 	ready           chan struct{}
 	readyOnce       sync.Once
 	mu              sync.RWMutex
 	serviceRegistry *EnhancedHandlerRegistry
 }
 
-// NewHTTPTransport creates a new HTTP transport
+// NewHTTPTransport creates a new HTTP transport with default configuration
 func NewHTTPTransport() *HTTPTransport {
-	return &HTTPTransport{
-		router:          gin.Default(),
-		ready:           make(chan struct{}),
+	return NewHTTPTransportWithConfig(&HTTPTransportConfig{
+		Address:     ":8080",
+		EnableReady: true,
+	})
+}
+
+// NewHTTPTransportWithConfig creates a new HTTP transport with custom configuration
+func NewHTTPTransportWithConfig(config *HTTPTransportConfig) *HTTPTransport {
+	if config == nil {
+		config = &HTTPTransportConfig{
+			Address:     ":8080",
+			EnableReady: true,
+		}
+	}
+
+	transport := &HTTPTransport{
+		router:          gin.New(), // Use gin.New() instead of gin.Default() for more control
+		config:          config,
 		serviceRegistry: NewEnhancedServiceRegistry(),
 	}
+
+	if config.EnableReady {
+		transport.ready = make(chan struct{})
+	}
+
+	return transport
 }
 
 // Start implements Transport interface
 func (h *HTTPTransport) Start(ctx context.Context) error {
-	// Check for test port override first
-	h.mu.RLock()
-	testPort := h.testPort
-	h.mu.RUnlock()
-
-	var port string
-	if testPort != "" {
-		port = testPort
-	} else {
-		cfg := config.GetConfig()
-		port = cfg.Server.Port
-		if port == "" {
-			port = "8080"
-		}
-	}
-
-	h.address = fmt.Sprintf(":%s", port)
+	// Determine address to use
+	address := h.determineAddress()
+	h.address = address
 
 	h.mu.Lock()
 	// Check if server is already running
@@ -81,29 +98,45 @@ func (h *HTTPTransport) Start(ctx context.Context) error {
 		return nil // Already started
 	}
 
+	// Create listener
+	ln, err := net.Listen("tcp", address)
+	if err != nil {
+		h.mu.Unlock()
+		return fmt.Errorf("failed to create HTTP listener: %w", err)
+	}
+
+	// Update actual address in case of :0 port
+	h.address = ln.Addr().String()
+
 	h.server = &http.Server{
 		Addr:    h.address,
 		Handler: h.router,
 	}
-	// Reset ready channel for each start
-	h.ready = make(chan struct{})
-	h.readyOnce = sync.Once{}
+
+	// Reset ready channel for each start if enabled
+	if h.config.EnableReady {
+		h.ready = make(chan struct{})
+		h.readyOnce = sync.Once{}
+	}
+
 	// Capture references inside the lock to avoid race conditions
 	ready := h.ready
 	readyOnce := &h.readyOnce
 	server := h.server
 	h.mu.Unlock()
 
-	logger.Logger.Info("Starting HTTP server", zap.String("address", h.address))
+	logger.Logger.Info("Starting HTTP transport", zap.String("address", h.address))
 
 	// Start serving in a goroutine
 	go func() {
-		// Signal that server is ready (only once)
-		readyOnce.Do(func() {
-			close(ready)
-		})
+		// Signal that server is ready (only once) if enabled
+		if h.config.EnableReady && ready != nil {
+			readyOnce.Do(func() {
+				close(ready)
+			})
+		}
 
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			logger.Logger.Error("HTTP server failed to serve", zap.Error(err))
 		}
 	}()
@@ -135,17 +168,17 @@ func (h *HTTPTransport) Stop(ctx context.Context) error {
 	// Reset server to nil so it can be started again
 	h.server = nil
 
-	logger.Logger.Info("HTTP server shut down successfully")
+	logger.Logger.Info("HTTP transport stopped successfully")
 	return nil
 }
 
-// Name implements Transport interface
-func (h *HTTPTransport) Name() string {
+// GetName implements Transport interface
+func (h *HTTPTransport) GetName() string {
 	return "http"
 }
 
-// Address implements Transport interface
-func (h *HTTPTransport) Address() string {
+// GetAddress implements Transport interface
+func (h *HTTPTransport) GetAddress() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.address
@@ -158,16 +191,67 @@ func (h *HTTPTransport) GetRouter() *gin.Engine {
 	return h.router
 }
 
-// WaitReady waits for the HTTP server to be ready
+// GetPort returns the actual port the server is listening on
+func (h *HTTPTransport) GetPort() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	// Try actual address first (set when server is running)
+	address := h.address
+	// If not running, try configured address
+	if address == "" && h.config != nil && h.config.Address != "" {
+		address = h.config.Address
+	}
+
+	if address == "" {
+		return 0
+	}
+
+	_, portStr, err := net.SplitHostPort(address)
+	if err != nil {
+		return 0
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0
+	}
+
+	return port
+}
+
+// WaitReady waits for the HTTP server to be ready (for testing)
 func (h *HTTPTransport) WaitReady() <-chan struct{} {
-	return h.ready
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.ready != nil {
+		return h.ready
+	}
+	// Return a closed channel if ready is disabled
+	closed := make(chan struct{})
+	close(closed)
+	return closed
 }
 
 // SetTestPort sets a custom port for testing (use "0" for dynamic port allocation)
 func (h *HTTPTransport) SetTestPort(port string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.testPort = port
+	if h.config == nil {
+		h.config = &HTTPTransportConfig{}
+	}
+	h.config.TestPort = port
+	h.config.TestMode = true
+}
+
+// SetAddress sets the HTTP server address
+func (h *HTTPTransport) SetAddress(addr string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.config == nil {
+		h.config = &HTTPTransportConfig{}
+	}
+	h.config.Address = addr
 }
 
 // RegisterHandler registers a service handler with the transport
@@ -175,12 +259,17 @@ func (h *HTTPTransport) RegisterHandler(handler HandlerRegister) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// HandlerRegister the service with the registry
+	// Register the service with the registry
 	if err := h.serviceRegistry.Register(handler); err != nil {
 		return fmt.Errorf("failed to register service: %w", err)
 	}
 
 	return nil
+}
+
+// RegisterService is an alias for RegisterHandler for backward compatibility
+func (h *HTTPTransport) RegisterService(handler HandlerRegister) error {
+	return h.RegisterHandler(handler)
 }
 
 // InitializeServices initializes all registered services
@@ -212,4 +301,23 @@ func (h *HTTPTransport) ShutdownServices(ctx context.Context) error {
 	defer h.mu.RUnlock()
 
 	return h.serviceRegistry.ShutdownAll(ctx)
+}
+
+// determineAddress determines the address to use for the HTTP server
+func (h *HTTPTransport) determineAddress() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	// Test port override takes highest priority
+	if h.config != nil && h.config.TestMode && h.config.TestPort != "" {
+		return ":" + h.config.TestPort
+	}
+
+	// Use configured address
+	if h.config != nil && h.config.Address != "" {
+		return h.config.Address
+	}
+
+	// Default fallback
+	return ":8080"
 }

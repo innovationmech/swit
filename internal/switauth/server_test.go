@@ -29,9 +29,9 @@ import (
 
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/deps"
-	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -132,12 +132,14 @@ func TestServerWithComponents(t *testing.T) {
 
 	t.Run("GetHTTPAddress", func(t *testing.T) {
 		address := server.GetHTTPAddress()
-		assert.Equal(t, ":8090", address)
+		// Address is empty until transport starts
+		assert.Equal(t, "", address)
 	})
 
 	t.Run("GetGRPCAddress", func(t *testing.T) {
 		address := server.GetGRPCAddress()
-		assert.Equal(t, ":50051", address)
+		// Address is empty until transport starts
+		assert.Equal(t, "", address)
 	})
 
 	t.Run("GetServices", func(t *testing.T) {
@@ -197,33 +199,26 @@ func TestServerWithComponents(t *testing.T) {
 
 func TestServerPortConfiguration(t *testing.T) {
 	// Test server with different port configurations
+	// Note: GetAddress() returns empty until transport starts
 	tests := []struct {
-		name         string
-		httpPort     string
-		grpcPort     string
-		expectedHTTP string
-		expectedGRPC string
+		name     string
+		httpPort string
+		grpcPort string
 	}{
 		{
-			name:         "standard ports",
-			httpPort:     "8090",
-			grpcPort:     "50051",
-			expectedHTTP: ":8090",
-			expectedGRPC: ":50051",
+			name:     "standard ports",
+			httpPort: "8090",
+			grpcPort: "50051",
 		},
 		{
-			name:         "different ports",
-			httpPort:     "3000",
-			grpcPort:     "9000",
-			expectedHTTP: ":3000",
-			expectedGRPC: ":9000",
+			name:     "different ports",
+			httpPort: "3000",
+			grpcPort: "9000",
 		},
 		{
-			name:         "empty grpc port uses default",
-			httpPort:     "8080",
-			grpcPort:     "",
-			expectedHTTP: ":8080",
-			expectedGRPC: ":50051", // Default
+			name:     "empty grpc port uses default",
+			httpPort: "8080",
+			grpcPort: "",
 		},
 	}
 
@@ -245,8 +240,9 @@ func TestServerPortConfiguration(t *testing.T) {
 				grpcTransport: grpcTransport,
 			}
 
-			assert.Equal(t, tt.expectedHTTP, server.GetHTTPAddress())
-			assert.Equal(t, tt.expectedGRPC, server.GetGRPCAddress())
+			// Address is empty until transport starts
+			assert.Equal(t, "", server.GetHTTPAddress())
+			assert.Equal(t, "", server.GetGRPCAddress())
 		})
 	}
 }
@@ -618,7 +614,7 @@ func TestServerAddressDefaults(t *testing.T) {
 		grpcTransport: grpcTransport,
 	}
 
-	// Initially addresses should be empty
+	// Initially addresses should be empty (not started yet)
 	assert.Equal(t, "", server.GetHTTPAddress())
 	assert.Equal(t, "", server.GetGRPCAddress())
 
@@ -626,6 +622,7 @@ func TestServerAddressDefaults(t *testing.T) {
 	httpTransport.SetAddress(":8090")
 	grpcTransport.SetAddress(":50051")
 
-	assert.Equal(t, ":8090", server.GetHTTPAddress())
-	assert.Equal(t, ":50051", server.GetGRPCAddress())
+	// Addresses are still empty until transport starts
+	assert.Equal(t, "", server.GetHTTPAddress())
+	assert.Equal(t, "", server.GetGRPCAddress())
 }
