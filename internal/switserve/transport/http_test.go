@@ -296,7 +296,7 @@ func TestHTTPTransport_RouteRegistration(t *testing.T) {
 	transport := NewHTTPTransport()
 	router := transport.GetRouter()
 
-	// Register a test route
+	// HandlerRegister a test route
 	router.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "test"})
 	})

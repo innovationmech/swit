@@ -28,7 +28,7 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/internal/switauth/deps"
 	auth "github.com/innovationmech/swit/internal/switauth/handler/http/auth/v1"
-	health "github.com/innovationmech/swit/internal/switauth/handler/http/health"
+	"github.com/innovationmech/swit/internal/switauth/handler/http/health"
 	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -37,7 +37,7 @@ import (
 )
 
 // Server represents the server structure with transport manager
-// Uses the service-centric architecture with ServiceHandler pattern
+// Uses the service-centric architecture with HandlerRegister pattern
 type Server struct {
 	transportManager *transport.Manager
 	httpTransport    *transport.HTTPTransport
@@ -93,7 +93,7 @@ func NewServer() (*Server, error) {
 // registerServices registers all services with the HTTP transport's enhanced service registry
 func (s *Server) registerServices() error {
 	// Register services with the HTTP transport's enhanced service registry
-	// This uses the new ServiceHandler interface for unified service management
+	// This uses the new HandlerRegister interface for unified service management
 
 	// Register authentication service with dependency injection
 	authHandler := auth.NewAuthHandler(s.deps.AuthSrv)

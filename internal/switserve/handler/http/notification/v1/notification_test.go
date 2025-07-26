@@ -706,14 +706,14 @@ func TestHandler_Shutdown(t *testing.T) {
 	}
 }
 
-// TestHandler_ServiceHandlerInterface tests that NotificationHandler implements ServiceHandler interface
+// TestHandler_ServiceHandlerInterface tests that NotificationHandler implements HandlerRegister interface
 func TestHandler_ServiceHandlerInterface(t *testing.T) {
 	t.Run("implements_service_handler_interface", func(t *testing.T) {
 		mockService := &MockNotificationService{}
 		handler := NewNotificationHandler(mockService)
 
-		// Verify that NotificationHandler implements transport.ServiceHandler interface
-		var _ transport.ServiceHandler = handler
+		// Verify that NotificationHandler implements transport.HandlerRegister interface
+		var _ transport.HandlerRegister = handler
 		assert.NotNil(t, handler)
 	})
 }
@@ -725,7 +725,7 @@ func TestHandler_Integration(t *testing.T) {
 		handler := NewNotificationHandler(mockService)
 		router := gin.New()
 
-		// Register routes
+		// HandlerRegister routes
 		err := handler.RegisterHTTP(router)
 		require.NoError(t, err)
 

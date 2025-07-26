@@ -38,7 +38,7 @@ import (
 
 // AuthHandler handles HTTP requests for authentication operations
 // including login, logout, token refresh, and token validation
-// and implements ServiceHandler interface
+// and implements HandlerRegister interface
 type AuthHandler struct {
 	authService interfaces.AuthService
 	startTime   time.Time
@@ -53,7 +53,7 @@ func NewAuthHandler(authService interfaces.AuthService) *AuthHandler {
 	}
 }
 
-// ServiceHandler interface implementation
+// HandlerRegister interface implementation
 
 // RegisterHTTP registers HTTP routes for authentication
 func (c *AuthHandler) RegisterHTTP(router *gin.Engine) error {
@@ -82,8 +82,8 @@ func (c *AuthHandler) RegisterGRPC(server *grpc.Server) error {
 }
 
 // GetMetadata returns service metadata
-func (c *AuthHandler) GetMetadata() *transport.ServiceMetadata {
-	return &transport.ServiceMetadata{
+func (c *AuthHandler) GetMetadata() *transport.HandlerMetadata {
+	return &transport.HandlerMetadata{
 		Name:           "auth-service",
 		Version:        "v1.0.0",
 		Description:    "Authentication service providing login, logout, refresh, and token validation",

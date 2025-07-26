@@ -42,7 +42,7 @@ type HTTPTransport struct {
 	ready           chan struct{}
 	readyOnce       sync.Once
 	mu              sync.RWMutex
-	serviceRegistry *EnhancedServiceRegistry
+	serviceRegistry *EnhancedHandlerRegistry
 }
 
 // NewHTTPTransport creates a new HTTP transport
@@ -170,12 +170,12 @@ func (h *HTTPTransport) SetTestPort(port string) {
 	h.testPort = port
 }
 
-// RegisterService registers a service handler with the transport
-func (h *HTTPTransport) RegisterService(handler ServiceHandler) error {
+// RegisterHandler registers a service handler with the transport
+func (h *HTTPTransport) RegisterHandler(handler HandlerRegister) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Register the service with the registry
+	// HandlerRegister the service with the registry
 	if err := h.serviceRegistry.Register(handler); err != nil {
 		return fmt.Errorf("failed to register service: %w", err)
 	}
@@ -200,7 +200,7 @@ func (h *HTTPTransport) RegisterAllRoutes() error {
 }
 
 // GetServiceRegistry returns the service registry
-func (h *HTTPTransport) GetServiceRegistry() *EnhancedServiceRegistry {
+func (h *HTTPTransport) GetServiceRegistry() *EnhancedHandlerRegistry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.serviceRegistry

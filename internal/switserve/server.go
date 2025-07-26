@@ -79,11 +79,11 @@ func NewServer() (*Server, error) {
 	server.httpTransport = transport.NewHTTPTransport()
 	server.grpcTransport = transport.NewGRPCTransport()
 
-	// Register transports
+	// HandlerRegister transports
 	server.transportManager.Register(server.httpTransport)
 	server.transportManager.Register(server.grpcTransport)
 
-	// Register services
+	// HandlerRegister services
 	if err := server.registerServices(); err != nil {
 		return nil, fmt.Errorf("failed to register services: %w", err)
 	}
@@ -93,36 +93,36 @@ func NewServer() (*Server, error) {
 
 // registerServices registers all services with the service registry
 func (s *Server) registerServices() error {
-	// Register services with the HTTP transport's service registry
-	// This uses the new ServiceHandler interface for unified service management
+	// HandlerRegister services with the HTTP transport's service registry
+	// This uses the new HandlerRegister interface for unified service management
 
-	// Register Greeter service with dependency injection
+	// HandlerRegister Greeter service with dependency injection
 	greeterHandler := greeterv1.NewGreeterHandler(s.deps.GreeterSrv)
-	if err := s.httpTransport.RegisterService(greeterHandler); err != nil {
+	if err := s.httpTransport.RegisterHandler(greeterHandler); err != nil {
 		return fmt.Errorf("failed to register greeter service: %w", err)
 	}
 
-	// Register Notification service with dependency injection
+	// HandlerRegister Notification service with dependency injection
 	notificationHandler := notificationv1.NewNotificationHandler(s.deps.NotificationSrv)
-	if err := s.httpTransport.RegisterService(notificationHandler); err != nil {
+	if err := s.httpTransport.RegisterHandler(notificationHandler); err != nil {
 		return fmt.Errorf("failed to register notification service: %w", err)
 	}
 
-	// Register Health service with dependency injection
+	// HandlerRegister Health service with dependency injection
 	healthHandler := health.NewHandler(s.deps.HealthSrv)
-	if err := s.httpTransport.RegisterService(healthHandler); err != nil {
+	if err := s.httpTransport.RegisterHandler(healthHandler); err != nil {
 		return fmt.Errorf("failed to register health service: %w", err)
 	}
 
-	// Register Stop service with dependency injection
+	// HandlerRegister Stop service with dependency injection
 	stopHandler := stop.NewHandler(s.deps.StopSrv)
-	if err := s.httpTransport.RegisterService(stopHandler); err != nil {
+	if err := s.httpTransport.RegisterHandler(stopHandler); err != nil {
 		return fmt.Errorf("failed to register stop service: %w", err)
 	}
 
-	// Register User service with dependency injection
+	// HandlerRegister User service with dependency injection
 	userHandler := userv1.NewUserHandler(s.deps.UserSrv)
-	if err := s.httpTransport.RegisterService(userHandler); err != nil {
+	if err := s.httpTransport.RegisterHandler(userHandler); err != nil {
 		return fmt.Errorf("failed to register user service: %w", err)
 	}
 
@@ -140,12 +140,12 @@ func (s *Server) Start(ctx context.Context) error {
 		// Add HTTP middleware here if needed
 	}
 
-	// Register all HTTP routes through HTTP transport
+	// HandlerRegister all HTTP routes through HTTP transport
 	if err := s.httpTransport.RegisterAllRoutes(); err != nil {
 		return fmt.Errorf("failed to register HTTP routes: %v", err)
 	}
 
-	// Register all gRPC services through HTTP transport's service registry
+	// HandlerRegister all gRPC services through HTTP transport's service registry
 	serviceRegistry := s.httpTransport.GetServiceRegistry()
 	if err := serviceRegistry.RegisterAllGRPC(grpcServer); err != nil {
 		return fmt.Errorf("failed to register gRPC services: %v", err)
@@ -159,7 +159,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Wait for HTTP transport to be ready
 	<-s.httpTransport.WaitReady()
 
-	// Register service in service discovery
+	// HandlerRegister service in service discovery
 	cfg := config.GetConfig()
 	port, _ := strconv.Atoi(cfg.Server.Port)
 	if err := s.sd.RegisterService("swit-serve", "localhost", port); err != nil {

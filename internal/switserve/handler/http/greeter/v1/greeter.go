@@ -35,7 +35,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// GreeterHandler handles HTTP requests for greeter service and implements ServiceHandler interface
+// GreeterHandler handles HTTP requests for greeter service and implements HandlerRegister interface
 type GreeterHandler struct {
 	service   interfaces.GreeterService
 	startTime time.Time
@@ -80,7 +80,7 @@ func (h *GreeterHandler) SayHello(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// ServiceHandler interface implementation
+// HandlerRegister interface implementation
 
 // RegisterHTTP registers HTTP routes for the Greeter service
 func (h *GreeterHandler) RegisterHTTP(router *gin.Engine) error {
@@ -102,8 +102,8 @@ func (h *GreeterHandler) RegisterGRPC(server *grpc.Server) error {
 }
 
 // GetMetadata returns service metadata information
-func (h *GreeterHandler) GetMetadata() *transport.ServiceMetadata {
-	return &transport.ServiceMetadata{
+func (h *GreeterHandler) GetMetadata() *transport.HandlerMetadata {
+	return &transport.HandlerMetadata{
 		Name:           "greeter",
 		Version:        "v1",
 		Description:    "Greeter service providing greeting functionality",

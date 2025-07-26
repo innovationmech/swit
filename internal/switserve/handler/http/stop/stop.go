@@ -35,7 +35,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Handler handles HTTP requests for stop service and implements ServiceHandler interface
+// Handler handles HTTP requests for stop service and implements HandlerRegister interface
 type Handler struct {
 	service   interfaces.StopService
 	startTime time.Time
@@ -66,7 +66,7 @@ func (h *Handler) StopServer(c *gin.Context) {
 	c.JSON(http.StatusOK, status)
 }
 
-// ServiceHandler interface implementation
+// HandlerRegister interface implementation
 
 // RegisterHTTP registers HTTP routes for the Stop service
 func (h *Handler) RegisterHTTP(router *gin.Engine) error {
@@ -95,8 +95,8 @@ func (h *Handler) RegisterGRPC(server *grpc.Server) error {
 }
 
 // GetMetadata returns service metadata information
-func (h *Handler) GetMetadata() *transport.ServiceMetadata {
-	return &transport.ServiceMetadata{
+func (h *Handler) GetMetadata() *transport.HandlerMetadata {
+	return &transport.HandlerMetadata{
 		Name:           "stop-service",
 		Version:        "v1.0.0",
 		Description:    "Stop service for handling server shutdown requests",

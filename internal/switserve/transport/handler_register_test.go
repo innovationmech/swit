@@ -36,7 +36,7 @@ import (
 	"github.com/innovationmech/swit/internal/switserve/types"
 )
 
-// MockServiceHandler implements ServiceHandler for testing
+// MockServiceHandler implements HandlerRegister for testing
 type MockServiceHandler struct {
 	name           string
 	version        string
@@ -61,8 +61,8 @@ func NewMockServiceHandler(name string) *MockServiceHandler {
 	}
 }
 
-func (m *MockServiceHandler) GetMetadata() *ServiceMetadata {
-	return &ServiceMetadata{
+func (m *MockServiceHandler) GetMetadata() *HandlerMetadata {
+	return &HandlerMetadata{
 		Name:        m.name,
 		Version:     m.version,
 		Description: m.description,
@@ -122,7 +122,7 @@ func (m *MockServiceHandler) GetHealthEndpoint() string {
 	return "/health/" + m.name
 }
 
-// IsHealthy implements the ServiceHandler interface
+// IsHealthy implements the HandlerRegister interface
 func (m *MockServiceHandler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
 	m.healthCalled = true
 	if m.healthError != nil {
@@ -170,7 +170,7 @@ func (m *MockServiceHandler) SetShutdownError(err error) {
 }
 
 func TestServiceMetadata(t *testing.T) {
-	metadata := &ServiceMetadata{
+	metadata := &HandlerMetadata{
 		Name:        "test-service",
 		Version:     "1.0.0",
 		Description: "Test service",
@@ -293,7 +293,7 @@ func TestEnhancedServiceRegistryUnregister(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not registered")
 
-	// Register and then unregister
+	// HandlerRegister and then unregister
 	err = registry.Register(handler)
 	assert.NoError(t, err)
 
@@ -312,7 +312,7 @@ func TestEnhancedServiceRegistryGetHandler(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not registered")
 
-	// Register and get handler
+	// HandlerRegister and get handler
 	err = registry.Register(handler)
 	assert.NoError(t, err)
 
@@ -330,7 +330,7 @@ func TestEnhancedServiceRegistryGetAllHandlers(t *testing.T) {
 	handlers := registry.GetAllHandlers()
 	assert.Empty(t, handlers)
 
-	// Register handlers
+	// HandlerRegister handlers
 	err := registry.Register(handler1)
 	assert.NoError(t, err)
 	err = registry.Register(handler2)
@@ -352,7 +352,7 @@ func TestEnhancedServiceRegistryGetServiceNames(t *testing.T) {
 	names := registry.GetServiceNames()
 	assert.Empty(t, names)
 
-	// Register handlers
+	// HandlerRegister handlers
 	err := registry.Register(handler1)
 	assert.NoError(t, err)
 	err = registry.Register(handler2)
@@ -373,7 +373,7 @@ func TestEnhancedServiceRegistryGetServiceMetadata(t *testing.T) {
 	metadata := registry.GetServiceMetadata()
 	assert.Empty(t, metadata)
 
-	// Register handler
+	// HandlerRegister handler
 	err := registry.Register(handler)
 	assert.NoError(t, err)
 
@@ -389,7 +389,7 @@ func TestEnhancedServiceRegistryInitializeAll(t *testing.T) {
 	handler1 := NewMockServiceHandler("service-1")
 	handler2 := NewMockServiceHandler("service-2")
 
-	// Register handlers
+	// HandlerRegister handlers
 	err := registry.Register(handler1)
 	assert.NoError(t, err)
 	err = registry.Register(handler2)
@@ -414,13 +414,13 @@ func TestEnhancedServiceRegistryRegisterAllHTTP(t *testing.T) {
 	handler1 := NewMockServiceHandler("service-1")
 	handler2 := NewMockServiceHandler("service-2")
 
-	// Register handlers
+	// HandlerRegister handlers
 	err := registry.Register(handler1)
 	assert.NoError(t, err)
 	err = registry.Register(handler2)
 	assert.NoError(t, err)
 
-	// Register all HTTP
+	// HandlerRegister all HTTP
 	router := gin.New()
 	err = registry.RegisterAllHTTP(router)
 	assert.NoError(t, err)
@@ -439,13 +439,13 @@ func TestEnhancedServiceRegistryRegisterAllGRPC(t *testing.T) {
 	handler1 := NewMockServiceHandler("service-1")
 	handler2 := NewMockServiceHandler("service-2")
 
-	// Register handlers
+	// HandlerRegister handlers
 	err := registry.Register(handler1)
 	assert.NoError(t, err)
 	err = registry.Register(handler2)
 	assert.NoError(t, err)
 
-	// Register all gRPC
+	// HandlerRegister all gRPC
 	server := grpc.NewServer()
 	err = registry.RegisterAllGRPC(server)
 	assert.NoError(t, err)
@@ -464,7 +464,7 @@ func TestEnhancedServiceRegistryCheckAllHealth(t *testing.T) {
 	handler1 := NewMockServiceHandler("service-1")
 	handler2 := NewMockServiceHandler("service-2")
 
-	// Register handlers
+	// HandlerRegister handlers
 	err := registry.Register(handler1)
 	assert.NoError(t, err)
 	err = registry.Register(handler2)
@@ -490,7 +490,7 @@ func TestEnhancedServiceRegistryShutdownAll(t *testing.T) {
 	handler1 := NewMockServiceHandler("service-1")
 	handler2 := NewMockServiceHandler("service-2")
 
-	// Register handlers
+	// HandlerRegister handlers
 	err := registry.Register(handler1)
 	assert.NoError(t, err)
 	err = registry.Register(handler2)

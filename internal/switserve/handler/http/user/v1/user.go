@@ -265,8 +265,8 @@ func (h *UserHandler) RegisterGRPC(server *grpc.Server) error {
 }
 
 // GetMetadata returns service metadata information
-func (h *UserHandler) GetMetadata() *transport.ServiceMetadata {
-	return &transport.ServiceMetadata{
+func (h *UserHandler) GetMetadata() *transport.HandlerMetadata {
+	return &transport.HandlerMetadata{
 		Name:           "user-service",
 		Version:        "v1",
 		Description:    "User management service",

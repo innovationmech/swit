@@ -37,7 +37,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// NotificationHandler handles HTTP requests for notification service and implements ServiceHandler interface
+// NotificationHandler handles HTTP requests for notification service and implements HandlerRegister interface
 type NotificationHandler struct {
 	service   v1.NotificationService
 	startTime time.Time
@@ -135,7 +135,7 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// ServiceHandler interface implementation
+// HandlerRegister interface implementation
 
 // RegisterHTTP registers HTTP routes for the Notification service
 func (h *NotificationHandler) RegisterHTTP(router *gin.Engine) error {
@@ -160,8 +160,8 @@ func (h *NotificationHandler) RegisterGRPC(server *grpc.Server) error {
 }
 
 // GetMetadata returns service metadata information
-func (h *NotificationHandler) GetMetadata() *transport.ServiceMetadata {
-	return &transport.ServiceMetadata{
+func (h *NotificationHandler) GetMetadata() *transport.HandlerMetadata {
+	return &transport.HandlerMetadata{
 		Name:           "notification",
 		Version:        "v1",
 		Description:    "Notification service providing notification management functionality",
