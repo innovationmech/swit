@@ -29,10 +29,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switauth/interfaces"
-	"github.com/innovationmech/swit/internal/switauth/transport"
 	"github.com/innovationmech/swit/internal/switauth/types"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/pkg/transport"
 	"google.golang.org/grpc"
 )
 

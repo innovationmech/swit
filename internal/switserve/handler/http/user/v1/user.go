@@ -29,8 +29,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/internal/switserve/model"
-	"github.com/innovationmech/swit/internal/switserve/transport"
 	"github.com/innovationmech/swit/internal/switserve/types"
+	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/utils"
 	"google.golang.org/grpc"
 )

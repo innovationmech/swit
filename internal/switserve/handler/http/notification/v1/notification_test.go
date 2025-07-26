@@ -34,9 +34,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	v1 "github.com/innovationmech/swit/internal/switserve/service/notification/v1"
-	"github.com/innovationmech/swit/internal/switserve/transport"
 	"github.com/innovationmech/swit/internal/switserve/types"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
