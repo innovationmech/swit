@@ -86,7 +86,7 @@ func (m *MockUserService) ListUsers(ctx context.Context, limit, offset int) ([]*
 
 func TestNewUserController(t *testing.T) {
 	mockUserSrv := &MockUserService{}
-	handler := NewUserController(mockUserSrv)
+	handler := NewUserHandler(mockUserSrv)
 
 	assert.NotNil(t, handler)
 	assert.Equal(t, mockUserSrv, handler.userSrv)
@@ -140,7 +140,7 @@ func TestHandler_CreateUser(t *testing.T) {
 			mockUserSrv := &MockUserService{}
 			tt.mockSetup(mockUserSrv)
 
-			handler := NewUserController(mockUserSrv)
+			handler := NewUserHandler(mockUserSrv)
 			router := gin.New()
 			router.POST("/users/create", handler.CreateUser)
 
@@ -198,7 +198,7 @@ func TestHandler_GetUserByUsername(t *testing.T) {
 			mockUserSrv := &MockUserService{}
 			tt.mockSetup(mockUserSrv)
 
-			handler := NewUserController(mockUserSrv)
+			handler := NewUserHandler(mockUserSrv)
 			router := gin.New()
 			router.GET("/users/username/:username", handler.GetUserByUsername)
 
@@ -263,7 +263,7 @@ func TestHandler_ValidateUserCredentials(t *testing.T) {
 			mockUserSrv := &MockUserService{}
 			tt.mockSetup(mockUserSrv)
 
-			handler := NewUserController(mockUserSrv)
+			handler := NewUserHandler(mockUserSrv)
 			router := gin.New()
 			router.POST("/internal/validate-user", handler.ValidateUserCredentials)
 
@@ -282,7 +282,7 @@ func TestHandler_ValidateUserCredentials(t *testing.T) {
 
 func TestHandler_ServiceHandlerInterface(t *testing.T) {
 	mockUserSrv := &MockUserService{}
-	handler := NewUserController(mockUserSrv)
+	handler := NewUserHandler(mockUserSrv)
 
 	// Test GetMetadata
 	metadata := handler.GetMetadata()
@@ -296,7 +296,7 @@ func TestHandler_ServiceHandlerInterface(t *testing.T) {
 	assert.Equal(t, "/api/v1/users/health", healthEndpoint)
 
 	// Test IsHealthy with nil service
-	handlerWithNilSrv := &Handler{userSrv: nil}
+	handlerWithNilSrv := &UserHandler{userSrv: nil}
 	status, err := handlerWithNilSrv.IsHealthy(context.Background())
 	assert.NoError(t, err)
 	assert.Equal(t, types.HealthStatusUnhealthy, status.Status)

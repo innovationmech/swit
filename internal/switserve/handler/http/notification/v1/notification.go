@@ -37,22 +37,22 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Handler handles HTTP requests for notification service and implements ServiceHandler interface
-type Handler struct {
+// NotificationHandler handles HTTP requests for notification service and implements ServiceHandler interface
+type NotificationHandler struct {
 	service   v1.NotificationService
 	startTime time.Time
 }
 
-// NewHandler creates a new notification HTTP handler
-func NewHandler(service v1.NotificationService) *Handler {
-	return &Handler{
+// NewNotificationHandler creates a new notification HTTP handler
+func NewNotificationHandler(service v1.NotificationService) *NotificationHandler {
+	return &NotificationHandler{
 		service:   service,
 		startTime: time.Now(),
 	}
 }
 
 // CreateNotification handles HTTP version of CreateNotification
-func (h *Handler) CreateNotification(c *gin.Context) {
+func (h *NotificationHandler) CreateNotification(c *gin.Context) {
 	var req struct {
 		UserID  string `json:"user_id" binding:"required"`
 		Title   string `json:"title" binding:"required"`
@@ -92,7 +92,7 @@ func (h *Handler) CreateNotification(c *gin.Context) {
 }
 
 // GetNotifications handles HTTP version of GetNotifications
-func (h *Handler) GetNotifications(c *gin.Context) {
+func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	userID := c.Query("user_id")
 	if userID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
@@ -138,7 +138,7 @@ func (h *Handler) GetNotifications(c *gin.Context) {
 // ServiceHandler interface implementation
 
 // RegisterHTTP registers HTTP routes for the Notification service
-func (h *Handler) RegisterHTTP(router *gin.Engine) error {
+func (h *NotificationHandler) RegisterHTTP(router *gin.Engine) error {
 	logger.Logger.Info("Registering notification HTTP routes")
 
 	// Notification endpoints
@@ -152,7 +152,7 @@ func (h *Handler) RegisterHTTP(router *gin.Engine) error {
 }
 
 // RegisterGRPC registers gRPC services for the Notification service
-func (h *Handler) RegisterGRPC(server *grpc.Server) error {
+func (h *NotificationHandler) RegisterGRPC(server *grpc.Server) error {
 	logger.Logger.Info("Notification service gRPC registration - HTTP endpoints available")
 	// Notification service primarily uses HTTP endpoints
 	// gRPC implementation can be added later if needed
@@ -160,7 +160,7 @@ func (h *Handler) RegisterGRPC(server *grpc.Server) error {
 }
 
 // GetMetadata returns service metadata information
-func (h *Handler) GetMetadata() *transport.ServiceMetadata {
+func (h *NotificationHandler) GetMetadata() *transport.ServiceMetadata {
 	return &transport.ServiceMetadata{
 		Name:           "notification",
 		Version:        "v1",
@@ -172,12 +172,12 @@ func (h *Handler) GetMetadata() *transport.ServiceMetadata {
 }
 
 // GetHealthEndpoint returns the health check endpoint path
-func (h *Handler) GetHealthEndpoint() string {
+func (h *NotificationHandler) GetHealthEndpoint() string {
 	return "/api/v1/health"
 }
 
 // IsHealthy performs a health check and returns the current status
-func (h *Handler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
+func (h *NotificationHandler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
 	// Check if notification service is healthy
 	if h.service == nil {
 		return types.NewHealthStatus(
@@ -196,21 +196,21 @@ func (h *Handler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
 }
 
 // Initialize performs any necessary initialization before service registration
-func (h *Handler) Initialize(ctx context.Context) error {
+func (h *NotificationHandler) Initialize(ctx context.Context) error {
 	logger.Logger.Info("Initializing notification service handler")
 	// Notification service initialization logic
 	return nil
 }
 
 // Shutdown performs graceful shutdown of the service
-func (h *Handler) Shutdown(ctx context.Context) error {
+func (h *NotificationHandler) Shutdown(ctx context.Context) error {
 	logger.Logger.Info("Shutting down notification service handler")
 	// Notification service cleanup logic
 	return nil
 }
 
 // MarkAsRead handles HTTP version of MarkAsRead
-func (h *Handler) MarkAsRead(c *gin.Context) {
+func (h *NotificationHandler) MarkAsRead(c *gin.Context) {
 	notificationID := c.Param("id")
 	if notificationID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "notification_id is required"})
@@ -240,7 +240,7 @@ func (h *Handler) MarkAsRead(c *gin.Context) {
 }
 
 // DeleteNotification handles HTTP version of DeleteNotification
-func (h *Handler) DeleteNotification(c *gin.Context) {
+func (h *NotificationHandler) DeleteNotification(c *gin.Context) {
 	notificationID := c.Param("id")
 	if notificationID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "notification_id is required"})

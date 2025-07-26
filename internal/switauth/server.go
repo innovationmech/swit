@@ -96,7 +96,7 @@ func (s *Server) registerServices() error {
 	// This uses the new ServiceHandler interface for unified service management
 
 	// Register authentication service with dependency injection
-	authHandler := auth.NewAuthController(s.deps.AuthSrv)
+	authHandler := auth.NewAuthHandler(s.deps.AuthSrv)
 	if err := s.httpTransport.RegisterService(authHandler); err != nil {
 		logger.Logger.Error("Failed to register auth service", zap.Error(err))
 		return fmt.Errorf("failed to register auth service: %w", err)

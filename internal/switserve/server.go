@@ -103,7 +103,7 @@ func (s *Server) registerServices() error {
 	}
 
 	// Register Notification service with dependency injection
-	notificationHandler := notificationv1.NewHandler(s.deps.NotificationSrv)
+	notificationHandler := notificationv1.NewNotificationHandler(s.deps.NotificationSrv)
 	if err := s.httpTransport.RegisterService(notificationHandler); err != nil {
 		return fmt.Errorf("failed to register notification service: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *Server) registerServices() error {
 	}
 
 	// Register User service with dependency injection
-	userHandler := userv1.NewUserController(s.deps.UserSrv)
+	userHandler := userv1.NewUserHandler(s.deps.UserSrv)
 	if err := s.httpTransport.RegisterService(userHandler); err != nil {
 		return fmt.Errorf("failed to register user service: %w", err)
 	}

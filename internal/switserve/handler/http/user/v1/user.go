@@ -35,15 +35,15 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Handler handles user-related HTTP requests
-type Handler struct {
+// UserHandler handles user-related HTTP requests
+type UserHandler struct {
 	userSrv   interfaces.UserService
 	startTime time.Time
 }
 
-// NewUserController creates a new user controller with dependency injection.
-func NewUserController(userSrv interfaces.UserService) *Handler {
-	return &Handler{
+// NewUserHandler creates a new user controller with dependency injection.
+func NewUserHandler(userSrv interfaces.UserService) *UserHandler {
+	return &UserHandler{
 		userSrv:   userSrv,
 		startTime: time.Now(),
 	}
@@ -61,7 +61,7 @@ func NewUserController(userSrv interfaces.UserService) *Handler {
 //	@Failure		400		{object}	map[string]interface{}	"Bad request"
 //	@Failure		500		{object}	map[string]interface{}	"Internal server error"
 //	@Router			/users/create [post]
-func (uc *Handler) CreateUser(c *gin.Context) {
+func (uc *UserHandler) CreateUser(c *gin.Context) {
 	var req model.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, map[string]interface{}{
@@ -102,7 +102,7 @@ func (uc *Handler) CreateUser(c *gin.Context) {
 //	@Failure		500			{object}	map[string]interface{}	"Internal server error"
 //	@Security		BearerAuth
 //	@Router			/users/username/{username} [get]
-func (uc *Handler) GetUserByUsername(c *gin.Context) {
+func (uc *UserHandler) GetUserByUsername(c *gin.Context) {
 	username := c.Param("username")
 	user, err := uc.userSrv.GetUserByUsername(c.Request.Context(), username)
 	if err != nil {
@@ -128,7 +128,7 @@ func (uc *Handler) GetUserByUsername(c *gin.Context) {
 //	@Failure		500		{object}	map[string]interface{}	"Internal server error"
 //	@Security		BearerAuth
 //	@Router			/users/email/{email} [get]
-func (uc *Handler) GetUserByEmail(c *gin.Context) {
+func (uc *UserHandler) GetUserByEmail(c *gin.Context) {
 	email := c.Param("email")
 	user, err := uc.userSrv.GetUserByEmail(c.Request.Context(), email)
 	if err != nil {
@@ -154,7 +154,7 @@ func (uc *Handler) GetUserByEmail(c *gin.Context) {
 //	@Failure		500	{object}	map[string]interface{}	"Internal server error"
 //	@Security		BearerAuth
 //	@Router			/users/{id} [delete]
-func (uc *Handler) DeleteUser(c *gin.Context) {
+func (uc *UserHandler) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
 
 	err := uc.userSrv.DeleteUser(c.Request.Context(), id)
@@ -183,7 +183,7 @@ func (uc *Handler) DeleteUser(c *gin.Context) {
 //	@Failure		401			{object}	map[string]interface{}	"Invalid credentials"
 //	@Failure		500			{object}	map[string]interface{}	"Internal server error"
 //	@Router			/internal/validate-user [post]
-func (uc *Handler) ValidateUserCredentials(c *gin.Context) {
+func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
@@ -239,7 +239,7 @@ func (uc *Handler) ValidateUserCredentials(c *gin.Context) {
 }
 
 // RegisterHTTP registers HTTP routes with the given router
-func (h *Handler) RegisterHTTP(router *gin.Engine) error {
+func (h *UserHandler) RegisterHTTP(router *gin.Engine) error {
 	v1 := router.Group("/api/v1")
 	{
 		// User management routes
@@ -259,13 +259,13 @@ func (h *Handler) RegisterHTTP(router *gin.Engine) error {
 }
 
 // RegisterGRPC registers gRPC services with the given server
-func (h *Handler) RegisterGRPC(server *grpc.Server) error {
+func (h *UserHandler) RegisterGRPC(server *grpc.Server) error {
 	// User service doesn't have gRPC implementation yet
 	return nil
 }
 
 // GetMetadata returns service metadata information
-func (h *Handler) GetMetadata() *transport.ServiceMetadata {
+func (h *UserHandler) GetMetadata() *transport.ServiceMetadata {
 	return &transport.ServiceMetadata{
 		Name:           "user-service",
 		Version:        "v1",
@@ -276,12 +276,12 @@ func (h *Handler) GetMetadata() *transport.ServiceMetadata {
 }
 
 // GetHealthEndpoint returns the health check endpoint path
-func (h *Handler) GetHealthEndpoint() string {
+func (h *UserHandler) GetHealthEndpoint() string {
 	return "/api/v1/users/health"
 }
 
 // IsHealthy performs a health check and returns the current status
-func (h *Handler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
+func (h *UserHandler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
 	// Simple health check - verify user service is available
 	if h.userSrv == nil {
 		return types.NewHealthStatus(types.HealthStatusUnhealthy, "v1", time.Since(h.startTime)), nil
@@ -291,13 +291,13 @@ func (h *Handler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
 }
 
 // Initialize performs any necessary initialization before service registration
-func (h *Handler) Initialize(ctx context.Context) error {
+func (h *UserHandler) Initialize(ctx context.Context) error {
 	// No special initialization needed for user handler
 	return nil
 }
 
 // Shutdown performs graceful shutdown of the service
-func (h *Handler) Shutdown(ctx context.Context) error {
+func (h *UserHandler) Shutdown(ctx context.Context) error {
 	// No special cleanup needed for user handler
 	return nil
 }
