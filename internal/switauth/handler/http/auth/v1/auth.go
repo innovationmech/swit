@@ -36,27 +36,27 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Controller handles HTTP requests for authentication operations
+// AuthHandler handles HTTP requests for authentication operations
 // including login, logout, token refresh, and token validation
-// and implements ServiceHandler interface
-type Controller struct {
+// and implements HandlerRegister interface
+type AuthHandler struct {
 	authService interfaces.AuthService
 	startTime   time.Time
 }
 
-// NewAuthController creates a new auth Controller instance
+// NewAuthHandler creates a new auth AuthHandler instance
 // with the provided authentication service
-func NewAuthController(authService interfaces.AuthService) *Controller {
-	return &Controller{
+func NewAuthHandler(authService interfaces.AuthService) *AuthHandler {
+	return &AuthHandler{
 		authService: authService,
 		startTime:   time.Now(),
 	}
 }
 
-// ServiceHandler interface implementation
+// HandlerRegister interface implementation
 
 // RegisterHTTP registers HTTP routes for authentication
-func (c *Controller) RegisterHTTP(router *gin.Engine) error {
+func (c *AuthHandler) RegisterHTTP(router *gin.Engine) error {
 	logger.Logger.Info("Registering auth HTTP routes")
 
 	// Create auth group
@@ -75,15 +75,15 @@ func (c *Controller) RegisterHTTP(router *gin.Engine) error {
 }
 
 // RegisterGRPC registers gRPC services for authentication
-func (c *Controller) RegisterGRPC(server *grpc.Server) error {
+func (c *AuthHandler) RegisterGRPC(server *grpc.Server) error {
 	logger.Logger.Info("Registering auth gRPC services")
 	// TODO: Implement gRPC service registration when needed
 	return nil
 }
 
 // GetMetadata returns service metadata
-func (c *Controller) GetMetadata() *transport.ServiceMetadata {
-	return &transport.ServiceMetadata{
+func (c *AuthHandler) GetMetadata() *transport.HandlerMetadata {
+	return &transport.HandlerMetadata{
 		Name:           "auth-service",
 		Version:        "v1.0.0",
 		Description:    "Authentication service providing login, logout, refresh, and token validation",
@@ -94,12 +94,12 @@ func (c *Controller) GetMetadata() *transport.ServiceMetadata {
 }
 
 // GetHealthEndpoint returns the health check endpoint
-func (c *Controller) GetHealthEndpoint() string {
+func (c *AuthHandler) GetHealthEndpoint() string {
 	return "/auth/health"
 }
 
 // IsHealthy performs a health check
-func (c *Controller) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
+func (c *AuthHandler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
 	// Check if auth service is healthy
 	if c.authService == nil {
 		return types.NewHealthStatus(
@@ -117,21 +117,21 @@ func (c *Controller) IsHealthy(ctx context.Context) (*types.HealthStatus, error)
 }
 
 // Initialize initializes the service
-func (c *Controller) Initialize(ctx context.Context) error {
+func (c *AuthHandler) Initialize(ctx context.Context) error {
 	logger.Logger.Info("Initializing auth service handler")
 	// Perform any initialization logic here
 	return nil
 }
 
 // Shutdown gracefully shuts down the service
-func (c *Controller) Shutdown(ctx context.Context) error {
+func (c *AuthHandler) Shutdown(ctx context.Context) error {
 	logger.Logger.Info("Shutting down auth service handler")
 	// Perform any cleanup logic here
 	return nil
 }
 
 // rateLimitMiddleware applies rate limiting to auth endpoints
-func (c *Controller) rateLimitMiddleware() gin.HandlerFunc {
+func (c *AuthHandler) rateLimitMiddleware() gin.HandlerFunc {
 	// Use the auth-specific rate limiting middleware
 	return middleware.NewAuthRateLimiter().Middleware()
 }
@@ -150,7 +150,7 @@ func (c *Controller) rateLimitMiddleware() gin.HandlerFunc {
 //	@Failure		400		{object}	types.AuthError		"Bad request"
 //	@Failure		401		{object}	types.AuthError		"Invalid credentials"
 //	@Router			/auth/login [post]
-func (c *Controller) Login(ctx *gin.Context) {
+func (c *AuthHandler) Login(ctx *gin.Context) {
 	var loginData types.LoginRequest
 
 	if err := ctx.ShouldBindJSON(&loginData); err != nil {
@@ -179,7 +179,7 @@ func (c *Controller) Login(ctx *gin.Context) {
 //	@Failure		400	{object}	types.AuthError			"Authorization header is missing"
 //	@Failure		500	{object}	types.AuthError			"Internal server error"
 //	@Router			/auth/logout [post]
-func (c *Controller) Logout(ctx *gin.Context) {
+func (c *AuthHandler) Logout(ctx *gin.Context) {
 	tokenString := ctx.GetHeader("Authorization")
 	if tokenString == "" {
 		ctx.JSON(http.StatusBadRequest, types.NewAuthError(types.ErrorCodeInvalidRequest, "Authorization header is missing", nil))
@@ -206,7 +206,7 @@ func (c *Controller) Logout(ctx *gin.Context) {
 //	@Failure		400		{object}	types.AuthError				"Bad request"
 //	@Failure		401		{object}	types.AuthError				"Invalid or expired refresh token"
 //	@Router			/auth/refresh [post]
-func (c *Controller) RefreshToken(ctx *gin.Context) {
+func (c *AuthHandler) RefreshToken(ctx *gin.Context) {
 	var data types.RefreshTokenRequest
 
 	if err := ctx.ShouldBindJSON(&data); err != nil {
@@ -234,7 +234,7 @@ func (c *Controller) RefreshToken(ctx *gin.Context) {
 //	@Success		200	{object}	types.ValidateTokenResponse	"Token is valid"
 //	@Failure		401	{object}	types.AuthError				"Invalid or expired token"
 //	@Router			/auth/validate [get]
-func (c *Controller) ValidateToken(ctx *gin.Context) {
+func (c *AuthHandler) ValidateToken(ctx *gin.Context) {
 	// Get Authorization header
 	authHeader := ctx.GetHeader("Authorization")
 	if authHeader == "" {

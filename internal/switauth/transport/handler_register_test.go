@@ -37,15 +37,15 @@ import (
 	"github.com/innovationmech/swit/internal/switauth/types"
 )
 
-// MockServiceHandler is a mock implementation of ServiceHandler interface
+// MockServiceHandler is a mock implementation of HandlerRegister interface
 type MockServiceHandler struct {
 	mock.Mock
-	metadata *ServiceMetadata
+	metadata *HandlerMetadata
 }
 
 func NewMockServiceHandler(name, version, description string) *MockServiceHandler {
 	return &MockServiceHandler{
-		metadata: &ServiceMetadata{
+		metadata: &HandlerMetadata{
 			Name:           name,
 			Version:        version,
 			Description:    description,
@@ -66,7 +66,7 @@ func (m *MockServiceHandler) RegisterGRPC(server *grpc.Server) error {
 	return args.Error(0)
 }
 
-func (m *MockServiceHandler) GetMetadata() *ServiceMetadata {
+func (m *MockServiceHandler) GetMetadata() *HandlerMetadata {
 	return m.metadata
 }
 
@@ -93,16 +93,16 @@ func (m *MockServiceHandler) Shutdown(ctx context.Context) error {
 	return args.Error(0)
 }
 
-// TestServiceMetadata tests the ServiceMetadata struct
+// TestServiceMetadata tests the HandlerMetadata struct
 func TestServiceMetadata(t *testing.T) {
 	tests := []struct {
 		name     string
-		metadata *ServiceMetadata
-		want     *ServiceMetadata
+		metadata *HandlerMetadata
+		want     *HandlerMetadata
 	}{
 		{
 			name: "complete metadata",
-			metadata: &ServiceMetadata{
+			metadata: &HandlerMetadata{
 				Name:           "test-service",
 				Version:        "v1.0.0",
 				Description:    "Test service",
@@ -110,7 +110,7 @@ func TestServiceMetadata(t *testing.T) {
 				Tags:           []string{"test", "api"},
 				Dependencies:   []string{"db", "cache"},
 			},
-			want: &ServiceMetadata{
+			want: &HandlerMetadata{
 				Name:           "test-service",
 				Version:        "v1.0.0",
 				Description:    "Test service",
@@ -121,13 +121,13 @@ func TestServiceMetadata(t *testing.T) {
 		},
 		{
 			name: "minimal metadata",
-			metadata: &ServiceMetadata{
+			metadata: &HandlerMetadata{
 				Name:           "minimal-service",
 				Version:        "v1.0.0",
 				Description:    "Minimal service",
 				HealthEndpoint: "/health",
 			},
-			want: &ServiceMetadata{
+			want: &HandlerMetadata{
 				Name:           "minimal-service",
 				Version:        "v1.0.0",
 				Description:    "Minimal service",
@@ -160,7 +160,7 @@ func TestNewEnhancedServiceRegistry(t *testing.T) {
 func TestEnhancedServiceRegistry_Register(t *testing.T) {
 	tests := []struct {
 		name       string
-		handler    ServiceHandler
+		handler    HandlerRegister
 		wantErr    bool
 		errorMsg   string
 		setupMocks func(*MockServiceHandler)
@@ -172,7 +172,7 @@ func TestEnhancedServiceRegistry_Register(t *testing.T) {
 		},
 		{
 			name: "nil metadata",
-			handler: func() ServiceHandler {
+			handler: func() HandlerRegister {
 				mock := &MockServiceHandler{metadata: nil}
 				return mock
 			}(),
@@ -181,9 +181,9 @@ func TestEnhancedServiceRegistry_Register(t *testing.T) {
 		},
 		{
 			name: "empty service name",
-			handler: func() ServiceHandler {
+			handler: func() HandlerRegister {
 				mock := &MockServiceHandler{
-					metadata: &ServiceMetadata{
+					metadata: &HandlerMetadata{
 						Name:        "",
 						Version:     "v1.0.0",
 						Description: "Test service",

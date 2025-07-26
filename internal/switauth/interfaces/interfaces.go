@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 //
 
-// Package interfaces defines the service interfaces for switserve.
+// Package interfaces defines the service interfaces for switauth.
 // This package provides a centralized location for all service interface definitions,
 // promoting loose coupling between service implementations and their consumers.
 //
@@ -27,9 +27,6 @@
 // from SOLID principles, ensuring that clients depend only on the methods they use.
 //
 // Service interfaces included:
-// - UserService: User management operations
+// - AuthService: Authentication and authorization operations
 // - HealthService: Health check and monitoring operations
-// - StopService: Graceful shutdown operations
-// - GreeterService: Greeter operations
-// - NotificationService: Notification and messaging operations (future use)
 package interfaces

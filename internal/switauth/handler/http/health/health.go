@@ -34,7 +34,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Handler handles health check operations and implements ServiceHandler interface
+// Handler handles health check operations and implements HandlerRegister interface
 type Handler struct {
 	startTime time.Time
 }
@@ -77,7 +77,7 @@ func (h *Handler) LivenessCheck(c *gin.Context) {
 	})
 }
 
-// ServiceHandler interface implementation
+// HandlerRegister interface implementation
 
 // RegisterHTTP registers HTTP routes for health checks
 func (h *Handler) RegisterHTTP(router *gin.Engine) error {
@@ -99,8 +99,8 @@ func (h *Handler) RegisterGRPC(server *grpc.Server) error {
 }
 
 // GetMetadata returns service metadata
-func (h *Handler) GetMetadata() *transport.ServiceMetadata {
-	return &transport.ServiceMetadata{
+func (h *Handler) GetMetadata() *transport.HandlerMetadata {
+	return &transport.HandlerMetadata{
 		Name:           "health-service",
 		Version:        "v1.0.0",
 		Description:    "Health check service for authentication service",

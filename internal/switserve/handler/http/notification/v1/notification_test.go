@@ -85,7 +85,7 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// TestNewHandler tests the NewHandler constructor
+// TestNewHandler tests the NewNotificationHandler constructor
 func TestNewHandler(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -106,7 +106,7 @@ func TestNewHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewHandler(tt.service)
+			handler := NewNotificationHandler(tt.service)
 
 			assert.NotNil(t, handler)
 			assert.Equal(t, tt.service, handler.service)
@@ -210,7 +210,7 @@ func TestHandler_CreateNotification(t *testing.T) {
 			mockService := &MockNotificationService{}
 			tt.mockSetup(mockService)
 
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			router := gin.New()
 			router.POST("/notifications", handler.CreateNotification)
 
@@ -308,7 +308,7 @@ func TestHandler_GetNotifications(t *testing.T) {
 			mockService := &MockNotificationService{}
 			tt.mockSetup(mockService)
 
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			router := gin.New()
 			router.GET("/notifications", handler.GetNotifications)
 
@@ -393,7 +393,7 @@ func TestHandler_MarkAsRead(t *testing.T) {
 			mockService := &MockNotificationService{}
 			tt.mockSetup(mockService)
 
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			router := gin.New()
 			router.PUT("/notifications/:id/read", handler.MarkAsRead)
 
@@ -478,7 +478,7 @@ func TestHandler_DeleteNotification(t *testing.T) {
 			mockService := &MockNotificationService{}
 			tt.mockSetup(mockService)
 
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			router := gin.New()
 			router.DELETE("/notifications/:id", handler.DeleteNotification)
 
@@ -524,7 +524,7 @@ func TestHandler_RegisterHTTP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockNotificationService{}
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			router := gin.New()
 
 			err := handler.RegisterHTTP(router)
@@ -550,7 +550,7 @@ func TestHandler_RegisterGRPC(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockNotificationService{}
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			server := grpc.NewServer()
 
 			err := handler.RegisterGRPC(server)
@@ -575,7 +575,7 @@ func TestHandler_GetMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockNotificationService{}
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 
 			metadata := handler.GetMetadata()
 
@@ -609,7 +609,7 @@ func TestHandler_GetHealthEndpoint(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockNotificationService{}
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 
 			endpoint := handler.GetHealthEndpoint()
 
@@ -642,7 +642,7 @@ func TestHandler_IsHealthy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewHandler(tt.service)
+			handler := NewNotificationHandler(tt.service)
 			ctx := context.Background()
 
 			status, err := handler.IsHealthy(ctx)
@@ -671,7 +671,7 @@ func TestHandler_Initialize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockNotificationService{}
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			ctx := context.Background()
 
 			err := handler.Initialize(ctx)
@@ -696,7 +696,7 @@ func TestHandler_Shutdown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockNotificationService{}
-			handler := NewHandler(mockService)
+			handler := NewNotificationHandler(mockService)
 			ctx := context.Background()
 
 			err := handler.Shutdown(ctx)
@@ -706,14 +706,14 @@ func TestHandler_Shutdown(t *testing.T) {
 	}
 }
 
-// TestHandler_ServiceHandlerInterface tests that Handler implements ServiceHandler interface
+// TestHandler_ServiceHandlerInterface tests that NotificationHandler implements HandlerRegister interface
 func TestHandler_ServiceHandlerInterface(t *testing.T) {
 	t.Run("implements_service_handler_interface", func(t *testing.T) {
 		mockService := &MockNotificationService{}
-		handler := NewHandler(mockService)
+		handler := NewNotificationHandler(mockService)
 
-		// Verify that Handler implements transport.ServiceHandler interface
-		var _ transport.ServiceHandler = handler
+		// Verify that NotificationHandler implements transport.HandlerRegister interface
+		var _ transport.HandlerRegister = handler
 		assert.NotNil(t, handler)
 	})
 }
@@ -722,10 +722,10 @@ func TestHandler_ServiceHandlerInterface(t *testing.T) {
 func TestHandler_Integration(t *testing.T) {
 	t.Run("complete_notification_lifecycle", func(t *testing.T) {
 		mockService := &MockNotificationService{}
-		handler := NewHandler(mockService)
+		handler := NewNotificationHandler(mockService)
 		router := gin.New()
 
-		// Register routes
+		// HandlerRegister routes
 		err := handler.RegisterHTTP(router)
 		require.NoError(t, err)
 
@@ -761,7 +761,7 @@ func BenchmarkHandler_CreateNotification(b *testing.B) {
 			UpdatedAt: time.Now().Unix(),
 		}, nil)
 
-	handler := NewHandler(mockService)
+	handler := NewNotificationHandler(mockService)
 	router := gin.New()
 	router.POST("/notifications", handler.CreateNotification)
 
@@ -781,7 +781,7 @@ func BenchmarkHandler_GetNotifications(b *testing.B) {
 	mockService.On("GetNotifications", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		[]*v1.Notification{}, nil)
 
-	handler := NewHandler(mockService)
+	handler := NewNotificationHandler(mockService)
 	router := gin.New()
 	router.GET("/notifications", handler.GetNotifications)
 
@@ -797,7 +797,7 @@ func BenchmarkHandler_MarkAsRead(b *testing.B) {
 	mockService := &MockNotificationService{}
 	mockService.On("MarkAsRead", mock.Anything, mock.Anything).Return(nil)
 
-	handler := NewHandler(mockService)
+	handler := NewNotificationHandler(mockService)
 	router := gin.New()
 	router.PUT("/notifications/:id/read", handler.MarkAsRead)
 

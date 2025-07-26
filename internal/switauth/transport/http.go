@@ -40,7 +40,7 @@ type HTTPTransport struct {
 	server          *http.Server
 	router          *gin.Engine
 	addr            string
-	serviceRegistry *EnhancedServiceRegistry
+	serviceRegistry *EnhancedHandlerRegistry
 	mu              sync.RWMutex
 }
 
@@ -154,14 +154,14 @@ func (h *HTTPTransport) GetPort() int {
 }
 
 // GetServiceRegistry returns the enhanced service registry
-func (h *HTTPTransport) GetServiceRegistry() *EnhancedServiceRegistry {
+func (h *HTTPTransport) GetServiceRegistry() *EnhancedHandlerRegistry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.serviceRegistry
 }
 
 // RegisterService registers a service handler with the transport
-func (h *HTTPTransport) RegisterService(handler ServiceHandler) error {
+func (h *HTTPTransport) RegisterService(handler HandlerRegister) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.serviceRegistry.Register(handler)

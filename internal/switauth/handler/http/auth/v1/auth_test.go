@@ -79,19 +79,19 @@ func TestNewAuthController(t *testing.T) {
 	tests := []struct {
 		name        string
 		authService interfaces.AuthService
-		expected    *Controller
+		expected    *AuthHandler
 	}{
 		{
 			name:        "Create controller with valid auth service",
 			authService: &MockAuthService{},
-			expected: &Controller{
+			expected: &AuthHandler{
 				authService: &MockAuthService{},
 			},
 		},
 		{
 			name:        "Create controller with nil auth service",
 			authService: nil,
-			expected: &Controller{
+			expected: &AuthHandler{
 				authService: nil,
 			},
 		},
@@ -99,10 +99,10 @@ func TestNewAuthController(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			controller := NewAuthController(tt.authService)
+			controller := NewAuthHandler(tt.authService)
 
 			assert.NotNil(t, controller)
-			assert.IsType(t, &Controller{}, controller)
+			assert.IsType(t, &AuthHandler{}, controller)
 
 			if tt.authService != nil {
 				assert.NotNil(t, controller.authService)
@@ -116,7 +116,7 @@ func TestNewAuthController(t *testing.T) {
 
 func TestControllerStruct(t *testing.T) {
 	mockAuthService := &MockAuthService{}
-	controller := &Controller{authService: mockAuthService}
+	controller := &AuthHandler{authService: mockAuthService}
 
 	assert.NotNil(t, controller)
 	assert.Equal(t, mockAuthService, controller.authService)
@@ -124,7 +124,7 @@ func TestControllerStruct(t *testing.T) {
 
 func TestControllerWithMockService(t *testing.T) {
 	mockAuthService := &MockAuthService{}
-	controller := NewAuthController(mockAuthService)
+	controller := NewAuthHandler(mockAuthService)
 
 	assert.NotNil(t, controller)
 	assert.Equal(t, mockAuthService, controller.authService)
@@ -134,7 +134,7 @@ func TestControllerWithMockService(t *testing.T) {
 
 func TestControllerFieldAccess(t *testing.T) {
 	mockAuthService := &MockAuthService{}
-	controller := NewAuthController(mockAuthService)
+	controller := NewAuthHandler(mockAuthService)
 
 	assert.NotNil(t, controller.authService)
 
@@ -147,13 +147,13 @@ func BenchmarkNewAuthController(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		NewAuthController(mockAuthService)
+		NewAuthHandler(mockAuthService)
 	}
 }
 
 func TestControllerInterfaceCompliance(t *testing.T) {
 	mockAuthService := &MockAuthService{}
-	controller := NewAuthController(mockAuthService)
+	controller := NewAuthHandler(mockAuthService)
 
 	assert.Implements(t, (*interfaces.AuthService)(nil), controller.authService)
 }
@@ -223,7 +223,7 @@ func TestLogin(t *testing.T) {
 			mockSrv := &MockAuthService{}
 			tt.setupMocks(mockSrv)
 
-			controller := &Controller{
+			controller := &AuthHandler{
 				authService: mockSrv,
 			}
 
@@ -317,7 +317,7 @@ func TestLogout(t *testing.T) {
 			mockSrv := &MockAuthService{}
 			tt.setupMocks(mockSrv)
 
-			controller := &Controller{
+			controller := &AuthHandler{
 				authService: mockSrv,
 			}
 
@@ -411,7 +411,7 @@ func TestRefreshToken(t *testing.T) {
 			mockSrv := &MockAuthService{}
 			tt.setupMocks(mockSrv)
 
-			controller := &Controller{
+			controller := &AuthHandler{
 				authService: mockSrv,
 			}
 
@@ -518,7 +518,7 @@ func TestValidateToken(t *testing.T) {
 			mockSrv := &MockAuthService{}
 			tt.setupMocks(mockSrv)
 
-			controller := &Controller{
+			controller := &AuthHandler{
 				authService: mockSrv,
 			}
 

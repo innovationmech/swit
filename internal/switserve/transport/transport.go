@@ -52,7 +52,7 @@ func NewManager() *Manager {
 	}
 }
 
-// Register adds a transport to the manager
+// Register adds transport to the manager
 func (m *Manager) Register(transport Transport) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
