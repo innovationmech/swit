@@ -24,227 +24,133 @@ package switserve
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"time"
 
-	"google.golang.org/grpc"
-
+	"github.com/innovationmech/swit/internal/base/server"
 	"github.com/innovationmech/swit/internal/switserve/config"
 	"github.com/innovationmech/swit/internal/switserve/deps"
-	greeterv1 "github.com/innovationmech/swit/internal/switserve/handler/http/greeter/v1"
-	"github.com/innovationmech/swit/internal/switserve/handler/http/health"
-	notificationv1 "github.com/innovationmech/swit/internal/switserve/handler/http/notification/v1"
-	"github.com/innovationmech/swit/internal/switserve/handler/http/stop"
-	userv1 "github.com/innovationmech/swit/internal/switserve/handler/http/user/v1"
-	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
-	"github.com/innovationmech/swit/pkg/middleware"
+	baseserver "github.com/innovationmech/swit/pkg/server"
 	"github.com/innovationmech/swit/pkg/transport"
 	"go.uber.org/zap"
 )
 
-// Server represents the SWIT server implementation
+// Server represents the SWIT server implementation with base server framework
 type Server struct {
-	transportManager *transport.Manager
-	sd               *discovery.ServiceDiscovery
-	httpTransport    *transport.HTTPTransport
-	grpcTransport    *transport.GRPCTransport
-	deps             *deps.Dependencies
+	baseServer *baseserver.BusinessServerImpl
 }
 
-// NewServer creates a new server instance
+// NewServer creates a new server instance using the base server framework
 func NewServer() (*Server, error) {
-	server := &Server{
-		transportManager: transport.NewManager(),
-	}
+	logger.Logger.Info("Creating switserve server with base framework")
 
 	// Initialize dependencies with shutdown callback
+	var baseServer *baseserver.BusinessServerImpl
 	dependencies, err := deps.NewDependencies(func() {
-		if err := server.Shutdown(); err != nil {
-			logger.Logger.Error("Failed to shutdown server during dependency cleanup", zap.Error(err))
+		if baseServer != nil {
+			if err := baseServer.Shutdown(); err != nil {
+				logger.Logger.Error("Failed to shutdown server during dependency cleanup", zap.Error(err))
+			}
 		}
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize dependencies: %v", err)
 	}
 
-	server.deps = dependencies
+	// Create service registrar
+	serviceRegistrar := NewServiceRegistrar(dependencies)
 
-	// Setup service discovery
+	// Create dependency container
+	dependencyContainer := NewBusinessDependencyContainer(dependencies)
+
+	// Map configuration
 	cfg := config.GetConfig()
-	sd, err := discovery.GetServiceDiscoveryByAddress(cfg.ServiceDiscovery.Address)
+	configMapper := NewConfigMapper(cfg)
+	serverConfig := configMapper.ToServerConfig()
+
+	// Create server factory
+	factory, err := server.NewServerFactory(serverConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create service discovery client: %v", err)
-	}
-	server.sd = sd
-
-	// Initialize HTTP transport for switserve
-	httpPort := cfg.Server.Port
-	if httpPort == "" {
-		httpPort = "8080"
-	}
-	httpConfig := &transport.HTTPTransportConfig{
-		Address:     fmt.Sprintf(":%s", httpPort),
-		Port:        httpPort,
-		EnableReady: true, // Enable ready channel for testing
-	}
-	server.httpTransport = transport.NewHTTPTransportWithConfig(httpConfig)
-
-	// Initialize gRPC transport for switserve
-	grpcPort := cfg.Server.GRPCPort
-	if grpcPort == "" {
-		// Fallback: use HTTP port + 1000 for gRPC (e.g., 8080 -> 9080)
-		grpcPort = transport.CalculateGRPCPort(cfg.Server.Port)
-	}
-	grpcConfig := transport.DefaultGRPCConfig()
-	grpcConfig.Address = fmt.Sprintf(":%s", grpcPort)
-	grpcConfig.EnableKeepalive = true
-	grpcConfig.EnableReflection = true
-	grpcConfig.EnableHealthService = true
-	// Add switserve-specific middleware
-	grpcConfig.UnaryInterceptors = []grpc.UnaryServerInterceptor{
-		middleware.GRPCRecoveryInterceptor(),
-		middleware.GRPCLoggingInterceptor(),
-		middleware.GRPCValidationInterceptor(),
-	}
-	server.grpcTransport = transport.NewGRPCTransportWithConfig(grpcConfig)
-
-	// HandlerRegister transports
-	server.transportManager.Register(server.httpTransport)
-	server.transportManager.Register(server.grpcTransport)
-
-	// HandlerRegister services
-	if err := server.registerServices(); err != nil {
-		return nil, fmt.Errorf("failed to register services: %w", err)
+		// Clean up dependencies if factory creation fails
+		if closeErr := dependencyContainer.Close(); closeErr != nil {
+			logger.Logger.Error("Failed to close dependencies after factory creation failure", zap.Error(closeErr))
+		}
+		return nil, fmt.Errorf("failed to create server factory: %v", err)
 	}
 
-	return server, nil
-}
-
-// registerServices registers all services with the service registry
-func (s *Server) registerServices() error {
-	// HandlerRegister services with the HTTP transport's service registry
-	// This uses the new HandlerRegister interface for unified service management
-
-	// HandlerRegister Greeter service with dependency injection
-	greeterHandler := greeterv1.NewGreeterHandler(s.deps.GreeterSrv)
-	if err := s.httpTransport.RegisterHandler(greeterHandler); err != nil {
-		return fmt.Errorf("failed to register greeter service: %w", err)
+	// Create base server
+	baseServerInterface, err := factory.CreateServer(serviceRegistrar, dependencyContainer)
+	if err != nil {
+		// Clean up dependencies if server creation fails
+		if closeErr := dependencyContainer.Close(); closeErr != nil {
+			logger.Logger.Error("Failed to close dependencies after server creation failure", zap.Error(closeErr))
+		}
+		return nil, fmt.Errorf("failed to create base server: %v", err)
 	}
 
-	// HandlerRegister Notification service with dependency injection
-	notificationHandler := notificationv1.NewNotificationHandler(s.deps.NotificationSrv)
-	if err := s.httpTransport.RegisterHandler(notificationHandler); err != nil {
-		return fmt.Errorf("failed to register notification service: %w", err)
+	// Type assert to BusinessServerImpl
+	var ok bool
+	baseServer, ok = baseServerInterface.(*baseserver.BusinessServerImpl)
+	if !ok {
+		// Clean up dependencies if type assertion fails
+		if closeErr := dependencyContainer.Close(); closeErr != nil {
+			logger.Logger.Error("Failed to close dependencies after type assertion failure", zap.Error(closeErr))
+		}
+		return nil, fmt.Errorf("failed to cast base server to BusinessServerImpl")
 	}
 
-	// HandlerRegister Health service with dependency injection
-	healthHandler := health.NewHandler(s.deps.HealthSrv)
-	if err := s.httpTransport.RegisterHandler(healthHandler); err != nil {
-		return fmt.Errorf("failed to register health service: %w", err)
+	// Create wrapper server
+	wrapper := &Server{
+		baseServer: baseServer,
 	}
 
-	// HandlerRegister Stop service with dependency injection
-	stopHandler := stop.NewHandler(s.deps.StopSrv)
-	if err := s.httpTransport.RegisterHandler(stopHandler); err != nil {
-		return fmt.Errorf("failed to register stop service: %w", err)
-	}
-
-	// HandlerRegister User service with dependency injection
-	userHandler := userv1.NewUserHandler(s.deps.UserSrv)
-	if err := s.httpTransport.RegisterHandler(userHandler); err != nil {
-		return fmt.Errorf("failed to register user service: %w", err)
-	}
-
-	return nil
+	logger.Logger.Info("Successfully created switserve server with base framework")
+	return wrapper, nil
 }
 
 // Start starts the server with all transports
 func (s *Server) Start(ctx context.Context) error {
-	// Get gRPC server (middleware is already configured in transport layer)
-	grpcServer := s.grpcTransport.GetServer()
-
-	// Get HTTP router
-	httpRouter := s.httpTransport.GetRouter()
-	if httpRouter != nil {
-		// Add HTTP middleware here if needed
+	if s.baseServer == nil {
+		return fmt.Errorf("base server is not initialized")
 	}
-
-	// HandlerRegister all HTTP routes through HTTP transport
-	if err := s.httpTransport.RegisterAllRoutes(); err != nil {
-		return fmt.Errorf("failed to register HTTP routes: %v", err)
-	}
-
-	// HandlerRegister all gRPC services through HTTP transport's service registry
-	serviceRegistry := s.httpTransport.GetServiceRegistry()
-	if err := serviceRegistry.RegisterAllGRPC(grpcServer); err != nil {
-		return fmt.Errorf("failed to register gRPC services: %v", err)
-	}
-
-	// Start all transports
-	if err := s.transportManager.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start transports: %v", err)
-	}
-
-	// Wait for HTTP transport to be ready
-	<-s.httpTransport.WaitReady()
-
-	// HandlerRegister service in service discovery
-	cfg := config.GetConfig()
-	port, _ := strconv.Atoi(cfg.Server.Port)
-	if err := s.sd.RegisterService("swit-serve", "localhost", port); err != nil {
-		logger.Logger.Error("failed to register swit-serve service", zap.Error(err))
-		return err
-	}
-
-	logger.Logger.Info("Server started successfully",
-		zap.String("http_address", s.httpTransport.GetAddress()),
-		zap.String("grpc_address", s.grpcTransport.GetAddress()),
-	)
-
-	return nil
+	return s.baseServer.Start(ctx)
 }
 
 // Stop gracefully stops the server
 func (s *Server) Stop() error {
-	shutdownTimeout := 5 * time.Second
-
-	// Deregister from service discovery if available
-	if s.sd != nil {
-		cfg := config.GetConfig()
-		port, _ := strconv.Atoi(cfg.Server.Port)
-		if err := s.sd.DeregisterService("swit-serve", "localhost", port); err != nil {
-			logger.Logger.Error("Deregister service error", zap.Error(err))
-		} else {
-			logger.Logger.Info("Service deregistered successfully", zap.String("service", "swit-serve"))
-		}
+	if s.baseServer == nil {
+		return nil
 	}
-
-	// Stop all transports if available
-	if s.transportManager != nil {
-		if err := s.transportManager.Stop(shutdownTimeout); err != nil {
-			logger.Logger.Error("Failed to stop transports", zap.Error(err))
-			return err
-		}
-	}
-
-	logger.Logger.Info("Server stopped successfully")
-	return nil
+	return s.baseServer.Stop(context.Background())
 }
 
 // Shutdown provides a graceful shutdown method for the stop service
 func (s *Server) Shutdown() error {
-	// Close dependencies before stopping the server
-	if s.deps != nil {
-		if err := s.deps.Close(); err != nil {
-			logger.Logger.Error("Failed to close dependencies", zap.Error(err))
-		}
+	if s.baseServer == nil {
+		return nil
 	}
-
-	return s.Stop()
+	return s.baseServer.Shutdown()
 }
 
 // GetTransports returns all registered transports for inspection
-func (s *Server) GetTransports() []transport.Transport {
-	return s.transportManager.GetTransports()
+func (s *Server) GetTransports() []transport.NetworkTransport {
+	if s.baseServer == nil {
+		return []transport.NetworkTransport{}
+	}
+	return s.baseServer.GetTransports()
+}
+
+// GetHTTPAddress returns the HTTP server listening address
+func (s *Server) GetHTTPAddress() string {
+	if s.baseServer == nil {
+		return ""
+	}
+	return s.baseServer.GetHTTPAddress()
+}
+
+// GetGRPCAddress returns the gRPC server listening address
+func (s *Server) GetGRPCAddress() string {
+	if s.baseServer == nil {
+		return ""
+	}
+	return s.baseServer.GetGRPCAddress()
 }

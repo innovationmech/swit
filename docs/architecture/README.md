@@ -4,13 +4,6 @@ This directory contains architectural documentation for the SWIT project.
 
 ## Documents
 
-### [Dependency Injection Refactoring](./dependency-injection-refactoring.md)
-Comprehensive documentation of the dependency injection refactoring implemented in switserve service, including:
-- Problem analysis and solution rationale
-- Implementation details and code examples
-- Testing strategies and migration guides
-- Benefits achieved and future considerations
-
 ## Architecture Overview
 
 The SWIT project follows a microservice architecture with clean separation of concerns:

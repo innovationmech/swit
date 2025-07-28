@@ -45,8 +45,8 @@ func init() {
 	logger.Logger, _ = zap.NewDevelopment()
 }
 
-func TestNewGRPCTransport(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestNewGRPCNetworkService(t *testing.T) {
+	transport := NewGRPCNetworkService()
 
 	assert.NotNil(t, transport)
 	assert.NotNil(t, transport.config)
@@ -54,7 +54,7 @@ func TestNewGRPCTransport(t *testing.T) {
 	assert.Equal(t, "grpc", transport.GetName())
 }
 
-func TestNewGRPCTransportWithConfig(t *testing.T) {
+func TestNewGRPCNetworkServiceWithConfig(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":9999",
 		EnableKeepalive:     true,
@@ -63,7 +63,7 @@ func TestNewGRPCTransportWithConfig(t *testing.T) {
 		UnaryInterceptors:   []grpc.UnaryServerInterceptor{},
 	}
 
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	assert.NotNil(t, transport)
 	assert.Equal(t, config, transport.config)
@@ -71,8 +71,8 @@ func TestNewGRPCTransportWithConfig(t *testing.T) {
 	assert.Equal(t, "grpc", transport.GetName())
 }
 
-func TestNewGRPCTransportWithConfig_NilConfig(t *testing.T) {
-	transport := NewGRPCTransportWithConfig(nil)
+func TestNewGRPCNetworkServiceWithConfig_NilConfig(t *testing.T) {
+	transport := NewGRPCNetworkServiceWithConfig(nil)
 
 	assert.NotNil(t, transport)
 	assert.NotNil(t, transport.config)
@@ -82,13 +82,13 @@ func TestNewGRPCTransportWithConfig_NilConfig(t *testing.T) {
 	assert.True(t, transport.config.EnableKeepalive)
 }
 
-func TestGRPCTransport_Start_Success(t *testing.T) {
+func TestGRPCNetworkService_Start_Success(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":0", // Use dynamic port
 		EnableReflection:    true,
 		EnableHealthService: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -101,13 +101,13 @@ func TestGRPCTransport_Start_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_Start_AlreadyStarted(t *testing.T) {
+func TestGRPCNetworkService_Start_AlreadyStarted(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":0",
 		EnableReflection:    true,
 		EnableHealthService: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 
@@ -124,13 +124,13 @@ func TestGRPCTransport_Start_AlreadyStarted(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_Stop_Success(t *testing.T) {
+func TestGRPCNetworkService_Stop_Success(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":0",
 		EnableReflection:    true,
 		EnableHealthService: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -140,21 +140,21 @@ func TestGRPCTransport_Stop_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_Stop_NotStarted(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_Stop_NotStarted(t *testing.T) {
+	transport := NewGRPCNetworkService()
 
 	ctx := context.Background()
 	err := transport.Stop(ctx)
 	assert.NoError(t, err) // Should not error when stopping non-started transport
 }
 
-func TestGRPCTransport_GetPort(t *testing.T) {
+func TestGRPCNetworkService_GetPort(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":0",
 		EnableReflection:    true,
 		EnableHealthService: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	// Before start
 	assert.Equal(t, 0, transport.GetPort())
@@ -171,8 +171,8 @@ func TestGRPCTransport_GetPort(t *testing.T) {
 	transport.Stop(context.Background())
 }
 
-func TestGRPCTransport_SetTestPort(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_SetTestPort(t *testing.T) {
+	transport := NewGRPCNetworkService()
 
 	transport.SetTestPort("9999")
 
@@ -186,8 +186,8 @@ func TestGRPCTransport_SetTestPort(t *testing.T) {
 	transport.Stop(context.Background())
 }
 
-func TestGRPCTransport_SetAddress(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_SetAddress(t *testing.T) {
+	transport := NewGRPCNetworkService()
 
 	transport.SetAddress(":7777")
 
@@ -201,33 +201,34 @@ func TestGRPCTransport_SetAddress(t *testing.T) {
 	transport.Stop(context.Background())
 }
 
-func TestGRPCTransport_GetServer(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_GetServer(t *testing.T) {
+	transport := NewGRPCNetworkService()
 
-	// Server is nil before start
+	// Server should be created immediately in constructor
 	server1 := transport.GetServer()
-	assert.Nil(t, server1)
+	assert.NotNil(t, server1)
 
-	// Start the transport to create server
+	// Start the transport
 	ctx := context.Background()
 	err := transport.Start(ctx)
 	require.NoError(t, err)
 
-	// Now server should exist
+	// Server should still exist and be the same instance
 	server2 := transport.GetServer()
 	assert.NotNil(t, server2)
+	assert.Equal(t, server1, server2)
 
 	// Clean up
 	transport.Stop(context.Background())
 }
 
-func TestGRPCTransport_FullLifecycle(t *testing.T) {
+func TestGRPCNetworkService_FullLifecycle(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":0",
 		EnableReflection:    true,
 		EnableHealthService: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	// Start transport
 	ctx := context.Background()
@@ -253,8 +254,8 @@ func TestGRPCTransport_FullLifecycle(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_ConcurrentAccess(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_ConcurrentAccess(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	const numGoroutines = 50
 
 	var wg sync.WaitGroup
@@ -281,13 +282,13 @@ func TestGRPCTransport_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-func TestGRPCTransport_StartStop_Multiple(t *testing.T) {
+func TestGRPCNetworkService_StartStop_Multiple(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":0",
 		EnableReflection:    true,
 		EnableHealthService: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 
@@ -301,12 +302,12 @@ func TestGRPCTransport_StartStop_Multiple(t *testing.T) {
 	}
 }
 
-func TestGRPCTransport_WithKeepalive(t *testing.T) {
+func TestGRPCNetworkService_WithKeepalive(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:         ":0",
 		EnableKeepalive: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -320,7 +321,7 @@ func TestGRPCTransport_WithKeepalive(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_WithInterceptors(t *testing.T) {
+func TestGRPCNetworkService_WithInterceptors(t *testing.T) {
 	// Create a test interceptor
 	testInterceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		return handler(ctx, req)
@@ -330,7 +331,7 @@ func TestGRPCTransport_WithInterceptors(t *testing.T) {
 		Address:           ":0",
 		UnaryInterceptors: []grpc.UnaryServerInterceptor{testInterceptor},
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -344,12 +345,12 @@ func TestGRPCTransport_WithInterceptors(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_HealthService(t *testing.T) {
+func TestGRPCNetworkService_HealthService(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:             ":0",
 		EnableHealthService: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -383,12 +384,12 @@ func TestGRPCTransport_HealthService(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_ReflectionService(t *testing.T) {
+func TestGRPCNetworkService_ReflectionService(t *testing.T) {
 	config := &GRPCTransportConfig{
 		Address:          ":0",
 		EnableReflection: true,
 	}
-	transport := NewGRPCTransportWithConfig(config)
+	transport := NewGRPCNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -439,7 +440,7 @@ func TestGRPCTransport_ReflectionService(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestGRPCTransport_determineAddress(t *testing.T) {
+func TestGRPCNetworkService_determineAddress(t *testing.T) {
 	tests := []struct {
 		name         string
 		config       *GRPCTransportConfig
@@ -468,7 +469,7 @@ func TestGRPCTransport_determineAddress(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport := NewGRPCTransportWithConfig(tt.config)
+			transport := NewGRPCNetworkServiceWithConfig(tt.config)
 			addr := transport.determineAddress()
 			assert.Equal(t, tt.expectedAddr, addr)
 		})
@@ -476,8 +477,8 @@ func TestGRPCTransport_determineAddress(t *testing.T) {
 }
 
 // Benchmark tests
-func BenchmarkGRPCTransport_GetServer(b *testing.B) {
-	transport := NewGRPCTransport()
+func BenchmarkGRPCNetworkService_GetServer(b *testing.B) {
+	transport := NewGRPCNetworkService()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -485,8 +486,8 @@ func BenchmarkGRPCTransport_GetServer(b *testing.B) {
 	}
 }
 
-func BenchmarkGRPCTransport_GetAddress(b *testing.B) {
-	transport := NewGRPCTransport()
+func BenchmarkGRPCNetworkService_GetAddress(b *testing.B) {
+	transport := NewGRPCNetworkService()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -494,8 +495,8 @@ func BenchmarkGRPCTransport_GetAddress(b *testing.B) {
 	}
 }
 
-func BenchmarkGRPCTransport_determineAddress(b *testing.B) {
-	transport := NewGRPCTransport()
+func BenchmarkGRPCNetworkService_determineAddress(b *testing.B) {
+	transport := NewGRPCNetworkService()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -503,8 +504,8 @@ func BenchmarkGRPCTransport_determineAddress(b *testing.B) {
 	}
 }
 
-func TestGRPCTransport_RegisterHandler(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_RegisterHandler(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	err := transport.RegisterHandler(handler)
@@ -518,8 +519,8 @@ func TestGRPCTransport_RegisterHandler(t *testing.T) {
 	assert.Equal(t, handler, retrieved)
 }
 
-func TestGRPCTransport_RegisterService(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_RegisterService(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	err := transport.RegisterService(handler)
@@ -529,8 +530,8 @@ func TestGRPCTransport_RegisterService(t *testing.T) {
 	assert.Equal(t, 1, registry.Count())
 }
 
-func TestGRPCTransport_InitializeServices(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_InitializeServices(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	transport.RegisterHandler(handler)
@@ -541,8 +542,8 @@ func TestGRPCTransport_InitializeServices(t *testing.T) {
 	assert.True(t, handler.IsInitialized())
 }
 
-func TestGRPCTransport_RegisterAllServices(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_RegisterAllServices(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	transport.RegisterHandler(handler)
@@ -559,28 +560,28 @@ func TestGRPCTransport_RegisterAllServices(t *testing.T) {
 	assert.True(t, handler.IsGRPCRegistered())
 }
 
-func TestGRPCTransport_RegisterAllServices_NotStarted(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_RegisterAllServices_NotStarted(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	transport.RegisterHandler(handler)
 
-	// Try to register services without starting transport
+	// Register services without starting transport - should work now since server is created in constructor
 	err := transport.RegisterAllServices()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "gRPC server not initialized")
+	assert.NoError(t, err)
+	assert.True(t, handler.IsGRPCRegistered())
 }
 
-func TestGRPCTransport_GetServiceRegistry(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_GetServiceRegistry(t *testing.T) {
+	transport := NewGRPCNetworkService()
 
 	registry := transport.GetServiceRegistry()
 	assert.NotNil(t, registry)
 	assert.Equal(t, 0, registry.Count())
 }
 
-func TestGRPCTransport_ShutdownServices(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_ShutdownServices(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	transport.RegisterHandler(handler)
@@ -591,8 +592,8 @@ func TestGRPCTransport_ShutdownServices(t *testing.T) {
 	assert.True(t, handler.IsShutdown())
 }
 
-func TestGRPCTransport_ServiceRegistryLifecycle(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_ServiceRegistryLifecycle(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -628,8 +629,8 @@ func TestGRPCTransport_ServiceRegistryLifecycle(t *testing.T) {
 	assert.True(t, handler2.IsShutdown())
 }
 
-func TestGRPCTransport_ConcurrentServiceOperations(t *testing.T) {
-	transport := NewGRPCTransport()
+func TestGRPCNetworkService_ConcurrentServiceOperations(t *testing.T) {
+	transport := NewGRPCNetworkService()
 	const numGoroutines = 20
 
 	var wg sync.WaitGroup
@@ -662,9 +663,9 @@ func TestGRPCTransport_ConcurrentServiceOperations(t *testing.T) {
 }
 
 // Benchmark tests for service registry operations
-func BenchmarkGRPCTransport_RegisterHandler(b *testing.B) {
-	transport := NewGRPCTransport()
-	handlers := make([]HandlerRegister, b.N)
+func BenchmarkGRPCNetworkService_RegisterHandler(b *testing.B) {
+	transport := NewGRPCNetworkService()
+	handlers := make([]TransportServiceHandler, b.N)
 
 	for i := 0; i < b.N; i++ {
 		handlers[i] = NewMockHandlerRegister(fmt.Sprintf("service-%d", i), "v1.0.0")
@@ -676,8 +677,8 @@ func BenchmarkGRPCTransport_RegisterHandler(b *testing.B) {
 	}
 }
 
-func BenchmarkGRPCTransport_GetServiceRegistry(b *testing.B) {
-	transport := NewGRPCTransport()
+func BenchmarkGRPCNetworkService_GetServiceRegistry(b *testing.B) {
+	transport := NewGRPCNetworkService()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -1,0 +1,61 @@
+# Production Configuration with Strict Discovery Failure Handling
+# This configuration demonstrates fail-fast discovery behavior suitable for production
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  username: root
+  password: root
+  dbname: user_service_db
+
+server:
+  service_name: swit-serve-prod
+  port: 9000
+  # HTTP Configuration
+  http:
+    enabled: true
+    port: "9000"
+    middleware:
+      enable_cors: true
+      cors:
+        allow_origins:
+          - "https://your-production-domain.com"
+          - "https://api.your-domain.com"
+        allow_methods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+        allow_headers:
+          - "Origin"
+          - "Content-Type"
+          - "Accept"
+          - "Authorization"
+        allow_credentials: true
+        max_age: 86400
+
+  # gRPC Configuration
+  grpc:
+    enabled: true
+    port: "9001"
+    enable_reflection: true
+    enable_health_service: true
+
+  # Discovery Configuration with Strict Failure Handling
+  discovery:
+    enabled: true
+    address: "consul.production.local:8500"
+    service_name: swit-serve-prod
+    tags:
+      - "v1"
+      - "production"
+      - "critical"
+    # CRITICAL: Use strict mode for production to ensure services are discoverable
+    failure_mode: strict                # Fail startup if discovery fails
+    health_check_required: true         # Check discovery health before registration
+    registration_timeout: 60s           # Allow more time for production reliability
+
+# Optional: ServiceDiscovery config for backward compatibility
+serviceDiscovery:
+  address: "consul.production.local:8500"

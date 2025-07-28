@@ -4,7 +4,36 @@ database:
   username: root
   password: root
   dbname: user_service_db
+
 server:
   port: 9000
+  # HTTP Configuration with secure CORS settings
+  http:
+    enabled: true
+    port: "9000"
+    middleware:
+      enable_cors: true
+      cors:
+        # SECURITY: Specify explicit allowed origins instead of wildcard
+        # For development, use specific localhost ports
+        # For production, use your actual frontend domains
+        allow_origins:
+          - "http://localhost:3000"    # React/Vue dev server
+          - "http://localhost:8080"    # Alternative frontend port
+          - "https://your-domain.com"  # Production frontend (update this)
+        allow_methods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+        allow_headers:
+          - "Origin"
+          - "Content-Type"
+          - "Accept"
+          - "Authorization"
+        allow_credentials: true
+        max_age: 86400  # 24 hours
+
 serviceDiscovery:
   address: "localhost:8500"

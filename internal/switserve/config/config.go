@@ -59,6 +59,7 @@ func GetConfig() *ServeConfig {
 	once.Do(func() {
 		viper.SetConfigName("swit")
 		viper.AddConfigPath(".")
+		viper.AddConfigPath("../..") // Add path for tests running from subdirectories
 		err := viper.ReadInConfig()
 		if err != nil {
 			panic(fmt.Errorf("FATAL ERROR CONFIG FILE: %s", err))

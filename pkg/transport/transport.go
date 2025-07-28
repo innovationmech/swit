@@ -115,8 +115,8 @@ func ExtractStopErrors(err error) []TransportError {
 	return nil
 }
 
-// Transport defines the interface for different transport mechanisms
-type Transport interface {
+// NetworkTransport defines the interface for different transport mechanisms
+type NetworkTransport interface {
 	// Start starts the transport server
 	Start(ctx context.Context) error
 	// Stop gracefully stops the transport server
@@ -127,23 +127,23 @@ type Transport interface {
 	GetAddress() string
 }
 
-// Manager manages multiple transport instances and their service registries
-type Manager struct {
-	transports      []Transport
-	registryManager *ServiceRegistryManager
+// TransportCoordinator manages multiple transport instances and their service registries
+type TransportCoordinator struct {
+	transports      []NetworkTransport
+	registryManager *MultiTransportRegistry
 	mu              sync.RWMutex
 }
 
-// NewManager creates a new transport manager
-func NewManager() *Manager {
-	return &Manager{
-		transports:      make([]Transport, 0),
-		registryManager: NewServiceRegistryManager(),
+// NewTransportCoordinator creates a new transport coordinator
+func NewTransportCoordinator() *TransportCoordinator {
+	return &TransportCoordinator{
+		transports:      make([]NetworkTransport, 0),
+		registryManager: NewMultiTransportRegistry(),
 	}
 }
 
-// Register adds transport to the manager
-func (m *Manager) Register(transport Transport) {
+// Register adds transport to the coordinator
+func (m *TransportCoordinator) Register(transport NetworkTransport) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -153,9 +153,9 @@ func (m *Manager) Register(transport Transport) {
 }
 
 // Start starts all registered transports
-func (m *Manager) Start(ctx context.Context) error {
+func (m *TransportCoordinator) Start(ctx context.Context) error {
 	m.mu.RLock()
-	transports := make([]Transport, len(m.transports))
+	transports := make([]NetworkTransport, len(m.transports))
 	copy(transports, m.transports)
 	m.mu.RUnlock()
 
@@ -173,9 +173,9 @@ func (m *Manager) Start(ctx context.Context) error {
 
 // Stop gracefully stops all registered transports
 // Returns a MultiError containing all errors encountered during shutdown
-func (m *Manager) Stop(timeout time.Duration) error {
+func (m *TransportCoordinator) Stop(timeout time.Duration) error {
 	m.mu.RLock()
-	transports := make([]Transport, len(m.transports))
+	transports := make([]NetworkTransport, len(m.transports))
 	copy(transports, m.transports)
 	m.mu.RUnlock()
 
@@ -214,68 +214,68 @@ func (m *Manager) Stop(timeout time.Duration) error {
 }
 
 // GetTransports returns a list of all registered transports
-func (m *Manager) GetTransports() []Transport {
+func (m *TransportCoordinator) GetTransports() []NetworkTransport {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	transports := make([]Transport, len(m.transports))
+	transports := make([]NetworkTransport, len(m.transports))
 	copy(transports, m.transports)
 	return transports
 }
 
-// GetServiceRegistryManager returns the service registry manager
-func (m *Manager) GetServiceRegistryManager() *ServiceRegistryManager {
+// GetMultiTransportRegistry returns the multi transport registry
+func (m *TransportCoordinator) GetMultiTransportRegistry() *MultiTransportRegistry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.registryManager
 }
 
-// RegisterHTTPHandler registers a service handler with HTTP transport
-func (m *Manager) RegisterHTTPHandler(handler HandlerRegister) error {
-	return m.registryManager.RegisterHTTPHandler(handler)
+// RegisterHTTPService registers a service handler with HTTP transport
+func (m *TransportCoordinator) RegisterHTTPService(handler TransportServiceHandler) error {
+	return m.registryManager.RegisterHTTPService(handler)
 }
 
-// RegisterGRPCHandler registers a service handler with gRPC transport
-func (m *Manager) RegisterGRPCHandler(handler HandlerRegister) error {
-	return m.registryManager.RegisterGRPCHandler(handler)
+// RegisterGRPCService registers a service handler with gRPC transport
+func (m *TransportCoordinator) RegisterGRPCService(handler TransportServiceHandler) error {
+	return m.registryManager.RegisterGRPCService(handler)
 }
 
 // RegisterHandler registers a service handler with a specific transport
-func (m *Manager) RegisterHandler(transportName string, handler HandlerRegister) error {
+func (m *TransportCoordinator) RegisterHandler(transportName string, handler TransportServiceHandler) error {
 	return m.registryManager.RegisterHandler(transportName, handler)
 }
 
-// InitializeAllServices initializes all services across all transports
-func (m *Manager) InitializeAllServices(ctx context.Context) error {
-	return m.registryManager.InitializeAll(ctx)
+// InitializeTransportServices initializes all services across all transports
+func (m *TransportCoordinator) InitializeTransportServices(ctx context.Context) error {
+	return m.registryManager.InitializeTransportServices(ctx)
 }
 
-// RegisterAllHTTPRoutes registers HTTP routes for all services across all transports
-func (m *Manager) RegisterAllHTTPRoutes(router *gin.Engine) error {
-	return m.registryManager.RegisterAllHTTP(router)
+// BindAllHTTPEndpoints registers HTTP routes for all services across all transports
+func (m *TransportCoordinator) BindAllHTTPEndpoints(router *gin.Engine) error {
+	return m.registryManager.BindAllHTTPEndpoints(router)
 }
 
-// RegisterAllGRPCServices registers gRPC services for all services across all transports
-func (m *Manager) RegisterAllGRPCServices(server *grpc.Server) error {
-	return m.registryManager.RegisterAllGRPC(server)
+// BindAllGRPCServices registers gRPC services for all services across all transports
+func (m *TransportCoordinator) BindAllGRPCServices(server *grpc.Server) error {
+	return m.registryManager.BindAllGRPCServices(server)
 }
 
 // CheckAllServicesHealth performs health checks on all services across all transports
-func (m *Manager) CheckAllServicesHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
+func (m *TransportCoordinator) CheckAllServicesHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
 	return m.registryManager.CheckAllHealth(ctx)
 }
 
 // ShutdownAllServices gracefully shuts down all services across all transports
-func (m *Manager) ShutdownAllServices(ctx context.Context) error {
+func (m *TransportCoordinator) ShutdownAllServices(ctx context.Context) error {
 	return m.registryManager.ShutdownAll(ctx)
 }
 
 // GetAllServiceMetadata returns metadata for all services across all transports
-func (m *Manager) GetAllServiceMetadata() map[string][]*HandlerMetadata {
+func (m *TransportCoordinator) GetAllServiceMetadata() map[string][]*HandlerMetadata {
 	return m.registryManager.GetAllServiceMetadata()
 }
 
 // GetTotalServiceCount returns the total number of services across all transports
-func (m *Manager) GetTotalServiceCount() int {
+func (m *TransportCoordinator) GetTotalServiceCount() int {
 	return m.registryManager.GetTotalServiceCount()
 }

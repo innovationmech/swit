@@ -1,0 +1,62 @@
+# Development Configuration with Graceful Discovery Failure Handling
+# This configuration demonstrates graceful failure behavior suitable for local development
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  username: root
+  password: root
+  dbname: user_service_db
+
+server:
+  service_name: swit-serve-dev
+  port: 9000
+  # HTTP Configuration
+  http:
+    enabled: true
+    port: "9000"
+    middleware:
+      enable_cors: true
+      cors:
+        allow_origins:
+          - "http://localhost:3000"    # React/Vue dev server
+          - "http://localhost:8080"    # Alternative frontend port
+          - "http://127.0.0.1:3000"
+          - "http://127.0.0.1:8080"
+        allow_methods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+        allow_headers:
+          - "Origin"
+          - "Content-Type"
+          - "Accept"
+          - "Authorization"
+        allow_credentials: true
+        max_age: 86400
+
+  # gRPC Configuration
+  grpc:
+    enabled: true
+    port: "9001"
+    enable_reflection: true
+    enable_health_service: true
+
+  # Discovery Configuration with Graceful Failure Handling
+  discovery:
+    enabled: true
+    address: "localhost:8500"
+    service_name: swit-serve-dev
+    tags:
+      - "v1"
+      - "development"
+    # DEVELOPMENT: Use graceful mode so service starts even if Consul is not running
+    failure_mode: graceful              # Continue startup even if discovery fails (default)
+    health_check_required: false        # Don't require health check for development
+    registration_timeout: 30s           # Standard timeout for development
+
+# Optional: ServiceDiscovery config for backward compatibility
+serviceDiscovery:
+  address: "localhost:8500"
