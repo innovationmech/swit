@@ -32,7 +32,6 @@ import (
 
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
-	"github.com/innovationmech/swit/pkg/middleware"
 	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
@@ -114,18 +113,23 @@ func (s *BaseServerImpl) initializeTransports() error {
 
 	// Initialize gRPC transport if enabled
 	if s.config.IsGRPCEnabled() {
-		grpcConfig := transport.DefaultGRPCConfig()
-		grpcConfig.Address = s.config.GetGRPCAddress()
-		grpcConfig.EnableKeepalive = s.config.GRPC.EnableKeepalive
-		grpcConfig.EnableReflection = s.config.GRPC.EnableReflection
-		grpcConfig.EnableHealthService = s.config.GRPC.EnableHealthService
-
-		// Add default middleware
-		grpcConfig.UnaryInterceptors = []grpc.UnaryServerInterceptor{
-			middleware.GRPCRecoveryInterceptor(),
-			middleware.GRPCLoggingInterceptor(),
-			middleware.GRPCValidationInterceptor(),
+		grpcConfig := &transport.GRPCTransportConfig{
+			Address:             s.config.GetGRPCAddress(),
+			Port:                s.config.GRPC.Port,
+			EnableKeepalive:     s.config.GRPC.EnableKeepalive,
+			EnableReflection:    s.config.GRPC.EnableReflection,
+			EnableHealthService: s.config.GRPC.EnableHealthService,
+			MaxRecvMsgSize:      s.config.GRPC.MaxRecvMsgSize,
+			MaxSendMsgSize:      s.config.GRPC.MaxSendMsgSize,
+			KeepaliveParams:     s.config.toGRPCKeepaliveParams(),
+			KeepalivePolicy:     s.config.toGRPCKeepalivePolicy(),
 		}
+
+		// Configure interceptors using middleware manager
+		middlewareManager := NewMiddlewareManager(s.config)
+		unaryInterceptors, streamInterceptors := middlewareManager.GetGRPCInterceptors()
+		grpcConfig.UnaryInterceptors = unaryInterceptors
+		grpcConfig.StreamInterceptors = streamInterceptors
 
 		s.grpcTransport = transport.NewGRPCTransportWithConfig(grpcConfig)
 		s.transportManager.Register(s.grpcTransport)
@@ -184,7 +188,9 @@ func (s *BaseServerImpl) Start(ctx context.Context) error {
 
 	// Configure middleware for HTTP transport
 	if s.httpTransport != nil {
-		s.configureHTTPMiddleware()
+		if err := s.configureHTTPMiddleware(); err != nil {
+			return fmt.Errorf("failed to configure HTTP middleware: %w", err)
+		}
 	}
 
 	// Initialize all services
@@ -300,26 +306,55 @@ func (s *BaseServerImpl) GetTransports() []transport.Transport {
 	return s.transportManager.GetTransports()
 }
 
+// GetTransportStatus returns the status of all transports
+func (s *BaseServerImpl) GetTransportStatus() map[string]TransportStatus {
+	transports := s.transportManager.GetTransports()
+	status := make(map[string]TransportStatus)
+
+	for _, t := range transports {
+		transportStatus := TransportStatus{
+			Name:    t.GetName(),
+			Address: t.GetAddress(),
+			Running: s.isTransportRunning(t),
+		}
+		status[t.GetName()] = transportStatus
+	}
+
+	return status
+}
+
+// GetTransportHealth returns health status of all services across all transports
+func (s *BaseServerImpl) GetTransportHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
+	return s.transportManager.CheckAllServicesHealth(ctx)
+}
+
+// isTransportRunning checks if a transport is currently running
+func (s *BaseServerImpl) isTransportRunning(t transport.Transport) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// A transport is considered running if the server is started and the transport has an address
+	return s.started && t.GetAddress() != ""
+}
+
 // configureHTTPMiddleware configures global middleware for HTTP transport
-func (s *BaseServerImpl) configureHTTPMiddleware() {
+func (s *BaseServerImpl) configureHTTPMiddleware() error {
 	if s.httpTransport == nil {
-		return
+		return nil
 	}
 
 	router := s.httpTransport.GetRouter()
 	if router == nil {
-		return
+		return fmt.Errorf("HTTP router not available")
 	}
 
-	// Apply global middleware based on configuration
-	registrar := middleware.NewGlobalMiddlewareRegistrar()
-	registrar.RegisterMiddleware(router)
+	// Create middleware manager and configure middleware
+	middlewareManager := NewMiddlewareManager(s.config)
+	if err := middlewareManager.ConfigureHTTPMiddleware(router); err != nil {
+		return fmt.Errorf("failed to configure HTTP middleware: %w", err)
+	}
 
-	logger.Logger.Info("HTTP middleware configured",
-		zap.Bool("cors", s.config.Middleware.EnableCORS),
-		zap.Bool("auth", s.config.Middleware.EnableAuth),
-		zap.Bool("rate_limit", s.config.Middleware.EnableRateLimit),
-		zap.Bool("logging", s.config.Middleware.EnableLogging))
+	return nil
 }
 
 // registerWithDiscovery registers the service with service discovery

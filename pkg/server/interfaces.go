@@ -25,7 +25,15 @@ import (
 	"context"
 
 	"github.com/innovationmech/swit/pkg/transport"
+	"github.com/innovationmech/swit/pkg/types"
 )
+
+// TransportStatus represents the status of a transport
+type TransportStatus struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Running bool   `json:"running"`
+}
 
 // BaseServer defines the core interface for all server implementations
 // It provides consistent lifecycle management and transport access
@@ -42,6 +50,10 @@ type BaseServer interface {
 	GetGRPCAddress() string
 	// GetTransports returns all registered transports
 	GetTransports() []transport.Transport
+	// GetTransportStatus returns the status of all transports
+	GetTransportStatus() map[string]TransportStatus
+	// GetTransportHealth returns health status of all services across all transports
+	GetTransportHealth(ctx context.Context) map[string]map[string]*types.HealthStatus
 }
 
 // ServiceRegistrar defines the interface for services to register themselves

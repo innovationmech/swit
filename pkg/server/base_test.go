@@ -187,9 +187,20 @@ func TestBaseServer_TransportInitialization(t *testing.T) {
 		{
 			name: "both transports enabled",
 			config: &ServerConfig{
-				ServiceName:     "test-service",
-				HTTP:            HTTPConfig{Port: "8080", Enabled: true},
-				GRPC:            GRPCConfig{Port: "9080", Enabled: true},
+				ServiceName: "test-service",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				GRPC: GRPCConfig{
+					Port:           "9080",
+					Enabled:        true,
+					MaxRecvMsgSize: 4 * 1024 * 1024,
+					MaxSendMsgSize: 4 * 1024 * 1024,
+				},
 				Discovery:       DiscoveryConfig{Enabled: false},
 				ShutdownTimeout: 5 * time.Second,
 			},
@@ -201,8 +212,14 @@ func TestBaseServer_TransportInitialization(t *testing.T) {
 		{
 			name: "only HTTP enabled",
 			config: &ServerConfig{
-				ServiceName:     "test-service",
-				HTTP:            HTTPConfig{Port: "8080", Enabled: true},
+				ServiceName: "test-service",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
 				GRPC:            GRPCConfig{Enabled: false},
 				Discovery:       DiscoveryConfig{Enabled: false},
 				ShutdownTimeout: 5 * time.Second,
@@ -215,9 +232,14 @@ func TestBaseServer_TransportInitialization(t *testing.T) {
 		{
 			name: "only gRPC enabled",
 			config: &ServerConfig{
-				ServiceName:     "test-service",
-				HTTP:            HTTPConfig{Enabled: false},
-				GRPC:            GRPCConfig{Port: "9080", Enabled: true},
+				ServiceName: "test-service",
+				HTTP:        HTTPConfig{Enabled: false},
+				GRPC: GRPCConfig{
+					Port:           "9080",
+					Enabled:        true,
+					MaxRecvMsgSize: 4 * 1024 * 1024,
+					MaxSendMsgSize: 4 * 1024 * 1024,
+				},
 				Discovery:       DiscoveryConfig{Enabled: false},
 				ShutdownTimeout: 5 * time.Second,
 			},
@@ -336,4 +358,58 @@ func TestServiceRegistryAdapter(t *testing.T) {
 
 	// Verify that the service registrar was called
 	mockRegistrar.AssertExpectations(t)
+}
+
+func TestBaseServer_TransportStatus(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+
+	mockRegistrar := &mockServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockDependencyContainer{}
+
+	server, err := NewBaseServer(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	// Get transport status
+	status := server.GetTransportStatus()
+
+	// Should have both HTTP and gRPC transports
+	assert.Len(t, status, 2)
+
+	// Check HTTP transport status
+	httpStatus, exists := status["http"]
+	assert.True(t, exists)
+	assert.Equal(t, "http", httpStatus.Name)
+	assert.Equal(t, ":8080", httpStatus.Address)
+	assert.False(t, httpStatus.Running) // Not started yet
+
+	// Check gRPC transport status
+	grpcStatus, exists := status["grpc"]
+	assert.True(t, exists)
+	assert.Equal(t, "grpc", grpcStatus.Name)
+	assert.Equal(t, ":9080", grpcStatus.Address)
+	assert.False(t, grpcStatus.Running) // Not started yet
+}
+
+func TestBaseServer_TransportHealth(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+
+	mockRegistrar := &mockServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockDependencyContainer{}
+
+	server, err := NewBaseServer(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Get transport health
+	health := server.GetTransportHealth(ctx)
+
+	// Should return health status map (may be empty if no services are registered)
+	assert.NotNil(t, health)
 }
