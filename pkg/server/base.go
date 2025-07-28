@@ -30,7 +30,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 
-	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/types"
@@ -39,13 +38,14 @@ import (
 
 // BaseServerImpl implements the BaseServer interface providing common server functionality
 type BaseServerImpl struct {
-	config           *ServerConfig
-	transportManager *transport.Manager
-	httpTransport    *transport.HTTPTransport
-	grpcTransport    *transport.GRPCTransport
-	serviceDiscovery *discovery.ServiceDiscovery
-	dependencies     DependencyContainer
-	serviceRegistrar ServiceRegistrar
+	config               *ServerConfig
+	transportManager     *transport.Manager
+	httpTransport        *transport.HTTPTransport
+	grpcTransport        *transport.GRPCTransport
+	discoveryManager     ServiceDiscoveryManager
+	serviceRegistrations []*ServiceRegistration
+	dependencies         DependencyContainer
+	serviceRegistrar     ServiceRegistrar
 
 	// State management
 	mu      sync.RWMutex
@@ -79,12 +79,15 @@ func NewBaseServer(config *ServerConfig, registrar ServiceRegistrar, deps Depend
 		return nil, fmt.Errorf("failed to initialize transports: %w", err)
 	}
 
-	// Initialize service discovery if enabled
-	if config.IsDiscoveryEnabled() {
-		if err := server.initializeServiceDiscovery(); err != nil {
-			return nil, fmt.Errorf("failed to initialize service discovery: %w", err)
-		}
+	// Initialize service discovery manager
+	discoveryManager, err := NewDiscoveryManager(&config.Discovery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize service discovery: %w", err)
 	}
+	server.discoveryManager = discoveryManager
+
+	// Create service registrations for discovery
+	server.serviceRegistrations = CreateServiceRegistrations(config)
 
 	// Register services with transport manager
 	if err := server.registerServices(); err != nil {
@@ -139,20 +142,6 @@ func (s *BaseServerImpl) initializeTransports() error {
 			zap.Bool("keepalive", grpcConfig.EnableKeepalive),
 			zap.Bool("reflection", grpcConfig.EnableReflection))
 	}
-
-	return nil
-}
-
-// initializeServiceDiscovery creates and configures the service discovery client
-func (s *BaseServerImpl) initializeServiceDiscovery() error {
-	sd, err := discovery.GetServiceDiscoveryByAddress(s.config.Discovery.Address)
-	if err != nil {
-		return fmt.Errorf("failed to create service discovery client: %w", err)
-	}
-
-	s.serviceDiscovery = sd
-	logger.Logger.Info("Service discovery initialized",
-		zap.String("address", s.config.Discovery.Address))
 
 	return nil
 }
@@ -219,8 +208,8 @@ func (s *BaseServerImpl) Start(ctx context.Context) error {
 
 	// Register with service discovery
 	if s.config.IsDiscoveryEnabled() {
-		if err := s.registerWithDiscovery(); err != nil {
-			// Log warning but don't fail startup
+		if err := s.registerWithDiscovery(ctx); err != nil {
+			// Log warning but don't fail startup - graceful handling of discovery failures
 			logger.Logger.Warn("Failed to register with service discovery", zap.Error(err))
 		}
 	}
@@ -247,8 +236,8 @@ func (s *BaseServerImpl) Stop(ctx context.Context) error {
 	logger.Logger.Info("Stopping base server", zap.String("service", s.config.ServiceName))
 
 	// Deregister from service discovery
-	if s.config.IsDiscoveryEnabled() && s.serviceDiscovery != nil {
-		if err := s.deregisterFromDiscovery(); err != nil {
+	if s.config.IsDiscoveryEnabled() && s.discoveryManager != nil {
+		if err := s.deregisterFromDiscovery(ctx); err != nil {
 			logger.Logger.Warn("Failed to deregister from service discovery", zap.Error(err))
 		}
 	}
@@ -357,77 +346,48 @@ func (s *BaseServerImpl) configureHTTPMiddleware() error {
 	return nil
 }
 
-// registerWithDiscovery registers the service with service discovery
-func (s *BaseServerImpl) registerWithDiscovery() error {
-	if s.serviceDiscovery == nil {
-		return fmt.Errorf("service discovery not initialized")
+// registerWithDiscovery registers the service with service discovery using the new abstraction
+func (s *BaseServerImpl) registerWithDiscovery(ctx context.Context) error {
+	if s.discoveryManager == nil {
+		return fmt.Errorf("discovery manager not initialized")
 	}
 
-	// Register HTTP service if enabled
-	if s.config.IsHTTPEnabled() && s.httpTransport != nil {
-		port := s.httpTransport.GetPort()
-		serviceName := s.config.Discovery.ServiceName
-		if err := s.serviceDiscovery.RegisterService(serviceName, "localhost", port); err != nil {
-			return fmt.Errorf("failed to register HTTP service '%s' on port %d: %w", serviceName, port, err)
-		}
-		logger.Logger.Info("HTTP service registered with discovery",
-			zap.String("service", serviceName),
-			zap.Int("port", port))
+	if len(s.serviceRegistrations) == 0 {
+		logger.Logger.Debug("No service registrations configured")
+		return nil
 	}
 
-	// Register gRPC service if enabled and on different port
-	if s.config.IsGRPCEnabled() && s.grpcTransport != nil {
-		grpcPort := s.grpcTransport.GetPort()
-		httpPort := 0
-		if s.httpTransport != nil {
-			httpPort = s.httpTransport.GetPort()
-		}
-
-		if grpcPort != httpPort {
-			grpcServiceName := s.config.Discovery.ServiceName + "-grpc"
-			if err := s.serviceDiscovery.RegisterService(grpcServiceName, "localhost", grpcPort); err != nil {
-				logger.Logger.Warn("Failed to register gRPC service with discovery", zap.Error(err))
-			} else {
-				logger.Logger.Info("gRPC service registered with discovery",
-					zap.String("service", grpcServiceName),
-					zap.Int("port", grpcPort))
-			}
-		}
+	// Register multiple endpoints with graceful failure handling
+	if err := s.discoveryManager.RegisterMultipleEndpoints(ctx, s.serviceRegistrations); err != nil {
+		return fmt.Errorf("failed to register service endpoints: %w", err)
 	}
+
+	logger.Logger.Info("Service endpoints registered with discovery",
+		zap.String("service", s.config.Discovery.ServiceName),
+		zap.Int("endpoints", len(s.serviceRegistrations)))
 
 	return nil
 }
 
-// deregisterFromDiscovery deregisters the service from service discovery
-func (s *BaseServerImpl) deregisterFromDiscovery() error {
-	if s.serviceDiscovery == nil {
+// deregisterFromDiscovery deregisters the service from service discovery using the new abstraction
+func (s *BaseServerImpl) deregisterFromDiscovery(ctx context.Context) error {
+	if s.discoveryManager == nil {
 		return nil
 	}
 
-	// Deregister HTTP service
-	if s.config.IsHTTPEnabled() && s.httpTransport != nil {
-		port := s.httpTransport.GetPort()
-		serviceName := s.config.Discovery.ServiceName
-		if err := s.serviceDiscovery.DeregisterService(serviceName, "localhost", port); err != nil {
-			return fmt.Errorf("failed to deregister HTTP service: %w", err)
-		}
+	if len(s.serviceRegistrations) == 0 {
+		logger.Logger.Debug("No service registrations to deregister")
+		return nil
 	}
 
-	// Deregister gRPC service
-	if s.config.IsGRPCEnabled() && s.grpcTransport != nil {
-		grpcPort := s.grpcTransport.GetPort()
-		httpPort := 0
-		if s.httpTransport != nil {
-			httpPort = s.httpTransport.GetPort()
-		}
-
-		if grpcPort != httpPort {
-			grpcServiceName := s.config.Discovery.ServiceName + "-grpc"
-			if err := s.serviceDiscovery.DeregisterService(grpcServiceName, "localhost", grpcPort); err != nil {
-				logger.Logger.Warn("Failed to deregister gRPC service", zap.Error(err))
-			}
-		}
+	// Deregister multiple endpoints with graceful failure handling
+	if err := s.discoveryManager.DeregisterMultipleEndpoints(ctx, s.serviceRegistrations); err != nil {
+		return fmt.Errorf("failed to deregister service endpoints: %w", err)
 	}
+
+	logger.Logger.Info("Service endpoints deregistered from discovery",
+		zap.String("service", s.config.Discovery.ServiceName),
+		zap.Int("endpoints", len(s.serviceRegistrations)))
 
 	return nil
 }
