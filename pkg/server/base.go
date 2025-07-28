@@ -175,6 +175,16 @@ func (s *BaseServerImpl) Start(ctx context.Context) error {
 
 	logger.Logger.Info("Starting base server", zap.String("service", s.config.ServiceName))
 
+	// Initialize dependencies if available
+	if s.dependencies != nil {
+		if initializer, ok := s.dependencies.(interface{ Initialize(context.Context) error }); ok {
+			if err := initializer.Initialize(ctx); err != nil {
+				return fmt.Errorf("failed to initialize dependencies: %w", err)
+			}
+			logger.Logger.Info("Dependencies initialized successfully")
+		}
+	}
+
 	// Configure middleware for HTTP transport
 	if s.httpTransport != nil {
 		if err := s.configureHTTPMiddleware(); err != nil {

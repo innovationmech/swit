@@ -107,6 +107,26 @@ type DependencyContainer interface {
 	GetService(name string) (interface{}, error)
 }
 
+// EnhancedDependencyContainer extends DependencyContainer with additional functionality
+// for registration and lifecycle management
+type EnhancedDependencyContainer interface {
+	DependencyContainer
+	// Initialize initializes all registered dependencies
+	Initialize(ctx context.Context) error
+	// RegisterSingleton registers a singleton dependency
+	RegisterSingleton(name string, factory DependencyFactory) error
+	// RegisterTransient registers a transient dependency
+	RegisterTransient(name string, factory DependencyFactory) error
+	// RegisterInstance registers a pre-created instance
+	RegisterInstance(name string, instance interface{}) error
+	// GetDependencyNames returns all registered dependency names
+	GetDependencyNames() []string
+	// IsInitialized returns true if the container has been initialized
+	IsInitialized() bool
+	// IsClosed returns true if the container has been closed
+	IsClosed() bool
+}
+
 // ConfigValidator defines the interface for configuration validation
 type ConfigValidator interface {
 	// Validate validates the configuration and returns any errors
