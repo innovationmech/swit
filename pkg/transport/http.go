@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -43,16 +44,23 @@ type HTTPTransportConfig struct {
 	EnableReady bool   // Enables ready channel for testing
 }
 
+// PerformanceTracker interface for tracking performance metrics
+type PerformanceTracker interface {
+	IncrementRequestCount()
+	UpdateAverageResponseTime(time.Duration)
+}
+
 // HTTPTransport implements Transport interface for HTTP
 type HTTPTransport struct {
-	server          *http.Server
-	router          *gin.Engine
-	address         string
-	config          *HTTPTransportConfig
-	ready           chan struct{}
-	readyOnce       sync.Once
-	mu              sync.RWMutex
-	serviceRegistry *EnhancedHandlerRegistry
+	server             *http.Server
+	router             *gin.Engine
+	address            string
+	config             *HTTPTransportConfig
+	ready              chan struct{}
+	readyOnce          sync.Once
+	mu                 sync.RWMutex
+	serviceRegistry    *EnhancedHandlerRegistry
+	performanceTracker PerformanceTracker
 }
 
 // NewHTTPTransport creates a new HTTP transport with default configuration
@@ -81,6 +89,9 @@ func NewHTTPTransportWithConfig(config *HTTPTransportConfig) *HTTPTransport {
 	if config.EnableReady {
 		transport.ready = make(chan struct{})
 	}
+
+	// Add performance monitoring middleware
+	transport.addPerformanceMiddleware()
 
 	return transport
 }
@@ -260,6 +271,33 @@ func (h *HTTPTransport) SetAddress(addr string) {
 		h.config = &HTTPTransportConfig{}
 	}
 	h.config.Address = addr
+}
+
+// SetPerformanceTracker sets the performance tracker for monitoring
+func (h *HTTPTransport) SetPerformanceTracker(tracker PerformanceTracker) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.performanceTracker = tracker
+}
+
+// addPerformanceMiddleware adds performance monitoring middleware
+func (h *HTTPTransport) addPerformanceMiddleware() {
+	h.router.Use(func(c *gin.Context) {
+		start := time.Now()
+
+		// Increment request count if tracker is available
+		if h.performanceTracker != nil {
+			h.performanceTracker.IncrementRequestCount()
+		}
+
+		c.Next()
+
+		// Update response time if tracker is available
+		if h.performanceTracker != nil {
+			duration := time.Since(start)
+			h.performanceTracker.UpdateAverageResponseTime(duration)
+		}
+	})
 }
 
 // RegisterHandler registers a service handler with the transport

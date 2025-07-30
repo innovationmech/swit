@@ -68,7 +68,7 @@ func runServer() error {
 	}
 
 	// Create context for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Handle shutdown signals
@@ -78,20 +78,12 @@ func runServer() error {
 	// Start server in goroutine
 	serverErr := make(chan error, 1)
 	go func() {
-		// Print registered transports
-		transports := srv.GetTransports()
-		logger.Logger.Info("Registered transports",
-			zap.Int("count", len(transports)),
-		)
+		// 获取传输层信息
+		logger.Logger.Info("HTTP transport started", zap.String("address", srv.GetHTTPAddress()))
+		logger.Logger.Info("gRPC transport started", zap.String("address", srv.GetGRPCAddress()))
 
-		for _, transport := range transports {
-			logger.Logger.Info("Transport registered",
-				zap.String("name", transport.GetName()),
-				zap.String("address", transport.GetAddress()),
-			)
-		}
-
-		if err := srv.Start(ctx); err != nil {
+		// 启动服务器
+		if err := srv.Start(); err != nil {
 			serverErr <- err
 		}
 	}()

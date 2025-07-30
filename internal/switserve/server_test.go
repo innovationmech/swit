@@ -37,6 +37,8 @@ func init() {
 
 	// Add config path for tests
 	// This is needed because go test changes working directory to the package directory
+	viper.AddConfigPath(".")
+	viper.AddConfigPath("../..")
 	viper.AddConfigPath("../../..")
 }
 
@@ -67,93 +69,82 @@ func TestNewServer(t *testing.T) {
 	}
 
 	assert.NotNil(t, server)
-	assert.NotNil(t, server.transportManager)
-	assert.NotNil(t, server.httpTransport)
-	assert.NotNil(t, server.grpcTransport)
-	assert.NotNil(t, server.sd)
+	assert.NotNil(t, server.switserveServer)
 
-	// Verify transports are registered
-	transports := server.GetTransports()
-	assert.Len(t, transports, 2)
-
-	// Verify transport types
-	transportNames := make([]string, len(transports))
-	for i, transport := range transports {
-		transportNames[i] = transport.GetName()
-	}
-	assert.Contains(t, transportNames, "http")
-	assert.Contains(t, transportNames, "grpc")
+	// Verify server properties
+	assert.Equal(t, "swit-serve", server.GetServiceName())
+	assert.NotEmpty(t, server.GetHTTPAddress())
+	assert.NotEmpty(t, server.GetGRPCAddress())
 }
 
-func TestServer_GetTransports(t *testing.T) {
+func TestServer_GetAddresses(t *testing.T) {
 	server := createTestServer(t)
 	if server == nil {
 		return
 	}
 
-	transports := server.GetTransports()
-	assert.Len(t, transports, 2)
+	// Test HTTP address
+	httpAddr := server.GetHTTPAddress()
+	assert.NotEmpty(t, httpAddr)
 
-	// Verify we get copies, not the original slice
-	originalLen := len(transports)
-	transports = append(transports, nil)
+	// Test gRPC address
+	grpcAddr := server.GetGRPCAddress()
+	assert.NotEmpty(t, grpcAddr)
 
-	newTransports := server.GetTransports()
-	assert.Len(t, newTransports, originalLen)
+	// Test legacy GetAddress method
+	addr := server.GetAddress()
+	assert.Equal(t, httpAddr, addr)
 }
 
-func TestServer_ServiceRegistration(t *testing.T) {
+func TestServer_ServiceProperties(t *testing.T) {
 	server := createTestServer(t)
 	if server == nil {
 		return
 	}
 
-	// Verify services were registered through HTTP transport
-	serviceRegistry := server.httpTransport.GetServiceRegistry()
-	assert.NotNil(t, serviceRegistry)
+	// Verify service name
+	serviceName := server.GetServiceName()
+	assert.Equal(t, "swit-serve", serviceName)
 
-	// We should have multiple services registered
-	handlers := serviceRegistry.GetAllHandlers()
-	assert.True(t, len(handlers) >= 4) // At least Greeter, Notification, Health, Stop
+	// Verify health check
+	ctx := context.Background()
+	isHealthy := server.IsHealthy(ctx)
+	assert.True(t, isHealthy)
 }
 
-func TestServer_TransportManagerIntegration(t *testing.T) {
+func TestServer_BaseServerIntegration(t *testing.T) {
 	server := createTestServer(t)
 	if server == nil {
 		return
 	}
 
-	// Verify transport manager has transports
-	transports := server.transportManager.GetTransports()
-	assert.Len(t, transports, 2)
+	// Verify base server integration
+	assert.NotNil(t, server.switserveServer)
 
-	// Verify both HTTP and gRPC transports are registered
-	names := make([]string, len(transports))
-	for i, transport := range transports {
-		names[i] = transport.GetName()
-	}
-	assert.Contains(t, names, "http")
-	assert.Contains(t, names, "grpc")
+	// Verify addresses are properly configured
+	httpAddr := server.GetHTTPAddress()
+	grpcAddr := server.GetGRPCAddress()
+	assert.NotEmpty(t, httpAddr)
+	assert.NotEmpty(t, grpcAddr)
+	assert.NotEqual(t, httpAddr, grpcAddr)
 }
 
-func TestServer_Shutdown(t *testing.T) {
+func TestServer_Stop(t *testing.T) {
 	server := createTestServer(t)
 	if server == nil {
 		return
 	}
 
-	// Shutdown should call Stop internally
-	err := server.Shutdown()
+	// Stop should work without errors
+	err := server.Stop()
 	assert.NoError(t, err)
 }
 
-func TestServer_StartStop_WithoutServiceDiscovery(t *testing.T) {
+func TestServer_StartStop_Lifecycle(t *testing.T) {
 	server := createTestServer(t)
 	if server == nil {
 		return
 	}
-
-	ctx := context.Background()
 
 	// Start server - may fail due to service discovery connection or transport issues
 	func() {
@@ -162,7 +153,7 @@ func TestServer_StartStop_WithoutServiceDiscovery(t *testing.T) {
 				t.Logf("Server start panicked (expected): %v", r)
 			}
 		}()
-		server.Start(ctx)
+		server.Start()
 	}()
 
 	// Stop server should always work
@@ -231,12 +222,12 @@ func TestServer_ErrorHandling(t *testing.T) {
 		err := server.Stop()
 		assert.NoError(t, err)
 
-		// Shutdown with nil dependencies should not panic
-		err = server.Shutdown()
-		assert.NoError(t, err)
+		// GetServiceName with nil switserveServer should return default
+		serviceName := server.GetServiceName()
+		assert.Equal(t, "swit-serve", serviceName)
 	})
 
-	t.Run("should_handle_transport_manager_errors", func(t *testing.T) {
+	t.Run("should_handle_switserve_server_errors", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
@@ -251,58 +242,55 @@ func TestServer_ErrorHandling(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("should_handle_service_discovery_errors_gracefully", func(t *testing.T) {
-		server := createTestServer(t)
-		if server == nil {
-			return
-		}
+	t.Run("should_handle_health_check_with_nil_server", func(t *testing.T) {
+		server := &Server{}
+		ctx := context.Background()
 
-		// Stop should work even if service discovery fails
-		err := server.Stop()
-		assert.NoError(t, err)
+		// Health check with nil switserveServer should return false
+		isHealthy := server.IsHealthy(ctx)
+		assert.False(t, isHealthy)
 	})
 }
 
 // Test resource management
 func TestServer_ResourceManagement(t *testing.T) {
-	t.Run("should_cleanup_all_resources_on_shutdown", func(t *testing.T) {
+	t.Run("should_cleanup_all_resources_on_stop", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
 		}
 
 		// Verify initial state
-		assert.NotNil(t, server.deps)
-		assert.NotNil(t, server.transportManager)
+		assert.NotNil(t, server.switserveServer)
 
-		// Shutdown should clean up resources
-		err := server.Shutdown()
+		// Stop should clean up resources
+		err := server.Stop()
 		assert.NoError(t, err)
 	})
 
 	t.Run("should_handle_partial_initialization_cleanup", func(t *testing.T) {
 		// Test server with partial initialization
 		server := &Server{
-			transportManager: nil,
+			switserveServer: nil,
 		}
 
 		// Should not panic on cleanup
-		err := server.Shutdown()
+		err := server.Stop()
 		assert.NoError(t, err)
 	})
 
-	t.Run("should_handle_concurrent_shutdown_calls", func(t *testing.T) {
+	t.Run("should_handle_concurrent_stop_calls", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
 		}
 
-		// Multiple concurrent shutdowns should be safe
+		// Multiple concurrent stops should be safe
 		done := make(chan error, 3)
 
 		for i := 0; i < 3; i++ {
 			go func() {
-				err := server.Shutdown()
+				err := server.Stop()
 				done <- err
 			}()
 		}
@@ -313,7 +301,7 @@ func TestServer_ResourceManagement(t *testing.T) {
 			case err := <-done:
 				assert.NoError(t, err)
 			case <-time.After(time.Second):
-				t.Fatal("Timeout waiting for concurrent shutdown operations")
+				t.Fatal("Timeout waiting for concurrent stop operations")
 			}
 		}
 	})
@@ -324,13 +312,13 @@ func TestServer_EdgeCases(t *testing.T) {
 	t.Run("should_handle_zero_value_server", func(t *testing.T) {
 		var server Server
 
-		// Zero value server should be safe to shutdown
-		err := server.Shutdown()
+		// Zero value server should be safe to stop
+		err := server.Stop()
 		assert.NoError(t, err)
 
-		// Zero value server should be safe to stop
-		err = server.Stop()
-		assert.NoError(t, err)
+		// Zero value server should return default service name
+		serviceName := server.GetServiceName()
+		assert.Equal(t, "swit-serve", serviceName)
 	})
 
 	t.Run("should_validate_server_components", func(t *testing.T) {
@@ -340,30 +328,27 @@ func TestServer_EdgeCases(t *testing.T) {
 		}
 
 		// Verify all components are properly initialized
-		assert.NotNil(t, server.transportManager, "Transport manager should be initialized")
-		assert.NotNil(t, server.httpTransport, "HTTP transport should be initialized")
-		assert.NotNil(t, server.grpcTransport, "gRPC transport should be initialized")
-		assert.NotNil(t, server.sd, "Service discovery should be initialized")
-		assert.NotNil(t, server.deps, "Dependencies should be initialized")
+		assert.NotNil(t, server.switserveServer, "SwitserveServer should be initialized")
+		assert.NotEmpty(t, server.GetHTTPAddress(), "HTTP address should be set")
+		assert.NotEmpty(t, server.GetGRPCAddress(), "gRPC address should be set")
+		assert.Equal(t, "swit-serve", server.GetServiceName(), "Service name should be correct")
 	})
 
-	t.Run("should_handle_service_registration_edge_cases", func(t *testing.T) {
+	t.Run("should_handle_address_retrieval_edge_cases", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
 		}
 
-		// Verify service registration doesn't cause issues
-		serviceRegistry := server.httpTransport.GetServiceRegistry()
-		handlers := serviceRegistry.GetAllHandlers()
-		assert.NotEmpty(t, handlers, "Should have registered services")
+		// Verify address methods work correctly
+		httpAddr := server.GetHTTPAddress()
+		grpcAddr := server.GetGRPCAddress()
+		legacyAddr := server.GetAddress()
 
-		// Multiple calls to registerServices should be safe
-		server.registerServices()
-
-		// Should still have services registered
-		newHandlers := serviceRegistry.GetAllHandlers()
-		assert.NotEmpty(t, newHandlers, "Should still have registered services")
+		assert.NotEmpty(t, httpAddr)
+		assert.NotEmpty(t, grpcAddr)
+		assert.Equal(t, httpAddr, legacyAddr)
+		assert.NotEqual(t, httpAddr, grpcAddr)
 	})
 }
 
@@ -383,34 +368,34 @@ func TestServer_LifecycleManagement(t *testing.T) {
 		}
 	})
 
-	t.Run("should_handle_shutdown_after_stop", func(t *testing.T) {
+	t.Run("should_handle_health_checks", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
 		}
 
-		// Stop first
-		err := server.Stop()
-		assert.NoError(t, err)
+		ctx := context.Background()
 
-		// Then shutdown should still work
-		err = server.Shutdown()
+		// Health check should work
+		isHealthy := server.IsHealthy(ctx)
+		assert.True(t, isHealthy)
+
+		// Stop server
+		err := server.Stop()
 		assert.NoError(t, err)
 	})
 
-	t.Run("should_handle_stop_after_shutdown", func(t *testing.T) {
+	t.Run("should_handle_service_properties", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
 		}
 
-		// Shutdown first
-		err := server.Shutdown()
-		assert.NoError(t, err)
-
-		// Then stop should still work
-		err = server.Stop()
-		assert.NoError(t, err)
+		// Service properties should be consistent
+		serviceName1 := server.GetServiceName()
+		serviceName2 := server.GetServiceName()
+		assert.Equal(t, serviceName1, serviceName2)
+		assert.Equal(t, "swit-serve", serviceName1)
 	})
 }
 
@@ -422,45 +407,47 @@ func TestServer_ComponentIntegration(t *testing.T) {
 		}
 
 		// Verify component integration
-		transports := server.GetTransports()
-		assert.Len(t, transports, 2, "Should have both HTTP and gRPC transports")
-
-		// Verify transport manager integration
-		managerTransports := server.transportManager.GetTransports()
-		assert.Equal(t, len(transports), len(managerTransports), "Transport manager should have same transports")
-
-		// Verify service registry integration
-		serviceRegistry := server.httpTransport.GetServiceRegistry()
-		handlers := serviceRegistry.GetAllHandlers()
-		assert.NotEmpty(t, handlers, "Service registry should have registered services")
+		assert.NotNil(t, server.switserveServer)
+		assert.NotEmpty(t, server.GetHTTPAddress())
+		assert.NotEmpty(t, server.GetGRPCAddress())
+		assert.Equal(t, "swit-serve", server.GetServiceName())
 	})
 
-	t.Run("should_handle_transport_lifecycle", func(t *testing.T) {
+	t.Run("should_handle_base_server_lifecycle", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
 		}
 
-		// Verify transports are properly configured
-		assert.NotNil(t, server.httpTransport.GetRouter(), "HTTP transport should have router")
-		assert.NotNil(t, server.grpcTransport.GetServer(), "gRPC transport should have server")
+		// Verify base server integration
+		assert.NotNil(t, server.switserveServer)
 
 		// Verify addresses are set
-		assert.NotEmpty(t, server.httpTransport.GetAddress(), "HTTP transport should have address")
-		assert.NotEmpty(t, server.grpcTransport.GetAddress(), "gRPC transport should have address")
+		assert.NotEmpty(t, server.GetHTTPAddress())
+		assert.NotEmpty(t, server.GetGRPCAddress())
+
+		// Stop should work
+		err := server.Stop()
+		assert.NoError(t, err)
 	})
 
-	t.Run("should_handle_service_discovery_integration", func(t *testing.T) {
+	t.Run("should_handle_health_and_service_integration", func(t *testing.T) {
 		server := createTestServer(t)
 		if server == nil {
 			return
 		}
 
-		// Service discovery should be initialized
-		assert.NotNil(t, server.sd, "Service discovery should be initialized")
+		// Health check should work
+		ctx := context.Background()
+		isHealthy := server.IsHealthy(ctx)
+		assert.True(t, isHealthy)
 
-		// Stop should handle service discovery cleanup
+		// Service name should be correct
+		serviceName := server.GetServiceName()
+		assert.Equal(t, "swit-serve", serviceName)
+
+		// Stop should handle cleanup
 		err := server.Stop()
-		assert.NoError(t, err, "Stop should handle service discovery cleanup")
+		assert.NoError(t, err)
 	})
 }
