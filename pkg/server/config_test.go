@@ -307,7 +307,7 @@ func TestServerConfig_Validate(t *testing.T) {
 					IdleTimeout:  120 * time.Second,
 				},
 			},
-			wantErr: "http.port must be between 1 and 65535",
+			wantErr: "http.port must be between 0 and 65535",
 		},
 		{
 			name: "missing gRPC port when enabled",

@@ -434,7 +434,8 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Validate ports are different if both transports are enabled
-	if c.HTTP.Enabled && c.GRPC.Enabled && c.HTTP.Port == c.GRPC.Port {
+	// Allow port 0 (system assigns available ports) which will be different
+	if c.HTTP.Enabled && c.GRPC.Enabled && c.HTTP.Port == c.GRPC.Port && c.HTTP.Port != "0" {
 		return fmt.Errorf("http.port and grpc.port must be different")
 	}
 
@@ -462,8 +463,9 @@ func (c *ServerConfig) validatePort(port, fieldName string) error {
 	if err != nil {
 		return fmt.Errorf("%s must be a valid port number: %w", fieldName, err)
 	}
-	if portNum < 1 || portNum > 65535 {
-		return fmt.Errorf("%s must be between 1 and 65535, got %d", fieldName, portNum)
+	// Allow port 0 (system assigns available port) for testing and dynamic allocation
+	if portNum < 0 || portNum > 65535 {
+		return fmt.Errorf("%s must be between 0 and 65535, got %d", fieldName, portNum)
 	}
 	return nil
 }

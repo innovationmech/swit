@@ -24,6 +24,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
@@ -50,6 +51,11 @@ type BaseServerImpl struct {
 	// State management
 	mu      sync.RWMutex
 	started bool
+
+	// Performance monitoring
+	startTime time.Time
+	metrics   *PerformanceMetrics
+	monitor   *PerformanceMonitor
 }
 
 // NewBaseServer creates a new base server instance with the provided configuration
@@ -72,7 +78,14 @@ func NewBaseServer(config *ServerConfig, registrar ServiceRegistrar, deps Depend
 		dependencies:     deps,
 		serviceRegistrar: registrar,
 		transportManager: transport.NewManager(),
+		metrics:          NewPerformanceMetrics(),
+		monitor:          NewPerformanceMonitor(),
 	}
+
+	// Add default performance monitoring hooks
+	server.monitor.AddHook(PerformanceLoggingHook)
+	server.monitor.AddHook(PerformanceThresholdViolationHook)
+	server.monitor.AddHook(PerformanceMetricsCollectionHook)
 
 	// Initialize transports based on configuration
 	if err := server.initializeTransports(); err != nil {
@@ -99,6 +112,14 @@ func NewBaseServer(config *ServerConfig, registrar ServiceRegistrar, deps Depend
 
 // initializeTransports creates and configures transport instances based on configuration
 func (s *BaseServerImpl) initializeTransports() error {
+	// Pre-allocate slice for transports to reduce allocations
+	var transports []transport.Transport
+	if s.config.IsHTTPEnabled() && s.config.IsGRPCEnabled() {
+		transports = make([]transport.Transport, 0, 2)
+	} else {
+		transports = make([]transport.Transport, 0, 1)
+	}
+
 	// Initialize HTTP transport if enabled
 	if s.config.IsHTTPEnabled() {
 		httpConfig := &transport.HTTPTransportConfig{
@@ -107,7 +128,7 @@ func (s *BaseServerImpl) initializeTransports() error {
 			EnableReady: s.config.HTTP.EnableReady,
 		}
 		s.httpTransport = transport.NewHTTPTransportWithConfig(httpConfig)
-		s.transportManager.Register(s.httpTransport)
+		transports = append(transports, s.httpTransport)
 
 		logger.Logger.Info("HTTP transport initialized",
 			zap.String("address", httpConfig.Address),
@@ -128,14 +149,14 @@ func (s *BaseServerImpl) initializeTransports() error {
 			KeepalivePolicy:     s.config.toGRPCKeepalivePolicy(),
 		}
 
-		// Configure interceptors using middleware manager
+		// Configure interceptors using middleware manager (reuse if possible)
 		middlewareManager := NewMiddlewareManager(s.config)
 		unaryInterceptors, streamInterceptors := middlewareManager.GetGRPCInterceptors()
 		grpcConfig.UnaryInterceptors = unaryInterceptors
 		grpcConfig.StreamInterceptors = streamInterceptors
 
 		s.grpcTransport = transport.NewGRPCTransportWithConfig(grpcConfig)
-		s.transportManager.Register(s.grpcTransport)
+		transports = append(transports, s.grpcTransport)
 
 		logger.Logger.Info("gRPC transport initialized",
 			zap.String("address", grpcConfig.Address),
@@ -143,11 +164,18 @@ func (s *BaseServerImpl) initializeTransports() error {
 			zap.Bool("reflection", grpcConfig.EnableReflection))
 	}
 
+	// Register all transports at once to reduce lock contention
+	for _, t := range transports {
+		s.transportManager.Register(t)
+	}
+
 	return nil
 }
 
 // registerServices registers all services with the transport manager using the service registrar
 func (s *BaseServerImpl) registerServices() error {
+	registrationStart := time.Now()
+
 	// Create a service registry adapter that bridges our interface to the transport layer
 	registry := &serviceRegistryAdapter{
 		transportManager: s.transportManager,
@@ -160,12 +188,15 @@ func (s *BaseServerImpl) registerServices() error {
 		return fmt.Errorf("service registration failed: %w", err)
 	}
 
-	logger.Logger.Info("Services registered successfully")
+	registrationDuration := time.Since(registrationStart)
+	logger.Logger.Info("Services registered successfully",
+		zap.Duration("registration_time", registrationDuration))
 	return nil
 }
 
 // Start starts the server with all registered services
 func (s *BaseServerImpl) Start(ctx context.Context) error {
+	startTime := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -173,6 +204,7 @@ func (s *BaseServerImpl) Start(ctx context.Context) error {
 		return fmt.Errorf("server is already started")
 	}
 
+	s.startTime = startTime
 	logger.Logger.Info("Starting base server", zap.String("service", s.config.ServiceName))
 
 	// Initialize dependencies if available
@@ -226,16 +258,33 @@ func (s *BaseServerImpl) Start(ctx context.Context) error {
 
 	s.started = true
 
+	// Record performance metrics
+	startupDuration := time.Since(startTime)
+	s.metrics.RecordStartupTime(startupDuration)
+	s.metrics.RecordMemoryUsage()
+
+	transports := s.transportManager.GetTransports()
+	s.metrics.RecordServiceMetrics(0, len(transports)) // Service count would need registry integration
+
+	// Trigger performance monitoring hooks
+	s.monitor.RecordEvent("server_startup_success")
+
+	// Start periodic metrics collection
+	go s.monitor.StartPeriodicCollection(context.Background(), 30*time.Second)
+
 	logger.Logger.Info("Base server started successfully",
 		zap.String("service", s.config.ServiceName),
 		zap.String("http_address", s.GetHTTPAddress()),
-		zap.String("grpc_address", s.GetGRPCAddress()))
+		zap.String("grpc_address", s.GetGRPCAddress()),
+		zap.Duration("startup_time", startupDuration),
+		zap.Int("goroutines", runtime.NumGoroutine()))
 
 	return nil
 }
 
 // Stop gracefully stops the server
 func (s *BaseServerImpl) Stop(ctx context.Context) error {
+	stopTime := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -259,13 +308,26 @@ func (s *BaseServerImpl) Stop(ctx context.Context) error {
 
 	s.started = false
 
-	logger.Logger.Info("Base server stopped successfully", zap.String("service", s.config.ServiceName))
+	// Record shutdown performance metrics
+	shutdownDuration := time.Since(stopTime)
+	s.metrics.RecordShutdownTime(shutdownDuration)
+	s.metrics.RecordMemoryUsage()
+
+	// Trigger performance monitoring hooks
+	s.monitor.RecordEvent("server_shutdown_success")
+
+	logger.Logger.Info("Base server stopped successfully",
+		zap.String("service", s.config.ServiceName),
+		zap.Duration("shutdown_time", shutdownDuration),
+		zap.Int("goroutines", runtime.NumGoroutine()))
 	return nil
 }
 
 // Shutdown performs complete server shutdown with resource cleanup
 func (s *BaseServerImpl) Shutdown() error {
-	ctx := context.Background()
+	// Use a timeout context for the entire shutdown process
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	// Stop the server
 	if err := s.Stop(ctx); err != nil {
@@ -274,9 +336,25 @@ func (s *BaseServerImpl) Shutdown() error {
 
 	// Close dependencies if available
 	if s.dependencies != nil {
-		if err := s.dependencies.Close(); err != nil {
-			logger.Logger.Error("Failed to close dependencies", zap.Error(err))
-			return fmt.Errorf("failed to close dependencies: %w", err)
+		// Create a separate timeout context for dependency cleanup
+		depCtx, depCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer depCancel()
+
+		// Use a goroutine with timeout to prevent hanging
+		done := make(chan error, 1)
+		go func() {
+			done <- s.dependencies.Close()
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				logger.Logger.Error("Failed to close dependencies", zap.Error(err))
+				return fmt.Errorf("failed to close dependencies: %w", err)
+			}
+		case <-depCtx.Done():
+			logger.Logger.Warn("Dependency cleanup timed out", zap.Duration("timeout", 10*time.Second))
+			return fmt.Errorf("dependency cleanup timed out")
 		}
 	}
 
@@ -325,6 +403,33 @@ func (s *BaseServerImpl) GetTransportStatus() map[string]TransportStatus {
 // GetTransportHealth returns health status of all services across all transports
 func (s *BaseServerImpl) GetTransportHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
 	return s.transportManager.CheckAllServicesHealth(ctx)
+}
+
+// GetPerformanceMetrics returns current performance metrics
+func (s *BaseServerImpl) GetPerformanceMetrics() *PerformanceMetrics {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Update current metrics before returning
+	s.metrics.RecordMemoryUsage()
+	s.metrics.RecordUptime(s.GetUptime())
+	return s.metrics
+}
+
+// GetPerformanceMonitor returns the performance monitor instance
+func (s *BaseServerImpl) GetPerformanceMonitor() *PerformanceMonitor {
+	return s.monitor
+}
+
+// GetUptime returns the server uptime
+func (s *BaseServerImpl) GetUptime() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if !s.started {
+		return 0
+	}
+	return time.Since(s.startTime)
 }
 
 // isTransportRunning checks if a transport is currently running

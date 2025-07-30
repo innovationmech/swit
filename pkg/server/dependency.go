@@ -152,36 +152,46 @@ func (c *SimpleDependencyContainer) RegisterInstance(name string, instance inter
 func (c *SimpleDependencyContainer) GetService(name string) (interface{}, error) {
 	c.mu.RLock()
 	metadata, exists := c.dependencies[name]
-	c.mu.RUnlock()
-
 	if !exists {
+		c.mu.RUnlock()
 		return nil, fmt.Errorf("dependency '%s' not found", name)
 	}
 
 	if c.closed {
+		c.mu.RUnlock()
 		return nil, fmt.Errorf("cannot get dependency '%s': container is closed", name)
 	}
 
 	// For singleton dependencies, return existing instance if available
 	if metadata.Singleton && metadata.Instance != nil {
-		return metadata.Instance, nil
+		instance := metadata.Instance
+		c.mu.RUnlock()
+		return instance, nil
 	}
 
 	// Create new instance using factory
 	if metadata.Factory == nil {
+		c.mu.RUnlock()
 		return nil, fmt.Errorf("no factory available for dependency '%s'", name)
 	}
 
-	instance, err := metadata.Factory(c)
+	factory := metadata.Factory
+	isSingleton := metadata.Singleton
+	c.mu.RUnlock()
+
+	instance, err := factory(c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dependency '%s': %w", name, err)
 	}
 
 	// Store singleton instances
-	if metadata.Singleton {
+	if isSingleton {
 		c.mu.Lock()
-		metadata.Instance = instance
-		metadata.Type = reflect.TypeOf(instance)
+		// Double-check pattern: another goroutine might have created the instance
+		if metadata.Instance == nil {
+			metadata.Instance = instance
+			metadata.Type = reflect.TypeOf(instance)
+		}
 		c.mu.Unlock()
 	}
 

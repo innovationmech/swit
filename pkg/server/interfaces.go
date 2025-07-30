@@ -23,6 +23,7 @@ package server
 
 import (
 	"context"
+	"time"
 
 	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/types"
@@ -54,6 +55,17 @@ type BaseServer interface {
 	GetTransportStatus() map[string]TransportStatus
 	// GetTransportHealth returns health status of all services across all transports
 	GetTransportHealth(ctx context.Context) map[string]map[string]*types.HealthStatus
+}
+
+// PerformanceAwareServer extends BaseServer with performance monitoring capabilities
+type PerformanceAwareServer interface {
+	BaseServer
+	// GetPerformanceMetrics returns current performance metrics
+	GetPerformanceMetrics() *PerformanceMetrics
+	// GetUptime returns the server uptime
+	GetUptime() time.Duration
+	// GetPerformanceMonitor returns the performance monitor instance
+	GetPerformanceMonitor() *PerformanceMonitor
 }
 
 // ServiceRegistrar defines the interface for services to register themselves
