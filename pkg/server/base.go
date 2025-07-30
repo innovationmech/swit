@@ -417,7 +417,7 @@ func (a *serviceRegistryAdapter) RegisterHTTPHandler(handler HTTPHandler) error 
 
 	// Create an adapter that implements transport.HandlerRegister
 	adapter := &httpHandlerAdapter{handler: handler}
-	return a.httpTransport.RegisterService(adapter)
+	return a.transportManager.RegisterHTTPHandler(adapter)
 }
 
 // RegisterGRPCService registers a gRPC service

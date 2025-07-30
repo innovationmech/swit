@@ -186,10 +186,10 @@ func TestNewServerMetrics(t *testing.T) {
 }
 
 func TestServerMetrics_RecordMethods(t *testing.T) {
-	collector := NewSimpleMetricsCollector()
-	metrics := NewServerMetrics("test-service", collector)
-
 	t.Run("RecordServerStart", func(t *testing.T) {
+		collector := NewSimpleMetricsCollector()
+		metrics := NewServerMetrics("test-service", collector)
+
 		metrics.RecordServerStart()
 
 		allMetrics := collector.GetMetrics()
@@ -207,6 +207,9 @@ func TestServerMetrics_RecordMethods(t *testing.T) {
 	})
 
 	t.Run("RecordServerStop", func(t *testing.T) {
+		collector := NewSimpleMetricsCollector()
+		metrics := NewServerMetrics("test-service", collector)
+
 		metrics.RecordServerStop()
 
 		counter, exists := collector.GetMetric("server_stops_total")
@@ -219,30 +222,76 @@ func TestServerMetrics_RecordMethods(t *testing.T) {
 	})
 
 	t.Run("RecordTransportStart", func(t *testing.T) {
+		collector := NewSimpleMetricsCollector()
+		metrics := NewServerMetrics("test-service", collector)
+
 		metrics.RecordTransportStart("http")
 
-		counter, exists := collector.GetMetric("transport_starts_total")
-		require.True(t, exists)
-		assert.Equal(t, int64(1), counter.Value)
+		// Check all metrics to find the ones with correct labels
+		allMetrics := collector.GetMetrics()
 
-		gauge, exists := collector.GetMetric("active_transports")
-		require.True(t, exists)
-		assert.Equal(t, 1.0, gauge.Value)
+		// Find transport_starts_total metric
+		var startsCounter *Metric
+		for _, metric := range allMetrics {
+			if metric.Name == "transport_starts_total" {
+				startsCounter = &metric
+				break
+			}
+		}
+		require.NotNil(t, startsCounter)
+		assert.Equal(t, int64(1), startsCounter.Value)
+
+		// Find active_transports gauge
+		var activeGauge *Metric
+		for _, metric := range allMetrics {
+			if metric.Name == "active_transports" {
+				activeGauge = &metric
+				break
+			}
+		}
+		require.NotNil(t, activeGauge)
+		assert.Equal(t, 1.0, activeGauge.Value)
 	})
 
 	t.Run("RecordTransportStop", func(t *testing.T) {
+		collector := NewSimpleMetricsCollector()
+		metrics := NewServerMetrics("test-service", collector)
+
+		// First start a transport to have something to stop
+		metrics.RecordTransportStart("http")
+		// Then stop it
 		metrics.RecordTransportStop("http")
 
-		counter, exists := collector.GetMetric("transport_stops_total")
-		require.True(t, exists)
-		assert.Equal(t, int64(1), counter.Value)
+		// Check all metrics to find the ones with correct labels
+		allMetrics := collector.GetMetrics()
 
-		gauge, exists := collector.GetMetric("active_transports")
-		require.True(t, exists)
-		assert.Equal(t, 0.0, gauge.Value) // Decremented from previous test
+		// Find transport_stops_total metric
+		var stopsCounter *Metric
+		for _, metric := range allMetrics {
+			if metric.Name == "transport_stops_total" {
+				stopsCounter = &metric
+				break
+			}
+		}
+		require.NotNil(t, stopsCounter)
+		assert.Equal(t, int64(1), stopsCounter.Value)
+
+		// Find active_transports gauge
+		var activeGauge *Metric
+		for _, metric := range allMetrics {
+			if metric.Name == "active_transports" {
+				activeGauge = &metric
+				break
+			}
+		}
+		require.NotNil(t, activeGauge)
+		assert.Equal(t, 0.0, activeGauge.Value) // Should be 0 after start then stop
 	})
 
 	t.Run("RecordServiceRegistration", func(t *testing.T) {
+		collector := NewSimpleMetricsCollector()
+		metrics := NewServerMetrics("test-service", collector)
+
 		metrics.RecordServiceRegistration("auth-service", "http")
 
 		counter, exists := collector.GetMetric("service_registrations_total")
@@ -255,6 +304,9 @@ func TestServerMetrics_RecordMethods(t *testing.T) {
 	})
 
 	t.Run("RecordError", func(t *testing.T) {
+		collector := NewSimpleMetricsCollector()
+		metrics := NewServerMetrics("test-service", collector)
+
 		metrics.RecordError("config_error", "startup")
 
 		counter, exists := collector.GetMetric("errors_total")
@@ -263,6 +315,9 @@ func TestServerMetrics_RecordMethods(t *testing.T) {
 	})
 
 	t.Run("RecordOperationDuration", func(t *testing.T) {
+		collector := NewSimpleMetricsCollector()
+		metrics := NewServerMetrics("test-service", collector)
+
 		duration := 100 * time.Millisecond
 		metrics.RecordOperationDuration("startup", duration)
 
