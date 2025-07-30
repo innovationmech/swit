@@ -134,23 +134,8 @@ func TestServerWithComponents(t *testing.T) {
 		assert.GreaterOrEqual(t, len(services), 0)
 	})
 
-	t.Run("RegisterWithDiscovery", func(t *testing.T) {
-		// This should work with the new implementation
-		err := server.registerWithDiscovery()
-		assert.NoError(t, err) // Should be no-op in new implementation
-	})
-
-	t.Run("DeregisterFromDiscovery", func(t *testing.T) {
-		// This should work with the new implementation
-		err := server.deregisterFromDiscovery()
-		assert.NoError(t, err) // Should be no-op in new implementation
-	})
-
-	t.Run("ConfigureMiddleware", func(t *testing.T) {
-		// This should work with the new implementation
-		server.configureMiddleware()
-		// No assertion needed as it's a no-op in new implementation
-	})
+	// Note: RegisterWithDiscovery, DeregisterFromDiscovery, and ConfigureMiddleware
+	// are now handled by the base server framework and not exposed as public methods
 
 	t.Run("Stop", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -223,13 +208,12 @@ func TestServerStruct(t *testing.T) {
 }
 
 func TestServerRegisterServices(t *testing.T) {
-	// Test registerServices method with new implementation
+	// Test that service registration is handled by base server
 	server := &Server{}
 
-	// This should be a no-op in the new implementation
-	server.registerServices()
-
-	// No assertions needed as it's a no-op
+	// Service registration is now handled by the base server framework
+	// This test verifies that the server can be created without panicking
+	assert.NotNil(t, server)
 }
 
 func TestServerStartErrorHandling(t *testing.T) {
@@ -262,21 +246,8 @@ func TestServerMethodsWithNilComponents(t *testing.T) {
 	server := &Server{}
 
 	// These should not panic with nil components
-	assert.NotPanics(t, func() {
-		server.configureMiddleware()
-	})
-
-	assert.NotPanics(t, func() {
-		server.registerServices()
-	})
-
-	assert.NotPanics(t, func() {
-		_ = server.registerWithDiscovery()
-	})
-
-	assert.NotPanics(t, func() {
-		_ = server.deregisterFromDiscovery()
-	})
+	// Note: configureMiddleware, registerServices, registerWithDiscovery,
+	// and deregisterFromDiscovery are now handled by the base server
 
 	assert.NotPanics(t, func() {
 		_ = server.GetHTTPAddress()
@@ -292,13 +263,12 @@ func TestServerMethodsWithNilComponents(t *testing.T) {
 }
 
 func TestServerConfigureMiddleware(t *testing.T) {
-	// Test configureMiddleware method
+	// Test that middleware configuration is handled by base server
 	server := &Server{}
 
-	// This should be a no-op in the new implementation
-	assert.NotPanics(t, func() {
-		server.configureMiddleware()
-	})
+	// Middleware configuration is now handled by the base server framework
+	// This test verifies that the server can be created without panicking
+	assert.NotNil(t, server)
 }
 
 func TestServerCompleteLifecycle(t *testing.T) {

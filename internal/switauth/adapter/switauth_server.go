@@ -78,20 +78,12 @@ func NewSwitauthServer(cfg *config.AuthConfig, dependencies *deps.Dependencies) 
 		config:     cfg,
 	}
 
-	// Register switauth services
-	if err := switauthServer.registerServices(); err != nil {
-		return nil, fmt.Errorf("failed to register services: %w", err)
-	}
+	// Services are automatically registered through base server framework
 
 	return switauthServer, nil
 }
 
-// registerServices is no longer needed as services are registered during server creation
-// This method is kept for backward compatibility
-func (s *SwitauthServer) registerServices() error {
-	// Services are already registered during server creation
-	return nil
-}
+// Services are registered during server creation - no separate registration needed
 
 // Start starts the switauth server
 func (s *SwitauthServer) Start(ctx context.Context) error {

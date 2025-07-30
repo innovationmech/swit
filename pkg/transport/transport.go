@@ -152,19 +152,60 @@ func (m *Manager) Register(transport Transport) {
 		zap.String("transport", transport.GetName()))
 }
 
-// Start starts all registered transports
+// Start starts all registered transports concurrently for better performance
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.RLock()
 	transports := make([]Transport, len(m.transports))
 	copy(transports, m.transports)
 	m.mu.RUnlock()
 
+	if len(transports) == 0 {
+		return nil
+	}
+
+	// Start transports concurrently
+	errorChan := make(chan *TransportError, len(transports))
+	var startedTransports []Transport
+	var mu sync.Mutex
+
 	for _, transport := range transports {
-		logger.Logger.Info("Starting transport",
-			zap.String("transport", transport.GetName()))
-		if err := transport.Start(ctx); err != nil {
-			return fmt.Errorf("failed to start %s transport: %w", transport.GetName(), err)
+		go func(t Transport) {
+			logger.Logger.Info("Starting transport",
+				zap.String("transport", t.GetName()))
+			if err := t.Start(ctx); err != nil {
+				errorChan <- &TransportError{
+					TransportName: t.GetName(),
+					Err:           err,
+				}
+			} else {
+				mu.Lock()
+				startedTransports = append(startedTransports, t)
+				mu.Unlock()
+				errorChan <- nil
+			}
+		}(transport)
+	}
+
+	// Wait for all transports to start and collect any errors
+	var firstError *TransportError
+	for i := 0; i < len(transports); i++ {
+		if err := <-errorChan; err != nil && firstError == nil {
+			firstError = err
 		}
+	}
+
+	// If there was an error, stop all successfully started transports
+	if firstError != nil {
+		mu.Lock()
+		for _, transport := range startedTransports {
+			if stopErr := transport.Stop(ctx); stopErr != nil {
+				logger.Logger.Error("Failed to stop transport during cleanup",
+					zap.String("transport", transport.GetName()),
+					zap.Error(stopErr))
+			}
+		}
+		mu.Unlock()
+		return firstError
 	}
 
 	logger.Logger.Info("All transports started successfully")

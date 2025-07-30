@@ -26,12 +26,23 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/innovationmech/swit/pkg/discovery"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/transport"
 	"go.uber.org/zap"
 )
+
+// PerformanceMetrics holds server performance metrics
+type PerformanceMetrics struct {
+	StartupTime     time.Duration
+	RequestCount    int64
+	TotalRequests   int64
+	AverageResponse time.Duration
+	LastRequestTime time.Time
+	mu              sync.RWMutex
+}
 
 // Server represents the base server implementation
 type Server struct {
@@ -45,6 +56,10 @@ type Server struct {
 	discoveryAbstraction *ServiceDiscoveryAbstraction
 	dependencies         DependencyContainer
 	registry             *serviceRegistry
+
+	// Performance monitoring
+	metrics   *PerformanceMetrics
+	startTime time.Time
 
 	// Lifecycle management
 	lifecycleHooks []LifecycleHook
@@ -108,6 +123,7 @@ func NewServer(config *ServerConfig, registrar ServiceRegistrar, deps Dependency
 		discoveryAbstraction: discoveryAbstraction,
 		dependencies:         deps,
 		registry:             serviceReg,
+		metrics:              &PerformanceMetrics{},
 		shutdownCh:           make(chan struct{}),
 	}
 
@@ -136,6 +152,9 @@ func (s *Server) Start(ctx context.Context) error {
 		logger.Logger.Info("Starting server", zap.String("service", s.config.ServiceName))
 	}
 
+	// Record startup time
+	s.startTime = time.Now()
+
 	// Create startup context with timeout
 	startupCtx, cancel := context.WithTimeout(ctx, s.config.StartupTimeout)
 	defer cancel()
@@ -146,15 +165,95 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.started = true
+	// Record startup duration
+	s.metrics.mu.Lock()
+	s.metrics.StartupTime = time.Since(s.startTime)
+	s.metrics.mu.Unlock()
+
 	if logger.Logger != nil {
 		logger.Logger.Info("Server started successfully",
 			zap.String("service", s.config.ServiceName),
 			zap.String("http_address", s.GetHTTPAddress()),
 			zap.String("grpc_address", s.GetGRPCAddress()),
+			zap.Duration("startup_time", s.metrics.StartupTime),
 		)
 	}
 
 	return nil
+}
+
+// GetMetrics returns the current performance metrics
+func (s *Server) GetMetrics() *PerformanceMetrics {
+	s.metrics.mu.RLock()
+	defer s.metrics.mu.RUnlock()
+	return &PerformanceMetrics{
+		StartupTime:     s.metrics.StartupTime,
+		RequestCount:    s.metrics.RequestCount,
+		TotalRequests:   s.metrics.TotalRequests,
+		AverageResponse: s.metrics.AverageResponse,
+		LastRequestTime: s.metrics.LastRequestTime,
+	}
+}
+
+// RegisterMetricsEndpoint registers performance metrics HTTP endpoint
+func (s *Server) RegisterMetricsEndpoint() {
+	if s.transportManager != nil {
+		for _, transport := range s.transportManager.GetTransports() {
+			if transport.GetName() == "http" {
+				if httpTransport, ok := transport.(interface{ GetRouter() interface{} }); ok {
+					if router, ok := httpTransport.GetRouter().(interface{ GET(string, ...interface{}) }); ok {
+						router.GET("/metrics", s.handleMetrics)
+					}
+				}
+				break
+			}
+		}
+	}
+}
+
+// handleMetrics handles the metrics endpoint
+func (s *Server) handleMetrics(c interface{}) {
+	metrics := s.GetMetrics()
+	response := map[string]interface{}{
+		"startup_time_ms":      metrics.StartupTime.Milliseconds(),
+		"current_requests":     metrics.RequestCount,
+		"total_requests":       metrics.TotalRequests,
+		"avg_response_time_ms": metrics.AverageResponse.Milliseconds(),
+		"last_request_time":    metrics.LastRequestTime.Format("2006-01-02T15:04:05Z07:00"),
+		"uptime_seconds":       time.Since(s.startTime).Seconds(),
+	}
+
+	if ginCtx, ok := c.(interface{ JSON(int, interface{}) }); ok {
+		ginCtx.JSON(200, response)
+	}
+}
+
+// IncrementRequestCount increments the request counter
+func (s *Server) IncrementRequestCount() {
+	s.metrics.mu.Lock()
+	defer s.metrics.mu.Unlock()
+	s.metrics.RequestCount++
+	s.metrics.TotalRequests++
+	s.metrics.LastRequestTime = time.Now()
+}
+
+// UpdateAverageResponseTime updates the average response time
+func (s *Server) UpdateAverageResponseTime(duration time.Duration) {
+	s.metrics.mu.Lock()
+	defer s.metrics.mu.Unlock()
+	if s.metrics.AverageResponse == 0 {
+		s.metrics.AverageResponse = duration
+	} else {
+		// Simple moving average
+		s.metrics.AverageResponse = (s.metrics.AverageResponse + duration) / 2
+	}
+}
+
+// ResetRequestCount resets the current request count (keeps total)
+func (s *Server) ResetRequestCount() {
+	s.metrics.mu.Lock()
+	defer s.metrics.mu.Unlock()
+	s.metrics.RequestCount = 0
 }
 
 // Stop gracefully stops the server with the given context
@@ -327,39 +426,60 @@ func (s *Server) createGRPCTransport() (transport.Transport, error) {
 	return grpcTransport, nil
 }
 
-// executeStartupSequence executes the server startup sequence
+// executeStartupSequence executes the server startup sequence with optimized performance
 func (s *Server) executeStartupSequence(ctx context.Context) error {
 	// 1. Execute starting hooks
 	if err := s.executeLifecycleHooks(ctx, "starting"); err != nil {
 		return fmt.Errorf("starting hooks failed: %w", err)
 	}
 
-	// 2. Initialize dependencies
-	if s.dependencies != nil {
-		if err := s.dependencies.Initialize(ctx); err != nil {
-			return fmt.Errorf("dependency initialization failed: %w", err)
+	// 2. Initialize dependencies and services concurrently
+	errorChan := make(chan error, 2)
+
+	// Initialize dependencies in goroutine
+	go func() {
+		if s.dependencies != nil {
+			errorChan <- s.dependencies.Initialize(ctx)
+		} else {
+			errorChan <- nil
+		}
+	}()
+
+	// Initialize services in goroutine
+	go func() {
+		errorChan <- s.transportManager.InitializeAllServices(ctx)
+	}()
+
+	// Wait for both operations to complete
+	for i := 0; i < 2; i++ {
+		if err := <-errorChan; err != nil {
+			if i == 0 {
+				return fmt.Errorf("dependency initialization failed: %w", err)
+			} else {
+				return fmt.Errorf("service initialization failed: %w", err)
+			}
 		}
 	}
 
-	// 3. Initialize services
-	if err := s.transportManager.InitializeAllServices(ctx); err != nil {
-		return fmt.Errorf("service initialization failed: %w", err)
-	}
-
-	// 4. Start transports
+	// 3. Start transports
 	if err := s.transportManager.Start(ctx); err != nil {
 		return fmt.Errorf("transport startup failed: %w", err)
 	}
 
-	// 5. Register with service discovery
-	if err := s.registerWithDiscovery(ctx); err != nil {
-		if logger.Logger != nil {
-			logger.Logger.Warn("Service discovery registration failed", zap.Error(err))
-		}
-		// Don't fail startup if discovery registration fails
-	}
+	// 3.1. Setup performance tracking for transports
+	s.setupPerformanceTracking()
 
-	// 6. Execute started hooks
+	// 4. Register with service discovery asynchronously
+	go func() {
+		if err := s.registerWithDiscovery(ctx); err != nil {
+			if logger.Logger != nil {
+				logger.Logger.Warn("Service discovery registration failed", zap.Error(err))
+			}
+			// Don't fail startup if discovery registration fails
+		}
+	}()
+
+	// 5. Execute started hooks
 	if err := s.executeLifecycleHooks(ctx, "started"); err != nil {
 		return fmt.Errorf("started hooks failed: %w", err)
 	}
@@ -523,6 +643,18 @@ func (s *Server) createGRPCEndpoint() (ServiceEndpoint, error) {
 		Protocol:    "grpc",
 		Tags:        []string{"grpc", "rpc"},
 	}, nil
+}
+
+// setupPerformanceTracking sets up performance tracking for transports
+func (s *Server) setupPerformanceTracking() {
+	for _, transport := range s.transportManager.GetTransports() {
+		if transport.GetName() == "http" {
+			if tracker, ok := transport.(interface{ SetPerformanceTracker(interface{}) }); ok {
+				tracker.SetPerformanceTracker(s)
+			}
+			break
+		}
+	}
 }
 
 // deregisterFromDiscovery deregisters the server from service discovery using the abstraction layer

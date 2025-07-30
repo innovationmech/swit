@@ -23,6 +23,7 @@ package server
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -126,14 +127,19 @@ func TestLogHooks(t *testing.T) {
 	t.Run("AddHook and LogEvent", func(t *testing.T) {
 		logger, _ := NewStructuredLogger(nil)
 
+		var wg sync.WaitGroup
 		hookCalled := false
 		var capturedEvent LogEvent
 		var capturedFields map[string]interface{}
+		var mu sync.Mutex
 
 		hook := func(ctx context.Context, event LogEvent, fields map[string]interface{}) {
+			mu.Lock()
 			hookCalled = true
 			capturedEvent = event
 			capturedFields = fields
+			mu.Unlock()
+			wg.Done()
 		}
 
 		logger.AddHook(hook)
@@ -143,11 +149,11 @@ func TestLogHooks(t *testing.T) {
 			"status":    "success",
 		}
 
+		wg.Add(1)
 		logger.LogEvent(context.Background(), EventServerStartup, fields)
+		wg.Wait()
 
-		// Give the goroutine time to execute
-		time.Sleep(100 * time.Millisecond)
-
+		mu.Lock()
 		if !hookCalled {
 			t.Errorf("Expected hook to be called")
 		}
@@ -163,14 +169,21 @@ func TestLogHooks(t *testing.T) {
 		if _, exists := capturedFields["timestamp"]; !exists {
 			t.Errorf("Expected timestamp field to be added")
 		}
+		mu.Unlock()
 	})
 
 	t.Run("RemoveHook", func(t *testing.T) {
 		logger, _ := NewStructuredLogger(nil)
 
+		var wg sync.WaitGroup
 		hookCalled := false
+		var mu sync.Mutex
+
 		hook := func(ctx context.Context, event LogEvent, fields map[string]interface{}) {
+			mu.Lock()
 			hookCalled = true
+			mu.Unlock()
+			wg.Done()
 		}
 
 		logger.AddHook(hook)
@@ -181,38 +194,49 @@ func TestLogHooks(t *testing.T) {
 		// Give time for potential hook execution
 		time.Sleep(100 * time.Millisecond)
 
+		mu.Lock()
 		if hookCalled {
 			t.Errorf("Expected hook to be removed and not called")
 		}
+		mu.Unlock()
 	})
 
 	t.Run("Multiple hooks", func(t *testing.T) {
 		logger, _ := NewStructuredLogger(nil)
 
+		var wg sync.WaitGroup
 		hook1Called := false
 		hook2Called := false
+		var mu sync.Mutex
 
 		hook1 := func(ctx context.Context, event LogEvent, fields map[string]interface{}) {
+			mu.Lock()
 			hook1Called = true
+			mu.Unlock()
+			wg.Done()
 		}
 		hook2 := func(ctx context.Context, event LogEvent, fields map[string]interface{}) {
+			mu.Lock()
 			hook2Called = true
+			mu.Unlock()
+			wg.Done()
 		}
 
 		logger.AddHook(hook1)
 		logger.AddHook(hook2)
 
+		wg.Add(2)
 		logger.LogEvent(context.Background(), EventServerStartup, map[string]interface{}{})
+		wg.Wait()
 
-		// Give time for hook execution
-		time.Sleep(100 * time.Millisecond)
-
+		mu.Lock()
 		if !hook1Called {
 			t.Errorf("Expected hook1 to be called")
 		}
 		if !hook2Called {
 			t.Errorf("Expected hook2 to be called")
 		}
+		mu.Unlock()
 	})
 }
 

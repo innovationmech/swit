@@ -64,17 +64,8 @@ func NewServer() (*Server, error) {
 	return server, nil
 }
 
-// registerServices is no longer needed as services are registered during server creation
-// This method is kept for backward compatibility but does nothing
-func (s *Server) registerServices() error {
-	return nil
-}
-
-// configureMiddleware is no longer needed as middleware is configured in the base server
-// This method is kept for backward compatibility but does nothing
-func (s *Server) configureMiddleware() {
-	// Middleware is now configured in the base server framework
-}
+// registerServices and configureMiddleware are no longer needed
+// as they are handled by the base server framework
 
 // Start starts the server using the new base server framework
 func (s *Server) Start(ctx context.Context) error {
@@ -109,17 +100,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
-// registerWithDiscovery is no longer needed as service discovery is handled by the base server
-// This method is kept for backward compatibility but does nothing
-func (s *Server) registerWithDiscovery() error {
-	return nil
-}
-
-// deregisterFromDiscovery is no longer needed as service discovery is handled by the base server
-// This method is kept for backward compatibility but does nothing
-func (s *Server) deregisterFromDiscovery() error {
-	return nil
-}
+// Discovery registration/deregistration is handled by base server
 
 // GetHTTPAddress returns the HTTP server address
 func (s *Server) GetHTTPAddress() string {
