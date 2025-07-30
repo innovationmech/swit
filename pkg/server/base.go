@@ -38,10 +38,11 @@ type Server struct {
 	config *ServerConfig
 
 	// Core components
-	transportManager *transport.Manager
-	serviceDiscovery *discovery.ServiceDiscovery
-	dependencies     DependencyContainer
-	registry         *serviceRegistry
+	transportManager     *transport.Manager
+	serviceDiscovery     *discovery.ServiceDiscovery
+	discoveryAbstraction *ServiceDiscoveryAbstraction
+	dependencies         DependencyContainer
+	registry             *serviceRegistry
 
 	// Lifecycle management
 	lifecycleHooks []LifecycleHook
@@ -82,21 +83,24 @@ func NewServer(config *ServerConfig, registrar ServiceRegistrar, deps Dependency
 
 	// Create service discovery if enabled
 	var sd *discovery.ServiceDiscovery
+	var discoveryAbstraction *ServiceDiscoveryAbstraction
 	if config.Discovery.Enabled {
 		var err error
 		sd, err = discovery.NewServiceDiscovery(config.Discovery.Consul.Address)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create service discovery: %w", err)
 		}
+		discoveryAbstraction = NewServiceDiscoveryAbstraction(sd, &config.Discovery)
 	}
 
 	server := &Server{
-		config:           config,
-		transportManager: transportManager,
-		serviceDiscovery: sd,
-		dependencies:     deps,
-		registry:         serviceReg,
-		shutdownCh:       make(chan struct{}),
+		config:               config,
+		transportManager:     transportManager,
+		serviceDiscovery:     sd,
+		discoveryAbstraction: discoveryAbstraction,
+		dependencies:         deps,
+		registry:             serviceReg,
+		shutdownCh:           make(chan struct{}),
 	}
 
 	// Setup transports based on configuration
@@ -306,7 +310,7 @@ func (s *Server) executeStartupSequence(ctx context.Context) error {
 	}
 
 	// 5. Register with service discovery
-	if err := s.registerWithDiscovery(); err != nil {
+	if err := s.registerWithDiscovery(ctx); err != nil {
 		if logger.Logger != nil {
 			logger.Logger.Warn("Service discovery registration failed", zap.Error(err))
 		}
@@ -331,7 +335,7 @@ func (s *Server) executeShutdownSequence(ctx context.Context) error {
 	}
 
 	// 2. Deregister from service discovery
-	if err := s.deregisterFromDiscovery(); err != nil {
+	if err := s.deregisterFromDiscovery(ctx); err != nil {
 		if logger.Logger != nil {
 			logger.Logger.Warn("Service discovery deregistration failed", zap.Error(err))
 		}
@@ -389,126 +393,109 @@ func (s *Server) executeLifecycleHooks(ctx context.Context, phase string) error 
 	return nil
 }
 
-// registerWithDiscovery registers the server with service discovery
-func (s *Server) registerWithDiscovery() error {
-	if s.serviceDiscovery == nil || !s.config.Discovery.Enabled {
+// registerWithDiscovery registers the server with service discovery using the abstraction layer
+func (s *Server) registerWithDiscovery(ctx context.Context) error {
+	if s.discoveryAbstraction == nil || !s.config.Discovery.Enabled {
 		return nil
 	}
 
-	var errors []error
+	var endpoints []ServiceEndpoint
 
-	// Register HTTP endpoint if enabled
+	// Prepare HTTP endpoint if enabled
 	if s.config.EnableHTTP {
-		if err := s.registerHTTPEndpoint(); err != nil {
-			errors = append(errors, err)
+		if endpoint, err := s.createHTTPEndpoint(); err == nil {
+			endpoints = append(endpoints, endpoint)
+		} else {
+			if logger.Logger != nil {
+				logger.Logger.Warn("Failed to create HTTP endpoint for registration", zap.Error(err))
+			}
 		}
 	}
 
-	// Register gRPC endpoint if enabled
+	// Prepare gRPC endpoint if enabled
 	if s.config.EnableGRPC {
-		if err := s.registerGRPCEndpoint(); err != nil {
-			errors = append(errors, err)
+		if endpoint, err := s.createGRPCEndpoint(); err == nil {
+			endpoints = append(endpoints, endpoint)
+		} else {
+			if logger.Logger != nil {
+				logger.Logger.Warn("Failed to create gRPC endpoint for registration", zap.Error(err))
+			}
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("service discovery registration failed: %v", errors)
+	// Register all endpoints with retry logic
+	if len(endpoints) > 0 {
+		if err := s.discoveryAbstraction.RegisterMultipleEndpoints(ctx, endpoints); err != nil {
+			// Log warning but don't fail startup
+			if logger.Logger != nil {
+				logger.Logger.Warn("Service discovery registration failed", zap.Error(err))
+			}
+			return err
+		}
 	}
 
 	return nil
 }
 
-// registerHTTPEndpoint registers the HTTP endpoint with service discovery
-func (s *Server) registerHTTPEndpoint() error {
+// createHTTPEndpoint creates a ServiceEndpoint for HTTP registration
+func (s *Server) createHTTPEndpoint() (ServiceEndpoint, error) {
 	address := s.GetHTTPAddress()
 	if address == "" {
-		return nil
+		return ServiceEndpoint{}, fmt.Errorf("HTTP address not available")
 	}
 
 	// Extract port from address
 	port, err := extractPortFromAddress(address)
 	if err != nil {
-		return fmt.Errorf("failed to extract HTTP port: %w", err)
+		return ServiceEndpoint{}, fmt.Errorf("failed to extract HTTP port: %w", err)
 	}
 
 	serviceName := s.config.Discovery.ServiceName + "-http"
-	return s.serviceDiscovery.RegisterService(serviceName, "localhost", port)
+	return ServiceEndpoint{
+		ServiceName: serviceName,
+		Address:     "localhost",
+		Port:        port,
+		Protocol:    "http",
+		Tags:        []string{"http", "api"},
+	}, nil
 }
 
-// registerGRPCEndpoint registers the gRPC endpoint with service discovery
-func (s *Server) registerGRPCEndpoint() error {
+// createGRPCEndpoint creates a ServiceEndpoint for gRPC registration
+func (s *Server) createGRPCEndpoint() (ServiceEndpoint, error) {
 	address := s.GetGRPCAddress()
 	if address == "" {
-		return nil
+		return ServiceEndpoint{}, fmt.Errorf("gRPC address not available")
 	}
 
 	// Extract port from address
 	port, err := extractPortFromAddress(address)
 	if err != nil {
-		return fmt.Errorf("failed to extract gRPC port: %w", err)
+		return ServiceEndpoint{}, fmt.Errorf("failed to extract gRPC port: %w", err)
 	}
 
 	serviceName := s.config.Discovery.ServiceName + "-grpc"
-	return s.serviceDiscovery.RegisterService(serviceName, "localhost", port)
+	return ServiceEndpoint{
+		ServiceName: serviceName,
+		Address:     "localhost",
+		Port:        port,
+		Protocol:    "grpc",
+		Tags:        []string{"grpc", "rpc"},
+	}, nil
 }
 
-// deregisterFromDiscovery deregisters the server from service discovery
-func (s *Server) deregisterFromDiscovery() error {
-	if s.serviceDiscovery == nil || !s.config.Discovery.Enabled {
+// deregisterFromDiscovery deregisters the server from service discovery using the abstraction layer
+func (s *Server) deregisterFromDiscovery(ctx context.Context) error {
+	if s.discoveryAbstraction == nil || !s.config.Discovery.Enabled {
 		return nil
 	}
 
-	var errors []error
-
-	// Deregister HTTP endpoint if enabled
-	if s.config.EnableHTTP {
-		if err := s.deregisterHTTPEndpoint(); err != nil {
-			errors = append(errors, err)
+	// Deregister all endpoints with retry logic
+	if err := s.discoveryAbstraction.DeregisterAllEndpoints(ctx); err != nil {
+		if logger.Logger != nil {
+			logger.Logger.Warn("Service discovery deregistration failed", zap.Error(err))
 		}
-	}
-
-	// Deregister gRPC endpoint if enabled
-	if s.config.EnableGRPC {
-		if err := s.deregisterGRPCEndpoint(); err != nil {
-			errors = append(errors, err)
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("service discovery deregistration failed: %v", errors)
+		return err
 	}
 
 	return nil
-}
-
-// deregisterHTTPEndpoint deregisters the HTTP endpoint from service discovery
-func (s *Server) deregisterHTTPEndpoint() error {
-	address := s.GetHTTPAddress()
-	if address == "" {
-		return nil
-	}
-
-	port, err := extractPortFromAddress(address)
-	if err != nil {
-		return fmt.Errorf("failed to extract HTTP port: %w", err)
-	}
-
-	serviceName := s.config.Discovery.ServiceName + "-http"
-	return s.serviceDiscovery.DeregisterService(serviceName, "localhost", port)
-}
-
-// deregisterGRPCEndpoint deregisters the gRPC endpoint from service discovery
-func (s *Server) deregisterGRPCEndpoint() error {
-	address := s.GetGRPCAddress()
-	if address == "" {
-		return nil
-	}
-
-	port, err := extractPortFromAddress(address)
-	if err != nil {
-		return fmt.Errorf("failed to extract gRPC port: %w", err)
-	}
-
-	serviceName := s.config.Discovery.ServiceName + "-grpc"
-	return s.serviceDiscovery.DeregisterService(serviceName, "localhost", port)
 }
