@@ -24,6 +24,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/innovationmech/swit/pkg/discovery"
@@ -36,6 +37,7 @@ import (
 type Server struct {
 	// Configuration
 	config *ServerConfig
+	logger *zap.Logger
 
 	// Core components
 	transportManager     *transport.Manager
@@ -63,6 +65,11 @@ func NewServer(config *ServerConfig, registrar ServiceRegistrar, deps Dependency
 
 	if registrar == nil {
 		return nil, fmt.Errorf("service registrar is required")
+	}
+
+	// Initialize logger if not already initialized
+	if logger.Logger == nil {
+		logger.InitLogger()
 	}
 
 	// Validate configuration
@@ -95,6 +102,7 @@ func NewServer(config *ServerConfig, registrar ServiceRegistrar, deps Dependency
 
 	server := &Server{
 		config:               config,
+		logger:               logger.Logger,
 		transportManager:     transportManager,
 		serviceDiscovery:     sd,
 		discoveryAbstraction: discoveryAbstraction,
@@ -204,6 +212,22 @@ func (s *Server) GetHTTPAddress() string {
 	if !s.config.EnableHTTP {
 		return ""
 	}
+
+	// Try to get actual address from running transport first
+	for _, transport := range s.transportManager.GetTransports() {
+		if transport.GetName() == "http" {
+			if addr := transport.GetAddress(); addr != "" {
+				// Convert IPv6 [::]:port to localhost:port for testing
+				if strings.HasPrefix(addr, "[::]:") {
+					return "localhost" + addr[4:]
+				}
+				return addr
+			}
+			break
+		}
+	}
+
+	// Fallback to configured address
 	return s.config.GetHTTPAddress()
 }
 
@@ -212,6 +236,18 @@ func (s *Server) GetGRPCAddress() string {
 	if !s.config.EnableGRPC {
 		return ""
 	}
+
+	// Try to get actual address from running transport first
+	for _, transport := range s.transportManager.GetTransports() {
+		if transport.GetName() == "grpc" {
+			if addr := transport.GetAddress(); addr != "" {
+				return addr
+			}
+			break
+		}
+	}
+
+	// Fallback to configured address
 	return s.config.GetGRPCAddress()
 }
 
@@ -263,6 +299,12 @@ func (s *Server) createHTTPTransport() (transport.Transport, error) {
 
 	// Set the address
 	httpTransport.SetAddress(s.config.GetHTTPAddress())
+
+	// Register HTTP routes
+	router := httpTransport.GetRouter()
+	if err := s.registry.RegisterAllHTTP(router); err != nil {
+		return nil, fmt.Errorf("failed to register HTTP routes: %w", err)
+	}
 
 	return httpTransport, nil
 }
