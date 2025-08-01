@@ -100,10 +100,15 @@ func NewGRPCTransportWithConfig(config *GRPCTransportConfig) *GRPCTransport {
 		config = DefaultGRPCConfig()
 	}
 
-	return &GRPCTransport{
+	transport := &GRPCTransport{
 		config:          config,
 		serviceRegistry: NewEnhancedServiceRegistry(),
 	}
+
+	// Create the gRPC server immediately so it's available for service registration
+	transport.server = transport.createConfiguredGRPCServer()
+
+	return transport
 }
 
 // Start implements Transport interface
@@ -122,8 +127,7 @@ func (g *GRPCTransport) Start(ctx context.Context) error {
 	g.mu.Lock()
 	g.listener = lis
 	g.address = lis.Addr().String() // Update actual address in case of :0 port
-	g.server = g.createConfiguredGRPCServer()
-	server := g.server // Capture server reference inside the lock
+	server := g.server              // Capture server reference inside the lock
 	g.mu.Unlock()
 
 	logger.Logger.Info("Starting gRPC transport", zap.String("address", g.address))
@@ -141,9 +145,11 @@ func (g *GRPCTransport) Start(ctx context.Context) error {
 // Stop implements Transport interface
 func (g *GRPCTransport) Stop(ctx context.Context) error {
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	server := g.server // Capture server reference before unlocking
+	listener := g.listener
+	g.mu.Unlock()
 
-	if g.server == nil {
+	if server == nil {
 		logger.Logger.Debug("gRPC server not initialized, skipping shutdown")
 		return nil
 	}
@@ -160,7 +166,7 @@ func (g *GRPCTransport) Stop(ctx context.Context) error {
 	done := make(chan struct{})
 
 	go func() {
-		g.server.GracefulStop()
+		server.GracefulStop()
 		close(done)
 	}()
 
@@ -170,15 +176,18 @@ func (g *GRPCTransport) Stop(ctx context.Context) error {
 		logger.Logger.Info("gRPC server gracefully stopped")
 	case <-ctx.Done():
 		logger.Logger.Warn("gRPC server shutdown timeout, forcing stop")
-		g.server.Stop()
+		server.Stop()
 	}
 
-	// Reset server to nil so it can be started again
-	g.server = nil
-	if g.listener != nil {
-		g.listener.Close()
+	// Reset server and listener after shutdown
+	g.mu.Lock()
+	g.server = g.createConfiguredGRPCServer() // Create new server for potential restart
+	if listener != nil {
+		listener.Close()
 		g.listener = nil
 	}
+	g.address = "" // Reset address
+	g.mu.Unlock()
 
 	return nil
 }

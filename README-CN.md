@@ -59,12 +59,15 @@ api/
 **协议**: gRPC + HTTP  
 **实现的方法**:
 - `SayHello` - 简单问候功能 ✅
+- `SayHelloStream` - 流式问候功能 ✅
 
 **HTTP 端点**:
 - `POST /v1/greeter/hello` - 发送问候请求
+- `POST /v1/greeter/hello/stream` - 发送流式问候请求
 
 **gRPC 端点**:
 - `greeter.v1.GreeterService/SayHello` - gRPC 问候服务
+- `greeter.v1.GreeterService/SayHelloStream` - gRPC 流式问候服务
 
 ### 2. Auth 服务 (HTTP REST)
 **端口**: 9001  
@@ -73,6 +76,9 @@ api/
 - 用户登录/登出
 - JWT Token 管理
 - Token 刷新和验证
+- 密码重置
+- 邮箱验证
+- 修改密码
 
 ### 3. User 服务 (HTTP REST)
 **HTTP 端口**: 9000  
@@ -82,6 +88,8 @@ api/
 - 用户注册
 - 用户信息管理
 - 用户查询和删除
+- 用户分页列表
+- 用户角色和权限管理
 
 ## 环境要求
 
@@ -89,6 +97,7 @@ api/
 - MySQL 8.0+
 - Consul 1.12+
 - Buf CLI 1.0+ (用于 API 开发)
+- Docker 20.10+ (用于容器化部署)
 
 ## 快速开始
 
@@ -137,6 +146,16 @@ make build-dev
 
 # 运行用户服务
 ./bin/swit-serve
+```
+
+### API 文档生成
+```bash
+# 生成 OpenAPI 文档
+make swagger
+
+# 查看文档:
+# http://localhost:9000/swagger/index.html (swit-serve)
+# http://localhost:9001/swagger/index.html (swit-auth)
 ```
 
 ## API 开发
@@ -304,6 +323,11 @@ make setup-dev
 # 快速设置（最小必要组件）
 make setup-quick
 ```
+
+### 可用服务和端口
+- **swit-serve**: HTTP: 9000, gRPC: 10000
+- **swit-auth**: HTTP: 9001, gRPC: 50051
+- **switctl**: CLI 工具 (无 HTTP/gRPC 端点)
 
 ### 开发工具
 
@@ -494,6 +518,30 @@ make help             # 显示所有可用命令及说明
 ```
 
 如需了解详细的命令选项和参数，请运行 `make help` 或参考 `scripts/mk/` 目录下的具体 `.mk` 文件。
+
+### API 端点参考
+
+#### swit-serve (用户服务)
+- **HTTP**: `http://localhost:9000`
+- **gRPC**: `http://localhost:10000`
+- `/v1/users` - 用户操作 (POST, GET, PUT, DELETE)
+- `/v1/users/username/{username}` - 根据用户名获取用户
+- `/v1/users/email/{email}` - 根据邮箱获取用户
+- `/v1/users` - 用户分页列表
+
+#### swit-auth (认证服务)
+- **HTTP**: `http://localhost:9001`
+- **gRPC**: `http://localhost:50051`
+- `/v1/auth/login` - 登录
+- `/v1/auth/logout` - 登出
+- `/v1/auth/refresh` - 刷新 token
+- `/v1/auth/validate` - 验证 token
+- `/v1/auth/reset-password` - 重置密码
+- `/v1/auth/change-password` - 修改密码
+- `/v1/auth/verify-email` - 验证邮箱
+
+#### switctl (CLI 工具)
+- 用于系统管理的命令行工具
 
 
 ## 相关文档

@@ -204,18 +204,19 @@ func TestGRPCTransport_SetAddress(t *testing.T) {
 func TestGRPCTransport_GetServer(t *testing.T) {
 	transport := NewGRPCTransport()
 
-	// Server is nil before start
+	// Server should be created immediately in constructor
 	server1 := transport.GetServer()
-	assert.Nil(t, server1)
+	assert.NotNil(t, server1)
 
-	// Start the transport to create server
+	// Start the transport
 	ctx := context.Background()
 	err := transport.Start(ctx)
 	require.NoError(t, err)
 
-	// Now server should exist
+	// Server should still exist and be the same instance
 	server2 := transport.GetServer()
 	assert.NotNil(t, server2)
+	assert.Equal(t, server1, server2)
 
 	// Clean up
 	transport.Stop(context.Background())
@@ -565,10 +566,10 @@ func TestGRPCTransport_RegisterAllServices_NotStarted(t *testing.T) {
 
 	transport.RegisterHandler(handler)
 
-	// Try to register services without starting transport
+	// Register services without starting transport - should work now since server is created in constructor
 	err := transport.RegisterAllServices()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "gRPC server not initialized")
+	assert.NoError(t, err)
+	assert.True(t, handler.IsGRPCRegistered())
 }
 
 func TestGRPCTransport_GetServiceRegistry(t *testing.T) {
