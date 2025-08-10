@@ -42,8 +42,8 @@ func init() {
 	logger.Logger, _ = zap.NewDevelopment()
 }
 
-func TestNewServiceRegistryManager(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestNewMultiTransportRegistry(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 
 	assert.NotNil(t, manager)
 	assert.NotNil(t, manager.registries)
@@ -51,8 +51,8 @@ func TestNewServiceRegistryManager(t *testing.T) {
 	assert.True(t, manager.IsEmpty())
 }
 
-func TestServiceRegistryManager_GetOrCreateRegistry(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_GetOrCreateRegistry(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 
 	// Test creating new registry
 	httpRegistry := manager.GetOrCreateRegistry("http")
@@ -70,8 +70,8 @@ func TestServiceRegistryManager_GetOrCreateRegistry(t *testing.T) {
 	assert.Equal(t, 2, len(manager.registries))
 }
 
-func TestServiceRegistryManager_GetRegistry(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_GetRegistry(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 
 	// Test getting non-existent registry
 	registry := manager.GetRegistry("nonexistent")
@@ -83,8 +83,8 @@ func TestServiceRegistryManager_GetRegistry(t *testing.T) {
 	assert.Equal(t, httpRegistry, retrievedRegistry)
 }
 
-func TestServiceRegistryManager_RegisterHandler(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_RegisterHandler(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	// Test registering handler
@@ -101,11 +101,11 @@ func TestServiceRegistryManager_RegisterHandler(t *testing.T) {
 	assert.Equal(t, handler, retrievedHandler)
 }
 
-func TestServiceRegistryManager_RegisterHTTPHandler(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_RegisterHTTPService(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler := NewMockHandlerRegister("http-service", "v1.0.0")
 
-	err := manager.RegisterHTTPHandler(handler)
+	err := manager.RegisterHTTPService(handler)
 	assert.NoError(t, err)
 
 	// Verify handler was registered with HTTP transport
@@ -114,11 +114,11 @@ func TestServiceRegistryManager_RegisterHTTPHandler(t *testing.T) {
 	assert.Equal(t, 1, httpRegistry.Count())
 }
 
-func TestServiceRegistryManager_RegisterGRPCHandler(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_RegisterGRPCService(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler := NewMockHandlerRegister("grpc-service", "v1.0.0")
 
-	err := manager.RegisterGRPCHandler(handler)
+	err := manager.RegisterGRPCService(handler)
 	assert.NoError(t, err)
 
 	// Verify handler was registered with gRPC transport
@@ -127,111 +127,111 @@ func TestServiceRegistryManager_RegisterGRPCHandler(t *testing.T) {
 	assert.Equal(t, 1, grpcRegistry.Count())
 }
 
-func TestServiceRegistryManager_RegisterAllHTTP(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_BindAllHTTPEndpoints(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler1 := NewMockHandlerRegister("http-service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("http-service2", "v1.1.0")
 
 	// Register handlers with HTTP transport only
-	manager.RegisterHTTPHandler(handler1)
-	manager.RegisterHTTPHandler(handler2)
+	manager.RegisterHTTPService(handler1)
+	manager.RegisterHTTPService(handler2)
 
 	router := gin.New()
-	err := manager.RegisterAllHTTP(router)
+	err := manager.BindAllHTTPEndpoints(router)
 
 	assert.NoError(t, err)
 	assert.True(t, handler1.IsHTTPRegistered())
 	assert.True(t, handler2.IsHTTPRegistered())
 }
 
-func TestServiceRegistryManager_RegisterAllHTTP_WithError(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_BindAllHTTPEndpoints_WithError(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler := NewMockHandlerRegister("error-service", "v1.0.0")
 
 	expectedErr := errors.New("HTTP registration failed")
 	handler.SetHTTPRegisterError(expectedErr)
 
-	manager.RegisterHTTPHandler(handler)
+	manager.RegisterHTTPService(handler)
 
 	router := gin.New()
-	err := manager.RegisterAllHTTP(router)
+	err := manager.BindAllHTTPEndpoints(router)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to register HTTP routes for transport 'http'")
 }
 
-func TestServiceRegistryManager_RegisterAllGRPC(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_BindAllGRPCServices(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler1 := NewMockHandlerRegister("grpc-service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("grpc-service2", "v1.1.0")
 
 	// Register handlers with gRPC transport only
-	manager.RegisterGRPCHandler(handler1)
-	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterGRPCService(handler1)
+	manager.RegisterGRPCService(handler2)
 
 	server := grpc.NewServer()
-	err := manager.RegisterAllGRPC(server)
+	err := manager.BindAllGRPCServices(server)
 
 	assert.NoError(t, err)
 	assert.True(t, handler1.IsGRPCRegistered())
 	assert.True(t, handler2.IsGRPCRegistered())
 }
 
-func TestServiceRegistryManager_RegisterAllGRPC_WithError(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_BindAllGRPCServices_WithError(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler := NewMockHandlerRegister("error-service", "v1.0.0")
 
 	expectedErr := errors.New("gRPC registration failed")
 	handler.SetGRPCRegisterError(expectedErr)
 
-	manager.RegisterGRPCHandler(handler)
+	manager.RegisterGRPCService(handler)
 
 	server := grpc.NewServer()
-	err := manager.RegisterAllGRPC(server)
+	err := manager.BindAllGRPCServices(server)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to register gRPC services for transport 'grpc'")
 }
 
-func TestServiceRegistryManager_InitializeAll(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_InitializeTransportServices(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
-	manager.RegisterHTTPHandler(handler1)
-	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterHTTPService(handler1)
+	manager.RegisterGRPCService(handler2)
 
 	ctx := context.Background()
-	err := manager.InitializeAll(ctx)
+	err := manager.InitializeTransportServices(ctx)
 
 	assert.NoError(t, err)
 	assert.True(t, handler1.IsInitialized())
 	assert.True(t, handler2.IsInitialized())
 }
 
-func TestServiceRegistryManager_InitializeAll_WithError(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_InitializeTransportServices_WithError(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler := NewMockHandlerRegister("error-service", "v1.0.0")
 
 	expectedErr := errors.New("initialization failed")
 	handler.SetInitializeError(expectedErr)
 
-	manager.RegisterHTTPHandler(handler)
+	manager.RegisterHTTPService(handler)
 
 	ctx := context.Background()
-	err := manager.InitializeAll(ctx)
+	err := manager.InitializeTransportServices(ctx)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to initialize services for transport 'http'")
 }
 
-func TestServiceRegistryManager_CheckAllHealth(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_CheckAllHealth(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
-	manager.RegisterHTTPHandler(handler1)
-	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterHTTPService(handler1)
+	manager.RegisterGRPCService(handler2)
 
 	ctx := context.Background()
 	results := manager.CheckAllHealth(ctx)
@@ -243,13 +243,13 @@ func TestServiceRegistryManager_CheckAllHealth(t *testing.T) {
 	assert.Equal(t, 1, len(results["grpc"]))
 }
 
-func TestServiceRegistryManager_ShutdownAll(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_ShutdownAll(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
-	manager.RegisterHTTPHandler(handler1)
-	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterHTTPService(handler1)
+	manager.RegisterGRPCService(handler2)
 
 	ctx := context.Background()
 	err := manager.ShutdownAll(ctx)
@@ -259,14 +259,14 @@ func TestServiceRegistryManager_ShutdownAll(t *testing.T) {
 	assert.True(t, handler2.IsShutdown())
 }
 
-func TestServiceRegistryManager_ShutdownAll_WithError(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_ShutdownAll_WithError(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler := NewMockHandlerRegister("error-service", "v1.0.0")
 
 	expectedErr := errors.New("shutdown failed")
 	handler.SetShutdownError(expectedErr)
 
-	manager.RegisterHTTPHandler(handler)
+	manager.RegisterHTTPService(handler)
 
 	ctx := context.Background()
 	err := manager.ShutdownAll(ctx)
@@ -275,13 +275,13 @@ func TestServiceRegistryManager_ShutdownAll_WithError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to shutdown services for transport")
 }
 
-func TestServiceRegistryManager_GetAllServiceMetadata(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_GetAllServiceMetadata(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
-	manager.RegisterHTTPHandler(handler1)
-	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterHTTPService(handler1)
+	manager.RegisterGRPCService(handler2)
 
 	metadata := manager.GetAllServiceMetadata()
 
@@ -294,8 +294,8 @@ func TestServiceRegistryManager_GetAllServiceMetadata(t *testing.T) {
 	assert.Equal(t, "service2", metadata["grpc"][0].Name)
 }
 
-func TestServiceRegistryManager_GetTransportNames(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_GetTransportNames(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 
 	// Test empty manager
 	names := manager.GetTransportNames()
@@ -313,8 +313,8 @@ func TestServiceRegistryManager_GetTransportNames(t *testing.T) {
 	assert.Contains(t, names, "websocket")
 }
 
-func TestServiceRegistryManager_GetTotalServiceCount(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_GetTotalServiceCount(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 
 	// Test empty manager
 	assert.Equal(t, 0, manager.GetTotalServiceCount())
@@ -325,23 +325,23 @@ func TestServiceRegistryManager_GetTotalServiceCount(t *testing.T) {
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 	handler3 := NewMockHandlerRegister("service3", "v1.2.0")
 
-	manager.RegisterHTTPHandler(handler1)
-	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterHTTPService(handler1)
+	manager.RegisterGRPCService(handler2)
 	manager.RegisterHandler("websocket", handler3)
 
 	assert.Equal(t, 3, manager.GetTotalServiceCount())
 	assert.False(t, manager.IsEmpty())
 }
 
-func TestServiceRegistryManager_Clear(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_Clear(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 
 	// Add some services
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
-	manager.RegisterHTTPHandler(handler1)
-	manager.RegisterGRPCHandler(handler2)
+	manager.RegisterHTTPService(handler1)
+	manager.RegisterGRPCService(handler2)
 
 	assert.Equal(t, 2, manager.GetTotalServiceCount())
 	assert.False(t, manager.IsEmpty())
@@ -354,8 +354,8 @@ func TestServiceRegistryManager_Clear(t *testing.T) {
 	assert.Equal(t, 0, len(manager.GetTransportNames()))
 }
 
-func TestServiceRegistryManager_ConcurrentAccess(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_ConcurrentAccess(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 	const numGoroutines = 50
 
 	var wg sync.WaitGroup
@@ -408,8 +408,8 @@ func TestServiceRegistryManager_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, numGoroutines, manager.GetTotalServiceCount())
 }
 
-func TestServiceRegistryManager_EdgeCases(t *testing.T) {
-	manager := NewServiceRegistryManager()
+func TestMultiTransportRegistry_EdgeCases(t *testing.T) {
+	manager := NewMultiTransportRegistry()
 
 	t.Run("empty transport name", func(t *testing.T) {
 		registry := manager.GetOrCreateRegistry("")
@@ -423,11 +423,11 @@ func TestServiceRegistryManager_EdgeCases(t *testing.T) {
 
 	t.Run("nil context operations", func(t *testing.T) {
 		handler := NewMockHandlerRegister("test-service", "v1.0.0")
-		manager.RegisterHTTPHandler(handler)
+		manager.RegisterHTTPService(handler)
 
 		// Use context.Background() instead of nil to avoid panic
 		ctx := context.Background()
-		err := manager.InitializeAll(ctx)
+		err := manager.InitializeTransportServices(ctx)
 		assert.NoError(t, err)
 
 		results := manager.CheckAllHealth(ctx)
@@ -439,7 +439,7 @@ func TestServiceRegistryManager_EdgeCases(t *testing.T) {
 
 	t.Run("timeout context", func(t *testing.T) {
 		handler := NewMockHandlerRegister("timeout-service", "v1.0.0")
-		manager.RegisterHTTPHandler(handler)
+		manager.RegisterHTTPService(handler)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 		defer cancel()
@@ -452,9 +452,9 @@ func TestServiceRegistryManager_EdgeCases(t *testing.T) {
 }
 
 // Benchmark tests
-func BenchmarkServiceRegistryManager_RegisterHandler(b *testing.B) {
-	manager := NewServiceRegistryManager()
-	handlers := make([]HandlerRegister, b.N)
+func BenchmarkMultiTransportRegistry_RegisterHandler(b *testing.B) {
+	manager := NewMultiTransportRegistry()
+	handlers := make([]TransportServiceHandler, b.N)
 
 	for i := 0; i < b.N; i++ {
 		handlers[i] = NewMockHandlerRegister(fmt.Sprintf("service-%d", i), "v1.0.0")
@@ -466,8 +466,8 @@ func BenchmarkServiceRegistryManager_RegisterHandler(b *testing.B) {
 	}
 }
 
-func BenchmarkServiceRegistryManager_GetOrCreateRegistry(b *testing.B) {
-	manager := NewServiceRegistryManager()
+func BenchmarkMultiTransportRegistry_GetOrCreateRegistry(b *testing.B) {
+	manager := NewMultiTransportRegistry()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -476,8 +476,8 @@ func BenchmarkServiceRegistryManager_GetOrCreateRegistry(b *testing.B) {
 	}
 }
 
-func BenchmarkServiceRegistryManager_GetTotalServiceCount(b *testing.B) {
-	manager := NewServiceRegistryManager()
+func BenchmarkMultiTransportRegistry_GetTotalServiceCount(b *testing.B) {
+	manager := NewMultiTransportRegistry()
 
 	// Setup: register 100 services across 5 transports
 	for i := 0; i < 100; i++ {

@@ -712,8 +712,8 @@ func TestHandler_ServiceHandlerInterface(t *testing.T) {
 		mockService := &MockNotificationService{}
 		handler := NewNotificationHandler(mockService)
 
-		// Verify that NotificationHandler implements transport.HandlerRegister interface
-		var _ transport.HandlerRegister = handler
+		// Verify that NotificationHandler implements transport.TransportServiceHandler interface
+		var _ transport.TransportServiceHandler = handler
 		assert.NotNil(t, handler)
 	})
 }

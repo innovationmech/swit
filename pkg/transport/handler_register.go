@@ -49,8 +49,8 @@ type HandlerMetadata struct {
 	Dependencies []string `json:"dependencies,omitempty"`
 }
 
-// HandlerRegister defines the unified interface for service registration and management
-type HandlerRegister interface {
+// TransportServiceHandler defines the unified interface for service registration and management
+type TransportServiceHandler interface {
 	// RegisterHTTP registers HTTP routes with the given router
 	RegisterHTTP(router *gin.Engine) error
 
@@ -73,23 +73,23 @@ type HandlerRegister interface {
 	Shutdown(ctx context.Context) error
 }
 
-// EnhancedHandlerRegistry manages service handlers with thread-safe operations
-type EnhancedHandlerRegistry struct {
+// TransportServiceRegistry manages service handlers with thread-safe operations
+type TransportServiceRegistry struct {
 	mu       sync.RWMutex
-	handlers map[string]HandlerRegister
+	handlers map[string]TransportServiceHandler
 	order    []string // Maintains registration order
 }
 
-// NewEnhancedServiceRegistry creates a new enhanced service registry
-func NewEnhancedServiceRegistry() *EnhancedHandlerRegistry {
-	return &EnhancedHandlerRegistry{
-		handlers: make(map[string]HandlerRegister),
+// NewTransportServiceRegistry creates a new transport service registry
+func NewTransportServiceRegistry() *TransportServiceRegistry {
+	return &TransportServiceRegistry{
+		handlers: make(map[string]TransportServiceHandler),
 		order:    make([]string, 0),
 	}
 }
 
 // Register adds a service handler to the registry
-func (sr *EnhancedHandlerRegistry) Register(handler HandlerRegister) error {
+func (sr *TransportServiceRegistry) Register(handler TransportServiceHandler) error {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
@@ -114,7 +114,7 @@ func (sr *EnhancedHandlerRegistry) Register(handler HandlerRegister) error {
 }
 
 // Unregister removes a service handler from the registry
-func (sr *EnhancedHandlerRegistry) Unregister(serviceName string) error {
+func (sr *TransportServiceRegistry) Unregister(serviceName string) error {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
@@ -136,7 +136,7 @@ func (sr *EnhancedHandlerRegistry) Unregister(serviceName string) error {
 }
 
 // GetHandler returns a specific service handler by name
-func (sr *EnhancedHandlerRegistry) GetHandler(serviceName string) (HandlerRegister, error) {
+func (sr *TransportServiceRegistry) GetHandler(serviceName string) (TransportServiceHandler, error) {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -149,11 +149,11 @@ func (sr *EnhancedHandlerRegistry) GetHandler(serviceName string) (HandlerRegist
 }
 
 // GetAllHandlers returns all registered service handlers in registration order
-func (sr *EnhancedHandlerRegistry) GetAllHandlers() []HandlerRegister {
+func (sr *TransportServiceRegistry) GetAllHandlers() []TransportServiceHandler {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
-	handlers := make([]HandlerRegister, 0, len(sr.order))
+	handlers := make([]TransportServiceHandler, 0, len(sr.order))
 	for _, name := range sr.order {
 		if handler, exists := sr.handlers[name]; exists {
 			handlers = append(handlers, handler)
@@ -164,7 +164,7 @@ func (sr *EnhancedHandlerRegistry) GetAllHandlers() []HandlerRegister {
 }
 
 // GetServiceNames returns all registered service names in registration order
-func (sr *EnhancedHandlerRegistry) GetServiceNames() []string {
+func (sr *TransportServiceRegistry) GetServiceNames() []string {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -174,7 +174,7 @@ func (sr *EnhancedHandlerRegistry) GetServiceNames() []string {
 }
 
 // GetServiceMetadata returns metadata for all registered services
-func (sr *EnhancedHandlerRegistry) GetServiceMetadata() []*HandlerMetadata {
+func (sr *TransportServiceRegistry) GetServiceMetadata() []*HandlerMetadata {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -188,8 +188,8 @@ func (sr *EnhancedHandlerRegistry) GetServiceMetadata() []*HandlerMetadata {
 	return metadata
 }
 
-// InitializeAll initializes all registered services in registration order
-func (sr *EnhancedHandlerRegistry) InitializeAll(ctx context.Context) error {
+// InitializeTransportServices initializes all registered services in registration order
+func (sr *TransportServiceRegistry) InitializeTransportServices(ctx context.Context) error {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -204,8 +204,8 @@ func (sr *EnhancedHandlerRegistry) InitializeAll(ctx context.Context) error {
 	return nil
 }
 
-// RegisterAllHTTP registers HTTP routes for all services
-func (sr *EnhancedHandlerRegistry) RegisterAllHTTP(router *gin.Engine) error {
+// BindAllHTTPEndpoints registers HTTP routes for all services
+func (sr *TransportServiceRegistry) BindAllHTTPEndpoints(router *gin.Engine) error {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -220,8 +220,8 @@ func (sr *EnhancedHandlerRegistry) RegisterAllHTTP(router *gin.Engine) error {
 	return nil
 }
 
-// RegisterAllGRPC registers gRPC services for all handlers
-func (sr *EnhancedHandlerRegistry) RegisterAllGRPC(server *grpc.Server) error {
+// BindAllGRPCServices registers gRPC services for all handlers
+func (sr *TransportServiceRegistry) BindAllGRPCServices(server *grpc.Server) error {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -237,7 +237,7 @@ func (sr *EnhancedHandlerRegistry) RegisterAllGRPC(server *grpc.Server) error {
 }
 
 // CheckAllHealth performs health checks on all registered services
-func (sr *EnhancedHandlerRegistry) CheckAllHealth(ctx context.Context) map[string]*types.HealthStatus {
+func (sr *TransportServiceRegistry) CheckAllHealth(ctx context.Context) map[string]*types.HealthStatus {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -269,7 +269,7 @@ func (sr *EnhancedHandlerRegistry) CheckAllHealth(ctx context.Context) map[strin
 }
 
 // ShutdownAll gracefully shuts down all registered services in reverse order
-func (sr *EnhancedHandlerRegistry) ShutdownAll(ctx context.Context) error {
+func (sr *TransportServiceRegistry) ShutdownAll(ctx context.Context) error {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 
@@ -287,13 +287,13 @@ func (sr *EnhancedHandlerRegistry) ShutdownAll(ctx context.Context) error {
 }
 
 // Count returns the number of registered services
-func (sr *EnhancedHandlerRegistry) Count() int {
+func (sr *TransportServiceRegistry) Count() int {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 	return len(sr.handlers)
 }
 
 // IsEmpty returns true if no services are registered
-func (sr *EnhancedHandlerRegistry) IsEmpty() bool {
+func (sr *TransportServiceRegistry) IsEmpty() bool {
 	return sr.Count() == 0
 }

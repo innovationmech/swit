@@ -36,7 +36,7 @@ import (
 	"github.com/innovationmech/swit/pkg/types"
 )
 
-// MockHandlerRegister implements HandlerRegister interface for testing
+// MockHandlerRegister implements TransportServiceHandler interface for testing
 type MockHandlerRegister struct {
 	metadata        *HandlerMetadata
 	httpRegisterErr error
@@ -187,8 +187,8 @@ func (m *MockHandlerRegister) IsShutdown() bool {
 	return m.shutdown
 }
 
-func TestNewEnhancedServiceRegistry(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestNewTransportServiceRegistry(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 
 	assert.NotNil(t, registry)
 	assert.NotNil(t, registry.handlers)
@@ -197,8 +197,8 @@ func TestNewEnhancedServiceRegistry(t *testing.T) {
 	assert.True(t, registry.IsEmpty())
 }
 
-func TestEnhancedHandlerRegistry_Register_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_Register_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -216,8 +216,8 @@ func TestEnhancedHandlerRegistry_Register_Success(t *testing.T) {
 	assert.Equal(t, []string{"service1", "service2"}, names)
 }
 
-func TestEnhancedHandlerRegistry_Register_NilMetadata(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_Register_NilMetadata(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler := NewMockHandlerRegister("test", "v1.0.0")
 	handler.metadata = nil
 
@@ -227,8 +227,8 @@ func TestEnhancedHandlerRegistry_Register_NilMetadata(t *testing.T) {
 	assert.Equal(t, 0, registry.Count())
 }
 
-func TestEnhancedHandlerRegistry_Register_EmptyName(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_Register_EmptyName(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler := NewMockHandlerRegister("", "v1.0.0")
 
 	err := registry.Register(handler)
@@ -237,8 +237,8 @@ func TestEnhancedHandlerRegistry_Register_EmptyName(t *testing.T) {
 	assert.Equal(t, 0, registry.Count())
 }
 
-func TestEnhancedHandlerRegistry_Register_DuplicateName(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_Register_DuplicateName(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service", "v2.0.0")
 
@@ -251,8 +251,8 @@ func TestEnhancedHandlerRegistry_Register_DuplicateName(t *testing.T) {
 	assert.Equal(t, 1, registry.Count())
 }
 
-func TestEnhancedHandlerRegistry_Unregister_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_Unregister_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -267,16 +267,16 @@ func TestEnhancedHandlerRegistry_Unregister_Success(t *testing.T) {
 	assert.Equal(t, []string{"service2"}, names)
 }
 
-func TestEnhancedHandlerRegistry_Unregister_NotFound(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_Unregister_NotFound(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 
 	err := registry.Unregister("nonexistent")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "service 'nonexistent' is not registered")
 }
 
-func TestEnhancedHandlerRegistry_GetHandler_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_GetHandler_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler := NewMockHandlerRegister("service", "v1.0.0")
 
 	registry.Register(handler)
@@ -286,8 +286,8 @@ func TestEnhancedHandlerRegistry_GetHandler_Success(t *testing.T) {
 	assert.Equal(t, handler, retrieved)
 }
 
-func TestEnhancedHandlerRegistry_GetHandler_NotFound(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_GetHandler_NotFound(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 
 	retrieved, err := registry.GetHandler("nonexistent")
 	assert.Error(t, err)
@@ -295,8 +295,8 @@ func TestEnhancedHandlerRegistry_GetHandler_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "service 'nonexistent' is not registered")
 }
 
-func TestEnhancedHandlerRegistry_GetAllHandlers(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_GetAllHandlers(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -314,8 +314,8 @@ func TestEnhancedHandlerRegistry_GetAllHandlers(t *testing.T) {
 	assert.Equal(t, handler2, handlers[1])
 }
 
-func TestEnhancedHandlerRegistry_GetServiceMetadata(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_GetServiceMetadata(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -330,8 +330,8 @@ func TestEnhancedHandlerRegistry_GetServiceMetadata(t *testing.T) {
 	assert.Equal(t, "v1.1.0", metadata[1].Version)
 }
 
-func TestEnhancedHandlerRegistry_InitializeAll_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_InitializeTransportServices_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -339,15 +339,15 @@ func TestEnhancedHandlerRegistry_InitializeAll_Success(t *testing.T) {
 	registry.Register(handler2)
 
 	ctx := context.Background()
-	err := registry.InitializeAll(ctx)
+	err := registry.InitializeTransportServices(ctx)
 
 	assert.NoError(t, err)
 	assert.True(t, handler1.IsInitialized())
 	assert.True(t, handler2.IsInitialized())
 }
 
-func TestEnhancedHandlerRegistry_InitializeAll_WithError(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_InitializeTransportServices_WithError(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -358,7 +358,7 @@ func TestEnhancedHandlerRegistry_InitializeAll_WithError(t *testing.T) {
 	registry.Register(handler2)
 
 	ctx := context.Background()
-	err := registry.InitializeAll(ctx)
+	err := registry.InitializeTransportServices(ctx)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to initialize service 'service2'")
@@ -366,8 +366,8 @@ func TestEnhancedHandlerRegistry_InitializeAll_WithError(t *testing.T) {
 	assert.False(t, handler2.IsInitialized())
 }
 
-func TestEnhancedHandlerRegistry_RegisterAllHTTP_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_BindAllHTTPEndpoints_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -375,15 +375,15 @@ func TestEnhancedHandlerRegistry_RegisterAllHTTP_Success(t *testing.T) {
 	registry.Register(handler2)
 
 	router := gin.New()
-	err := registry.RegisterAllHTTP(router)
+	err := registry.BindAllHTTPEndpoints(router)
 
 	assert.NoError(t, err)
 	assert.True(t, handler1.IsHTTPRegistered())
 	assert.True(t, handler2.IsHTTPRegistered())
 }
 
-func TestEnhancedHandlerRegistry_RegisterAllHTTP_WithError(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_BindAllHTTPEndpoints_WithError(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -394,7 +394,7 @@ func TestEnhancedHandlerRegistry_RegisterAllHTTP_WithError(t *testing.T) {
 	registry.Register(handler2)
 
 	router := gin.New()
-	err := registry.RegisterAllHTTP(router)
+	err := registry.BindAllHTTPEndpoints(router)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to register HTTP routes for service 'service2'")
@@ -402,8 +402,8 @@ func TestEnhancedHandlerRegistry_RegisterAllHTTP_WithError(t *testing.T) {
 	assert.False(t, handler2.IsHTTPRegistered())
 }
 
-func TestEnhancedHandlerRegistry_RegisterAllGRPC_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_BindAllGRPCServices_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -411,15 +411,15 @@ func TestEnhancedHandlerRegistry_RegisterAllGRPC_Success(t *testing.T) {
 	registry.Register(handler2)
 
 	server := grpc.NewServer()
-	err := registry.RegisterAllGRPC(server)
+	err := registry.BindAllGRPCServices(server)
 
 	assert.NoError(t, err)
 	assert.True(t, handler1.IsGRPCRegistered())
 	assert.True(t, handler2.IsGRPCRegistered())
 }
 
-func TestEnhancedHandlerRegistry_RegisterAllGRPC_WithError(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_BindAllGRPCServices_WithError(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -430,7 +430,7 @@ func TestEnhancedHandlerRegistry_RegisterAllGRPC_WithError(t *testing.T) {
 	registry.Register(handler2)
 
 	server := grpc.NewServer()
-	err := registry.RegisterAllGRPC(server)
+	err := registry.BindAllGRPCServices(server)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to register gRPC services for service 'service2'")
@@ -438,8 +438,8 @@ func TestEnhancedHandlerRegistry_RegisterAllGRPC_WithError(t *testing.T) {
 	assert.False(t, handler2.IsGRPCRegistered())
 }
 
-func TestEnhancedHandlerRegistry_CheckAllHealth_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_CheckAllHealth_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -456,8 +456,8 @@ func TestEnhancedHandlerRegistry_CheckAllHealth_Success(t *testing.T) {
 	assert.Equal(t, types.HealthStatusHealthy, healthResults["service2"].Status)
 }
 
-func TestEnhancedHandlerRegistry_CheckAllHealth_WithError(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_CheckAllHealth_WithError(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -475,8 +475,8 @@ func TestEnhancedHandlerRegistry_CheckAllHealth_WithError(t *testing.T) {
 	assert.Equal(t, types.HealthStatusUnhealthy, healthResults["service2"].Status)
 }
 
-func TestEnhancedHandlerRegistry_ShutdownAll_Success(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_ShutdownAll_Success(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -491,8 +491,8 @@ func TestEnhancedHandlerRegistry_ShutdownAll_Success(t *testing.T) {
 	assert.True(t, handler2.IsShutdown())
 }
 
-func TestEnhancedHandlerRegistry_ShutdownAll_WithError(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_ShutdownAll_WithError(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -511,8 +511,8 @@ func TestEnhancedHandlerRegistry_ShutdownAll_WithError(t *testing.T) {
 	assert.True(t, handler2.IsShutdown())                                    // Should still shutdown
 }
 
-func TestEnhancedHandlerRegistry_ThreadSafety(t *testing.T) {
-	registry := NewEnhancedServiceRegistry()
+func TestTransportServiceRegistry_ThreadSafety(t *testing.T) {
+	registry := NewTransportServiceRegistry()
 	const numGoroutines = 50
 
 	var wg sync.WaitGroup
@@ -561,8 +561,8 @@ func TestEnhancedHandlerRegistry_ThreadSafety(t *testing.T) {
 }
 
 // Benchmark tests
-func BenchmarkEnhancedHandlerRegistry_Register(b *testing.B) {
-	registry := NewEnhancedServiceRegistry()
+func BenchmarkTransportServiceRegistry_Register(b *testing.B) {
+	registry := NewTransportServiceRegistry()
 	handlers := make([]*MockHandlerRegister, b.N)
 
 	for i := 0; i < b.N; i++ {
@@ -575,8 +575,8 @@ func BenchmarkEnhancedHandlerRegistry_Register(b *testing.B) {
 	}
 }
 
-func BenchmarkEnhancedHandlerRegistry_GetHandler(b *testing.B) {
-	registry := NewEnhancedServiceRegistry()
+func BenchmarkTransportServiceRegistry_GetHandler(b *testing.B) {
+	registry := NewTransportServiceRegistry()
 
 	// Setup: register 100 handlers
 	for i := 0; i < 100; i++ {
@@ -590,8 +590,8 @@ func BenchmarkEnhancedHandlerRegistry_GetHandler(b *testing.B) {
 	}
 }
 
-func BenchmarkEnhancedHandlerRegistry_GetAllHandlers(b *testing.B) {
-	registry := NewEnhancedServiceRegistry()
+func BenchmarkTransportServiceRegistry_GetAllHandlers(b *testing.B) {
+	registry := NewTransportServiceRegistry()
 
 	// Setup: register 100 handlers
 	for i := 0; i < 100; i++ {

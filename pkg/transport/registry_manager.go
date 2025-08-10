@@ -33,10 +33,10 @@ import (
 	"github.com/innovationmech/swit/pkg/types"
 )
 
-// ServiceRegistryManager manages multiple service registries for different transports
-type ServiceRegistryManager struct {
+// MultiTransportRegistry manages multiple service registries for different transports
+type MultiTransportRegistry struct {
 	mu         sync.RWMutex
-	registries map[string]*EnhancedHandlerRegistry // Transport name -> registry
+	registries map[string]*TransportServiceRegistry // Transport name -> registry
 }
 
 // validateTransportName validates transport name
@@ -56,15 +56,15 @@ func validateTransportName(name string) error {
 	return nil
 }
 
-// NewServiceRegistryManager creates a new service registry manager
-func NewServiceRegistryManager() *ServiceRegistryManager {
-	return &ServiceRegistryManager{
-		registries: make(map[string]*EnhancedHandlerRegistry),
+// NewMultiTransportRegistry creates a new multi transport registry
+func NewMultiTransportRegistry() *MultiTransportRegistry {
+	return &MultiTransportRegistry{
+		registries: make(map[string]*TransportServiceRegistry),
 	}
 }
 
 // GetOrCreateRegistry gets or creates a registry for the specified transport
-func (srm *ServiceRegistryManager) GetOrCreateRegistry(transportName string) *EnhancedHandlerRegistry {
+func (srm *MultiTransportRegistry) GetOrCreateRegistry(transportName string) *TransportServiceRegistry {
 	srm.mu.Lock()
 	defer srm.mu.Unlock()
 
@@ -72,13 +72,13 @@ func (srm *ServiceRegistryManager) GetOrCreateRegistry(transportName string) *En
 		return registry
 	}
 
-	registry := NewEnhancedServiceRegistry()
+	registry := NewTransportServiceRegistry()
 	srm.registries[transportName] = registry
 	return registry
 }
 
 // GetRegistry returns the registry for the specified transport
-func (srm *ServiceRegistryManager) GetRegistry(transportName string) *EnhancedHandlerRegistry {
+func (srm *MultiTransportRegistry) GetRegistry(transportName string) *TransportServiceRegistry {
 	srm.mu.RLock()
 	defer srm.mu.RUnlock()
 
@@ -86,7 +86,7 @@ func (srm *ServiceRegistryManager) GetRegistry(transportName string) *EnhancedHa
 }
 
 // RegisterHandler registers a service handler with a specific transport
-func (srm *ServiceRegistryManager) RegisterHandler(transportName string, handler HandlerRegister) error {
+func (srm *MultiTransportRegistry) RegisterHandler(transportName string, handler TransportServiceHandler) error {
 	if err := validateTransportName(transportName); err != nil {
 		return fmt.Errorf("invalid transport name: %w", err)
 	}
@@ -97,24 +97,24 @@ func (srm *ServiceRegistryManager) RegisterHandler(transportName string, handler
 	return registry.Register(handler)
 }
 
-// RegisterHTTPHandler registers a service handler with the HTTP transport
-func (srm *ServiceRegistryManager) RegisterHTTPHandler(handler HandlerRegister) error {
+// RegisterHTTPService registers a service handler with the HTTP transport
+func (srm *MultiTransportRegistry) RegisterHTTPService(handler TransportServiceHandler) error {
 	return srm.RegisterHandler("http", handler)
 }
 
-// RegisterGRPCHandler registers a service handler with the gRPC transport
-func (srm *ServiceRegistryManager) RegisterGRPCHandler(handler HandlerRegister) error {
+// RegisterGRPCService registers a service handler with the gRPC transport
+func (srm *MultiTransportRegistry) RegisterGRPCService(handler TransportServiceHandler) error {
 	return srm.RegisterHandler("grpc", handler)
 }
 
-// RegisterAllHTTP registers HTTP routes for services in the HTTP transport registry
-func (srm *ServiceRegistryManager) RegisterAllHTTP(router *gin.Engine) error {
+// BindAllHTTPEndpoints registers HTTP routes for services in the HTTP transport registry
+func (srm *MultiTransportRegistry) BindAllHTTPEndpoints(router *gin.Engine) error {
 	srm.mu.RLock()
 	defer srm.mu.RUnlock()
 
 	// Only register HTTP routes from the HTTP transport registry
 	if httpRegistry, exists := srm.registries["http"]; exists {
-		if err := httpRegistry.RegisterAllHTTP(router); err != nil {
+		if err := httpRegistry.BindAllHTTPEndpoints(router); err != nil {
 			return fmt.Errorf("failed to register HTTP routes for transport 'http': %w", err)
 		}
 	}
@@ -122,14 +122,14 @@ func (srm *ServiceRegistryManager) RegisterAllHTTP(router *gin.Engine) error {
 	return nil
 }
 
-// RegisterAllGRPC registers gRPC services for services in the gRPC transport registry
-func (srm *ServiceRegistryManager) RegisterAllGRPC(server *grpc.Server) error {
+// BindAllGRPCServices registers gRPC services for services in the gRPC transport registry
+func (srm *MultiTransportRegistry) BindAllGRPCServices(server *grpc.Server) error {
 	srm.mu.RLock()
 	defer srm.mu.RUnlock()
 
 	// Only register gRPC services from the gRPC transport registry
 	if grpcRegistry, exists := srm.registries["grpc"]; exists {
-		if err := grpcRegistry.RegisterAllGRPC(server); err != nil {
+		if err := grpcRegistry.BindAllGRPCServices(server); err != nil {
 			return fmt.Errorf("failed to register gRPC services for transport 'grpc': %w", err)
 		}
 	}
@@ -137,10 +137,10 @@ func (srm *ServiceRegistryManager) RegisterAllGRPC(server *grpc.Server) error {
 	return nil
 }
 
-// InitializeAll initializes all services across all transports
-func (srm *ServiceRegistryManager) InitializeAll(ctx context.Context) error {
+// InitializeTransportServices initializes all services across all transports
+func (srm *MultiTransportRegistry) InitializeTransportServices(ctx context.Context) error {
 	srm.mu.RLock()
-	registriesCopy := make(map[string]*EnhancedHandlerRegistry)
+	registriesCopy := make(map[string]*TransportServiceRegistry)
 	for name, registry := range srm.registries {
 		registriesCopy[name] = registry
 	}
@@ -154,7 +154,7 @@ func (srm *ServiceRegistryManager) InitializeAll(ctx context.Context) error {
 	}
 
 	for transportName, registry := range registriesCopy {
-		if err := registry.InitializeAll(ctx); err != nil {
+		if err := registry.InitializeTransportServices(ctx); err != nil {
 			return fmt.Errorf("failed to initialize services for transport '%s': %w", transportName, err)
 		}
 	}
@@ -163,9 +163,9 @@ func (srm *ServiceRegistryManager) InitializeAll(ctx context.Context) error {
 }
 
 // CheckAllHealth performs health checks on all services across all transports
-func (srm *ServiceRegistryManager) CheckAllHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
+func (srm *MultiTransportRegistry) CheckAllHealth(ctx context.Context) map[string]map[string]*types.HealthStatus {
 	srm.mu.RLock()
-	registriesCopy := make(map[string]*EnhancedHandlerRegistry)
+	registriesCopy := make(map[string]*TransportServiceRegistry)
 	for name, registry := range srm.registries {
 		registriesCopy[name] = registry
 	}
@@ -191,11 +191,11 @@ func (srm *ServiceRegistryManager) CheckAllHealth(ctx context.Context) map[strin
 }
 
 // ShutdownAll gracefully shuts down all services across all transports
-func (srm *ServiceRegistryManager) ShutdownAll(ctx context.Context) error {
+func (srm *MultiTransportRegistry) ShutdownAll(ctx context.Context) error {
 	srm.mu.RLock()
 
 	// Make a copy of registries to avoid race condition after unlock
-	registriesCopy := make(map[string]*EnhancedHandlerRegistry)
+	registriesCopy := make(map[string]*TransportServiceRegistry)
 	for name, registry := range srm.registries {
 		registriesCopy[name] = registry
 	}
@@ -241,7 +241,7 @@ func (srm *ServiceRegistryManager) ShutdownAll(ctx context.Context) error {
 }
 
 // GetAllServiceMetadata returns metadata for all services across all transports
-func (srm *ServiceRegistryManager) GetAllServiceMetadata() map[string][]*HandlerMetadata {
+func (srm *MultiTransportRegistry) GetAllServiceMetadata() map[string][]*HandlerMetadata {
 	srm.mu.RLock()
 	defer srm.mu.RUnlock()
 
@@ -258,7 +258,7 @@ func (srm *ServiceRegistryManager) GetAllServiceMetadata() map[string][]*Handler
 }
 
 // GetTransportNames returns all registered transport names
-func (srm *ServiceRegistryManager) GetTransportNames() []string {
+func (srm *MultiTransportRegistry) GetTransportNames() []string {
 	srm.mu.RLock()
 	defer srm.mu.RUnlock()
 
@@ -271,7 +271,7 @@ func (srm *ServiceRegistryManager) GetTransportNames() []string {
 }
 
 // GetTotalServiceCount returns the total number of services across all transports
-func (srm *ServiceRegistryManager) GetTotalServiceCount() int {
+func (srm *MultiTransportRegistry) GetTotalServiceCount() int {
 	srm.mu.RLock()
 	defer srm.mu.RUnlock()
 
@@ -284,14 +284,14 @@ func (srm *ServiceRegistryManager) GetTotalServiceCount() int {
 }
 
 // Clear removes all registries and services
-func (srm *ServiceRegistryManager) Clear() {
+func (srm *MultiTransportRegistry) Clear() {
 	srm.mu.Lock()
 	defer srm.mu.Unlock()
 
-	srm.registries = make(map[string]*EnhancedHandlerRegistry)
+	srm.registries = make(map[string]*TransportServiceRegistry)
 }
 
 // IsEmpty returns true if no services are registered in any transport
-func (srm *ServiceRegistryManager) IsEmpty() bool {
+func (srm *MultiTransportRegistry) IsEmpty() bool {
 	return srm.GetTotalServiceCount() == 0
 }

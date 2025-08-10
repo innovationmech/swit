@@ -45,8 +45,8 @@ func init() {
 	logger.Logger, _ = zap.NewDevelopment()
 }
 
-func TestNewHTTPTransport(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestNewHTTPNetworkService(t *testing.T) {
+	transport := NewHTTPNetworkService()
 
 	assert.NotNil(t, transport)
 	assert.NotNil(t, transport.router)
@@ -54,22 +54,22 @@ func TestNewHTTPTransport(t *testing.T) {
 	assert.Equal(t, "http", transport.GetName())
 }
 
-func TestNewHTTPTransportWithConfig(t *testing.T) {
+func TestNewHTTPNetworkServiceWithConfig(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":9999",
 		Port:        "9999",
 		EnableReady: false,
 	}
 
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	assert.NotNil(t, transport)
 	assert.Equal(t, config, transport.config)
 	assert.Equal(t, "http", transport.GetName())
 }
 
-func TestNewHTTPTransportWithConfig_NilConfig(t *testing.T) {
-	transport := NewHTTPTransportWithConfig(nil)
+func TestNewHTTPNetworkServiceWithConfig_NilConfig(t *testing.T) {
+	transport := NewHTTPNetworkServiceWithConfig(nil)
 
 	assert.NotNil(t, transport)
 	assert.NotNil(t, transport.config)
@@ -77,12 +77,12 @@ func TestNewHTTPTransportWithConfig_NilConfig(t *testing.T) {
 	assert.True(t, transport.config.EnableReady)
 }
 
-func TestHTTPTransport_Start_Success(t *testing.T) {
+func TestHTTPNetworkService_Start_Success(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":0", // Use dynamic port
 		EnableReady: true,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -104,12 +104,12 @@ func TestHTTPTransport_Start_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestHTTPTransport_Start_AlreadyStarted(t *testing.T) {
+func TestHTTPNetworkService_Start_AlreadyStarted(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":0",
 		EnableReady: true,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 
@@ -126,12 +126,12 @@ func TestHTTPTransport_Start_AlreadyStarted(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestHTTPTransport_Stop_Success(t *testing.T) {
+func TestHTTPNetworkService_Stop_Success(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":0",
 		EnableReady: true,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 	err := transport.Start(ctx)
@@ -143,20 +143,20 @@ func TestHTTPTransport_Stop_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestHTTPTransport_Stop_NotStarted(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_Stop_NotStarted(t *testing.T) {
+	transport := NewHTTPNetworkService()
 
 	ctx := context.Background()
 	err := transport.Stop(ctx)
 	assert.NoError(t, err) // Should not error when stopping non-started transport
 }
 
-func TestHTTPTransport_GetPort(t *testing.T) {
+func TestHTTPNetworkService_GetPort(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":0",
 		EnableReady: true,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	// Before start
 	assert.Equal(t, 0, transport.GetPort())
@@ -175,8 +175,8 @@ func TestHTTPTransport_GetPort(t *testing.T) {
 	transport.Stop(context.Background())
 }
 
-func TestHTTPTransport_SetTestPort(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_SetTestPort(t *testing.T) {
+	transport := NewHTTPNetworkService()
 
 	transport.SetTestPort("9999")
 
@@ -190,8 +190,8 @@ func TestHTTPTransport_SetTestPort(t *testing.T) {
 	transport.Stop(context.Background())
 }
 
-func TestHTTPTransport_SetAddress(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_SetAddress(t *testing.T) {
+	transport := NewHTTPNetworkService()
 
 	transport.SetAddress(":7777")
 
@@ -205,8 +205,8 @@ func TestHTTPTransport_SetAddress(t *testing.T) {
 	transport.Stop(context.Background())
 }
 
-func TestHTTPTransport_RegisterHandler_Success(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_RegisterHandler_Success(t *testing.T) {
+	transport := NewHTTPNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	err := transport.RegisterHandler(handler)
@@ -220,8 +220,8 @@ func TestHTTPTransport_RegisterHandler_Success(t *testing.T) {
 	assert.Equal(t, handler, retrieved)
 }
 
-func TestHTTPTransport_RegisterService_Alias(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_RegisterService_Alias(t *testing.T) {
+	transport := NewHTTPNetworkService()
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	err := transport.RegisterService(handler) // Test alias method
@@ -231,8 +231,8 @@ func TestHTTPTransport_RegisterService_Alias(t *testing.T) {
 	assert.Equal(t, 1, registry.Count())
 }
 
-func TestHTTPTransport_InitializeServices_Success(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_InitializeServices_Success(t *testing.T) {
+	transport := NewHTTPNetworkService()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -247,8 +247,8 @@ func TestHTTPTransport_InitializeServices_Success(t *testing.T) {
 	assert.True(t, handler2.IsInitialized())
 }
 
-func TestHTTPTransport_RegisterAllRoutes_Success(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_RegisterAllRoutes_Success(t *testing.T) {
+	transport := NewHTTPNetworkService()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -262,8 +262,8 @@ func TestHTTPTransport_RegisterAllRoutes_Success(t *testing.T) {
 	assert.True(t, handler2.IsHTTPRegistered())
 }
 
-func TestHTTPTransport_ShutdownServices_Success(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_ShutdownServices_Success(t *testing.T) {
+	transport := NewHTTPNetworkService()
 	handler1 := NewMockHandlerRegister("service1", "v1.0.0")
 	handler2 := NewMockHandlerRegister("service2", "v1.1.0")
 
@@ -278,12 +278,12 @@ func TestHTTPTransport_ShutdownServices_Success(t *testing.T) {
 	assert.True(t, handler2.IsShutdown())
 }
 
-func TestHTTPTransport_WaitReady_DisabledReady(t *testing.T) {
+func TestHTTPNetworkService_WaitReady_DisabledReady(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":0",
 		EnableReady: false,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	// Should return closed channel immediately
 	select {
@@ -294,12 +294,12 @@ func TestHTTPTransport_WaitReady_DisabledReady(t *testing.T) {
 	}
 }
 
-func TestHTTPTransport_FullLifecycle(t *testing.T) {
+func TestHTTPNetworkService_FullLifecycle(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":0",
 		EnableReady: true,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 	handler := NewMockHandlerRegister("test-service", "v1.0.0")
 
 	// Register handler
@@ -345,8 +345,8 @@ func TestHTTPTransport_FullLifecycle(t *testing.T) {
 	assert.True(t, handler.IsShutdown())
 }
 
-func TestHTTPTransport_ConcurrentAccess(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_ConcurrentAccess(t *testing.T) {
+	transport := NewHTTPNetworkService()
 	const numGoroutines = 50
 
 	var wg sync.WaitGroup
@@ -386,12 +386,12 @@ func TestHTTPTransport_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, numGoroutines, registry.Count())
 }
 
-func TestHTTPTransport_StartStop_Multiple(t *testing.T) {
+func TestHTTPNetworkService_StartStop_Multiple(t *testing.T) {
 	config := &HTTPTransportConfig{
 		Address:     ":0",
 		EnableReady: true,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	ctx := context.Background()
 
@@ -407,8 +407,8 @@ func TestHTTPTransport_StartStop_Multiple(t *testing.T) {
 	}
 }
 
-func TestHTTPTransport_GetRouter(t *testing.T) {
-	transport := NewHTTPTransport()
+func TestHTTPNetworkService_GetRouter(t *testing.T) {
+	transport := NewHTTPNetworkService()
 
 	router1 := transport.GetRouter()
 	router2 := transport.GetRouter()
@@ -417,13 +417,13 @@ func TestHTTPTransport_GetRouter(t *testing.T) {
 	assert.Equal(t, router1, router2) // Should return same router instance
 }
 
-func TestHTTPTransport_ActualHTTPRequests(t *testing.T) {
+func TestHTTPNetworkService_ActualHTTPRequests(t *testing.T) {
 	// Create a transport that can handle real HTTP requests
 	config := &HTTPTransportConfig{
 		Address:     ":0",
 		EnableReady: true,
 	}
-	transport := NewHTTPTransportWithConfig(config)
+	transport := NewHTTPNetworkServiceWithConfig(config)
 
 	// Add a test route
 	router := transport.GetRouter()
@@ -459,7 +459,7 @@ func TestHTTPTransport_ActualHTTPRequests(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestHTTPTransport_determineAddress(t *testing.T) {
+func TestHTTPNetworkService_determineAddress(t *testing.T) {
 	tests := []struct {
 		name         string
 		config       *HTTPTransportConfig
@@ -497,7 +497,7 @@ func TestHTTPTransport_determineAddress(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport := NewHTTPTransportWithConfig(tt.config)
+			transport := NewHTTPNetworkServiceWithConfig(tt.config)
 			addr := transport.determineAddress()
 			assert.Equal(t, tt.expectedAddr, addr)
 		})
@@ -505,8 +505,8 @@ func TestHTTPTransport_determineAddress(t *testing.T) {
 }
 
 // Benchmark tests
-func BenchmarkHTTPTransport_RegisterHandler(b *testing.B) {
-	transport := NewHTTPTransport()
+func BenchmarkHTTPNetworkService_RegisterHandler(b *testing.B) {
+	transport := NewHTTPNetworkService()
 	handlers := make([]*MockHandlerRegister, b.N)
 
 	for i := 0; i < b.N; i++ {
@@ -519,8 +519,8 @@ func BenchmarkHTTPTransport_RegisterHandler(b *testing.B) {
 	}
 }
 
-func BenchmarkHTTPTransport_GetRouter(b *testing.B) {
-	transport := NewHTTPTransport()
+func BenchmarkHTTPNetworkService_GetRouter(b *testing.B) {
+	transport := NewHTTPNetworkService()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -528,8 +528,8 @@ func BenchmarkHTTPTransport_GetRouter(b *testing.B) {
 	}
 }
 
-func BenchmarkHTTPTransport_GetServiceRegistry(b *testing.B) {
-	transport := NewHTTPTransport()
+func BenchmarkHTTPNetworkService_GetServiceRegistry(b *testing.B) {
+	transport := NewHTTPNetworkService()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

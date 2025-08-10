@@ -43,8 +43,8 @@ type HTTPTransportConfig struct {
 	EnableReady bool   // Enables ready channel for testing
 }
 
-// HTTPTransport implements Transport interface for HTTP
-type HTTPTransport struct {
+// HTTPNetworkService implements NetworkTransport interface for HTTP
+type HTTPNetworkService struct {
 	server          *http.Server
 	router          *gin.Engine
 	address         string
@@ -52,19 +52,19 @@ type HTTPTransport struct {
 	ready           chan struct{}
 	readyOnce       sync.Once
 	mu              sync.RWMutex
-	serviceRegistry *EnhancedHandlerRegistry
+	serviceRegistry *TransportServiceRegistry
 }
 
-// NewHTTPTransport creates a new HTTP transport with default configuration
-func NewHTTPTransport() *HTTPTransport {
-	return NewHTTPTransportWithConfig(&HTTPTransportConfig{
+// NewHTTPNetworkService creates a new HTTP network service with default configuration
+func NewHTTPNetworkService() *HTTPNetworkService {
+	return NewHTTPNetworkServiceWithConfig(&HTTPTransportConfig{
 		Address:     ":8080",
 		EnableReady: true,
 	})
 }
 
-// NewHTTPTransportWithConfig creates a new HTTP transport with custom configuration
-func NewHTTPTransportWithConfig(config *HTTPTransportConfig) *HTTPTransport {
+// NewHTTPNetworkServiceWithConfig creates a new HTTP network service with custom configuration
+func NewHTTPNetworkServiceWithConfig(config *HTTPTransportConfig) *HTTPNetworkService {
 	if config == nil {
 		config = &HTTPTransportConfig{
 			Address:     ":8080",
@@ -72,10 +72,10 @@ func NewHTTPTransportWithConfig(config *HTTPTransportConfig) *HTTPTransport {
 		}
 	}
 
-	transport := &HTTPTransport{
+	transport := &HTTPNetworkService{
 		router:          gin.New(), // Use gin.New() instead of gin.Default() for more control
 		config:          config,
-		serviceRegistry: NewEnhancedServiceRegistry(),
+		serviceRegistry: NewTransportServiceRegistry(),
 	}
 
 	if config.EnableReady {
@@ -85,8 +85,8 @@ func NewHTTPTransportWithConfig(config *HTTPTransportConfig) *HTTPTransport {
 	return transport
 }
 
-// Start implements Transport interface
-func (h *HTTPTransport) Start(ctx context.Context) error {
+// Start implements NetworkTransport interface
+func (h *HTTPNetworkService) Start(ctx context.Context) error {
 	// Determine address to use
 	address := h.determineAddress()
 	h.address = address
@@ -145,7 +145,7 @@ func (h *HTTPTransport) Start(ctx context.Context) error {
 }
 
 // Stop implements Transport interface
-func (h *HTTPTransport) Stop(ctx context.Context) error {
+func (h *HTTPNetworkService) Stop(ctx context.Context) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -173,12 +173,12 @@ func (h *HTTPTransport) Stop(ctx context.Context) error {
 }
 
 // GetName implements Transport interface
-func (h *HTTPTransport) GetName() string {
+func (h *HTTPNetworkService) GetName() string {
 	return "http"
 }
 
 // GetAddress implements Transport interface
-func (h *HTTPTransport) GetAddress() string {
+func (h *HTTPNetworkService) GetAddress() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -193,14 +193,14 @@ func (h *HTTPTransport) GetAddress() string {
 }
 
 // GetRouter returns the Gin router for route registration
-func (h *HTTPTransport) GetRouter() *gin.Engine {
+func (h *HTTPNetworkService) GetRouter() *gin.Engine {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.router
 }
 
 // GetPort returns the actual port the server is listening on
-func (h *HTTPTransport) GetPort() int {
+func (h *HTTPNetworkService) GetPort() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -229,7 +229,7 @@ func (h *HTTPTransport) GetPort() int {
 }
 
 // WaitReady waits for the HTTP server to be ready (for testing)
-func (h *HTTPTransport) WaitReady() <-chan struct{} {
+func (h *HTTPNetworkService) WaitReady() <-chan struct{} {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if h.ready != nil {
@@ -242,7 +242,7 @@ func (h *HTTPTransport) WaitReady() <-chan struct{} {
 }
 
 // SetTestPort sets a custom port for testing (use "0" for dynamic port allocation)
-func (h *HTTPTransport) SetTestPort(port string) {
+func (h *HTTPNetworkService) SetTestPort(port string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.config == nil {
@@ -253,7 +253,7 @@ func (h *HTTPTransport) SetTestPort(port string) {
 }
 
 // SetAddress sets the HTTP server address
-func (h *HTTPTransport) SetAddress(addr string) {
+func (h *HTTPNetworkService) SetAddress(addr string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.config == nil {
@@ -263,7 +263,7 @@ func (h *HTTPTransport) SetAddress(addr string) {
 }
 
 // RegisterHandler registers a service handler with the transport
-func (h *HTTPTransport) RegisterHandler(handler HandlerRegister) error {
+func (h *HTTPNetworkService) RegisterHandler(handler TransportServiceHandler) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -276,35 +276,35 @@ func (h *HTTPTransport) RegisterHandler(handler HandlerRegister) error {
 }
 
 // RegisterService is an alias for RegisterHandler for backward compatibility
-func (h *HTTPTransport) RegisterService(handler HandlerRegister) error {
+func (h *HTTPNetworkService) RegisterService(handler TransportServiceHandler) error {
 	return h.RegisterHandler(handler)
 }
 
 // InitializeServices initializes all registered services
-func (h *HTTPTransport) InitializeServices(ctx context.Context) error {
+func (h *HTTPNetworkService) InitializeServices(ctx context.Context) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	return h.serviceRegistry.InitializeAll(ctx)
+	return h.serviceRegistry.InitializeTransportServices(ctx)
 }
 
 // RegisterAllRoutes registers HTTP routes for all registered services
-func (h *HTTPTransport) RegisterAllRoutes() error {
+func (h *HTTPNetworkService) RegisterAllRoutes() error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	return h.serviceRegistry.RegisterAllHTTP(h.router)
+	return h.serviceRegistry.BindAllHTTPEndpoints(h.router)
 }
 
 // GetServiceRegistry returns the service registry
-func (h *HTTPTransport) GetServiceRegistry() *EnhancedHandlerRegistry {
+func (h *HTTPNetworkService) GetServiceRegistry() *TransportServiceRegistry {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.serviceRegistry
 }
 
 // ShutdownServices gracefully shuts down all registered services
-func (h *HTTPTransport) ShutdownServices(ctx context.Context) error {
+func (h *HTTPNetworkService) ShutdownServices(ctx context.Context) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -312,7 +312,7 @@ func (h *HTTPTransport) ShutdownServices(ctx context.Context) error {
 }
 
 // determineAddress determines the address to use for the HTTP server
-func (h *HTTPTransport) determineAddress() string {
+func (h *HTTPNetworkService) determineAddress() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 

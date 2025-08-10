@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release'
-        required: true
-        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -63,17 +57,9 @@ jobs:
         
     - name: Generate changelog
       id: changelog
-      env:
-        EVENT_NAME: ${{ github.event_name }}
-        INPUT_TAG: ${{ github.event.inputs.tag }}
       run: |
-        # 生成变更日志
-        if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-          TAG="${INPUT_TAG}"
-        else
-          TAG=${GITHUB_REF#refs/tags/}
-        fi
-        
+        # 获取当前标签
+        TAG=${GITHUB_REF#refs/tags/}
         echo "tag=${TAG}" >> $GITHUB_OUTPUT
         
         # 获取上一个标签
@@ -135,5 +121,4 @@ jobs:
     - name: Build and push Docker images
       run: |
         # 构建各个服务的 Docker 镜像
-        make docker-build
-        make docker-push
+        make docker

@@ -79,35 +79,40 @@ func DefaultGRPCConfig() *GRPCTransportConfig {
 	}
 }
 
-// GRPCTransport implements Transport interface for gRPC
-type GRPCTransport struct {
+// GRPCNetworkService implements NetworkTransport interface for gRPC
+type GRPCNetworkService struct {
 	server          *grpc.Server
 	listener        net.Listener
 	address         string
 	config          *GRPCTransportConfig
-	serviceRegistry *EnhancedHandlerRegistry
+	serviceRegistry *TransportServiceRegistry
 	mu              sync.RWMutex
 }
 
-// NewGRPCTransport creates a new gRPC transport with default configuration
-func NewGRPCTransport() *GRPCTransport {
-	return NewGRPCTransportWithConfig(DefaultGRPCConfig())
+// NewGRPCNetworkService creates a new gRPC network service with default configuration
+func NewGRPCNetworkService() *GRPCNetworkService {
+	return NewGRPCNetworkServiceWithConfig(DefaultGRPCConfig())
 }
 
-// NewGRPCTransportWithConfig creates a new gRPC transport with custom configuration
-func NewGRPCTransportWithConfig(config *GRPCTransportConfig) *GRPCTransport {
+// NewGRPCNetworkServiceWithConfig creates a new gRPC network service with custom configuration
+func NewGRPCNetworkServiceWithConfig(config *GRPCTransportConfig) *GRPCNetworkService {
 	if config == nil {
 		config = DefaultGRPCConfig()
 	}
 
-	return &GRPCTransport{
+	transport := &GRPCNetworkService{
 		config:          config,
-		serviceRegistry: NewEnhancedServiceRegistry(),
+		serviceRegistry: NewTransportServiceRegistry(),
 	}
+
+	// Create the gRPC server immediately so it's available for service registration
+	transport.server = transport.createConfiguredGRPCServer()
+
+	return transport
 }
 
 // Start implements Transport interface
-func (g *GRPCTransport) Start(ctx context.Context) error {
+func (g *GRPCNetworkService) Start(ctx context.Context) error {
 	// Determine address to use
 	address := g.determineAddress()
 
@@ -122,8 +127,7 @@ func (g *GRPCTransport) Start(ctx context.Context) error {
 	g.mu.Lock()
 	g.listener = lis
 	g.address = lis.Addr().String() // Update actual address in case of :0 port
-	g.server = g.createConfiguredGRPCServer()
-	server := g.server // Capture server reference inside the lock
+	server := g.server              // Capture server reference inside the lock
 	g.mu.Unlock()
 
 	logger.Logger.Info("Starting gRPC transport", zap.String("address", g.address))
@@ -139,11 +143,13 @@ func (g *GRPCTransport) Start(ctx context.Context) error {
 }
 
 // Stop implements Transport interface
-func (g *GRPCTransport) Stop(ctx context.Context) error {
+func (g *GRPCNetworkService) Stop(ctx context.Context) error {
 	g.mu.Lock()
-	defer g.mu.Unlock()
+	server := g.server // Capture server reference before unlocking
+	listener := g.listener
+	g.mu.Unlock()
 
-	if g.server == nil {
+	if server == nil {
 		logger.Logger.Debug("gRPC server not initialized, skipping shutdown")
 		return nil
 	}
@@ -160,7 +166,7 @@ func (g *GRPCTransport) Stop(ctx context.Context) error {
 	done := make(chan struct{})
 
 	go func() {
-		g.server.GracefulStop()
+		server.GracefulStop()
 		close(done)
 	}()
 
@@ -170,26 +176,29 @@ func (g *GRPCTransport) Stop(ctx context.Context) error {
 		logger.Logger.Info("gRPC server gracefully stopped")
 	case <-ctx.Done():
 		logger.Logger.Warn("gRPC server shutdown timeout, forcing stop")
-		g.server.Stop()
+		server.Stop()
 	}
 
-	// Reset server to nil so it can be started again
-	g.server = nil
-	if g.listener != nil {
-		g.listener.Close()
+	// Reset server and listener after shutdown
+	g.mu.Lock()
+	g.server = g.createConfiguredGRPCServer() // Create new server for potential restart
+	if listener != nil {
+		listener.Close()
 		g.listener = nil
 	}
+	g.address = "" // Reset address
+	g.mu.Unlock()
 
 	return nil
 }
 
 // GetName implements Transport interface
-func (g *GRPCTransport) GetName() string {
+func (g *GRPCNetworkService) GetName() string {
 	return "grpc"
 }
 
 // GetAddress implements Transport interface
-func (g *GRPCTransport) GetAddress() string {
+func (g *GRPCNetworkService) GetAddress() string {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -204,14 +213,14 @@ func (g *GRPCTransport) GetAddress() string {
 }
 
 // GetServer returns the gRPC server instance for service registration
-func (g *GRPCTransport) GetServer() *grpc.Server {
+func (g *GRPCNetworkService) GetServer() *grpc.Server {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return g.server
 }
 
 // GetPort returns the actual port the server is listening on
-func (g *GRPCTransport) GetPort() int {
+func (g *GRPCNetworkService) GetPort() int {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -240,7 +249,7 @@ func (g *GRPCTransport) GetPort() int {
 }
 
 // SetTestPort sets a custom port for testing (use "0" for dynamic port allocation)
-func (g *GRPCTransport) SetTestPort(port string) {
+func (g *GRPCNetworkService) SetTestPort(port string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.config == nil {
@@ -251,7 +260,7 @@ func (g *GRPCTransport) SetTestPort(port string) {
 }
 
 // SetAddress sets the gRPC server address
-func (g *GRPCTransport) SetAddress(addr string) {
+func (g *GRPCNetworkService) SetAddress(addr string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.config == nil {
@@ -261,7 +270,7 @@ func (g *GRPCTransport) SetAddress(addr string) {
 }
 
 // AddUnaryInterceptor adds a unary interceptor to the configuration
-func (g *GRPCTransport) AddUnaryInterceptor(interceptor grpc.UnaryServerInterceptor) {
+func (g *GRPCNetworkService) AddUnaryInterceptor(interceptor grpc.UnaryServerInterceptor) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.config == nil {
@@ -271,7 +280,7 @@ func (g *GRPCTransport) AddUnaryInterceptor(interceptor grpc.UnaryServerIntercep
 }
 
 // AddStreamInterceptor adds a stream interceptor to the configuration
-func (g *GRPCTransport) AddStreamInterceptor(interceptor grpc.StreamServerInterceptor) {
+func (g *GRPCNetworkService) AddStreamInterceptor(interceptor grpc.StreamServerInterceptor) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.config == nil {
@@ -281,7 +290,7 @@ func (g *GRPCTransport) AddStreamInterceptor(interceptor grpc.StreamServerInterc
 }
 
 // createConfiguredGRPCServer creates a new gRPC server with configuration
-func (g *GRPCTransport) createConfiguredGRPCServer() *grpc.Server {
+func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 	opts := []grpc.ServerOption{}
 
 	// Add keepalive settings if enabled
@@ -329,7 +338,7 @@ func (g *GRPCTransport) createConfiguredGRPCServer() *grpc.Server {
 }
 
 // determineAddress determines the address to use for the gRPC server
-func (g *GRPCTransport) determineAddress() string {
+func (g *GRPCNetworkService) determineAddress() string {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -385,7 +394,7 @@ func isValidPort(port int) bool {
 }
 
 // RegisterHandler registers a service handler with the gRPC transport
-func (g *GRPCTransport) RegisterHandler(handler HandlerRegister) error {
+func (g *GRPCNetworkService) RegisterHandler(handler TransportServiceHandler) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -398,20 +407,20 @@ func (g *GRPCTransport) RegisterHandler(handler HandlerRegister) error {
 }
 
 // RegisterService is an alias for RegisterHandler for backward compatibility
-func (g *GRPCTransport) RegisterService(handler HandlerRegister) error {
+func (g *GRPCNetworkService) RegisterService(handler TransportServiceHandler) error {
 	return g.RegisterHandler(handler)
 }
 
 // InitializeServices initializes all registered services
-func (g *GRPCTransport) InitializeServices(ctx context.Context) error {
+func (g *GRPCNetworkService) InitializeServices(ctx context.Context) error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	return g.serviceRegistry.InitializeAll(ctx)
+	return g.serviceRegistry.InitializeTransportServices(ctx)
 }
 
 // RegisterAllServices registers gRPC services for all registered services
-func (g *GRPCTransport) RegisterAllServices() error {
+func (g *GRPCNetworkService) RegisterAllServices() error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -419,18 +428,18 @@ func (g *GRPCTransport) RegisterAllServices() error {
 		return fmt.Errorf("gRPC server not initialized")
 	}
 
-	return g.serviceRegistry.RegisterAllGRPC(g.server)
+	return g.serviceRegistry.BindAllGRPCServices(g.server)
 }
 
 // GetServiceRegistry returns the service registry
-func (g *GRPCTransport) GetServiceRegistry() *EnhancedHandlerRegistry {
+func (g *GRPCNetworkService) GetServiceRegistry() *TransportServiceRegistry {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return g.serviceRegistry
 }
 
 // ShutdownServices gracefully shuts down all registered services
-func (g *GRPCTransport) ShutdownServices(ctx context.Context) error {
+func (g *GRPCNetworkService) ShutdownServices(ctx context.Context) error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 

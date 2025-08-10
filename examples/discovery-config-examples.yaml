@@ -1,0 +1,110 @@
+# Discovery Configuration Examples
+# This file demonstrates different service discovery failure handling configurations
+
+# Example 1: Development environment with graceful degradation (default)
+# Services continue to start even if discovery fails - good for local development
+development:
+  service_name: swit-serve-dev
+  http:
+    enabled: true
+    port: "9000"
+  grpc:
+    enabled: true
+    port: "9001"
+  discovery:
+    enabled: true
+    address: "127.0.0.1:8500"
+    service_name: swit-serve-dev
+    failure_mode: graceful              # Default: continue startup even if discovery fails
+    health_check_required: false        # Default: don't check discovery health before registration
+    registration_timeout: 30s           # Default: 30 second timeout for registration
+    tags:
+      - "v1"
+      - "development"
+
+---
+
+# Example 2: Production environment with fail-fast behavior
+# Server startup fails immediately if discovery registration fails
+production:
+  service_name: swit-serve-prod
+  http:
+    enabled: true
+    port: "9000"
+  grpc:
+    enabled: true
+    port: "9001"
+  discovery:
+    enabled: true
+    address: "consul.production.local:8500"
+    service_name: swit-serve-prod
+    failure_mode: fail_fast             # Fail server startup if discovery fails
+    health_check_required: false        # Optional: check discovery health first
+    registration_timeout: 60s           # Longer timeout for production reliability
+    tags:
+      - "v1"
+      - "production"
+
+---
+
+# Example 3: Critical production environment with strict mode
+# Requires discovery to be healthy and fails fast on any issues
+critical_production:
+  service_name: swit-serve-critical
+  http:
+    enabled: true
+    port: "9000"
+  grpc:
+    enabled: true
+    port: "9001"
+  discovery:
+    enabled: true
+    address: "consul.production.local:8500"
+    service_name: swit-serve-critical
+    failure_mode: strict                # Strictest mode: check health AND fail fast
+    health_check_required: true         # Require discovery health check before registration
+    registration_timeout: 45s           # Reasonable timeout for production
+    tags:
+      - "v1"
+      - "production"
+      - "critical"
+
+---
+
+# Example 4: Kubernetes/Cloud environment with discovery disabled
+# Some environments handle service discovery externally
+kubernetes:
+  service_name: swit-serve-k8s
+  http:
+    enabled: true
+    port: "9000"
+  grpc:
+    enabled: true
+    port: "9001"
+  discovery:
+    enabled: false                      # Discovery handled by Kubernetes/service mesh
+    # Other discovery options are ignored when enabled: false
+
+---
+
+# Example 5: Hybrid environment with custom configuration
+# Mix of settings for specific deployment scenarios
+hybrid:
+  service_name: swit-serve-hybrid
+  http:
+    enabled: true
+    port: "9000"
+  grpc:
+    enabled: true
+    port: "9001"
+  discovery:
+    enabled: true
+    address: "consul.internal:8500"
+    service_name: swit-serve-hybrid
+    failure_mode: fail_fast             # Fail fast but don't require health check
+    health_check_required: false        # Skip health check for faster startup
+    registration_timeout: 20s           # Shorter timeout for faster feedback
+    tags:
+      - "v1"
+      - "hybrid"
+      - "internal"

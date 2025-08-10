@@ -70,12 +70,15 @@ api/
 **Protocol**: gRPC + HTTP  
 **Implemented Methods**:
 - `SayHello` - Simple greeting functionality ✅
+- `SayHelloStream` - Streaming greeting functionality ✅
 
 **HTTP Endpoints**:
 - `POST /v1/greeter/hello` - Send greeting request
+- `POST /v1/greeter/hello/stream` - Send streaming greeting request
 
 **gRPC Endpoints**:
 - `greeter.v1.GreeterService/SayHello` - gRPC greeting service
+- `greeter.v1.GreeterService/SayHelloStream` - gRPC streaming greeting service
 
 ### 2. Auth Service (HTTP REST)
 **Port**: 9001  
@@ -84,6 +87,9 @@ api/
 - User login/logout
 - JWT Token management
 - Token refresh and validation
+- Password reset
+- Email verification
+- Change password
 
 ### 3. User Service (HTTP REST)
 **HTTP Port**: 9000  
@@ -93,6 +99,8 @@ api/
 - User registration
 - User information management
 - User query and deletion
+- User listing with pagination
+- User role and permission management
 
 ## Requirements
 
@@ -100,6 +108,7 @@ api/
 - MySQL 8.0+
 - Consul 1.12+
 - Buf CLI 1.0+ (for API development)
+- Docker 20.10+ (for containerized deployment)
 
 ## Quick Start
 
@@ -133,6 +142,16 @@ CREATE DATABASE auth_service_db;
 # Import database schema
 mysql -u root -p user_service_db < scripts/sql/user_service_db.sql
 mysql -u root -p auth_service_db < scripts/sql/auth_service_db.sql
+```
+
+### 5. API Documentation
+```bash
+# Generate OpenAPI documentation
+make swagger
+
+# View documentation at:
+# http://localhost:9000/swagger/index.html (for swit-serve)
+# http://localhost:9001/swagger/index.html (for swit-auth)
 ```
 
 ### 5. Build and Run
@@ -315,6 +334,11 @@ make setup-dev
 # Quick setup for minimal requirements
 make setup-quick
 ```
+
+### Available Services and Ports
+- **swit-serve**: HTTP: 9000, gRPC: 10000
+- **swit-auth**: HTTP: 9001, gRPC: 50051
+- **switctl**: CLI tool (no HTTP/gRPC endpoints)
 
 ### Development Tools
 
@@ -506,11 +530,41 @@ make help             # Show all available commands with descriptions
 
 For detailed command options and parameters, run `make help` or refer to the specific `.mk` files in `scripts/mk/`.
 
+### API Endpoints Reference
+
+#### swit-serve (User Service)
+- **HTTP**: `http://localhost:9000`
+- **gRPC**: `http://localhost:10000`
+- `/v1/users` - User operations (POST, GET, PUT, DELETE)
+- `/v1/users/username/{username}` - Get user by username
+- `/v1/users/email/{email}` - Get user by email
+- `/v1/users` - List users with pagination
+
+#### swit-auth (Auth Service)
+- **HTTP**: `http://localhost:9001`
+- **gRPC**: `http://localhost:50051`
+- `/v1/auth/login` - Login
+- `/v1/auth/logout` - Logout
+- `/v1/auth/refresh` - Refresh token
+- `/v1/auth/validate` - Validate token
+- `/v1/auth/reset-password` - Reset password
+- `/v1/auth/change-password` - Change password
+- `/v1/auth/verify-email` - Verify email
+
+#### switctl (CLI Tool)
+- Command-line tool for system administration
+
 
 ## Related Documentation
 
 - [Development Guide](DEVELOPMENT.md)
 - [API Documentation](api/docs/README.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+
+## Contributing
+
+We welcome contributions to the Swit project! Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to ensure a positive and inclusive environment for all community members.
 
 ## License
 
