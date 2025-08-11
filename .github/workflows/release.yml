@@ -34,6 +34,16 @@ jobs:
         fi
         mkdir -p ~/go/pkg/mod
 
+    # 生成必需的代码 - 必须在依赖安装之前
+    - name: Install Proto tools
+      run: make proto-setup
+
+    - name: Install Swagger tools
+      run: make swagger-setup
+
+    - name: Generate proto code
+      run: make proto
+
     - name: Cache Go modules
       uses: actions/cache@v4
       with:
@@ -48,16 +58,6 @@ jobs:
         go mod tidy
         go mod download
         go mod verify
-
-    # 生成必需的代码
-    - name: Install Proto tools
-      run: make proto-setup
-
-    - name: Install Swagger tools
-      run: make swagger-setup
-
-    - name: Generate proto code
-      run: make proto
 
     - name: Verify working directory and Go files
       run: |
