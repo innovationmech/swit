@@ -200,8 +200,15 @@ build_service_platform() {
         output_name="${service}.exe"
     fi
     
+    # 创建带版本和平台标识的文件名用于发布
+    local release_name="${service}-${VERSION}-${target_os}-${target_arch}"
+    if [ "$target_os" = "windows" ]; then
+        release_name="${service}-${VERSION}-${target_os}-${target_arch}.exe"
+    fi
+    
     local output_dir="${BUILD_DIR}/${service}/${platform}"
     local output_file="${output_dir}/${output_name}"
+    local release_file="${BUILD_DIR}/${release_name}"
     
     mkdir -p "$output_dir"
     
@@ -222,10 +229,14 @@ build_service_platform() {
     if CGO_ENABLED=0 GOOS=${target_os} GOARCH=${target_arch} go build ${BUILD_FLAGS} -ldflags "${full_ldflags}" -o "${output_file}" "${main_file}"; then
         log_success "✓ ${service} (${platform}) 构建完成"
         
+        # 创建带版本和平台标识的副本用于发布
+        cp "${output_file}" "${release_file}"
+        
         # 显示文件信息
         if [ -f "$output_file" ]; then
             local file_size=$(du -h "$output_file" | cut -f1)
             log_info "  文件大小: ${file_size}"
+            log_info "  发布文件: ${release_file}"
         fi
         
         return 0
