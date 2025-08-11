@@ -52,7 +52,7 @@ func TestInitLoggerMultipleCalls(t *testing.T) {
 		Logger = originalLogger
 	}()
 
-	Logger = nil
+	ResetLogger() // Use proper reset function
 
 	InitLogger()
 	firstLogger := Logger
@@ -64,8 +64,9 @@ func TestInitLoggerMultipleCalls(t *testing.T) {
 		t.Error("InitLogger() failed: Logger is nil after multiple calls")
 	}
 
-	if firstLogger == secondLogger {
-		t.Error("InitLogger() should create new logger instance on each call")
+	// Multiple calls should return the same logger instance (race-safe behavior)
+	if firstLogger != secondLogger {
+		t.Error("InitLogger() should return the same logger instance on multiple calls for thread safety")
 	}
 }
 
@@ -76,7 +77,7 @@ func TestLoggerGlobalVariable(t *testing.T) {
 		Logger = originalLogger
 	}()
 
-	Logger = nil
+	ResetLogger() // Use proper reset function
 
 	if Logger != nil {
 		t.Error("Logger should be nil initially")

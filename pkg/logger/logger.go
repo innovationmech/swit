@@ -21,16 +21,45 @@
 
 package logger
 
-import "go.uber.org/zap"
+import (
+	"go.uber.org/zap"
+	"sync"
+)
 
-// Logger is the global logger for the application.
-var Logger *zap.Logger
+var (
+	// Logger is the global logger for the application.
+	Logger *zap.Logger
+	// mu protects Logger from concurrent access
+	mu sync.RWMutex
+	// initialized tracks whether logger has been initialized
+	initialized bool
+)
 
-// InitLogger initializes the global logger.
+// InitLogger initializes the global logger safely to prevent race conditions.
 func InitLogger() {
-	var err error
-	Logger, err = zap.NewProduction()
-	if err != nil {
-		panic(err)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Only initialize if not already done
+	if !initialized || Logger == nil {
+		var err error
+		Logger, err = zap.NewProduction()
+		if err != nil {
+			panic(err)
+		}
+		initialized = true
 	}
+}
+
+// ResetLogger resets the logger for testing purposes.
+// This should only be used in tests.
+func ResetLogger() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if Logger != nil {
+		Logger.Sync() // Flush any pending log entries
+	}
+	Logger = nil
+	initialized = false
 }
