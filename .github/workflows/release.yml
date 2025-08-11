@@ -27,7 +27,11 @@ jobs:
     - name: Clean cache directories
       run: |
         # Clean up cache directories before restore
-        rm -rf ~/go/pkg/mod
+        # Handle permission issues with read-only files in Go module cache
+        if [ -d "~/go/pkg/mod" ]; then
+          chmod -R u+w ~/go/pkg/mod || true
+          rm -rf ~/go/pkg/mod || true
+        fi
         mkdir -p ~/go/pkg/mod
 
     - name: Cache Go modules
