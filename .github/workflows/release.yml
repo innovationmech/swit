@@ -24,6 +24,12 @@ jobs:
       with:
         go-version: '1.23'
 
+    - name: Clean cache directories
+      run: |
+        # Clean up cache directories before restore
+        rm -rf ~/go/pkg/mod
+        mkdir -p ~/go/pkg/mod
+
     - name: Cache Go modules
       uses: actions/cache@v4
       with:
@@ -33,7 +39,11 @@ jobs:
           ${{ runner.os }}-go-
 
     - name: Install dependencies
-      run: go mod download
+      run: |
+        # Update dependencies for Go compatibility
+        go mod tidy
+        go mod download
+        go mod verify
 
     # 生成必需的代码
     - name: Install Proto tools
@@ -45,8 +55,29 @@ jobs:
     - name: Generate proto code
       run: make proto
 
+    - name: Verify working directory and Go files
+      run: |
+        # Ensure correct working directory and presence of Go files
+        pwd
+        ls -la
+        if [ ! -f "go.mod" ]; then
+          echo "Error: go.mod not found in current directory"
+          exit 1
+        fi
+        if [ ! -d "cmd" ]; then
+          echo "Error: cmd directory not found"
+          exit 1
+        fi
+        echo "Working directory verified successfully"
+
     - name: Generate swagger docs
-      run: make swagger
+      run: |
+        # Generate swagger docs with proper error handling
+        make swagger
+        # Verify swagger docs were generated
+        if [ ! -d "docs" ]; then
+          echo "Warning: docs directory not found after swagger generation"
+        fi
 
     - name: Run tests
       run: make test
@@ -54,6 +85,46 @@ jobs:
     - name: Build binaries
       run: |
         make build-release
+        
+    - name: Verify build artifacts
+      run: |
+        # Confirm artifacts exist before upload
+        echo "Checking for build artifacts..."
+        
+        # Check for distribution files
+        if [ -d "_output/dist" ]; then
+          echo "Distribution directory found:"
+          ls -la _output/dist/
+        else
+          echo "Warning: _output/dist directory not found"
+        fi
+        
+        # Check for build binaries
+        if [ -d "_output/build" ]; then
+          echo "Build directory found:"
+          ls -la _output/build/
+        else
+          echo "Warning: _output/build directory not found"
+        fi
+        
+        # Verify at least some artifacts exist
+        ARTIFACT_COUNT=0
+        if ls _output/dist/*.tar.gz 1> /dev/null 2>&1; then
+          ARTIFACT_COUNT=$((ARTIFACT_COUNT + $(ls _output/dist/*.tar.gz | wc -l)))
+        fi
+        if ls _output/dist/*.zip 1> /dev/null 2>&1; then
+          ARTIFACT_COUNT=$((ARTIFACT_COUNT + $(ls _output/dist/*.zip | wc -l)))
+        fi
+        if ls _output/build/*-*-*-* 1> /dev/null 2>&1; then
+          ARTIFACT_COUNT=$((ARTIFACT_COUNT + $(ls _output/build/*-*-*-* | wc -l)))
+        fi
+        
+        echo "Total artifacts found: $ARTIFACT_COUNT"
+        if [ $ARTIFACT_COUNT -eq 0 ]; then
+          echo "Error: No build artifacts found for release"
+          exit 1
+        fi
+        echo "Build artifacts verification completed successfully"
         
     - name: Generate changelog
       id: changelog
