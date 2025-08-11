@@ -87,7 +87,11 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          _output/build/**/*
+          _output/dist/*.tar.gz
+          _output/dist/*.zip
+          _output/dist/checksums.txt
+          _output/build/*-*-*-*
+          _output/build/*-*-*-*.exe
         token: ${{ secrets.GITHUB_TOKEN }}
 
   docker-release:
@@ -113,12 +117,15 @@ jobs:
       uses: docker/metadata-action@v5
       with:
         images: |
-          ghcr.io/${{ github.repository }}
+          ghcr.io/innovationmech/swit
         tags: |
           type=ref,event=tag
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push Docker images
+      env:
+        REGISTRY: ghcr.io/innovationmech
+        VERSION: ${{ github.ref_name }}
       run: |
-        # 构建各个服务的 Docker 镜像
-        make docker
+        # 构建并推送各个服务的 Docker 镜像
+        ./scripts/tools/docker-manage.sh build --push

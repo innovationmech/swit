@@ -238,14 +238,104 @@ run_tests() {
         return 0
     fi
     
-    # 执行测试
-    if eval "$test_cmd"; then
+    # 创建临时文件存储测试输出
+    local test_output_file=$(mktemp)
+    local test_error_file=$(mktemp)
+    
+    # 执行测试并捕获输出
+    if eval "$test_cmd" > "$test_output_file" 2> "$test_error_file"; then
         log_success "✅ 测试通过"
+        # 清理临时文件
+        rm -f "$test_output_file" "$test_error_file"
         return 0
     else
+        local exit_code=$?
         log_error "❌ 测试失败"
-        return 1
+        
+        # 分析并显示失败信息
+        analyze_test_failures "$test_output_file" "$test_error_file"
+        
+        # 清理临时文件
+        rm -f "$test_output_file" "$test_error_file"
+        return $exit_code
     fi
+}
+
+# 函数：分析测试失败信息
+analyze_test_failures() {
+    local test_output_file="$1"
+    local test_error_file="$2"
+    
+    echo ""
+    log_error "🔍 测试失败详情："
+    echo ""
+    
+    # 分析失败的测试用例
+    local failed_tests=""
+    local failed_packages=""
+    local compilation_errors=""
+    
+    # 从输出中提取失败的测试
+    if [[ -s "$test_output_file" ]]; then
+        failed_tests=$(grep -E "^--- FAIL:" "$test_output_file" | head -10)
+        failed_packages=$(grep -E "^FAIL\s+" "$test_output_file" | head -10)
+    fi
+    
+    # 从错误输出中提取编译错误
+    if [[ -s "$test_error_file" ]]; then
+        compilation_errors=$(grep -E "(compilation|build|syntax|import|cannot find|no such|undefined)" "$test_error_file" | head -5)
+    fi
+    
+    # 显示失败的测试用例
+    if [[ -n "$failed_tests" ]]; then
+        log_error "❌ 失败的测试用例："
+        echo "$failed_tests" | while IFS= read -r line; do
+            echo "   $line"
+        done
+        echo ""
+    fi
+    
+    # 显示失败的包
+    if [[ -n "$failed_packages" ]]; then
+        log_error "📦 失败的包："
+        echo "$failed_packages" | while IFS= read -r line; do
+            echo "   $line"
+        done
+        echo ""
+    fi
+    
+    # 显示编译错误
+    if [[ -n "$compilation_errors" ]]; then
+        log_error "🔧 编译错误："
+        echo "$compilation_errors" | while IFS= read -r line; do
+            echo "   $line"
+        done
+        echo ""
+    fi
+    
+    # 如果没有找到具体错误，显示最后几行输出
+    if [[ -z "$failed_tests" && -z "$failed_packages" && -z "$compilation_errors" ]]; then
+        log_error "📄 最后的输出信息："
+        echo ""
+        if [[ -s "$test_error_file" ]]; then
+            echo "错误输出："
+            tail -10 "$test_error_file" | sed 's/^/   /'
+            echo ""
+        fi
+        if [[ -s "$test_output_file" ]]; then
+            echo "标准输出："
+            tail -10 "$test_output_file" | sed 's/^/   /'
+            echo ""
+        fi
+    fi
+    
+    # 提供调试建议
+    log_info "💡 调试建议："
+    echo "   1. 运行单个失败的测试包进行详细调试"
+    echo "   2. 使用 -v 选项查看详细输出"
+    echo "   3. 检查测试依赖是否正确生成"
+    echo "   4. 运行 go mod tidy 确保依赖正确"
+    echo ""
 }
 
 # 函数：运行覆盖率测试
@@ -273,8 +363,12 @@ run_coverage_tests() {
         return 0
     fi
     
+    # 创建临时文件存储测试输出
+    local test_output_file=$(mktemp)
+    local test_error_file=$(mktemp)
+    
     # 执行覆盖率测试
-    if eval "$coverage_cmd"; then
+    if eval "$coverage_cmd" > "$test_output_file" 2> "$test_error_file"; then
         log_success "✅ 覆盖率测试完成"
         
         # 生成HTML报告
@@ -291,10 +385,19 @@ run_coverage_tests() {
             log_warning "覆盖率报告生成失败"
         fi
         
+        # 清理临时文件
+        rm -f "$test_output_file" "$test_error_file"
         return 0
     else
+        local exit_code=$?
         log_error "❌ 覆盖率测试失败"
-        return 1
+        
+        # 分析并显示失败信息
+        analyze_test_failures "$test_output_file" "$test_error_file"
+        
+        # 清理临时文件
+        rm -f "$test_output_file" "$test_error_file"
+        return $exit_code
     fi
 }
 
