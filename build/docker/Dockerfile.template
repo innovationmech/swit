@@ -17,6 +17,12 @@ ARG GIT_COMMIT
 ARG TARGET_OS=linux
 ARG TARGET_ARCH=amd64
 
+# 安装必要的工具和生成proto代码
+RUN apk add --no-cache git make bash curl && \
+    chmod +x ./scripts/tools/proto-generate.sh && \
+    ./scripts/tools/proto-generate.sh --setup && \
+    ./scripts/tools/proto-generate.sh
+
 # 创建输出目录
 RUN mkdir -p _output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}
 
