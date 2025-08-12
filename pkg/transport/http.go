@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -50,7 +51,7 @@ type HTTPNetworkService struct {
 	address         string
 	config          *HTTPTransportConfig
 	ready           chan struct{}
-	readyOnce       sync.Once
+	readySignaled   int32 // atomic boolean to track if ready was signaled
 	mu              sync.RWMutex
 	serviceRegistry *TransportServiceRegistry
 }
@@ -92,16 +93,16 @@ func (h *HTTPNetworkService) Start(ctx context.Context) error {
 	h.address = address
 
 	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	// Check if server is already running
 	if h.server != nil {
-		h.mu.Unlock()
 		return nil // Already started
 	}
 
 	// Create listener
 	ln, err := net.Listen("tcp", address)
 	if err != nil {
-		h.mu.Unlock()
 		return fmt.Errorf("failed to create HTTP listener: %w", err)
 	}
 
@@ -116,24 +117,29 @@ func (h *HTTPNetworkService) Start(ctx context.Context) error {
 	// Reset ready channel for each start if enabled
 	if h.config.EnableReady {
 		h.ready = make(chan struct{})
-		h.readyOnce = sync.Once{}
+		// Reset ready signaled flag
+		atomic.StoreInt32(&h.readySignaled, 0)
 	}
 
-	// Capture references inside the lock to avoid race conditions
-	ready := h.ready
-	readyOnce := &h.readyOnce
+	// Capture server reference to avoid race conditions
 	server := h.server
-	h.mu.Unlock()
 
 	logger.Logger.Info("Starting HTTP transport", zap.String("address", h.address))
 
 	// Start serving in a goroutine
 	go func() {
 		// Signal that server is ready (only once) if enabled
-		if h.config.EnableReady && ready != nil {
-			readyOnce.Do(func() {
-				close(ready)
-			})
+		if h.config.EnableReady {
+			h.mu.RLock()
+			ready := h.ready
+			h.mu.RUnlock()
+
+			if ready != nil {
+				// Use atomic compare-and-swap to ensure only one signal
+				if atomic.CompareAndSwapInt32(&h.readySignaled, 0, 1) {
+					close(ready)
+				}
+			}
 		}
 
 		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -228,14 +234,17 @@ func (h *HTTPNetworkService) GetPort() int {
 	return port
 }
 
-// WaitReady waits for the HTTP server to be ready (for testing)
+// WaitReady returns a channel that will be closed when the service is ready
 func (h *HTTPNetworkService) WaitReady() <-chan struct{} {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if h.ready != nil {
+
+	// If ready channel exists and server is running, return it
+	if h.ready != nil && h.server != nil {
 		return h.ready
 	}
-	// Return a closed channel if ready is disabled
+
+	// Return a closed channel if service is not running or ready channel is nil
 	closed := make(chan struct{})
 	close(closed)
 	return closed
