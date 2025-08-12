@@ -165,8 +165,6 @@ jobs:
           _output/dist/*.tar.gz
           _output/dist/*.zip
           _output/dist/checksums.txt
-          _output/build/*-*-*-*
-          _output/build/*-*-*-*.exe
         token: ${{ secrets.GITHUB_TOKEN }}
 
   docker-release:
