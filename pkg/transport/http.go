@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -50,7 +51,7 @@ type HTTPNetworkService struct {
 	address         string
 	config          *HTTPTransportConfig
 	ready           chan struct{}
-	readyOnce       sync.Once
+	readySignaled   int32 // atomic boolean to track if ready was signaled
 	mu              sync.RWMutex
 	serviceRegistry *TransportServiceRegistry
 }
@@ -116,8 +117,8 @@ func (h *HTTPNetworkService) Start(ctx context.Context) error {
 	// Reset ready channel for each start if enabled
 	if h.config.EnableReady {
 		h.ready = make(chan struct{})
-		// Create a new sync.Once for each start
-		h.readyOnce = sync.Once{}
+		// Reset ready signaled flag
+		atomic.StoreInt32(&h.readySignaled, 0)
 	}
 
 	// Capture server reference to avoid race conditions
@@ -131,13 +132,13 @@ func (h *HTTPNetworkService) Start(ctx context.Context) error {
 		if h.config.EnableReady {
 			h.mu.RLock()
 			ready := h.ready
-			readyOnce := &h.readyOnce
 			h.mu.RUnlock()
 
-			if ready != nil && readyOnce != nil {
-				readyOnce.Do(func() {
+			if ready != nil {
+				// Use atomic compare-and-swap to ensure only one signal
+				if atomic.CompareAndSwapInt32(&h.readySignaled, 0, 1) {
 					close(ready)
-				})
+				}
 			}
 		}
 
