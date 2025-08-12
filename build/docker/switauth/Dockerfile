@@ -1,11 +1,23 @@
 FROM golang:1.24-alpine AS builder
 
+# Install build dependencies
+RUN apk add --no-cache git curl
+
 WORKDIR /app
 
 COPY . .
 
+# Install buf tool for proto generation
+RUN go install github.com/bufbuild/buf/cmd/buf@latest
+
+# Generate protobuf code
+RUN cd api && buf dep update && buf generate
+
 # 创建输出目录结构，与构建脚本保持一致
 RUN mkdir -p _output/build/swit-auth/linux/amd64
+
+# Download dependencies
+RUN go mod tidy && go mod download
 
 # 使用与构建脚本相同的构建参数
 ARG VERSION=dev
