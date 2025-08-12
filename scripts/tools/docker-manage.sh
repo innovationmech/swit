@@ -587,7 +587,7 @@ docker_build_service_advanced() {
     
     log_info "高级构建 Docker 镜像: ${service}"
     
-    local image_name="${REGISTRY}/${TAG_PREFIX}-${service}"
+    local image_name="${REGISTRY}/${service}"
     local dockerfile_path="build/docker/${service}/Dockerfile"
     
     # 检查 Dockerfile 是否存在
