@@ -23,6 +23,11 @@ RUN apk add --no-cache git make bash curl && \
     ./scripts/tools/proto-generate.sh --setup && \
     ./scripts/tools/proto-generate.sh
 
+# 验证proto代码生成并更新Go模块
+RUN ls -la api/gen/go/proto/swit/ && \
+    go mod tidy && \
+    go mod download
+
 # 创建输出目录
 RUN mkdir -p _output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}
 
