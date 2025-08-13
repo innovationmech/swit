@@ -11,32 +11,51 @@
 [![GitHub issues](https://img.shields.io/github/issues/innovationmech/swit.svg)](https://github.com/innovationmech/swit/issues)
 [![GitHub stars](https://img.shields.io/github/stars/innovationmech/swit.svg)](https://github.com/innovationmech/swit/stargazers)
 
-Swit is a microservice-based backend system built with Go, featuring modular design for user management, authentication, and service discovery. The project uses the Gin framework for HTTP requests, GORM for data persistence, and supports gRPC protocol for inter-service communication.
+Swit is a comprehensive microservice framework for Go that provides a unified, production-ready foundation for building scalable microservices. Built with a focus on developer productivity and architectural consistency, Swit offers a complete base server framework, unified transport layer, dependency injection system, and comprehensive tooling for rapid microservice development.
 
-## Core Features
+## Framework Features
 
-- **Microservice Architecture**: Modular design supporting independent deployment and scaling
-- **Authentication System**: Complete JWT-based authentication with token refresh support
-- **User Management**: Full CRUD operations and permission management for users
-- **Service Discovery**: Consul integration for service registration and discovery
-- **Database Support**: MySQL for data persistence
-- **Dual Protocol Support**: Both HTTP REST API and gRPC protocol support
-- **Modern API**: Buf toolchain for managing gRPC APIs with versioning and automatic documentation generation
-- **Health Check**: Built-in health check endpoints for service monitoring
-- **Docker Support**: Containerized deployment solution
-- **OpenAPI Documentation**: Integrated Swagger UI for interactive API documentation
+- **Base Server Framework**: Complete server lifecycle management with `BusinessServerCore` interface and unified service registration patterns
+- **Unified Transport Layer**: Seamless HTTP and gRPC transport coordination through `TransportCoordinator` with pluggable transport architecture
+- **Dependency Injection System**: Factory-based dependency container with singleton/transient support and automatic lifecycle management
+- **Configuration Management**: Comprehensive configuration validation with environment-based overrides and sensible defaults
+- **Performance Monitoring**: Built-in metrics collection, performance profiling, and monitoring hooks with threshold violation detection
+- **Service Discovery Integration**: Consul-based service registration with health check integration and automatic deregistration
+- **Middleware Framework**: Configurable middleware stack for both HTTP and gRPC transports including CORS, rate limiting, and timeouts
+- **Health Check System**: Comprehensive health monitoring with service aggregation and timeout handling
+- **Graceful Lifecycle Management**: Phased startup/shutdown with proper resource cleanup and error handling
+- **Protocol Buffer Integration**: Buf toolchain support for API versioning and automatic documentation generation
+- **Example Services**: Complete reference implementations demonstrating framework usage patterns and best practices
 
-## System Architecture
+## Framework Architecture
 
-The project consists of the following main components:
+The Swit framework consists of the following core components:
 
-1. **swit-serve** - Main user service (port 9000)
-2. **swit-auth** - Authentication service (port 9001)
-3. **switctl** - Command-line control tool
+### Core Framework (`pkg/server/`)
+- **BusinessServerCore**: Main server interface providing lifecycle management, transport coordination, and service health monitoring
+- **BusinessServerImpl**: Complete server implementation with transport management, service discovery, and performance monitoring
+- **BusinessServiceRegistrar**: Interface pattern for services to register with the framework's transport layer
+- **BusinessDependencyContainer**: Dependency injection system with factory patterns and lifecycle management
 
-## Modern API Architecture
+### Transport Layer (`pkg/transport/`)
+- **TransportCoordinator**: Central coordinator managing multiple transport instances (HTTP/gRPC) with unified service registration
+- **NetworkTransport**: Base interface for transport implementations with pluggable architecture
+- **MultiTransportRegistry**: Service registry manager handling cross-transport operations and health checking
 
-The project has completed API modernization migration, using Buf toolchain to manage gRPC APIs:
+### Example Services (`internal/`)
+- **switserve**: User management service demonstrating complete framework usage with HTTP/gRPC endpoints
+- **switauth**: Authentication service showcasing JWT integration and service-to-service communication
+- **switctl**: Command-line tool example showing framework integration patterns
+
+### Framework Support (`pkg/`)
+- **Discovery**: Consul-based service discovery with automatic registration/deregistration
+- **Middleware**: HTTP and gRPC middleware stack with CORS, rate limiting, timeout, and authentication support
+- **Types**: Common type definitions and health check abstractions
+- **Utils**: Cryptographic utilities, JWT handling, and security components
+
+## Framework API Architecture
+
+The Swit framework provides comprehensive API development support through the Buf toolchain for gRPC APIs:
 
 ```
 api/
@@ -62,216 +81,536 @@ api/
 - **Dual Protocol**: Support both gRPC and HTTP/REST
 - **Automation**: Use Buf toolchain for automatic code and documentation generation
 
-## Current Implemented Services
+## Framework Examples and Reference Implementations
 
-### 1. Greeter Service (gRPC)
-**HTTP Port**: 9000  
-**gRPC Port**: 10000 (HTTP port + 1000)  
-**Protocol**: gRPC + HTTP  
-**Implemented Methods**:
-- `SayHello` - Simple greeting functionality ✅
-- `SayHelloStream` - Streaming greeting functionality ✅
+The Swit framework includes comprehensive examples demonstrating various usage patterns:
 
-**HTTP Endpoints**:
-- `POST /v1/greeter/hello` - Send greeting request
-- `POST /v1/greeter/hello/stream` - Send streaming greeting request
+### Simple Examples (`examples/`)
 
-**gRPC Endpoints**:
-- `greeter.v1.GreeterService/SayHello` - gRPC greeting service
-- `greeter.v1.GreeterService/SayHelloStream` - gRPC streaming greeting service
+#### `examples/simple-http-service/`
+- **Purpose**: Basic HTTP-only service demonstration
+- **Features**: RESTful API endpoints, health checks, graceful shutdown
+- **Best For**: Getting started with the framework, HTTP-only services
+- **Key Concepts**: `BusinessServiceRegistrar` implementation, HTTP routing patterns
 
-### 2. Auth Service (HTTP REST)
-**Port**: 9001  
-**Protocol**: HTTP REST + gRPC  
-**Main Features**:
-- User login/logout
-- JWT Token management
-- Token refresh and validation
-- Password reset
-- Email verification
-- Change password
+#### `examples/grpc-service/`
+- **Purpose**: gRPC service implementation showcase
+- **Features**: Protocol Buffer definitions, gRPC server setup, streaming support
+- **Best For**: gRPC-focused microservices, inter-service communication
+- **Key Concepts**: `BusinessGRPCService` implementation, Protocol Buffer integration
 
-### 3. User Service (HTTP REST)
-**HTTP Port**: 9000  
-**gRPC Port**: 10000 (HTTP port + 1000)  
-**Protocol**: HTTP REST + gRPC  
-**Main Features**:
-- User registration
-- User information management
-- User query and deletion
-- User listing with pagination
-- User role and permission management
+#### `examples/full-featured-service/`
+- **Purpose**: Complete framework feature demonstration
+- **Features**: HTTP + gRPC, dependency injection, service discovery, middleware
+- **Best For**: Production-ready service patterns, framework evaluation
+- **Key Concepts**: Multi-transport services, advanced configuration, monitoring
+
+### Reference Services (`internal/`)
+
+#### `internal/switserve/` - User Management Service
+- **Purpose**: Comprehensive user management microservice
+- **Architecture**: Full framework integration with database, caching, and external service communication
+- **Features**:
+  - User CRUD operations (HTTP REST + gRPC)
+  - Greeter service with streaming support
+  - Notification system integration
+  - Health monitoring and graceful shutdown
+  - Database integration with GORM
+  - Middleware stack demonstration
+
+#### `internal/switauth/` - Authentication Service  
+- **Purpose**: JWT-based authentication microservice
+- **Architecture**: Secure authentication patterns with token management
+- **Features**:
+  - User login/logout (HTTP + gRPC)
+  - JWT token generation and validation  
+  - Token refresh and revocation
+  - Password reset workflows
+  - Service-to-service authentication
+  - Redis integration for session management
+
+#### `internal/switctl/` - CLI Tool
+- **Purpose**: Command-line administration tool
+- **Architecture**: Framework integration patterns for CLI applications
+- **Features**:
+  - Health check commands
+  - Service management operations
+  - Version information and diagnostics
+
+### Usage Patterns Demonstrated
+
+1. **Service Registration**: Multiple implementation patterns for HTTP and gRPC services
+2. **Configuration Management**: Environment-based configuration with validation
+3. **Dependency Injection**: Database connections, Redis clients, external service clients
+4. **Middleware Integration**: Authentication, CORS, rate limiting, logging
+5. **Health Monitoring**: Service health checks and readiness probes
+6. **Performance Monitoring**: Metrics collection and performance profiling
+7. **Service Discovery**: Consul registration and service lookup patterns
+8. **Testing Strategies**: Unit tests, integration tests, and performance benchmarks
+
+## Framework Interfaces & Patterns
+
+### Core Server Interfaces
+
+#### `BusinessServerCore`
+Main server interface providing complete lifecycle management:
+```go
+type BusinessServerCore interface {
+    Start(ctx context.Context) error
+    Stop(ctx context.Context) error
+    Shutdown() error
+    GetHTTPAddress() string
+    GetGRPCAddress() string
+    GetTransports() []transport.NetworkTransport
+    GetTransportStatus() map[string]TransportStatus
+}
+```
+
+#### `BusinessServiceRegistrar`
+Interface for services to register with the framework:
+```go
+type BusinessServiceRegistrar interface {
+    RegisterServices(registry BusinessServiceRegistry) error
+}
+```
+
+#### `BusinessServiceRegistry` 
+Registry interface for different service types:
+```go
+type BusinessServiceRegistry interface {
+    RegisterBusinessHTTPHandler(handler BusinessHTTPHandler) error
+    RegisterBusinessGRPCService(service BusinessGRPCService) error
+    RegisterBusinessHealthCheck(check BusinessHealthCheck) error
+}
+```
+
+### Transport Layer Interfaces
+
+#### `BusinessHTTPHandler`
+Interface for HTTP service implementations:
+```go
+type BusinessHTTPHandler interface {
+    RegisterRoutes(router interface{}) error
+    GetServiceName() string
+}
+```
+
+#### `BusinessGRPCService`
+Interface for gRPC service implementations:
+```go
+type BusinessGRPCService interface {
+    RegisterGRPC(server interface{}) error
+    GetServiceName() string
+}
+```
+
+#### `BusinessHealthCheck`
+Interface for service health monitoring:
+```go
+type BusinessHealthCheck interface {
+    Check(ctx context.Context) error
+    GetServiceName() string
+}
+```
+
+### Dependency Management Interfaces
+
+#### `BusinessDependencyContainer`
+Dependency injection and lifecycle management:
+```go
+type BusinessDependencyContainer interface {
+    Close() error
+    GetService(name string) (interface{}, error)
+}
+```
+
+#### `BusinessDependencyRegistry`
+Extended dependency management with factory patterns:
+```go
+type BusinessDependencyRegistry interface {
+    BusinessDependencyContainer
+    Initialize(ctx context.Context) error
+    RegisterSingleton(name string, factory DependencyFactory) error
+    RegisterTransient(name string, factory DependencyFactory) error
+    RegisterInstance(name string, instance interface{}) error
+}
+```
+
+### Configuration Interfaces
+
+#### `ConfigValidator`
+Configuration validation and defaults:
+```go
+type ConfigValidator interface {
+    Validate() error
+    SetDefaults()
+}
+```
+
+### Service Implementation Examples
+
+The framework includes working examples of these interfaces:
+- **HTTP Services**: RESTful APIs with Gin router integration
+- **gRPC Services**: Protocol Buffer service implementations
+- **Health Checks**: Database connectivity, external service checks
+- **Dependency Injection**: Database connections, Redis clients, external APIs
+- **Configuration**: Environment-based config with validation
 
 ## Requirements
 
-- Go 1.24+
-- MySQL 8.0+
-- Consul 1.12+
-- Buf CLI 1.0+ (for API development)
-- Docker 20.10+ (for containerized deployment)
+### Framework Core Requirements
+- **Go 1.24+** - Modern Go version with generics support
+- **Git** - For framework and example code management
+
+### Optional Dependencies (Service-Specific)
+- **MySQL 8.0+** - For database-backed services (demonstrated in examples)
+- **Redis 6.0+** - For caching and session management (used in auth examples)
+- **Consul 1.12+** - For service discovery (optional, can be disabled)
+
+### Development Tools
+- **Buf CLI 1.0+** - For Protocol Buffer API development
+- **Docker 20.10+** - For containerized deployment and development
+- **Make** - For build automation (standard on most systems)
 
 ## Quick Start
 
-### 1. Clone Repository
+### 1. Get the Framework
 ```bash
 git clone https://github.com/innovationmech/swit.git
 cd swit
-```
-
-### 2. Install Dependencies
-```bash
 go mod download
 ```
 
-### 3. Environment Configuration
-```bash
-# Copy configuration files
-cp swit.yaml.example swit.yaml
-cp switauth.yaml.example switauth.yaml
+### 2. Create a Simple Service
+```go
+// main.go
+package main
 
-# Edit configuration files with database information
+import (
+    "context"
+    "net/http"
+    
+    "github.com/gin-gonic/gin"
+    "github.com/innovationmech/swit/pkg/server"
+)
+
+// MyService implements the BusinessServiceRegistrar interface
+type MyService struct{}
+
+func (s *MyService) RegisterServices(registry server.BusinessServiceRegistry) error {
+    httpHandler := &MyHTTPHandler{}
+    return registry.RegisterBusinessHTTPHandler(httpHandler)
+}
+
+// MyHTTPHandler implements the BusinessHTTPHandler interface
+type MyHTTPHandler struct{}
+
+func (h *MyHTTPHandler) RegisterRoutes(router interface{}) error {
+    ginRouter := router.(*gin.Engine)
+    ginRouter.GET("/hello", h.handleHello)
+    return nil
+}
+
+func (h *MyHTTPHandler) GetServiceName() string {
+    return "my-service"
+}
+
+func (h *MyHTTPHandler) handleHello(c *gin.Context) {
+    c.JSON(http.StatusOK, gin.H{"message": "Hello from Swit framework!"})
+}
+
+func main() {
+    config := &server.ServerConfig{
+        ServiceName: "my-service",
+        HTTP: server.HTTPConfig{Port: "8080", Enabled: true},
+        GRPC: server.GRPCConfig{Enabled: false},
+    }
+    
+    service := &MyService{}
+    baseServer, _ := server.NewBusinessServerCore(config, service, nil)
+    
+    ctx := context.Background()
+    baseServer.Start(ctx)
+    defer baseServer.Shutdown()
+    
+    // Server running on :8080
+    select {} // Keep running
+}
 ```
 
-### 4. Database Initialization
+### 3. Run Your Service
 ```bash
-# Create databases
-mysql -u root -p
-CREATE DATABASE user_service_db;
-CREATE DATABASE auth_service_db;
-
-# Import database schema
-mysql -u root -p user_service_db < scripts/sql/user_service_db.sql
-mysql -u root -p auth_service_db < scripts/sql/auth_service_db.sql
+go run main.go
+curl http://localhost:8080/hello
 ```
 
-### 5. API Documentation
+### 4. Explore Examples
 ```bash
-# Generate OpenAPI documentation
-make swagger
+# Simple HTTP service
+cd examples/simple-http-service
+go run main.go
 
-# View documentation at:
-# http://localhost:9000/swagger/index.html (for swit-serve)
-# http://localhost:9001/swagger/index.html (for swit-auth)
+# gRPC service example
+cd examples/grpc-service  
+go run main.go
+
+# Full-featured service
+cd examples/full-featured-service
+go run main.go
 ```
 
-### 5. Build and Run
+### 5. Build Framework Components
 ```bash
-# Build all services (development mode)
+# Build all framework components and examples
 make build
 
-# Or quick build (skip quality checks)
+# Quick development build
 make build-dev
 
-# Run authentication service
-./bin/swit-auth
-
-# Run user service
-./bin/swit-serve
+# Run example services
+./bin/swit-serve    # User management example
+./bin/swit-auth     # Authentication example
 ```
 
-## API Development
+## Framework Development
 
-### Toolchain Setup
+### Development Environment Setup
 ```bash
-# Setup protobuf development environment
-make proto-setup
+# Setup complete framework development environment
+make setup-dev
 
-# Setup swagger development environment
-make swagger-setup
+# Quick setup for essential components only
+make setup-quick
+
+# Setup individual development tools
+make proto-setup    # Protocol Buffer toolchain
+make swagger-setup  # OpenAPI documentation tools
+make quality-setup  # Code quality tools
 ```
 
-### Daily Development Commands
+### Framework Development Commands
 
-#### Protobuf Development
+#### Framework API Development
 ```bash
-# Complete protobuf workflow (recommended)
-make proto
+# Complete API development workflow
+make proto          # Generate protobuf code + docs
+make swagger        # Generate OpenAPI documentation
 
-# Quick development mode (skip dependencies)
-make proto-dev
+# Quick development iterations
+make proto-dev      # Skip dependency checks
+make swagger-dev    # Skip formatting steps
 
-# Advanced proto operations
-make proto-advanced OPERATION=format
-make proto-advanced OPERATION=lint
-make proto-advanced OPERATION=breaking
-make proto-advanced OPERATION=clean
-make proto-advanced OPERATION=docs
+# Advanced API operations
+make proto-advanced OPERATION=format    # Format proto files
+make proto-advanced OPERATION=lint      # Lint proto definitions
+make proto-advanced OPERATION=breaking  # Check breaking changes
+make proto-advanced OPERATION=docs      # Generate documentation only
 ```
 
-#### Swagger Documentation
+#### Framework Extension Development
 ```bash
-# Generate swagger documentation (recommended)
-make swagger
+# Build framework components and examples
+make build          # Full framework build
+make build-dev      # Quick build (skip quality checks)
+make build-release  # Multi-platform release build
 
-# Quick development mode (skip formatting)
-make swagger-dev
-
-# Advanced swagger operations
-make swagger-advanced OPERATION=format
-make swagger-advanced OPERATION=switserve
-make swagger-advanced OPERATION=switauth
-make swagger-advanced OPERATION=clean
+# Framework testing
+make test           # Complete test suite
+make test-dev       # Quick tests (skip codegen)
+make test-coverage  # Generate coverage reports
+make test-race      # Race condition detection
 ```
 
-### API Development Workflow
+### Framework Extension Workflow
 
-1. **Modify proto files**
+1. **Create Your Service**
    ```bash
-   # Edit proto files
-   vim api/proto/swit/v1/greeter/greeter.proto
+   # Create service directory
+   mkdir my-service
+   cd my-service
+   
+   # Initialize with framework dependency
+   go mod init my-service
+   go get github.com/innovationmech/swit
    ```
 
-2. **Generate code**
+2. **Implement Framework Interfaces**
+   ```go
+   // Implement BusinessServiceRegistrar
+   type MyService struct{}
+   
+   func (s *MyService) RegisterServices(registry server.BusinessServiceRegistry) error {
+       // Register your HTTP/gRPC handlers
+       return nil
+   }
+   ```
+
+3. **Configure and Test**
    ```bash
+   # Generate proto code if using gRPC
    make proto-generate
+   
+   # Build and test your service
+   go build .
+   go test ./...
+   
+   # Run with framework
+   ./my-service
    ```
 
-3. **Implement service**
+4. **Framework Integration Testing**
    ```bash
-   # Implement gRPC methods in corresponding service files
-   vim internal/switserve/service/greeter.go
+   # Test with framework examples
+   cd examples/simple-http-service
+   go run main.go
+   
+   # Integration testing
+   make test-integration
    ```
 
-4. **Test and validate**
+### Contributing to the Framework
+
+1. **Framework Core Development**
    ```bash
-   make proto-lint
-   make build
-   make test
+   # Work on pkg/server/ or pkg/transport/
+   vim pkg/server/interfaces.go
+   
+   # Test framework changes
+   make test-advanced TYPE=unit PACKAGE=pkg
    ```
 
-## Configuration
+2. **Add New Examples**
+   ```bash
+   # Create new example service
+   mkdir examples/my-example
+   # Follow example patterns from existing services
+   ```
 
-### Main Service Configuration (swit.yaml)
-```yaml
-server:
-  port: 9000
+3. **Documentation Updates**
+   ```bash
+   # Update framework documentation
+   vim pkg/server/CLAUDE.md
+   vim pkg/transport/CLAUDE.md
+   ```
 
-database:
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-  dbname: user_service_db
+## Framework Configuration
 
-serviceDiscovery:
-  address: "localhost:8500"
+### Core Server Configuration
+The framework uses `ServerConfig` structure for comprehensive server setup:
+
+```go
+type ServerConfig struct {
+    ServiceName     string           // Service identification
+    HTTP            HTTPConfig       // HTTP transport configuration  
+    GRPC            GRPCConfig       // gRPC transport configuration
+    Discovery       DiscoveryConfig  // Service discovery settings
+    Middleware      MiddlewareConfig // Middleware configuration
+    ShutdownTimeout time.Duration    // Graceful shutdown timeout
+}
 ```
 
-### Authentication Service Configuration (switauth.yaml)
+### HTTP Transport Configuration
+```go
+type HTTPConfig struct {
+    Port         string            // Listen port (e.g., "8080")
+    Address      string            // Listen address (e.g., ":8080")
+    Enabled      bool              // Enable HTTP transport
+    EnableReady  bool              // Ready channel for testing
+    TestMode     bool              // Test mode settings
+    ReadTimeout  time.Duration     // Read timeout
+    WriteTimeout time.Duration     // Write timeout
+    IdleTimeout  time.Duration     // Idle timeout
+    Headers      map[string]string // Default headers
+    Middleware   HTTPMiddleware    // Middleware configuration
+}
+```
+
+### gRPC Transport Configuration
+```go
+type GRPCConfig struct {
+    Port                string              // Listen port (e.g., "9080")
+    Address             string              // Listen address
+    Enabled             bool                // Enable gRPC transport
+    EnableKeepalive     bool                // Enable keepalive
+    EnableReflection    bool                // Enable reflection
+    EnableHealthService bool                // Enable health service
+    MaxRecvMsgSize      int                 // Max receive message size
+    MaxSendMsgSize      int                 // Max send message size
+    KeepaliveParams     GRPCKeepaliveParams // Keepalive parameters
+}
+```
+
+### Service Discovery Configuration
+```go
+type DiscoveryConfig struct {
+    Enabled     bool     // Enable service discovery
+    Address     string   // Consul address (e.g., "localhost:8500")
+    ServiceName string   // Service name for registration
+    Tags        []string // Service tags
+    CheckPath   string   // Health check path
+    CheckInterval string // Health check interval
+}
+```
+
+### Example Framework Configuration (YAML)
 ```yaml
-server:
-  port: 9001
-  grpcPort: 50051
+service_name: "my-microservice"
+shutdown_timeout: "30s"
 
-database:
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-  dbname: auth_service_db
+http:
+  enabled: true
+  port: "8080" 
+  read_timeout: "30s"
+  write_timeout: "30s"
+  middleware:
+    enable_cors: true
+    enable_logging: true
+    enable_timeout: true
 
-serviceDiscovery:
-  address: "localhost:8500"
+grpc:
+  enabled: true
+  port: "9080"
+  enable_keepalive: true
+  enable_reflection: true
+  enable_health_service: true
+
+discovery:
+  enabled: true
+  address: "127.0.0.1:8500"
+  service_name: "my-microservice"
+  tags: ["v1", "production"]
+  check_path: "/health"
+  check_interval: "10s"
+
+middleware:
+  enable_cors: true
+  enable_logging: true
+  cors:
+    allowed_origins: ["*"]
+    allowed_methods: ["GET", "POST", "PUT", "DELETE"]
+    allowed_headers: ["*"]
+```
+
+### Environment Variable Configuration
+```bash
+# Service configuration
+SERVICE_NAME=my-microservice
+SHUTDOWN_TIMEOUT=30s
+
+# HTTP transport
+HTTP_ENABLED=true
+HTTP_PORT=8080
+HTTP_READ_TIMEOUT=30s
+
+# gRPC transport  
+GRPC_ENABLED=true
+GRPC_PORT=9080
+GRPC_ENABLE_REFLECTION=true
+
+# Service discovery
+DISCOVERY_ENABLED=true
+CONSUL_ADDRESS=localhost:8500
+DISCOVERY_SERVICE_NAME=my-microservice
 ```
 
 ## Docker Deployment
@@ -530,41 +869,123 @@ make help             # Show all available commands with descriptions
 
 For detailed command options and parameters, run `make help` or refer to the specific `.mk` files in `scripts/mk/`.
 
-### API Endpoints Reference
+### Framework Usage Examples
 
-#### swit-serve (User Service)
+#### Example Services (Reference Implementations)
+
+#### `examples/simple-http-service/`
+- **HTTP**: `http://localhost:8080` (configurable)
+- **Purpose**: Basic framework demonstration
+- **Endpoints**:
+  - `GET /api/v1/hello?name=<name>` - Greeting endpoint
+  - `GET /api/v1/status` - Service status
+  - `POST /api/v1/echo` - Echo request body
+  - `GET /health` - Health check (auto-registered)
+
+#### `internal/switserve/` (User Management Reference)
 - **HTTP**: `http://localhost:9000`
 - **gRPC**: `http://localhost:10000`
-- `/v1/users` - User operations (POST, GET, PUT, DELETE)
-- `/v1/users/username/{username}` - Get user by username
-- `/v1/users/email/{email}` - Get user by email
-- `/v1/users` - List users with pagination
+- **Purpose**: Complete framework feature demonstration
+- **Framework Features Demonstrated**:
+  - Multi-transport service registration
+  - Database integration patterns
+  - Health check implementation
+  - Dependency injection usage
+  - Middleware configuration
 
-#### swit-auth (Auth Service)
+#### `internal/switauth/` (Authentication Reference)
 - **HTTP**: `http://localhost:9001`
 - **gRPC**: `http://localhost:50051`
-- `/v1/auth/login` - Login
-- `/v1/auth/logout` - Logout
-- `/v1/auth/refresh` - Refresh token
-- `/v1/auth/validate` - Validate token
-- `/v1/auth/reset-password` - Reset password
-- `/v1/auth/change-password` - Change password
-- `/v1/auth/verify-email` - Verify email
+- **Purpose**: Authentication service patterns
+- **Framework Features Demonstrated**:
+  - JWT middleware integration
+  - Service-to-service communication
+  - Redis dependency injection
+  - Secure configuration patterns
 
-#### switctl (CLI Tool)
-- Command-line tool for system administration
+#### Framework Patterns Available
+
+1. **HTTP Service Registration**
+   ```go
+   func (h *MyHandler) RegisterRoutes(router interface{}) error {
+       ginRouter := router.(*gin.Engine)
+       ginRouter.GET("/api/v1/my-endpoint", h.handleEndpoint)
+       return nil
+   }
+   ```
+
+2. **gRPC Service Registration**
+   ```go
+   func (s *MyService) RegisterGRPC(server interface{}) error {
+       grpcServer := server.(*grpc.Server)
+       mypb.RegisterMyServiceServer(grpcServer, s)
+       return nil
+   }
+   ```
+
+3. **Health Check Implementation**
+   ```go
+   func (h *MyHealthCheck) Check(ctx context.Context) error {
+       // Implement your health check logic
+       return nil
+   }
+   ```
 
 
-## Related Documentation
+## Framework Documentation
 
-- [Development Guide](DEVELOPMENT.md)
-- [API Documentation](api/docs/README.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Security Policy](SECURITY.md)
+### Core Framework Guides
+- [Base Server Framework](docs/base-server-framework.md) - Complete framework architecture and usage patterns
+- [Configuration Reference](docs/configuration-reference.md) - Comprehensive configuration documentation
+- [Service Development Guide](docs/service-development-guide.md) - How to build services with the framework
+
+### Framework Components Documentation
+- [Base Server Framework](pkg/server/CLAUDE.md) - Core server interfaces and implementation patterns
+- [Transport Layer](pkg/transport/CLAUDE.md) - HTTP and gRPC transport coordination
+- [Service Architecture Analysis](docs/service-architecture-analysis.md) - Framework design principles
+
+### Example Service Documentation
+- [Example Services Overview](examples/README.md) - Guide to all framework examples
+- [Simple HTTP Service](examples/simple-http-service/README.md) - Basic framework usage
+- [gRPC Service Example](examples/grpc-service/README.md) - gRPC integration patterns
+- [Full-Featured Service](examples/full-featured-service/README.md) - Complete framework showcase
+
+### Reference Service Documentation
+- [SwitServe Service](docs/services/switserve/README.md) - User management service implementation
+- [SwitAuth Service](docs/services/switauth/README.md) - Authentication service patterns
+
+### API and Protocol Documentation
+- [API Documentation](api/docs/README.md) - Protocol Buffer definitions and API patterns
+- [Generated API Reference](docs/generated/) - Auto-generated API documentation
+
+### Development and Contribution
+- [Development Guide](DEVELOPMENT.md) - Framework development environment setup
+- [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
+- [Security Policy](SECURITY.md) - Security practices and reporting
 
 ## Contributing
 
-We welcome contributions to the Swit project! Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to ensure a positive and inclusive environment for all community members.
+We welcome contributions to the Swit microservice framework! Whether you're fixing bugs, improving documentation, adding examples, or enhancing framework features, your contributions are valued.
+
+### Ways to Contribute
+
+1. **Framework Core Development** - Enhance `pkg/server/` and `pkg/transport/` components
+2. **Example Services** - Add new examples in `examples/` directory
+3. **Documentation** - Improve framework documentation and guides
+4. **Testing** - Add tests for framework components and examples
+5. **Bug Reports** - Report issues with framework functionality
+6. **Feature Requests** - Suggest new framework capabilities
+
+### Getting Started
+
+1. Fork the repository and clone your fork
+2. Set up the development environment: `make setup-dev`
+3. Run tests to ensure everything works: `make test`
+4. Make your changes following the existing patterns
+5. Add tests for new functionality
+6. Submit a pull request with a clear description
+
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to ensure a positive and inclusive environment for all community members.
 
 ## License
 
