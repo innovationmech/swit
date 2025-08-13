@@ -4,197 +4,280 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Key Development Commands
 
-### Build Commands
-- `make build` - Build all services (swit-serve, swit-auth, switctl)
+### Framework Development Commands
+- `make build` - Build framework components and example services
 - `make build-dev` - Quick build without quality checks
 - `make build-release` - Build release versions for all platforms
 - `make all` - Full build pipeline (proto + swagger + tidy + copyright + build)
 
 ### Testing Commands
-- `make test` - Run all tests with dependencies
+- `make test` - Run all tests including framework and examples
 - `make test-dev` - Quick test without dependency generation
-- `make test-coverage` - Generate test coverage report
+- `make test-coverage` - Generate test coverage report for framework
 - `make test-race` - Run tests with race detection
+- `make test-advanced TYPE=unit PACKAGE=pkg` - Test specific framework packages
 
 ### Code Quality
 - `make tidy` - Run go mod tidy
 - `make format` - Format code with gofmt
 - `make quality` - Run format and vet checks
-- `make lint` - Run golangci-lint (if available)
+- `make quality-dev` - Quick quality checks for development
 
 ### API Development
 - `make proto` - Generate protobuf code and documentation
 - `make proto-generate` - Generate code only
 - `make proto-lint` - Check proto files
-- `make swagger` - Generate Swagger documentation for all services
+- `make swagger` - Generate Swagger documentation for example services
 
 ### Development Environment
-- `make setup-dev` - Setup complete development environment
+- `make setup-dev` - Setup complete framework development environment
+- `make setup-quick` - Quick setup for essential components
 - `make ci` - Run full CI pipeline locally
+
+### Running Examples
+- Run simple HTTP service: `cd examples/simple-http-service && go run main.go`
+- Run gRPC service: `cd examples/grpc-service && go run main.go`
+- Run reference services: `./bin/swit-serve` or `./bin/swit-auth`
 
 ## High-Level Architecture
 
-### Base Server Framework
-The project uses a unified base server framework located in `pkg/server/` that provides:
+### Microservice Framework Core
+This is a comprehensive Go microservice framework providing production-ready components for building scalable microservices. The framework consists of:
 
-- **BaseServer Interface** - Consistent lifecycle management across all services
-- **Transport Management** - Unified HTTP and gRPC transport handling via Transport Manager
-- **Service Registration** - Service Registrar pattern for pluggable service registration
-- **Performance Monitoring** - Built-in performance metrics and monitoring hooks
-- **Dependency Injection** - DependencyContainer interface for service dependencies
-- **Service Discovery Integration** - Pluggable service discovery with Consul support
+### Core Framework (`pkg/server/`)
+- **BusinessServerCore Interface** - Main server interface providing complete lifecycle management
+- **BusinessServerImpl** - Complete server implementation with transport coordination
+- **BusinessServiceRegistrar** - Interface pattern for services to register with the framework
+- **BusinessDependencyContainer** - Dependency injection system with factory patterns
+- **Configuration Management** - Comprehensive validation with environment overrides
+- **Performance Monitoring** - Built-in metrics collection and monitoring hooks
+- **Lifecycle Management** - Phased startup/shutdown with proper resource cleanup
 
 Key components:
-- `pkg/server/base.go` - Core BaseServerImpl with lifecycle management
-- `pkg/server/interfaces.go` - All server interfaces and contracts
-- `pkg/server/config.go` - Server configuration management
-- `pkg/server/performance.go` - Performance monitoring and metrics
+- `pkg/server/base.go` - Core server implementation with all framework features
+- `pkg/server/interfaces.go` - All framework interfaces and contracts
+- `pkg/server/config.go` - Framework configuration structures and validation
+- `pkg/server/performance.go` - Performance monitoring and metrics collection
+- `pkg/server/dependency.go` - Dependency injection container implementation
 
-### Service Structure
-The project follows a microservice architecture with three main services:
+### Transport Layer (`pkg/transport/`)
+- **TransportCoordinator** - Central coordinator for HTTP and gRPC transports
+- **NetworkTransport Interface** - Base interface for transport implementations
+- **MultiTransportRegistry** - Service registry handling cross-transport operations
+- **Service Registration** - Unified registration patterns for HTTP and gRPC services
 
-1. **swit-serve** (port 9000) - Main user service
-   - User management (CRUD operations)
-   - Greeter service (gRPC + HTTP)
-   - Notification service 
-   - Health checks
-   - Stop service for graceful shutdown
+Key components:
+- `pkg/transport/transport.go` - Main transport coordinator implementation
+- `pkg/transport/http.go` - HTTP transport with Gin framework integration
+- `pkg/transport/grpc.go` - gRPC transport with advanced configuration
+- `pkg/transport/registry_manager.go` - Multi-transport service registry
 
-2. **swit-auth** (port 9001) - Authentication service
-   - JWT-based authentication
-   - Token refresh and validation
-   - User login/logout
-   - Health checks
+### Example Services and Reference Implementations
 
-3. **switctl** - Command-line control tool
-   - Health checks
-   - Service management
-   - Version information
+#### Examples (`examples/`)
+- **simple-http-service** - Basic HTTP-only service demonstrating framework basics
+- **grpc-service** - gRPC service implementation with Protocol Buffers
+- **full-featured-service** - Complete framework showcase with all features
+- **symmetric_transport** - Transport layer usage patterns
 
-### Transport Layer Architecture
-Both services use a unified transport architecture via the base server framework:
-- **Transport Manager** - Manages HTTP and gRPC transports
-- **Service Registry** - Registers services with both transport types
-- **Service Registrar Pattern** - Each service implements ServiceRegistrar interface for transport registration
-- **Middleware Management** - Centralized middleware configuration for both HTTP and gRPC
+#### Reference Services (`internal/`)
+- **switserve** - Complete user management service demonstrating full framework integration
+- **switauth** - Authentication service showcasing JWT and security patterns
+- **switctl** - CLI tool showing framework integration for command-line applications
 
-Transport integration:
-- Services implement `ServiceRegistrar` interface
-- Base server handles transport initialization and lifecycle
+### Framework Integration Architecture
+
+#### Service Registration Pattern
+All services (examples and reference implementations) follow the same integration pattern:
+- Implement `BusinessServiceRegistrar` interface to register with framework
+- Framework handles transport initialization and lifecycle automatically
 - Automatic service registration with both HTTP and gRPC transports
-- Health check integration across all transports
+- Built-in health check integration across all transports
 
-### Key Dependencies
-- **Gin** - HTTP web framework
-- **gRPC** - RPC framework with HTTP gateway support
-- **GORM** - ORM for database operations
-- **Consul** - Service discovery
-- **Zap** - Structured logging
-- **Viper** - Configuration management
-- **JWT** - Token-based authentication
-- **Buf** - Protocol Buffer toolchain
+#### Adapter Pattern Integration
+Framework uses adapter patterns to bridge different service interfaces:
+- HTTP handlers implement `BusinessHTTPHandler` interface
+- gRPC services implement `BusinessGRPCService` interface  
+- Framework adapters translate between transport-specific and business interfaces
+- Unified service metadata and health checking
 
-### Database
-- **MySQL** - Primary database
-- Two separate databases: `user_service_db` (user service) and `auth_service_db` (auth service)
-- Database schemas in `scripts/sql/`
+### Supporting Framework Components
 
-### Configuration
-- `swit.yaml` - Main service configuration
-- `switauth.yaml` - Authentication service configuration
-- Uses Viper for configuration management with BaseServer integration
+#### Key Dependencies
+- **Gin** - HTTP web framework (used in transport layer)
+- **gRPC** - RPC framework with grpc-gateway support
+- **Consul** - Service discovery (optional, can be disabled)
+- **Zap** - Structured logging throughout framework
+- **Viper** - Configuration management with validation
+- **GORM** - ORM for database operations (used in examples)
+- **JWT** - Token-based authentication (used in auth examples)
+- **Buf** - Protocol Buffer toolchain for API development
 
-### API Structure
-The project uses Buf toolchain for Protocol Buffer management:
-- Proto definitions in `api/proto/swit/`
-- Generated code in `api/gen/`
+#### Configuration System
+Framework provides comprehensive configuration management:
+- `ServerConfig` structure with validation and defaults
+- Environment variable override support
+- YAML configuration file support (examples use `swit.yaml`, `switauth.yaml`)
+- Configuration validation with meaningful error messages
+
+#### API and Protocol Buffer Integration
+- Proto definitions in `api/proto/swit/` for cross-service contracts
+- Generated code in `api/gen/` for Go and OpenAPI
 - Supports both gRPC and HTTP/REST endpoints via grpc-gateway
-- OpenAPI v2 documentation generation
+- Buf toolchain for API development and documentation generation
 
-### Service Discovery
-- Consul-based service discovery
-- Automatic service registration/deregistration via BaseServer
-- Health check integration
-- ServiceDiscoveryManager abstraction in base server
+#### Service Discovery Integration
+- Optional Consul-based service discovery via `ServiceDiscoveryManager`
+- Automatic service registration/deregistration
+- Health check integration with service discovery
+- Can be disabled for development or standalone deployment
 
 ## Project Structure Overview
 
 ```
-├── cmd/                    # Application entry points
-│   ├── swit-serve/        # Main server executable
-│   ├── swit-auth/         # Auth service executable  
-│   └── switctl/           # CLI tool executable
-├── internal/              # Private application code
-│   ├── switserve/        # Main server implementation
-│   ├── switauth/         # Auth service implementation
-│   └── switctl/          # CLI tool implementation
-├── pkg/                   # Shared library code
-│   ├── server/           # Base server framework (core architecture)
-│   ├── discovery/        # Service discovery
-│   ├── middleware/       # HTTP/gRPC middleware
-│   ├── transport/        # Transport layer abstractions
-│   └── utils/           # Utilities (JWT, hashing)
-├── api/                   # API definitions and generated code
+├── cmd/                    # Application entry points for reference services
+│   ├── swit-serve/        # User management service main
+│   ├── swit-auth/         # Authentication service main  
+│   └── switctl/           # CLI tool main
+├── pkg/                   # CORE FRAMEWORK COMPONENTS
+│   ├── server/           # ★ Base server framework (main framework core)
+│   ├── transport/        # ★ Transport layer (HTTP/gRPC coordination)
+│   ├── discovery/        # Service discovery integration
+│   ├── middleware/       # HTTP/gRPC middleware components
+│   ├── types/           # Common type definitions
+│   └── utils/           # Utilities (JWT, crypto, hashing)
+├── examples/              # Framework usage examples
+│   ├── simple-http-service/   # Basic HTTP service example
+│   ├── grpc-service/         # gRPC service example
+│   ├── full-featured-service/ # Complete framework showcase
+│   └── symmetric_transport/   # Transport patterns
+├── internal/              # Reference service implementations
+│   ├── switserve/        # User management reference service
+│   ├── switauth/         # Authentication reference service
+│   └── switctl/          # CLI reference implementation
+├── api/                   # Protocol Buffer definitions and generated code
 │   ├── proto/            # Protocol Buffer definitions
 │   ├── gen/              # Generated code (Go, OpenAPI)
 │   └── buf.yaml          # Buf toolchain configuration
-└── scripts/              # Build scripts and tools
-    ├── mk/               # Makefile modules
-    ├── tools/            # Development tools
-    └── sql/              # Database schemas
+├── docs/                  # Framework and service documentation
+└── scripts/              # Build scripts and development tools
+    ├── mk/               # Makefile modules for build automation
+    ├── tools/            # Development and CI tools
+    └── sql/              # Database schemas for reference services
 ```
 
-## Base Server Usage Patterns
+## Framework Usage Patterns
 
-### Service Implementation Pattern
-1. Implement `ServiceRegistrar` interface in your service
-2. Register HTTP handlers via `ServiceRegistry.RegisterHTTPHandler()`
-3. Register gRPC services via `ServiceRegistry.RegisterGRPCService()`
-4. Use `NewBaseServer()` with your service registrar
-5. Call `Start()` and `Stop()` for lifecycle management
+### Core Service Implementation Pattern
+1. **Implement `BusinessServiceRegistrar`** - Main interface for framework integration
+   ```go
+   func (s *MyService) RegisterServices(registry BusinessServiceRegistry) error {
+       // Register HTTP handlers, gRPC services, health checks
+   }
+   ```
 
-### Dependency Injection Pattern
-- Implement `DependencyContainer` interface for service dependencies
-- Pass to `NewBaseServer()` for automatic lifecycle management
-- Dependencies are initialized during server startup
-- Automatic cleanup during server shutdown
+2. **Register Service Components** with the registry:
+   - HTTP handlers via `RegisterBusinessHTTPHandler()`
+   - gRPC services via `RegisterBusinessGRPCService()`  
+   - Health checks via `RegisterBusinessHealthCheck()`
 
-### Performance Monitoring
-- Built-in performance metrics collection
-- Configurable performance monitoring hooks
-- Memory usage and startup/shutdown time tracking
-- Access via `GetPerformanceMetrics()` and `GetPerformanceMonitor()`
+3. **Create and Start Framework Server**:
+   ```go
+   config := &server.ServerConfig{...}
+   baseServer, _ := server.NewBusinessServerCore(config, myService, dependencies)
+   baseServer.Start(ctx)
+   ```
 
-## Testing Notes
-- Comprehensive unit tests for all services including base server framework
-- Test coverage reporting available via `make test-coverage`
-- Race detection enabled for concurrent testing via `make test-race`
-- Mock-based testing for external dependencies
-- Performance regression tests in base server framework
-- Integration tests for end-to-end service communication
+### Dependency Injection Framework Pattern
+- **Implement `BusinessDependencyContainer`** for service dependencies
+- **Factory Pattern Support** - Register singleton and transient dependencies
+- **Automatic Lifecycle** - Dependencies initialized during server startup
+- **Graceful Cleanup** - Automatic resource cleanup during server shutdown
+- **Service Lookup** - Access dependencies via `GetService(name string)`
 
-## Important Development Notes
+### HTTP Handler Implementation
+```go
+type MyHTTPHandler struct{}
 
-### Base Server Framework Development
-When modifying the base server framework (`pkg/server/`):
-- All interfaces are in `interfaces.go` - maintain backward compatibility
-- Performance monitoring is built-in - add hooks for new metrics
-- Transport management is centralized - avoid direct transport access
-- Configuration validation is enforced - implement `Validate()` method
-- Dependency lifecycle is managed - implement proper `Close()` methods
+func (h *MyHTTPHandler) RegisterRoutes(router interface{}) error {
+    ginRouter := router.(*gin.Engine)
+    ginRouter.GET("/api/v1/my-endpoint", h.handleEndpoint)
+    return nil
+}
 
-### Service Development
-When adding new services:
-- Extend existing services rather than creating new ones when possible
-- Implement `ServiceRegistrar` for base server integration
-- Use the transport manager for HTTP/gRPC registration
-- Follow the established configuration patterns
-- Add appropriate health checks and performance monitoring
+func (h *MyHTTPHandler) GetServiceName() string {
+    return "my-service"
+}
+```
 
-### API Development
-When modifying APIs:
-- Update proto files in `api/proto/swit/`
-- Run `make proto` to regenerate code
-- Update swagger documentation with `make swagger`
-- Test both gRPC and HTTP endpoints
-- Maintain API versioning in proto packages
+### gRPC Service Implementation
+```go
+type MyGRPCService struct{}
+
+func (s *MyGRPCService) RegisterGRPC(server interface{}) error {
+    grpcServer := server.(*grpc.Server)
+    mypb.RegisterMyServiceServer(grpcServer, s)
+    return nil
+}
+
+func (s *MyGRPCService) GetServiceName() string {
+    return "my-grpc-service"
+}
+```
+
+### Performance Monitoring Integration
+- **Built-in Metrics Collection** - Memory usage, startup/shutdown timing
+- **Performance Hooks** - Configurable monitoring hooks for custom metrics
+- **Threshold Monitoring** - Automatic alerts on performance threshold violations
+- **Access Methods** - `GetPerformanceMetrics()` and `GetPerformanceMonitor()`
+
+## Framework Testing Strategy
+
+### Framework Core Testing
+- **Unit Tests** - Comprehensive coverage for `pkg/server/` and `pkg/transport/`
+- **Integration Tests** - End-to-end framework functionality testing
+- **Performance Tests** - Performance regression testing for framework components
+- **Race Detection** - Concurrent testing with `make test-race`
+- **Coverage Reports** - Framework test coverage via `make test-coverage`
+
+### Example Service Testing
+- **Reference Implementation Tests** - Tests for `internal/` services as framework usage examples
+- **Example Tests** - Tests in `examples/` demonstrating testing patterns
+- **Mock-based Testing** - External dependency mocking patterns
+- **Transport Testing** - HTTP and gRPC endpoint testing strategies
+
+### Testing Commands for Framework Development
+- `make test-advanced TYPE=unit PACKAGE=pkg` - Test framework packages specifically
+- `make test-advanced TYPE=integration` - Run integration tests
+- `make test-advanced TYPE=performance` - Performance regression tests
+
+## Important Framework Development Guidelines
+
+### Core Framework Development (`pkg/server/`, `pkg/transport/`)
+**Interface Stability** - All public interfaces in `interfaces.go` - maintain backward compatibility
+**Performance Integration** - Built-in performance monitoring - add hooks for new metrics  
+**Transport Abstraction** - Centralized transport management - avoid direct transport access
+**Configuration Validation** - Enforced validation - implement `Validate()` method on new config types
+**Dependency Lifecycle** - Managed container lifecycle - implement proper `Close()` methods
+**Thread Safety** - All framework components must be thread-safe with proper mutex usage
+
+### Example and Reference Service Development
+**Framework Integration** - Always implement `BusinessServiceRegistrar` for framework integration
+**Pattern Consistency** - Follow established patterns from existing examples
+**Transport Registration** - Use framework's transport coordination, not direct registration
+**Configuration Patterns** - Follow `ServerConfig` patterns with validation
+**Health Checks** - Implement meaningful health checks for service dependencies
+**Documentation** - Examples should be well-documented to serve as framework tutorials
+
+### Framework Extension Development
+**New Examples** - Add to `examples/` directory following existing patterns
+**Reference Services** - Extend `internal/` services to demonstrate new framework features
+**Interface Extensions** - Add new interfaces in framework core if extending capabilities
+**Backward Compatibility** - Ensure new features don't break existing framework users
+
+### API and Protocol Development
+**Protocol Buffer Management** - Update proto files in `api/proto/swit/` for cross-service contracts
+**Code Generation** - Run `make proto` to regenerate all API code
+**Documentation Generation** - Update OpenAPI docs with `make swagger`
+**Transport Testing** - Test both gRPC and HTTP endpoints for dual-protocol support
+**API Versioning** - Maintain proper versioning in proto packages for framework APIs
