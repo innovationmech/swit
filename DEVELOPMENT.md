@@ -138,9 +138,9 @@ make swagger-switauth    # Generate for switauth
 ```
 
 Documentation is generated in:
-- `internal/switserve/docs/` - SwitServe API docs
-- `internal/switauth/docs/` - SwitAuth API docs
-- `docs/generated/` - Unified documentation links
+- `docs/generated/switserve/` - SwitServe API docs
+- `docs/generated/switauth/` - SwitAuth API docs
+- `docs/generated/` - Root for generated documentation
 
 ## Project Structure
 

@@ -62,17 +62,25 @@ api/
 ├── buf.yaml              # Buf 主配置文件
 ├── buf.gen.yaml          # 代码生成配置
 ├── buf.lock              # 依赖锁文件
-├── proto/                # Protocol Buffer 定义
-│   └── swit/
-│       └── v1/          # API 版本 1
-│           └── greeter/ # 问候服务
-├── gen/                 # 生成的代码
-│   ├── go/             # Go 代码
-│   └── openapiv2/      # OpenAPI 文档
-└── docs/               # 文档
-    ├── README.md       # API 使用文档
-    └── MIGRATION.md    # 迁移指南
+└── proto/               # Protocol Buffer 定义
+    └── swit/
+        ├── common/
+        │   └── v1/
+        │       ├── common.proto
+        │       └── health.proto
+        ├── communication/
+        │   └── v1/
+        │       └── notification.proto
+        ├── interaction/
+        │   └── v1/
+        │       └── greeter.proto
+        └── user/
+            └── v1/
+                ├── auth.proto
+                └── user.proto
 ```
+
+如需生成 `api/gen/` 目录和 Swagger 文档，可执行 `make proto` 和 `make swagger`，这些产物不会提交到版本库中。
 
 ### API 设计原则
 
@@ -954,8 +962,8 @@ make help             # 显示所有可用命令及说明
 - [SwitAuth 服务](docs/services/switauth/README.md) - 身份验证服务模式
 
 ### API 和协议文档
-- [API 文档](api/docs/README.md) - Protocol Buffer 定义和 API 模式
-- [生成的 API 参考](docs/generated/) - 自动生成的 API 文档
+- [Protocol Buffer 定义](api/proto/) - 源 API 规格
+- 生成的 Swagger 参考 (`docs/generated/`，通过 `make swagger`)
 
 ### 开发和贡献
 - [开发指南](DEVELOPMENT.md) - 框架开发环境设置
