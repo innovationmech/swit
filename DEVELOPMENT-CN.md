@@ -138,9 +138,9 @@ make swagger-switauth    # 为switauth生成
 ```
 
 文档生成位置：
-- `internal/switserve/docs/` - SwitServe API文档
-- `internal/switauth/docs/` - SwitAuth API文档
-- `docs/generated/` - 统一文档链接
+- `docs/generated/switserve/` - SwitServe API 文档
+- `docs/generated/switauth/` - SwitAuth API 文档
+- `docs/generated/` - 统一文档根目录
 
 ## 项目结构
 

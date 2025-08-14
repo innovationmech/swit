@@ -62,17 +62,25 @@ api/
 ├── buf.yaml              # Buf main configuration
 ├── buf.gen.yaml          # Code generation configuration
 ├── buf.lock              # Dependency lock file
-├── proto/                # Protocol Buffer definitions
-│   └── swit/
-│       └── v1/          # API version 1
-│           └── greeter/ # Greeter service
-├── gen/                 # Generated code
-│   ├── go/             # Go code
-│   └── openapiv2/      # OpenAPI documentation
-└── docs/               # Documentation
-    ├── README.md       # API usage documentation
-    └── MIGRATION.md    # Migration guide
+└── proto/               # Protocol Buffer definitions
+    └── swit/
+        ├── common/
+        │   └── v1/
+        │       ├── common.proto
+        │       └── health.proto
+        ├── communication/
+        │   └── v1/
+        │       └── notification.proto
+        ├── interaction/
+        │   └── v1/
+        │       └── greeter.proto
+        └── user/
+            └── v1/
+                ├── auth.proto
+                └── user.proto
 ```
+
+Generated artifacts such as `api/gen/` and Swagger documentation are produced by the build tools (`make proto`, `make swagger`) and are not committed to the repository.
 
 ### API Design Principles
 
@@ -955,8 +963,8 @@ For detailed command options and parameters, run `make help` or refer to the spe
 - [SwitAuth Service](docs/services/switauth/README.md) - Authentication service patterns
 
 ### API and Protocol Documentation
-- [API Documentation](api/docs/README.md) - Protocol Buffer definitions and API patterns
-- [Generated API Reference](docs/generated/) - Auto-generated API documentation
+- [Protocol Buffer Definitions](api/proto/) - Source API specifications
+- Generated Swagger reference (`docs/generated/`, via `make swagger`)
 
 ### Development and Contribution
 - [Development Guide](DEVELOPMENT.md) - Framework development environment setup
