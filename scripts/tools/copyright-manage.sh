@@ -249,7 +249,7 @@ manage_copyright() {
     
     # 显示当前状态
     echo ""
-    check_copyright
+    check_copyright || true
     
     # 自动修复
     if [ ${#missing_files[@]} -gt 0 ]; then
