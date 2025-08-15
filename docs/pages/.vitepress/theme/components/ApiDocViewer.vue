@@ -331,7 +331,7 @@ export default {
             requestBody: {
               name: '张三',
               email: 'zhang@example.com',
-              password: 'securepassword123'
+              password: '${API_PASSWORD}'
             },
             responses: {
               '201': {
@@ -357,7 +357,7 @@ export default {
             description: '使用邮箱和密码进行用户登录，返回JWT令牌',
             requestBody: {
               email: 'user@example.com',
-              password: 'password123'
+              password: '${API_PASSWORD}'
             },
             responses: {
               '200': {

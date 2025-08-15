@@ -3,6 +3,21 @@
     <!-- 可访问性控制组件 -->
     <AccessibilityControls />
     
+    <!-- 性能监控 -->
+    <PerformanceMonitor />
+    
+    <!-- 分析追踪 -->
+    <AnalyticsTracker />
+    
+    <!-- 用户反馈 -->
+    <FeedbackWidget />
+    
+    <!-- 安全配置 -->
+    <SecurityConfig />
+    
+    <!-- 隐私政策 -->
+    <PrivacyPolicy />
+    
     <!-- 使用默认主题布局，但添加可访问性增强 -->
     <DefaultLayout>
       <!-- 添加语义化 HTML 结构 -->

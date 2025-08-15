@@ -272,11 +272,12 @@ jobs:
 
   # 部署到 GitHub Pages
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    environment: production
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      pages: write
+      id-token: write
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     steps:
       - name: 🚀 Deploy to GitHub Pages
@@ -291,11 +292,12 @@ jobs:
 
   # 部署到预览环境
   deploy-preview:
-    environment:
-      name: preview
-      url: ${{ steps.preview.outputs.preview_url }}
+    environment: preview
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      pull-requests: write
+      contents: read
     if: github.event_name == 'pull_request'
     steps:
       - name: 📥 Download build artifacts
@@ -359,13 +361,19 @@ jobs:
         working-directory: ${{ env.DOCS_DIR }}
         run: npm ci
 
+      - name: 🔗 Get deployment URL
+        id: get-deploy-url
+        run: |
+          PAGE_URL="${{ needs.deploy.outputs.page_url }}"
+          echo "page_url=${PAGE_URL:-https://docs.example.com}" >> $GITHUB_OUTPUT
+
       - name: 🧪 Run E2E tests against deployed site
         working-directory: ${{ env.DOCS_DIR }}
         run: |
           echo "🧪 Running E2E tests against deployed site..."
           
           # 设置基础 URL 为部署的站点
-          export BASE_URL="${{ needs.deploy.outputs.page_url }}"
+          export BASE_URL="${{ steps.get-deploy-url.outputs.page_url }}"
           
           # 等待站点可用
           timeout 300 bash -c 'until curl -s "$BASE_URL" > /dev/null; do sleep 5; done'
@@ -411,8 +419,14 @@ jobs:
           echo "🔗 Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           # 这里可以添加 Slack、Discord 或邮件通知
 
+      - name: 🔗 Get site URL for notification
+        id: get-site-url
+        run: |
+          PAGE_URL="${{ needs.deploy.outputs.page_url }}"
+          echo "page_url=${PAGE_URL:-https://docs.example.com}" >> $GITHUB_OUTPUT
+
       - name: 🎉 Notify on success
         if: success()
         run: |
           echo "✅ Documentation deployment completed successfully!"
-          echo "📄 Site: ${{ needs.deploy.outputs.page_url }}"
+          echo "📄 Site: ${{ steps.get-site-url.outputs.page_url }}"

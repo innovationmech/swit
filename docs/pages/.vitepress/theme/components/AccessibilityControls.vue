@@ -2,17 +2,17 @@
   <div class="accessibility-controls">
     <!-- 跳转到主内容链接 -->
     <a href="#main-content" class="skip-to-content" @click="skipToMain">
-      {{ t('accessibility.skipToMain') }}
+      跳转到主内容
     </a>
     
     <!-- 字体大小控制 -->
-    <div class="font-size-controls" role="region" :aria-label="t('accessibility.fontSizeControls')">
+    <div class="font-size-controls" role="region" aria-label="字体大小控制">
       <button
         v-for="size in fontSizes"
         :key="size.key"
         class="font-size-btn"
         :class="{ active: currentFontSize === size.key }"
-        :aria-label="t('accessibility.setFontSize', { size: size.label })"
+        :aria-label="`设置字体大小为 ${size.label}`"
         :aria-pressed="currentFontSize === size.key"
         @click="setFontSize(size.key)"
       >
@@ -23,7 +23,7 @@
     <!-- 高对比度切换 -->
     <button
       class="contrast-toggle"
-      :aria-label="t('accessibility.toggleContrast')"
+      aria-label="切换高对比度"
       :aria-pressed="highContrast"
       @click="toggleContrast"
     >
@@ -58,10 +58,10 @@
     </button>
     
     <!-- 辅助功能设置面板 -->
-    <div v-if="showSettingsPanel" class="accessibility-panel" role="dialog" :aria-label="t('accessibility.settingsPanel')">
+    <div v-if="showSettingsPanel" class="accessibility-panel" role="dialog" aria-label="辅助功能设置面板">
       <div class="panel-header">
-        <h3>{{ t('accessibility.accessibilitySettings') }}</h3>
-        <button class="close-btn" @click="showSettingsPanel = false" :aria-label="t('accessibility.closePanel')">
+        <h3>辅助功能设置</h3>
+        <button class="close-btn" @click="showSettingsPanel = false" aria-label="关闭面板">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
@@ -71,7 +71,7 @@
       <div class="panel-content">
         <!-- 字体大小设置 -->
         <fieldset>
-          <legend>{{ t('accessibility.fontSize') }}</legend>
+          <legend>字体大小</legend>
           <div class="radio-group">
             <label v-for="size in fontSizes" :key="size.key" class="radio-label">
               <input
@@ -89,7 +89,7 @@
         
         <!-- 对比度设置 -->
         <fieldset>
-          <legend>{{ t('accessibility.contrast') }}</legend>
+          <legend>对比度</legend>
           <label class="checkbox-label">
             <input
               type="checkbox"
@@ -98,13 +98,13 @@
               class="checkbox-input"
             />
             <span class="checkbox-custom"></span>
-            {{ t('accessibility.highContrast') }}
+            高对比度
           </label>
         </fieldset>
         
-        <!-- 动画设置 */
+        <!-- 动画设置 -->
         <fieldset>
-          <legend>{{ t('accessibility.animations') }}</legend>
+          <legend>动画</legend>
           <label class="checkbox-label">
             <input
               type="checkbox"
@@ -113,7 +113,7 @@
               class="checkbox-input"
             />
             <span class="checkbox-custom"></span>
-            {{ t('accessibility.reduceMotion') }}
+            减少动画
           </label>
         </fieldset>
       </div>
@@ -122,7 +122,7 @@
     <!-- 设置按钮 -->
     <button
       class="settings-toggle"
-      :aria-label="t('accessibility.openSettings')"
+      aria-label="打开设置"
       @click="showSettingsPanel = !showSettingsPanel"
     >
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -142,8 +142,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vitepress'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 // 响应式状态
 const currentFontSize = ref('normal')
@@ -153,384 +152,302 @@ const showSettingsPanel = ref(false)
 
 // 字体大小选项
 const fontSizes = [
-  { key: 'small', label: '小', display: 'A-' },
+  { key: 'small', label: '小', display: 'A' },
   { key: 'normal', label: '正常', display: 'A' },
-  { key: 'large', label: '大', display: 'A+' },
-  { key: 'xlarge', label: '超大', display: 'A++' }
+  { key: 'large', label: '大', display: 'A' },
+  { key: 'xlarge', label: '特大', display: 'A' }
 ]
 
-// 国际化函数（简化版本）
-const t = (key, params = {}) => {
-  const translations = {
-    'accessibility.skipToMain': 'Skip to main content',
-    'accessibility.fontSizeControls': 'Font size controls',
-    'accessibility.setFontSize': `Set font size to ${params.size || ''}`,
-    'accessibility.toggleContrast': 'Toggle high contrast mode',
-    'accessibility.settingsPanel': 'Accessibility settings panel',
-    'accessibility.accessibilitySettings': 'Accessibility Settings',
-    'accessibility.closePanel': 'Close settings panel',
-    'accessibility.fontSize': 'Font Size',
-    'accessibility.contrast': 'Contrast',
-    'accessibility.highContrast': 'High contrast mode',
-    'accessibility.animations': 'Animations',
-    'accessibility.reduceMotion': 'Reduce motion',
-    'accessibility.openSettings': 'Open accessibility settings'
+// 方法
+function skipToMain() {
+  const main = document.querySelector('#main-content')
+  if (main) {
+    main.focus()
+    main.scrollIntoView({ behavior: 'smooth' })
   }
-  
-  return translations[key] || key
 }
 
-// 设置字体大小
-const setFontSize = (size) => {
+function setFontSize(size) {
   currentFontSize.value = size
   document.documentElement.className = document.documentElement.className
-    .replace(/font-(small|normal|large|xlarge)/g, '')
-    .trim()
-  document.documentElement.classList.add(`font-${size}`)
+    .replace(/font-size-\w+/g, '')
+  document.documentElement.classList.add(`font-size-${size}`)
   
   // 保存到本地存储
-  localStorage.setItem('swit-font-size', size)
-  
-  // 通知屏幕阅读器
-  announceToScreenReader(`Font size changed to ${fontSizes.find(f => f.key === size)?.label}`)
+  localStorage.setItem('accessibility-font-size', size)
 }
 
-// 切换高对比度
-const toggleContrast = () => {
+function toggleContrast() {
   highContrast.value = !highContrast.value
-  
-  if (highContrast.value) {
-    document.documentElement.classList.add('high-contrast')
-  } else {
-    document.documentElement.classList.remove('high-contrast')
-  }
+  document.documentElement.classList.toggle('high-contrast', highContrast.value)
   
   // 保存到本地存储
-  localStorage.setItem('swit-high-contrast', highContrast.value.toString())
-  
-  // 通知屏幕阅读器
-  announceToScreenReader(`High contrast mode ${highContrast.value ? 'enabled' : 'disabled'}`)
+  localStorage.setItem('accessibility-high-contrast', highContrast.value.toString())
 }
 
-// 切换动画减少
-const toggleMotion = () => {
+function toggleMotion() {
   reduceMotion.value = !reduceMotion.value
-  
-  if (reduceMotion.value) {
-    document.documentElement.classList.add('reduce-motion')
-  } else {
-    document.documentElement.classList.remove('reduce-motion')
-  }
+  document.documentElement.classList.toggle('reduce-motion', reduceMotion.value)
   
   // 保存到本地存储
-  localStorage.setItem('swit-reduce-motion', reduceMotion.value.toString())
-  
-  // 通知屏幕阅读器
-  announceToScreenReader(`Motion reduction ${reduceMotion.value ? 'enabled' : 'disabled'}`)
+  localStorage.setItem('accessibility-reduce-motion', reduceMotion.value.toString())
 }
 
-// 跳转到主内容
-const skipToMain = (event) => {
-  event.preventDefault()
-  const mainContent = document.getElementById('main-content') || document.querySelector('main')
-  if (mainContent) {
-    mainContent.focus()
-    mainContent.scrollIntoView({ behavior: 'smooth' })
-  }
-}
-
-// 向屏幕阅读器宣布消息
-const announceToScreenReader = (message) => {
-  const announcement = document.createElement('div')
-  announcement.setAttribute('aria-live', 'polite')
-  announcement.setAttribute('aria-atomic', 'true')
-  announcement.style.position = 'absolute'
-  announcement.style.left = '-10000px'
-  announcement.style.width = '1px'
-  announcement.style.height = '1px'
-  announcement.style.overflow = 'hidden'
-  announcement.textContent = message
-  
-  document.body.appendChild(announcement)
-  
-  setTimeout(() => {
-    document.body.removeChild(announcement)
-  }, 1000)
-}
-
-// 键盘事件处理
-const handleKeyDown = (event) => {
-  // Escape 键关闭设置面板
-  if (event.key === 'Escape' && showSettingsPanel.value) {
-    showSettingsPanel.value = false
-  }
-  
-  // Alt + A 开关可访问性设置
-  if (event.altKey && event.key === 'a') {
-    event.preventDefault()
-    showSettingsPanel.value = !showSettingsPanel.value
-  }
-  
-  // Alt + 数字键快速设置字体大小
-  if (event.altKey && /^[1-4]$/.test(event.key)) {
-    event.preventDefault()
-    const sizes = ['small', 'normal', 'large', 'xlarge']
-    setFontSize(sizes[parseInt(event.key) - 1])
-  }
-  
-  // Alt + C 切换对比度
-  if (event.altKey && event.key === 'c') {
-    event.preventDefault()
-    toggleContrast()
-  }
-}
-
-// 组件挂载时初始化
+// 初始化
 onMounted(() => {
   // 从本地存储恢复设置
-  const savedFontSize = localStorage.getItem('swit-font-size')
-  if (savedFontSize && fontSizes.some(f => f.key === savedFontSize)) {
+  const savedFontSize = localStorage.getItem('accessibility-font-size')
+  if (savedFontSize) {
     setFontSize(savedFontSize)
   }
   
-  const savedContrast = localStorage.getItem('swit-high-contrast')
+  const savedContrast = localStorage.getItem('accessibility-high-contrast')
   if (savedContrast === 'true') {
     highContrast.value = true
     document.documentElement.classList.add('high-contrast')
   }
   
-  const savedMotion = localStorage.getItem('swit-reduce-motion')
+  const savedMotion = localStorage.getItem('accessibility-reduce-motion')
   if (savedMotion === 'true') {
     reduceMotion.value = true
     document.documentElement.classList.add('reduce-motion')
   }
   
-  // 检测系统偏好设置
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    reduceMotion.value = true
-    document.documentElement.classList.add('reduce-motion')
-  }
-  
-  if (window.matchMedia && window.matchMedia('(prefers-contrast: high)').matches) {
-    highContrast.value = true
-    document.documentElement.classList.add('high-contrast')
-  }
-  
-  // 添加键盘事件监听
-  document.addEventListener('keydown', handleKeyDown)
-  
-  // 添加页面focus管理
-  document.body.addEventListener('click', (event) => {
-    if (!event.target.closest('.accessibility-controls')) {
-      showSettingsPanel.value = false
+  // 检测系统偏好
+  if (window.matchMedia) {
+    const contrastQuery = window.matchMedia('(prefers-contrast: high)')
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    
+    if (contrastQuery.matches && !localStorage.getItem('accessibility-high-contrast')) {
+      toggleContrast()
     }
-  })
-})
-
-// 组件卸载时清理
-onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeyDown)
+    
+    if (motionQuery.matches && !localStorage.getItem('accessibility-reduce-motion')) {
+      toggleMotion()
+    }
+  }
 })
 </script>
 
 <style scoped>
 .accessibility-controls {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
+  top: 20px;
+  right: 20px;
   z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
 }
 
-.accessibility-controls > * {
+.skip-to-content {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: var(--vp-c-brand);
+  color: white;
+  padding: 8px 16px;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.skip-to-content:focus {
+  top: 0;
+  opacity: 1;
   pointer-events: auto;
 }
 
-.settings-toggle {
-  position: fixed;
-  top: 150px;
-  right: 16px;
+.font-size-controls {
+  display: flex;
+  gap: 4px;
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.font-size-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.font-size-btn:hover {
+  background: var(--vp-c-gray-soft);
+}
+
+.font-size-btn.active {
+  background: var(--vp-c-brand);
+  color: white;
+}
+
+.contrast-toggle {
   width: 48px;
   height: 48px;
-  border: 1px solid var(--vp-c-border);
-  border-radius: 50%;
+  border: none;
   background: var(--vp-c-bg);
-  color: var(--vp-c-text-1);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  box-shadow: var(--swit-shadow-md);
+}
+
+.contrast-toggle:hover {
+  background: var(--vp-c-gray-soft);
+}
+
+.settings-toggle {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
 }
 
 .settings-toggle:hover {
-  background: var(--vp-c-brand-1);
-  color: white;
-  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-gray-soft);
 }
 
 .accessibility-panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 90%;
-  max-width: 400px;
+  position: absolute;
+  top: 0;
+  right: 60px;
+  width: 300px;
   background: var(--vp-c-bg);
-  border: 1px solid var(--vp-c-border);
-  border-radius: var(--swit-radius-lg);
-  box-shadow: var(--swit-shadow-xl);
-  z-index: 1001;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  border-bottom: 1px solid var(--vp-c-border);
+  padding: 16px 20px;
+  background: var(--vp-c-bg-soft);
+  border-bottom: 1px solid var(--vp-c-divider);
 }
 
 .panel-header h3 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--vp-c-text-1);
 }
 
 .close-btn {
-  width: 32px;
-  height: 32px;
+  background: none;
   border: none;
-  border-radius: var(--swit-radius-sm);
-  background: transparent;
-  color: var(--vp-c-text-2);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--vp-c-text-2);
 }
 
 .close-btn:hover {
-  background: var(--vp-c-bg-soft);
+  background: var(--vp-c-gray-soft);
   color: var(--vp-c-text-1);
 }
 
 .panel-content {
-  padding: 1rem;
+  padding: 20px;
 }
 
 fieldset {
   border: none;
-  margin: 0 0 1.5rem 0;
+  margin: 0 0 20px 0;
   padding: 0;
 }
 
 legend {
   font-weight: 600;
-  margin-bottom: 0.75rem;
+  margin-bottom: 12px;
   color: var(--vp-c-text-1);
-  font-size: 0.9rem;
 }
 
 .radio-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .radio-label,
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   cursor: pointer;
-  padding: 0.25rem;
-  border-radius: var(--swit-radius-sm);
-  transition: background-color 0.2s ease;
-}
-
-.radio-label:hover,
-.checkbox-label:hover {
-  background: var(--vp-c-bg-soft);
+  font-size: 14px;
+  color: var(--vp-c-text-2);
 }
 
 .radio-input,
 .checkbox-input {
-  opacity: 0;
-  position: absolute;
-  pointer-events: none;
+  margin: 0;
 }
 
-.radio-custom,
-.checkbox-custom {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--vp-c-border);
-  border-radius: 50%;
-  position: relative;
-  transition: all 0.2s ease;
+/* 高对比度样式 */
+.high-contrast {
+  filter: contrast(150%);
 }
 
-.checkbox-custom {
-  border-radius: var(--swit-radius-sm);
+/* 减少动画样式 */
+.reduce-motion * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
-.radio-input:checked + .radio-custom,
-.checkbox-input:checked + .checkbox-custom {
-  border-color: var(--vp-c-brand-1);
-  background: var(--vp-c-brand-1);
+/* 字体大小样式 */
+.font-size-small {
+  font-size: 14px;
 }
 
-.radio-input:checked + .radio-custom::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 6px;
-  height: 6px;
-  background: white;
-  border-radius: 50%;
+.font-size-normal {
+  font-size: 16px;
 }
 
-.checkbox-input:checked + .checkbox-custom::after {
-  content: '✓';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: white;
-  font-size: 10px;
-  font-weight: bold;
+.font-size-large {
+  font-size: 18px;
 }
 
-.radio-input:focus + .radio-custom,
-.checkbox-input:focus + .checkbox-custom {
-  outline: 2px solid var(--vp-c-brand-1);
-  outline-offset: 2px;
+.font-size-xlarge {
+  font-size: 20px;
 }
 
-.font-size-btn.active {
-  background: var(--vp-c-brand-1);
-  color: white;
-  border-color: var(--vp-c-brand-1);
-}
-
+/* 响应式设计 */
 @media (max-width: 768px) {
-  .settings-toggle {
-    right: 8px;
-    width: 44px;
-    height: 44px;
+  .accessibility-controls {
+    top: 10px;
+    right: 10px;
   }
   
   .accessibility-panel {
-    width: 95%;
-    max-width: none;
+    right: 0;
+    width: calc(100vw - 20px);
+    max-width: 300px;
   }
 }
 </style>

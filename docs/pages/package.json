@@ -25,6 +25,8 @@
     "test:accessibility": "node tests/accessibility/run-a11y-tests.js",
     "test:performance": "node tests/performance/run-perf-tests.js",
     "test:all": "npm run test:unit && npm run test:e2e && npm run test:accessibility",
+    "security:scan": "node scripts/security-scanner.js",
+    "security:audit": "npm audit && npm run security:scan",
     "analyze": "npm run build && npm run optimize"
   },
   "devDependencies": {
@@ -39,7 +41,7 @@
     "axe-core": "^4.8.0",
     "eslint": "^8.54.0",
     "eslint-plugin-vue": "^9.18.0",
-    "eslint-plugin-accessibility": "^3.1.0",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
     "happy-dom": "^12.10.0",
     "lighthouse": "^11.4.0",
     "postcss": "^8.4.32",
@@ -50,6 +52,7 @@
     "vue": "^3.3.10"
   },
   "dependencies": {
+    "@sentry/browser": "^7.91.0",
     "@vueuse/core": "^10.7.0",
     "shiki": "^0.14.7"
   }

@@ -393,7 +393,7 @@ jobs:
           ### Sync Jobs Status
           - README Sync: ${{ needs.sync-readme.result || 'skipped' }}
           - API Docs Sync: ${{ needs.sync-api-docs.result || 'skipped' }}
-          - Examples Sync: ${{ needs-examples.result || 'skipped' }}
+          - Examples Sync: ${{ needs.sync-examples.result || 'skipped' }}
           EOF
           
           echo "📄 Content report generated"

@@ -26,6 +26,9 @@
     ".vitepress/**/*.d.ts",
     ".vitepress/**/*.tsx",
     ".vitepress/**/*.vue",
+    "tests/**/*.ts",
+    "scripts/**/*.js",
+    "*.config.ts",
     "**/*.md"
   ],
   "exclude": ["node_modules", "dist"]

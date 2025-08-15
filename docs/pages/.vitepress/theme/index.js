@@ -8,6 +8,11 @@ import CodeExample from './components/CodeExample.vue'
 import ApiDocViewer from './components/ApiDocViewer.vue'
 import SearchBox from './components/SearchBox.vue'
 import AccessibilityControls from './components/AccessibilityControls.vue'
+import PerformanceMonitor from './components/PerformanceMonitor.vue'
+import AnalyticsTracker from './components/AnalyticsTracker.vue'
+import FeedbackWidget from './components/FeedbackWidget.vue'
+import SecurityConfig from './components/SecurityConfig.vue'
+import PrivacyPolicy from './components/PrivacyPolicy.vue'
 import Layout from './Layout.vue'
 
 export default {
@@ -23,5 +28,10 @@ export default {
     app.component('ApiDocViewer', ApiDocViewer)
     app.component('SearchBox', SearchBox)
     app.component('AccessibilityControls', AccessibilityControls)
+    app.component('PerformanceMonitor', PerformanceMonitor)
+    app.component('AnalyticsTracker', AnalyticsTracker)
+    app.component('FeedbackWidget', FeedbackWidget)
+    app.component('SecurityConfig', SecurityConfig)
+    app.component('PrivacyPolicy', PrivacyPolicy)
   }
 }
