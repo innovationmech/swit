@@ -1,0 +1,129 @@
+# 依赖更新自动化配置
+version: 2
+updates:
+  # npm 包更新
+  - package-ecosystem: "npm"
+    directory: "/docs/pages"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "maintainers"
+    assignees:
+      - "maintainers"
+    commit-message:
+      prefix: "🔧"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "documentation"
+    target-branch: "master"
+    
+    # 版本更新策略
+    versioning-strategy: increase
+    
+    # 忽略特定包
+    ignore:
+      # 主要框架版本更新手动处理
+      - dependency-name: "vitepress"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vue"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      
+      # 测试工具主版本更新手动处理  
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@playwright/test"
+        update-types: ["version-update:semver-major"]
+    
+    # 分组更新
+    groups:
+      vitepress:
+        patterns:
+          - "vitepress*"
+          - "@vitepress/*"
+      vue-ecosystem:
+        patterns:
+          - "vue*"
+          - "@vue/*"
+      testing:
+        patterns:
+          - "*test*"
+          - "*spec*"
+          - "vitest*"
+          - "@playwright/*"
+          - "playwright*"
+          - "axe-core*"
+          - "@axe-core/*"
+      linting:
+        patterns:
+          - "eslint*"
+          - "@eslint/*"
+          - "@typescript-eslint/*"
+          - "prettier*"
+      build-tools:
+        patterns:
+          - "vite*"
+          - "@vitejs/*"
+          - "rollup*"
+          - "typescript*"
+
+  # GitHub Actions 更新
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "maintainers"
+    commit-message:
+      prefix: "🚀"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci/cd"
+    
+    # 分组 Actions 更新
+    groups:
+      github-actions:
+        patterns:
+          - "actions/*"
+          - "github/*"
+      deployment:
+        patterns:
+          - "*deploy*"
+          - "*pages*"
+          - "*upload*"
+      testing-actions:
+        patterns:
+          - "*test*"
+          - "*coverage*"
+          - "playwright*"
+      
+  # Go 模块更新（如果有 Go 相关工具）
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "11:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "maintainers"
+    commit-message:
+      prefix: "📦"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "go"
+    target-branch: "master"
