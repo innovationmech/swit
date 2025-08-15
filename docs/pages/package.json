@@ -6,8 +6,12 @@
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview",
-    "generate-api-docs": "node scripts/generate-api-docs.js",
-    "sync-docs": "node scripts/sync-docs.js"
+    "generate-api-docs": "node scripts/api-docs-generator.js",
+    "sync-docs": "node scripts/sync-docs.js",
+    "build-all": "./scripts/build-all.sh",
+    "clean": "rm -rf dist .vitepress/cache",
+    "lint": "echo 'Linting not configured yet'",
+    "test": "echo 'Tests not configured yet'"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
