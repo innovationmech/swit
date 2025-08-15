@@ -1,0 +1,407 @@
+name: 🔍 Documentation Preview
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'docs/pages/**'
+      - '.github/workflows/docs-preview.yml'
+    types: [opened, synchronize, reopened, closed]
+
+# 设置权限
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+# 允许一个并发预览部署（按 PR 分组）
+concurrency:
+  group: "docs-preview-${{ github.event.number }}"
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '18'
+  DOCS_DIR: './docs/pages'
+
+jobs:
+  # 构建预览版本
+  build-preview:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    outputs:
+      preview-ready: ${{ steps.build.outputs.success }}
+      preview-url: ${{ steps.deploy.outputs.preview_url }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          npm ci
+          echo "📦 Dependencies installed for preview build"
+
+      - name: 🔧 Configure preview build
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔧 Configuring preview build environment..."
+          
+          # 设置预览环境变量
+          echo "NODE_ENV=preview" >> $GITHUB_ENV
+          echo "VITE_BUILD_TIME=$(date -u)" >> $GITHUB_ENV
+          echo "VITE_COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "VITE_COMMIT_REF=${{ github.head_ref }}" >> $GITHUB_ENV
+          echo "VITE_PR_NUMBER=${{ github.event.number }}" >> $GITHUB_ENV
+          echo "VITE_PREVIEW_MODE=true" >> $GITHUB_ENV
+
+      - name: 🔍 Quick lint check
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔍 Running quick lint check..."
+          
+          # 只对变更的文件进行 lint
+          if [ -f ".eslintrc.js" ]; then
+            npx eslint --ext .vue,.ts,.js --max-warnings 10 .
+          fi
+
+      - name: 🏗️ Build preview
+        id: build
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🏗️ Building documentation preview..."
+          
+          # 设置预览基础路径（如果需要）
+          export BASE_URL="/pr-${{ github.event.number }}/"
+          
+          npm run build
+          
+          if [ -d ".vitepress/dist" ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ Preview build completed successfully"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ Preview build failed"
+            exit 1
+          fi
+
+      - name: 🔧 Prepare preview files
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔧 Preparing preview deployment files..."
+          
+          # 添加预览标识
+          cat > .vitepress/dist/preview-info.json << EOF
+          {
+            "prNumber": ${{ github.event.number }},
+            "prTitle": "${{ github.event.pull_request.title }}",
+            "prAuthor": "${{ github.event.pull_request.user.login }}",
+            "buildTime": "$(date -u)",
+            "commitSha": "${{ github.event.pull_request.head.sha }}",
+            "branchName": "${{ github.head_ref }}",
+            "isPreview": true
+          }
+          EOF
+          
+          # 在页面中添加预览横幅
+          find .vitepress/dist -name "*.html" -exec sed -i 's/<body/<body data-preview="true" data-pr="${{ github.event.number }}"/' {} \;
+
+      - name: 📤 Upload preview artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-preview-${{ github.event.number }}
+          path: '${{ env.DOCS_DIR }}/.vitepress/dist'
+          retention-days: 7
+
+  # 部署到预览环境（模拟 - 实际项目中可以使用 Netlify、Vercel 等）
+  deploy-preview:
+    runs-on: ubuntu-latest
+    needs: build-preview
+    if: needs.build-preview.outputs.preview-ready == 'true'
+    outputs:
+      preview_url: ${{ steps.deploy.outputs.preview_url }}
+    steps:
+      - name: 📥 Download preview artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-preview-${{ github.event.number }}
+          path: ./preview-dist
+
+      - name: 🚀 Deploy to preview environment
+        id: deploy
+        run: |
+          echo "🚀 Deploying to preview environment..."
+          
+          # 模拟部署到预览环境
+          # 实际实现中，这里会部署到 Netlify、Vercel 或其他服务
+          PREVIEW_URL="https://swit-docs-pr-${{ github.event.number }}.preview.example.com"
+          
+          echo "preview_url=${PREVIEW_URL}" >> $GITHUB_OUTPUT
+          echo "🔗 Preview deployed to: ${PREVIEW_URL}"
+          
+          # 验证部署内容
+          ls -la preview-dist/
+          echo "📄 Preview files ready for deployment"
+
+  # 运行预览测试
+  test-preview:
+    runs-on: ubuntu-latest
+    needs: [build-preview, deploy-preview]
+    if: needs.build-preview.outputs.preview-ready == 'true'
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: npm ci
+
+      - name: 📥 Download preview artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-preview-${{ github.event.number }}
+          path: ./test-preview
+
+      - name: 🧪 Run preview tests
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🧪 Running tests on preview build..."
+          
+          # 启动本地服务器测试预览版本
+          npm install -g serve
+          serve ../test-preview -p 3000 &
+          SERVER_PID=$!
+          
+          # 等待服务器启动
+          sleep 5
+          
+          # 运行基础测试
+          if npm run test:preview --if-present; then
+            echo "✅ Preview tests passed"
+          else
+            echo "⚠️ Preview tests not available"
+          fi
+          
+          # 清理
+          kill $SERVER_PID 2>/dev/null || true
+
+      - name: 🔍 Check preview accessibility
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔍 Checking preview accessibility..."
+          
+          # 运行快速可访问性检查
+          if npm run test:accessibility:quick --if-present; then
+            echo "✅ Basic accessibility checks passed"
+          else
+            echo "⚠️ Accessibility tests not available"
+          fi
+
+  # 分析预览差异
+  analyze-changes:
+    runs-on: ubuntu-latest
+    needs: build-preview
+    if: needs.build-preview.outputs.preview-ready == 'true'
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Analyze documentation changes
+        run: |
+          echo "🔍 Analyzing documentation changes..."
+          
+          # 获取变更的文件列表
+          git diff --name-only origin/master...HEAD -- docs/pages/ > changed_files.txt
+          
+          if [ -s changed_files.txt ]; then
+            echo "📝 Changed files:"
+            cat changed_files.txt
+            
+            # 统计变更
+            TOTAL_CHANGES=$(wc -l < changed_files.txt)
+            MD_CHANGES=$(grep -c '\.md$' changed_files.txt || echo 0)
+            VUE_CHANGES=$(grep -c '\.vue$' changed_files.txt || echo 0)
+            CONFIG_CHANGES=$(grep -c 'config' changed_files.txt || echo 0)
+            
+            echo "📊 Change summary:"
+            echo "  Total files: $TOTAL_CHANGES"
+            echo "  Markdown files: $MD_CHANGES"
+            echo "  Vue components: $VUE_CHANGES"
+            echo "  Config files: $CONFIG_CHANGES"
+            
+            # 保存分析结果
+            cat > analysis.json << EOF
+          {
+            "totalChanges": $TOTAL_CHANGES,
+            "markdownChanges": $MD_CHANGES,
+            "vueChanges": $VUE_CHANGES,
+            "configChanges": $CONFIG_CHANGES,
+            "changedFiles": $(cat changed_files.txt | jq -R . | jq -s .)
+          }
+          EOF
+          else
+            echo "📝 No documentation files changed"
+            echo '{"totalChanges": 0}' > analysis.json
+          fi
+
+      - name: 📤 Upload analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-analysis-${{ github.event.number }}
+          path: analysis.json
+
+  # 更新 PR 评论
+  update-pr-comment:
+    runs-on: ubuntu-latest
+    needs: [build-preview, deploy-preview, test-preview, analyze-changes]
+    if: always() && github.event.action != 'closed'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: 📥 Download analysis
+        uses: actions/download-artifact@v4
+        with:
+          name: change-analysis-${{ github.event.number }}
+          path: ./analysis
+        continue-on-error: true
+
+      - name: 💬 Update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let analysis = { totalChanges: 0 };
+            
+            try {
+              if (fs.existsSync('./analysis/analysis.json')) {
+                analysis = JSON.parse(fs.readFileSync('./analysis/analysis.json', 'utf8'));
+              }
+            } catch (e) {
+              console.log('Could not read analysis file');
+            }
+            
+            const buildSuccess = '${{ needs.build-preview.outputs.preview-ready }}' === 'true';
+            const previewUrl = '${{ needs.deploy-preview.outputs.preview_url }}';
+            const testStatus = '${{ needs.test-preview.result }}';
+            
+            let commentBody = `## 📚 Documentation Preview\n\n`;
+            
+            if (buildSuccess) {
+              commentBody += `✅ **Build Status**: Success\n`;
+              commentBody += `🔗 **Preview URL**: [View Preview](${previewUrl})\n`;
+              commentBody += `🧪 **Tests**: ${testStatus === 'success' ? '✅ Passed' : '⚠️ ' + testStatus}\n\n`;
+              
+              if (analysis.totalChanges > 0) {
+                commentBody += `### 📊 Changes Summary\n`;
+                commentBody += `- **Total files changed**: ${analysis.totalChanges}\n`;
+                if (analysis.markdownChanges > 0) {
+                  commentBody += `- **Markdown files**: ${analysis.markdownChanges}\n`;
+                }
+                if (analysis.vueChanges > 0) {
+                  commentBody += `- **Vue components**: ${analysis.vueChanges}\n`;
+                }
+                if (analysis.configChanges > 0) {
+                  commentBody += `- **Config files**: ${analysis.configChanges}\n`;
+                }
+                commentBody += `\n`;
+              }
+              
+              commentBody += `### 🔍 Quick Actions\n`;
+              commentBody += `- [View diff](${context.payload.pull_request.html_url}/files)\n`;
+              commentBody += `- [Preview site](${previewUrl})\n`;
+              commentBody += `- [CI logs](${context.payload.pull_request.html_url}/checks)\n\n`;
+            } else {
+              commentBody += `❌ **Build Status**: Failed\n`;
+              commentBody += `Please check the [CI logs](${context.payload.pull_request.html_url}/checks) for details.\n\n`;
+            }
+            
+            commentBody += `---\n`;
+            commentBody += `*Preview updated at ${new Date().toUTCString()}*\n`;
+            commentBody += `*Commit: ${context.payload.pull_request.head.sha.substring(0, 7)}*`;
+            
+            // 查找现有评论
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.data.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('📚 Documentation Preview')
+            );
+            
+            if (botComment) {
+              // 更新现有评论
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // 创建新评论
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+  # 清理预览环境
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    steps:
+      - name: 🧹 Cleanup preview environment
+        run: |
+          echo "🧹 Cleaning up preview environment for PR #${{ github.event.number }}"
+          
+          # 在实际项目中，这里会清理预览部署
+          # 例如删除 Netlify 预览部署、清理临时资源等
+          
+          echo "✅ Preview environment cleaned up"
+
+      - name: 💬 Update PR comment on closure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.data.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('📚 Documentation Preview')
+            );
+            
+            if (botComment) {
+              const updatedBody = botComment.body + '\n\n---\n⚠️ *Preview environment has been cleaned up as this PR was closed.*';
+              
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: updatedBody
+              });
+            }

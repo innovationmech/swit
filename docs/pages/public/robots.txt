@@ -1,0 +1,25 @@
+# robots.txt for Swit Framework Documentation
+# https://innovationmech.github.io/swit/
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://innovationmech.github.io/swit/sitemap.xml
+
+# Allow search engines to index all content
+Allow: /en/
+Allow: /zh/
+Allow: /api/
+Allow: /guide/
+Allow: /examples/
+Allow: /community/
+
+# Disallow search and utility pages
+Disallow: /search
+Disallow: /_vitepres/
+Disallow: /node_modules/
+Disallow: /.git/
+
+# Crawl delay (be respectful to the server)
+Crawl-delay: 1
