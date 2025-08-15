@@ -1,0 +1,46 @@
+/**
+ * CSS Variables for Theme Customization
+ * Colors
+ */
+
+:root {
+  --vp-c-brand-1: #646cff;
+  --vp-c-brand-2: #747bff;
+  --vp-c-brand-3: #535bf2;
+  --vp-c-brand-soft: rgba(100, 108, 255, 0.14);
+
+  /* 自定义颜色变量 */
+  --swit-primary: #646cff;
+  --swit-secondary: #42b883;
+  --swit-accent: #ff6b35;
+  --swit-text-light: #2c3e50;
+  --swit-text-dark: #ffffff;
+  --swit-bg-light: #ffffff;
+  --swit-bg-dark: #1a1a1a;
+  
+  /* 间距 */
+  --swit-spacing-xs: 0.25rem;
+  --swit-spacing-sm: 0.5rem;
+  --swit-spacing-md: 1rem;
+  --swit-spacing-lg: 1.5rem;
+  --swit-spacing-xl: 2rem;
+  --swit-spacing-2xl: 3rem;
+  
+  /* 圆角 */
+  --swit-radius-sm: 0.25rem;
+  --swit-radius-md: 0.5rem;
+  --swit-radius-lg: 0.75rem;
+  --swit-radius-xl: 1rem;
+  
+  /* 阴影 */
+  --swit-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --swit-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --swit-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.dark {
+  --vp-c-brand-1: #747bff;
+  --vp-c-brand-2: #646cff;
+  --vp-c-brand-3: #535bf2;
+  --vp-c-brand-soft: rgba(116, 123, 255, 0.16);
+}

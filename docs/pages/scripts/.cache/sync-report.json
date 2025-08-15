@@ -1,0 +1,43 @@
+{
+  "main": {
+    "en": {
+      "status": "synced",
+      "source": "/Users/liyanjie/VSCodeProjects/swit/README.md",
+      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/en/index.md",
+      "validationIssues": [
+        "发现可能的内部链接: 17 个"
+      ]
+    },
+    "zh": {
+      "status": "synced",
+      "source": "/Users/liyanjie/VSCodeProjects/swit/README-CN.md",
+      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/zh/index.md",
+      "validationIssues": [
+        "发现可能的内部链接: 17 个"
+      ]
+    }
+  },
+  "additional": [
+    {
+      "source": "/Users/liyanjie/VSCodeProjects/swit/DEVELOPMENT.md",
+      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/en/community/development.md",
+      "status": "synced"
+    },
+    {
+      "source": "/Users/liyanjie/VSCodeProjects/swit/DEVELOPMENT-CN.md",
+      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/zh/community/development.md",
+      "status": "synced"
+    },
+    {
+      "source": "/Users/liyanjie/VSCodeProjects/swit/CODE_OF_CONDUCT.md",
+      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/en/community/code_of_conduct.md",
+      "status": "synced"
+    },
+    {
+      "source": "/Users/liyanjie/VSCodeProjects/swit/SECURITY.md",
+      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/en/community/security.md",
+      "status": "synced"
+    }
+  ],
+  "timestamp": "2025-08-15T09:52:36.075Z"
+}
