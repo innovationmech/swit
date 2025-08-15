@@ -24,9 +24,9 @@ Internal API for validating user credentials, used by authentication service
 
 **Parameters**
 
-| Description | Type | Required/Optional | Description |
+| 参数名 | 类型 | Required/Optional | Description |
 |------|------|----------|-------------|
-| `credentials` | object | Required | User credentials |
+| `credentials` | `object` | Required | User credentials |
 
 **Responses**
 
@@ -39,10 +39,53 @@ Internal API for validating user credentials, used by authentication service
 
 **Examples**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X POST "/internal/validate-user" \
+curl -X POST \
+  "http://localhost:8080/internal/validate-user" \
   -d '{"key": "value"}'
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/internal/validate-user', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+  },
+  body: JSON.stringify({ key: 'value' }),
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.post(
+    'http://localhost:8080/internal/validate-user',
+    json={'key': 'value'},
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 ### users
 
@@ -58,9 +101,9 @@ Create a new user with username, email and password
 
 **Parameters**
 
-| Description | Type | Required/Optional | Description |
+| 参数名 | 类型 | Required/Optional | Description |
 |------|------|----------|-------------|
-| `user` | object | Required | User information |
+| `user` | `object` | Required | User information |
 
 **Responses**
 
@@ -72,10 +115,53 @@ Create a new user with username, email and password
 
 **Examples**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X POST "/users/create" \
+curl -X POST \
+  "http://localhost:8080/users/create" \
   -d '{"key": "value"}'
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/users/create', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+  },
+  body: JSON.stringify({ key: 'value' }),
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.post(
+    'http://localhost:8080/users/create',
+    json={'key': 'value'},
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 #### GET /users/email/{email}
 
@@ -89,9 +175,9 @@ Get user details by email address
 
 **Parameters**
 
-| Description | Type | Required/Optional | Description |
+| 参数名 | 类型 | Required/Optional | Description |
 |------|------|----------|-------------|
-| `email` | string | Required | Email address |
+| `email` | `string` | Required | Email address |
 
 **Responses**
 
@@ -103,9 +189,48 @@ Get user details by email address
 
 **Examples**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X GET "/users/email/{email}"
+curl -X GET \
+  "http://localhost:8080/users/email/{email}
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/users/email/{email}', {
+  headers: {
+    'Authorization': 'Bearer <your_token>',
+  },
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.get(
+    'http://localhost:8080/users/email/{email}',
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 #### GET /users/username/{username}
 
@@ -119,9 +244,9 @@ Get user details by username
 
 **Parameters**
 
-| Description | Type | Required/Optional | Description |
+| 参数名 | 类型 | Required/Optional | Description |
 |------|------|----------|-------------|
-| `username` | string | Required | Username |
+| `username` | `string` | Required | Username |
 
 **Responses**
 
@@ -133,9 +258,48 @@ Get user details by username
 
 **Examples**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X GET "/users/username/{username}"
+curl -X GET \
+  "http://localhost:8080/users/username/{username}
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/users/username/{username}', {
+  headers: {
+    'Authorization': 'Bearer <your_token>',
+  },
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.get(
+    'http://localhost:8080/users/username/{username}',
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 #### DELETE /users/{id}
 
@@ -149,9 +313,9 @@ Delete a user by ID
 
 **Parameters**
 
-| Description | Type | Required/Optional | Description |
+| 参数名 | 类型 | Required/Optional | Description |
 |------|------|----------|-------------|
-| `id` | string | Required | User ID |
+| `id` | `string` | Required | User ID |
 
 **Responses**
 
@@ -163,7 +327,48 @@ Delete a user by ID
 
 **Examples**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X DELETE "/users/{id}"
+curl -X DELETE \
+  "http://localhost:8080/users/{id}
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/users/{id}', {
+  method: 'DELETE',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+  },
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.delete(
+    'http://localhost:8080/users/{id}',
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 

@@ -11,50 +11,12 @@ Welcome to the Swit Framework API Documentation. Below are the available service
 
 <div class="service-grid">
 
-<div class="service-card">
-
-### [SWIT Server API](./switserve.md)
-
-This is the SWIT server API documentation.
-
-<div class="service-stats">
-
-- **Endpoints**: 5
-- **Version**: 1.0
-- **Base URL**: `http://localhost:8080/`
-
-</div>
-
-[View Documentation →](./switserve.md)
-
-</div>
-
-<div class="service-card">
-
-### [SWIT Auth API](./switauth.md)
-
-This is the SWIT authentication service API documentation.
-
-<div class="service-stats">
-
-- **Endpoints**: 5
-- **Version**: 1.0
-- **Base URL**: `http://localhost:8090/`
-
-</div>
-
-[View Documentation →](./switauth.md)
-
-</div>
-
 </div>
 
 ## Quick Links
 
 - [Complete API Reference](./complete.md)
 - [Overview](./overview.md)
-- [Authentication Service](./switauth.md)
-- [User Management Service](./switserve.md)
 
 ## General Information
 

@@ -11,50 +11,12 @@ description: Swit 框架 API 接口文档
 
 <div class="service-grid">
 
-<div class="service-card">
-
-### [SWIT Server API](./switserve.md)
-
-This is the SWIT server API documentation.
-
-<div class="service-stats">
-
-- **端点数量**: 5
-- **版本**: 1.0
-- **基础URL**: `http://localhost:8080/`
-
-</div>
-
-[查看文档 →](./switserve.md)
-
-</div>
-
-<div class="service-card">
-
-### [SWIT Auth API](./switauth.md)
-
-This is the SWIT authentication service API documentation.
-
-<div class="service-stats">
-
-- **端点数量**: 5
-- **版本**: 1.0
-- **基础URL**: `http://localhost:8090/`
-
-</div>
-
-[查看文档 →](./switauth.md)
-
-</div>
-
 </div>
 
 ## 快速链接
 
 - [完整 API 参考](./complete.md)
 - [概览](./overview.md)
-- [认证服务](./switauth.md)
-- [用户管理服务](./switserve.md)
 
 ## 通用信息
 

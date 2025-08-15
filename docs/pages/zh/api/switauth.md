@@ -24,9 +24,9 @@ Authenticate a user with username and password, returns access and refresh token
 
 **参数**
 
-| 描述 | Type | 必填/可选 | 描述 |
+| 参数名 | 类型 | 必填/可选 | 描述 |
 |------|------|----------|-------------|
-| `login` | object | 必填 | User login credentials |
+| `login` | `object` | 必填 | User login credentials |
 
 **响应**
 
@@ -38,10 +38,53 @@ Authenticate a user with username and password, returns access and refresh token
 
 **示例**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X POST "/auth/login" \
+curl -X POST \
+  "http://localhost:8080/auth/login" \
   -d '{"key": "value"}'
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/auth/login', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+  },
+  body: JSON.stringify({ key: 'value' }),
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.post(
+    'http://localhost:8080/auth/login',
+    json={'key': 'value'},
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 #### POST /auth/logout
 
@@ -63,9 +106,50 @@ Invalidate the user's access token and log them out
 
 **示例**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X POST "/auth/logout"
+curl -X POST \
+  "http://localhost:8080/auth/logout
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/auth/logout', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+  },
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.post(
+    'http://localhost:8080/auth/logout',
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 #### POST /auth/refresh
 
@@ -79,9 +163,9 @@ Generate new access and refresh tokens using a valid refresh token
 
 **参数**
 
-| 描述 | Type | 必填/可选 | 描述 |
+| 参数名 | 类型 | 必填/可选 | 描述 |
 |------|------|----------|-------------|
-| `refresh` | object | 必填 | Refresh token |
+| `refresh` | `object` | 必填 | Refresh token |
 
 **响应**
 
@@ -93,10 +177,53 @@ Generate new access and refresh tokens using a valid refresh token
 
 **示例**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X POST "/auth/refresh" \
+curl -X POST \
+  "http://localhost:8080/auth/refresh" \
   -d '{"key": "value"}'
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/auth/refresh', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+  },
+  body: JSON.stringify({ key: 'value' }),
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.post(
+    'http://localhost:8080/auth/refresh',
+    json={'key': 'value'},
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 #### GET /auth/validate
 
@@ -117,9 +244,48 @@ Validate an access token and return token information including user ID
 
 **示例**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X GET "/auth/validate"
+curl -X GET \
+  "http://localhost:8080/auth/validate
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/auth/validate', {
+  headers: {
+    'Authorization': 'Bearer <your_token>',
+  },
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.get(
+    'http://localhost:8080/auth/validate',
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 
 ### health
 
@@ -141,7 +307,46 @@ Check if the authentication service is healthy
 
 **示例**
 
+:::tabs
+
+== cURL
+
 ```bash
-curl -X GET "/health"
+curl -X GET \
+  "http://localhost:8080/health
 ```
+
+== JavaScript
+
+```javascript
+const response = await fetch('http://localhost:8080/health', {
+  headers: {
+    'Authorization': 'Bearer <your_token>',
+  },
+});
+const data = await response.json();
+console.log(data);
+```
+
+== Python
+
+```python
+import requests
+
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer <your_token>',
+}
+
+response = requests.get(
+    'http://localhost:8080/health',
+    headers=headers
+)
+data = response.json()
+print(data)
+```
+
+:::
+
+---
 

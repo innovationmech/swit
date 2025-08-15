@@ -9,9 +9,14 @@
     "generate-api-docs": "node scripts/api-docs-generator.js",
     "sync-docs": "node scripts/sync-docs.js",
     "build-all": "./scripts/build-all.sh",
+    "build-optimized": "npm run build && npm run optimize",
+    "optimize": "node scripts/performance-optimizer.js",
+    "validate-content": "node scripts/content-validator.js",
     "clean": "rm -rf dist .vitepress/cache",
+    "clean-all": "npm run clean && rm -rf node_modules package-lock.json",
     "lint": "echo 'Linting not configured yet'",
-    "test": "echo 'Tests not configured yet'"
+    "test": "echo 'Tests not configured yet'",
+    "analyze": "npm run build && npm run optimize"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
