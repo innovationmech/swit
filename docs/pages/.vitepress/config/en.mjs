@@ -88,6 +88,13 @@ export const enConfig = defineConfig({
             { text: 'Service Discovery', link: '/en/guide/service-discovery' },
             { text: 'Testing', link: '/en/guide/testing' }
           ]
+        },
+        {
+          text: 'Website Usage',
+          items: [
+            { text: 'Website Usage Guide', link: '/en/guide/website-usage' },
+            { text: 'Troubleshooting & FAQ', link: '/en/guide/troubleshooting' }
+          ]
         }
       ],
       
@@ -123,6 +130,14 @@ export const enConfig = defineConfig({
             { text: 'Contributing', link: '/en/community/contributing' },
             { text: 'Code of Conduct', link: '/en/community/code_of_conduct' },
             { text: 'Security', link: '/en/community/security' }
+          ]
+        },
+        {
+          text: 'Development',
+          items: [
+            { text: 'Development Guide', link: '/en/community/development' },
+            { text: 'Website Development', link: '/en/community/website-development' },
+            { text: 'User Feedback', link: '/en/community/user-feedback' }
           ]
         }
       ]

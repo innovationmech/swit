@@ -24,14 +24,15 @@ go mod init my-service
 
 创建一个简单的 HTTP 服务：
 
-<CodeExample :code="`package main
+```go
+package main
 
 import (
-    'context'
-    'log'
+    "context"
+    "log"
     
-    'github.com/gin-gonic/gin'
-    'github.com/innovationmech/swit/pkg/server'
+    "github.com/gin-gonic/gin"
+    "github.com/innovationmech/swit/pkg/server"
 )
 
 type MyService struct {
@@ -48,27 +49,27 @@ type MyHTTPHandler struct{}
 
 func (h *MyHTTPHandler) RegisterRoutes(router interface{}) error {
     r := router.(*gin.Engine)
-    r.GET('/health', h.Health)
-    r.GET('/api/v1/hello', h.Hello)
+    r.GET("/health", h.Health)
+    r.GET("/api/v1/hello", h.Hello)
     return nil
 }
 
 func (h *MyHTTPHandler) GetServiceName() string {
-    return 'my-service'
+    return "my-service"
 }
 
 func (h *MyHTTPHandler) Health(c *gin.Context) {
-    c.JSON(200, gin.H{'status': 'healthy'})
+    c.JSON(200, gin.H{"status": "healthy"})
 }
 
 func (h *MyHTTPHandler) Hello(c *gin.Context) {
-    c.JSON(200, gin.H{'message': 'Hello from Swit!'})
+    c.JSON(200, gin.H{"message": "Hello from Swit!"})
 }
 
 func main() {
     config := &server.ServerConfig{
-        Name:    'my-service',
-        Version: '1.0.0',
+        Name:    "my-service",
+        Version: "1.0.0",
         HTTP: server.HTTPConfig{
             Port:     8080,
             Enabled:  true,
@@ -85,7 +86,8 @@ func main() {
     if err := srv.Start(context.Background()); err != nil {
         log.Fatal(err)
     }
-}`" language="go" title="main.go" />
+}
+```
 
 ## 运行服务
 

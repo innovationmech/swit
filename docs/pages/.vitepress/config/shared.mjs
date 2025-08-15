@@ -95,66 +95,14 @@ export const sharedConfig = {
   // Performance and build optimizations
   cleanUrls: true,
   metaChunk: true,
+  ignoreDeadLinks: true,
   
-  // Vite configuration for performance
+  // Simplified Vite configuration
   vite: {
-    define: {
-      __VUE_OPTIONS_API__: false
-    },
-    
-    // Build optimizations
-    build: {
-      minify: 'terser',
-      cssMinify: true,
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            // Vendor chunks for better caching
-            'vue-vendor': ['vue', '@vue/runtime-dom'],
-            'vitepress-vendor': ['vitepress/theme'],
-            'ui-components': [
-              './components/HomePage.vue',
-              './components/FeatureCard.vue',
-              './components/CodeExample.vue',
-              './components/ApiDocViewer.vue',
-              './components/SearchBox.vue'
-            ]
-          },
-          chunkFileNames: 'assets/[name]-[hash].js',
-          entryFileNames: 'assets/[name]-[hash].js',
-          assetFileNames: 'assets/[name]-[hash].[ext]'
-        }
-      },
-      target: 'esnext',
-      sourcemap: false,
-      reportCompressedSize: true,
-      chunkSizeWarningLimit: 1000
-    },
-    
-    // Development optimizations
-    optimizeDeps: {
-      include: [
-        'vue',
-        '@vue/runtime-dom'
-      ],
-      exclude: [
-        'vitepress'
-      ]
-    },
-    
-    // Asset optimization
-    assetsInclude: ['**/*.svg', '**/*.png', '**/*.jpg', '**/*.jpeg', '**/*.webp'],
-    
-    // Server configuration for development
     server: {
       fs: {
         allow: ['..', '../..']
       }
-    },
-    
-    // CSS configuration
-    css: {
-      devSourcemap: false
     }
   },
 

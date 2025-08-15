@@ -92,6 +92,13 @@ export const zhConfig = defineConfig({
             { text: '服务发现', link: '/zh/guide/service-discovery' },
             { text: '测试', link: '/zh/guide/testing' }
           ]
+        },
+        {
+          text: '网站使用',
+          items: [
+            { text: '网站使用指南', link: '/zh/guide/website-usage' },
+            { text: '故障排除与常见问题', link: '/zh/guide/troubleshooting' }
+          ]
         }
       ],
       
@@ -127,6 +134,14 @@ export const zhConfig = defineConfig({
             { text: '贡献指南', link: '/zh/community/contributing' },
             { text: '行为准则', link: '/zh/community/code_of_conduct' },
             { text: '安全政策', link: '/zh/community/security' }
+          ]
+        },
+        {
+          text: '开发',
+          items: [
+            { text: '开发指南', link: '/zh/community/development' },
+            { text: '网站开发指南', link: '/zh/community/website-development' },
+            { text: '用户反馈与贡献', link: '/zh/community/user-feedback' }
           ]
         }
       ]
