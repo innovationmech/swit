@@ -229,6 +229,9 @@ onUnmounted(() => {
 // 监控方法
 async function initializeMonitor() {
   try {
+    // SSR protection
+    if (typeof window === 'undefined') return
+    
     // 检查 Performance API 支持
     if (!window.performance) {
       console.warn('Performance API not supported')
@@ -540,7 +543,7 @@ function drawLine(ctx: CanvasRenderingContext2D, data: number[], color: string, 
 let monitoringInterval: number | null = null
 
 function startPerformanceMonitoring() {
-  if (monitoringInterval) return
+  if (monitoringInterval || typeof window === 'undefined') return
   
   monitoringInterval = window.setInterval(() => {
     collectInitialMetrics()

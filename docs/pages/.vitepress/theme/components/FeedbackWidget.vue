@@ -343,8 +343,8 @@ async function sendFeedback() {
   const feedbackData = {
     ...feedback,
     timestamp: new Date().toISOString(),
-    url: window.location.href,
-    referrer: document.referrer
+    url: typeof window !== 'undefined' ? window.location.href : '',
+    referrer: typeof document !== 'undefined' ? document.referrer : ''
   }
   
   // 模拟 API 调用

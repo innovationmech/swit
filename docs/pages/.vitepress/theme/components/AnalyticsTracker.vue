@@ -357,7 +357,8 @@ function initializePerformanceMonitoring() {
     }
     
     // 页面加载性能
-    window.addEventListener('load', () => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('load', () => {
       setTimeout(() => {
         const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
         if (navigation) {
@@ -374,6 +375,7 @@ function initializePerformanceMonitoring() {
         }
       }, 1000)
     })
+    }
     
     if (analyticsConfig.enableDebug) {
       console.log('Performance monitoring initialized')
@@ -417,7 +419,7 @@ function setupUserInteractionTracking() {
         label: link.textContent || 'Unknown Link',
         custom_parameters: {
           href: link.href,
-          internal: link.host === window.location.host
+          internal: typeof window !== 'undefined' && link.host === window.location.host
         }
       })
     }
@@ -435,6 +437,7 @@ function setupUserInteractionTracking() {
   // 滚动深度追踪
   let maxScrollDepth = 0
   const trackScrollDepth = () => {
+    if (typeof window === 'undefined') return
     const scrollDepth = Math.round((window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100)
     if (scrollDepth > maxScrollDepth && scrollDepth % 25 === 0) {
       maxScrollDepth = scrollDepth
@@ -447,7 +450,9 @@ function setupUserInteractionTracking() {
     }
   }
   
-  window.addEventListener('scroll', trackScrollDepth, { passive: true })
+  if (typeof window !== 'undefined') {
+    window.addEventListener('scroll', trackScrollDepth, { passive: true })
+  }
 }
 
 // 事件追踪
@@ -482,7 +487,7 @@ function trackPageView(path: string) {
       ;(window as any).gtag('config', analyticsConfig.googleAnalyticsId, {
         page_path: path,
         page_title: document.title,
-        page_location: window.location.href,
+        page_location: typeof window !== 'undefined' ? window.location.href : '',
         custom_map: {
           user_language: lang.value,
           page_theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
@@ -583,13 +588,15 @@ function saveSettings() {
 }
 
 // 全局错误处理
-window.addEventListener('error', (event) => {
-  trackError(new Error(event.message), 'Global Error Handler')
-})
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    trackError(new Error(event.message), 'Global Error Handler')
+  })
 
-window.addEventListener('unhandledrejection', (event) => {
-  trackError(new Error(event.reason), 'Unhandled Promise Rejection')
-})
+  window.addEventListener('unhandledrejection', (event) => {
+    trackError(new Error(event.reason), 'Unhandled Promise Rejection')
+  })
+}
 
 // 暴露追踪函数给其他组件使用
 if (typeof window !== 'undefined') {

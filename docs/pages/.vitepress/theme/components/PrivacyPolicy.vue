@@ -340,9 +340,11 @@ function saveCookieSettings() {
     applyCookieSettings()
     
     // 触发设置更新事件
-    window.dispatchEvent(new CustomEvent('cookieSettingsUpdated', {
-      detail: cookieSettings
-    }))
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cookieSettingsUpdated', {
+        detail: cookieSettings
+      }))
+    }
     
   } catch (error) {
     console.error('Failed to save cookie settings:', error)
@@ -434,9 +436,11 @@ function clearMarketingCookies() {
 
 function deleteCookie(name: string) {
   // 删除 Cookie 的标准方法
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`
+  if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`
+  }
 }
 
 function updateCookieSecurityPolicy() {

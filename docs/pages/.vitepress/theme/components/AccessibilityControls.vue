@@ -195,6 +195,9 @@ function toggleMotion() {
 
 // 初始化
 onMounted(() => {
+  // SSR protection
+  if (typeof window === 'undefined') return
+  
   // 从本地存储恢复设置
   const savedFontSize = localStorage.getItem('accessibility-font-size')
   if (savedFontSize) {
