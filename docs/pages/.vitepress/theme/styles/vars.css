@@ -1,0 +1,99 @@
+/**
+ * Customize default theme styling by overriding CSS variables
+ */
+
+:root {
+  --vp-c-default-1: var(--vp-c-gray-1);
+  --vp-c-default-2: var(--vp-c-gray-2);
+  --vp-c-default-3: var(--vp-c-gray-3);
+  --vp-c-default-soft: var(--vp-c-gray-soft);
+
+  --vp-c-brand-1: #3490dc;
+  --vp-c-brand-2: #2779bd;
+  --vp-c-brand-3: #1c64a5;
+  --vp-c-brand-soft: rgba(52, 144, 220, 0.14);
+
+  --vp-c-tip-1: var(--vp-c-brand-1);
+  --vp-c-tip-2: var(--vp-c-brand-2);
+  --vp-c-tip-3: var(--vp-c-brand-3);
+  --vp-c-tip-soft: var(--vp-c-brand-soft);
+
+  --vp-c-warning-1: #f6993f;
+  --vp-c-warning-2: #f38020;
+  --vp-c-warning-3: #e76a00;
+  --vp-c-warning-soft: rgba(246, 153, 63, 0.14);
+
+  --vp-c-danger-1: #e3342f;
+  --vp-c-danger-2: #cc1f1a;
+  --vp-c-danger-3: #b01e1a;
+  --vp-c-danger-soft: rgba(227, 52, 47, 0.14);
+
+  --vp-c-success-1: #38c172;
+  --vp-c-success-2: #2fa55c;
+  --vp-c-success-3: #268e4b;
+  --vp-c-success-soft: rgba(56, 193, 114, 0.14);
+
+  /* Component tokens */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(
+    120deg,
+    #3490dc 30%,
+    #38c172
+  );
+
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    #3490dc 50%,
+    #38c172 50%
+  );
+  --vp-home-hero-image-filter: blur(44px);
+
+  /* Custom variables */
+  --swit-primary: #3490dc;
+  --swit-secondary: #38c172;
+  --swit-accent: #f6993f;
+  --swit-dark: #1a202c;
+  --swit-light: #f7fafc;
+  --swit-border-radius: 8px;
+  --swit-transition: all 0.3s ease;
+}
+
+.dark {
+  --vp-c-default-1: var(--vp-c-gray-1);
+  --vp-c-default-2: var(--vp-c-gray-2);
+  --vp-c-default-3: var(--vp-c-gray-3);
+  --vp-c-default-soft: var(--vp-c-gray-soft);
+
+  --vp-c-brand-1: #4ba3f5;
+  --vp-c-brand-2: #3490dc;
+  --vp-c-brand-3: #2779bd;
+  --vp-c-brand-soft: rgba(75, 163, 245, 0.14);
+
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    #4ba3f5 50%,
+    #42d392 50%
+  );
+}
+
+/**
+ * Component: Custom Button
+ */
+:root {
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: var(--vp-c-white);
+  --vp-button-brand-bg: var(--vp-c-brand-2);
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: var(--vp-c-white);
+  --vp-button-brand-hover-bg: var(--vp-c-brand-1);
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: var(--vp-c-white);
+  --vp-button-brand-active-bg: var(--vp-c-brand-3);
+}
+
+/**
+ * Component: Algolia
+ */
+.DocSearch {
+  --docsearch-primary-color: var(--vp-c-brand-1) !important;
+}
