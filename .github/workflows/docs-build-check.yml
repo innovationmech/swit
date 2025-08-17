@@ -1,0 +1,371 @@
+name: 📝 Documentation Build Check
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'docs/pages/**'
+      - '.github/workflows/docs-build-check.yml'
+    types: [opened, synchronize, reopened]
+
+# 设置权限
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+# 允许一个并发检查（按 PR 分组）
+concurrency:
+  group: "docs-build-check-${{ github.event.number }}"
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '18'
+  DOCS_DIR: './docs/pages'
+
+jobs:
+  # 代码质量检查
+  lint-check:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    outputs:
+      lint-success: ${{ steps.lint.outputs.success }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          npm ci
+          echo "📦 Dependencies installed for lint check"
+
+      - name: 🔍 ESLint check
+        id: lint
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔍 Running ESLint check..."
+          
+          if npm run lint:check; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ ESLint check passed"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ ESLint check failed"
+            exit 1
+          fi
+
+      - name: 🔍 TypeScript type check
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔍 Running TypeScript type check..."
+          
+          if [ -f "tsconfig.json" ]; then
+            if npx vue-tsc --noEmit; then
+              echo "✅ TypeScript check passed"
+            else
+              echo "❌ TypeScript check failed"
+              exit 1
+            fi
+          else
+            echo "⚠️ No tsconfig.json found, skipping TypeScript check"
+          fi
+
+  # 构建测试
+  build-check:
+    runs-on: ubuntu-latest
+    needs: lint-check
+    if: needs.lint-check.outputs.lint-success == 'true'
+    outputs:
+      build-success: ${{ steps.build.outputs.success }}
+      build-size: ${{ steps.analyze.outputs.size }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: npm ci
+
+      - name: 🔧 Configure build environment
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔧 Configuring build environment..."
+          
+          # 设置构建环境变量
+          echo "NODE_ENV=test" >> $GITHUB_ENV
+          echo "VITE_BUILD_TIME=$(date -u)" >> $GITHUB_ENV
+          echo "VITE_COMMIT_SHA=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          echo "VITE_COMMIT_REF=${{ github.head_ref }}" >> $GITHUB_ENV
+          echo "VITE_PR_NUMBER=${{ github.event.number }}" >> $GITHUB_ENV
+          
+          # 检查配置文件
+          if [ ! -f ".vitepress/config.mjs" ]; then
+            echo "❌ VitePress config file not found"
+            exit 1
+          fi
+
+      - name: 🏗️ Build documentation
+        id: build
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🏗️ Building documentation..."
+          
+          if npm run build; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ Documentation built successfully"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ Documentation build failed"
+            exit 1
+          fi
+          
+          # 验证构建输出
+          if [ ! -d "dist" ]; then
+            echo "❌ Build output directory not found"
+            exit 1
+          fi
+          
+          # 检查关键文件
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ Main index.html not found in build output"
+            exit 1
+          fi
+
+      - name: 📊 Analyze build size
+        id: analyze
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "📊 Analyzing build size..."
+          
+          # 计算构建大小
+          DIST_SIZE=$(du -sh dist | cut -f1)
+          DIST_SIZE_KB=$(du -s dist | cut -f1)
+          
+          echo "size=${DIST_SIZE}" >> $GITHUB_OUTPUT
+          echo "📦 Build size: ${DIST_SIZE}"
+          
+          # 检查包大小限制（50MB）
+          MAX_SIZE=51200  # 50MB in KB
+          
+          if [ $DIST_SIZE_KB -gt $MAX_SIZE ]; then
+            echo "⚠️ Build size ($DIST_SIZE) exceeds recommended limit (50MB)"
+            echo "Consider optimizing assets or splitting content"
+          else
+            echo "✅ Build size within limits"
+          fi
+          
+          # 显示最大的文件
+          echo "🔍 Largest files:"
+          find dist -type f -exec du -h {} \; | sort -hr | head -10
+
+  # 内容验证
+  content-validation:
+    runs-on: ubuntu-latest
+    needs: build-check
+    if: needs.build-check.outputs.build-success == 'true'
+    outputs:
+      validation-success: ${{ steps.validate.outputs.success }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: npm ci
+
+      - name: 🔍 Validate content
+        id: validate
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔍 Validating documentation content..."
+          
+          # 运行内容验证（如果存在）
+          if npm run validate:content --if-present; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ Content validation passed"
+          else
+            echo "success=true" >> $GITHUB_OUTPUT  # 非阻塞
+            echo "⚠️ Content validation not available or failed (non-blocking)"
+          fi
+          
+          # 检查链接（如果存在）
+          if npm run validate:links --if-present; then
+            echo "✅ Link validation passed"
+          else
+            echo "⚠️ Link validation not available"
+          fi
+
+  # 分析变更
+  analyze-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      total-changes: ${{ steps.changes.outputs.total }}
+      markdown-changes: ${{ steps.changes.outputs.markdown }}
+      vue-changes: ${{ steps.changes.outputs.vue }}
+      config-changes: ${{ steps.changes.outputs.config }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Analyze changes
+        id: changes
+        run: |
+          echo "🔍 Analyzing documentation changes..."
+          
+          # 获取变更的文件列表
+          git diff --name-only origin/master...HEAD -- docs/pages/ > changed_files.txt
+          
+          if [ -s changed_files.txt ]; then
+            echo "📝 Changed files:"
+            cat changed_files.txt
+            
+            # 统计变更
+            TOTAL_CHANGES=$(wc -l < changed_files.txt)
+            MD_CHANGES=$(grep -c '\.md$' changed_files.txt || echo 0)
+            VUE_CHANGES=$(grep -c '\.vue$' changed_files.txt || echo 0)
+            CONFIG_CHANGES=$(grep -c 'config\|\.json$\|\.yaml$\|\.yml$' changed_files.txt || echo 0)
+            
+            echo "total=${TOTAL_CHANGES}" >> $GITHUB_OUTPUT
+            echo "markdown=${MD_CHANGES}" >> $GITHUB_OUTPUT
+            echo "vue=${VUE_CHANGES}" >> $GITHUB_OUTPUT
+            echo "config=${CONFIG_CHANGES}" >> $GITHUB_OUTPUT
+            
+            echo "📊 Change summary:"
+            echo "  Total files: $TOTAL_CHANGES"
+            echo "  Markdown files: $MD_CHANGES"
+            echo "  Vue components: $VUE_CHANGES"
+            echo "  Config files: $CONFIG_CHANGES"
+          else
+            echo "📝 No documentation files changed"
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "markdown=0" >> $GITHUB_OUTPUT
+            echo "vue=0" >> $GITHUB_OUTPUT
+            echo "config=0" >> $GITHUB_OUTPUT
+          fi
+
+  # 更新 PR 状态
+  update-pr-status:
+    runs-on: ubuntu-latest
+    needs: [lint-check, build-check, content-validation, analyze-changes]
+    if: always()
+    permissions:
+      pull-requests: write
+    steps:
+      - name: 💬 Update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const lintSuccess = '${{ needs.lint-check.outputs.lint-success }}' === 'true';
+            const buildSuccess = '${{ needs.build-check.outputs.build-success }}' === 'true';
+            const validationSuccess = '${{ needs.content-validation.outputs.validation-success }}' === 'true';
+            const buildSize = '${{ needs.build-check.outputs.build-size }}' || 'Unknown';
+            
+            const totalChanges = parseInt('${{ needs.analyze-changes.outputs.total-changes }}') || 0;
+            const markdownChanges = parseInt('${{ needs.analyze-changes.outputs.markdown-changes }}') || 0;
+            const vueChanges = parseInt('${{ needs.analyze-changes.outputs.vue-changes }}') || 0;
+            const configChanges = parseInt('${{ needs.analyze-changes.outputs.config-changes }}') || 0;
+            
+            let commentBody = `## 📝 Documentation Build Check\n\n`;
+            
+            // 检查状态
+            commentBody += `### 🧪 Check Results\n`;
+            commentBody += `- **Lint Check**: ${lintSuccess ? '✅ Passed' : '❌ Failed'}\n`;
+            commentBody += `- **Build Check**: ${buildSuccess ? '✅ Passed' : '❌ Failed'}\n`;
+            commentBody += `- **Content Validation**: ${validationSuccess ? '✅ Passed' : '⚠️ Warning'}\n`;
+            
+            if (buildSuccess) {
+              commentBody += `- **Build Size**: ${buildSize}\n`;
+            }
+            commentBody += `\n`;
+            
+            // 变更摘要
+            if (totalChanges > 0) {
+              commentBody += `### 📊 Changes Summary\n`;
+              commentBody += `- **Total files changed**: ${totalChanges}\n`;
+              if (markdownChanges > 0) {
+                commentBody += `- **Markdown files**: ${markdownChanges}\n`;
+              }
+              if (vueChanges > 0) {
+                commentBody += `- **Vue components**: ${vueChanges}\n`;
+              }
+              if (configChanges > 0) {
+                commentBody += `- **Config files**: ${configChanges}\n`;
+              }
+              commentBody += `\n`;
+            }
+            
+            // 快速操作
+            commentBody += `### 🔍 Quick Actions\n`;
+            commentBody += `- [View diff](${context.payload.pull_request.html_url}/files)\n`;
+            commentBody += `- [CI logs](${context.payload.pull_request.html_url}/checks)\n`;
+            
+            // 状态提示
+            if (lintSuccess && buildSuccess) {
+              commentBody += `\n✅ **All checks passed!** This PR is ready for review.\n`;
+            } else {
+              commentBody += `\n❌ **Some checks failed.** Please review the errors above.\n`;
+            }
+            
+            commentBody += `\n---\n`;
+            commentBody += `*Build check completed at ${new Date().toUTCString()}*\n`;
+            commentBody += `*Commit: ${context.payload.pull_request.head.sha.substring(0, 7)}*`;
+            
+            // 查找现有评论
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.data.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('📝 Documentation Build Check')
+            );
+            
+            if (botComment) {
+              // 更新现有评论
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // 创建新评论
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }

@@ -1,0 +1,299 @@
+{
+  "timestamp": "2025-08-15T14:45:04.357Z",
+  "summary": {
+    "filesScanned": 84,
+    "issues": 28,
+    "critical": 3,
+    "high": 4,
+    "medium": 4,
+    "low": 17
+  },
+  "issues": [
+    {
+      "file": ".vitepress/cache/deps/@sentry_browser.js",
+      "line": 22784,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "your.email@example.org",
+      "context": "    22782: var SUBMIT_BUTTON_LABEL = \"Send Bug Report\";\n    22783: var FORM_TITLE = \"Report a Bug\";\n>>> 22784: var EMAIL_PLACEHOLDER = \"your.email@example.org\";\n    22785: var EMAIL_LABEL = \"Email\";\n    22786: var MESSAGE_PLACEHOLDER = \"What's the bug? What did you expect?\";"
+    },
+    {
+      "file": ".vitepress/cache/deps/vitepress___@vueuse_core.js",
+      "line": 8433,
+      "severity": "critical",
+      "type": "xss",
+      "category": "xss",
+      "message": "Dangerous eval usage",
+      "match": "eVal(",
+      "context": "    8431:     return typeof v === \"number\" ? v : v.map(toValue);\n    8432:   };\n>>> 8433:   const outputRef = ref(sourceVal());\n    8434:   watch(sourceVal, async (to) => {\n    8435:     var _a, _b;"
+    },
+    {
+      "file": ".vitepress/cache/deps/vitepress___@vueuse_core.js",
+      "line": 8457,
+      "severity": "critical",
+      "type": "xss",
+      "category": "xss",
+      "message": "Dangerous eval usage",
+      "match": "eVal(",
+      "context": "    8455:     if (disabled) {\n    8456:       currentId++;\n>>> 8457:       outputRef.value = sourceVal();\n    8458:     }\n    8459:   });"
+    },
+    {
+      "file": ".vitepress/cache/deps/vitepress___@vueuse_core.js",
+      "line": 8463,
+      "severity": "critical",
+      "type": "xss",
+      "category": "xss",
+      "message": "Dangerous eval usage",
+      "match": "eVal(",
+      "context": "    8461:     currentId++;\n    8462:   });\n>>> 8463:   return computed(() => toValue(options.disabled) ? sourceVal() : outputRef.value);\n    8464: }\n    8465: function useUrlSearchParams(mode = \"history\", options = {}) {"
+    },
+    {
+      "file": ".vitepress/theme/components/AnalyticsTracker.vue",
+      "line": 186,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "xxx@xxx.ingest.sentry.io",
+      "context": "    184: const analyticsConfig: AnalyticsConfig = {\n    185:   googleAnalyticsId: 'G-XXXXXXXXXX', // 替换为实际的 GA4 ID\n>>> 186:   sentryDsn: 'https://xxx@xxx.ingest.sentry.io/xxx', // 替换为实际的 Sentry DSN\n    187:   enableDebug: import.meta.env.DEV\n    188: }"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 334,
+      "severity": "high",
+      "type": "credential",
+      "category": "sensitive",
+      "message": "Hardcoded password detected",
+      "match": "password: 'securepassword123'",
+      "context": "    332:               name: '张三',\n    333:               email: 'zhang@example.com',\n>>> 334:               password: 'securepassword123'\n    335:             },\n    336:             responses: {"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 360,
+      "severity": "high",
+      "type": "credential",
+      "category": "sensitive",
+      "message": "Hardcoded password detected",
+      "match": "password: 'password123'",
+      "context": "    358:             requestBody: {\n    359:               email: 'user@example.com',\n>>> 360:               password: 'password123'\n    361:             },\n    362:             responses: {"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 368,
+      "severity": "medium",
+      "type": "credential",
+      "category": "sensitive",
+      "message": "Token detected",
+      "match": "token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'",
+      "context": "    366:                   status: 'success',\n    367:                   data: {\n>>> 368:                     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',\n    369:                     user: { id: 1, name: '张三', email: 'zhang@example.com' }\n    370:                   }"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 317,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "zhang@example.com",
+      "context": "    315:                   data: {\n    316:                     users: [\n>>> 317:                       { id: 1, name: '张三', email: 'zhang@example.com' }\n    318:                     ],\n    319:                     pagination: { page: 1, limit: 10, total: 100 }"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 333,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "zhang@example.com",
+      "context": "    331:             requestBody: {\n    332:               name: '张三',\n>>> 333:               email: 'zhang@example.com',\n    334:               password: 'securepassword123'\n    335:             },"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 341,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "zhang@example.com",
+      "context": "    339:                 example: {\n    340:                   status: 'success',\n>>> 341:                   data: { id: 1, name: '张三', email: 'zhang@example.com' }\n    342:                 }\n    343:               }"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 359,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "user@example.com",
+      "context": "    357:             description: '使用邮箱和密码进行用户登录，返回JWT令牌',\n    358:             requestBody: {\n>>> 359:               email: 'user@example.com',\n    360:               password: 'password123'\n    361:             },"
+    },
+    {
+      "file": ".vitepress/theme/components/ApiDocViewer.vue",
+      "line": 369,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "zhang@example.com",
+      "context": "    367:                   data: {\n    368:                     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',\n>>> 369:                     user: { id: 1, name: '张三', email: 'zhang@example.com' }\n    370:                   }\n    371:                 }"
+    },
+    {
+      "file": ".vitepress/theme/components/FeedbackWidget.vue",
+      "line": 381,
+      "severity": "medium",
+      "type": "credential",
+      "category": "sensitive",
+      "message": "Token detected",
+      "match": "token = 'your-github-token'",
+      "context": "    379:   const owner = 'your-org'\n    380:   const repo = 'your-repo'\n>>> 381:   const token = 'your-github-token' // 应该从环境变量获取\n    382:   \n    383:   const title = `[${feedbackData.type.toUpperCase()}] ${feedbackData.content.substring(0, 50)}...`"
+    },
+    {
+      "file": ".vitepress/theme/components/SecurityConfig.vue",
+      "line": 348,
+      "severity": "high",
+      "type": "xss",
+      "category": "xss",
+      "message": "Potential XSS via innerHTML concatenation",
+      "match": "innerHTML = function(value) {\n    if (typeof value === 'string' && containsXSSPattern(value)) {\n    ",
+      "context": "    346:   // 监听危险的 DOM 操作\n    347:   const originalInnerHTML = Element.prototype.innerHTML\n>>> 348:   Element.prototype.innerHTML = function(value) {\n    349:     if (typeof value === 'string' && containsXSSPattern(value)) {\n    350:       console.warn('Potential XSS attempt detected:', value)"
+    },
+    {
+      "file": "en/community/index.md",
+      "line": 164,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "john@example.com",
+      "context": "    162:             user: &User{\n    163:                 Name:  \"John Doe\",\n>>> 164:                 Email: \"john@example.com\",\n    165:             },\n    166:             wantErr: false,"
+    },
+    {
+      "file": "en/community/index.md",
+      "line": 233,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "test@example.com",
+      "context": "    231:         user := map[string]interface{}{\n    232:             \"name\":  \"Test User\",\n>>> 233:             \"email\": \"test@example.com\",\n    234:         }\n    235:         "
+    },
+    {
+      "file": "en/examples/index.md",
+      "line": 82,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "john@example.com",
+      "context": "    80: curl -X POST http://localhost:9000/api/v1/users \\\n    81:   -H \"Content-Type: application/json\" \\\n>>> 82:   -d '{\"name\": \"John Doe\", \"email\": \"john@example.com\"}'\n    83: ```\n    84: "
+    },
+    {
+      "file": "en/examples/index.md",
+      "line": 354,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "john@example.com",
+      "context": "    352:     user := &User{\n    353:         Name:  \"John Doe\",\n>>> 354:         Email: \"john@example.com\",\n    355:     }\n    356:     "
+    },
+    {
+      "file": "package-lock.json",
+      "line": 6107,
+      "severity": "medium",
+      "type": "dependency",
+      "category": "dependencies",
+      "message": "Outdated lodash version (potential prototype pollution)",
+      "match": "\"lodash\": \"^",
+      "context": "    6105:         \"lighthouse-logger\": \"^2.0.1\",\n    6106:         \"lighthouse-stack-packs\": \"1.12.1\",\n>>> 6107:         \"lodash\": \"^4.17.21\",\n    6108:         \"lookup-closest-locale\": \"6.2.0\",\n    6109:         \"metaviewport-parser\": \"0.3.0\","
+    },
+    {
+      "file": "package-lock.json",
+      "line": 9318,
+      "severity": "medium",
+      "type": "dependency",
+      "category": "dependencies",
+      "message": "Outdated lodash version (potential prototype pollution)",
+      "match": "\"lodash\": \"^",
+      "context": "    9316:         \"espree\": \"^9.3.1\",\n    9317:         \"esquery\": \"^1.4.0\",\n>>> 9318:         \"lodash\": \"^4.17.21\",\n    9319:         \"semver\": \"^7.3.6\"\n    9320:       },"
+    },
+    {
+      "file": "tests/unit/utils/helpers.test.ts",
+      "line": 68,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "test@example.com",
+      "context": "    66:     describe('isValidEmail', () => {\n    67:       it('应该验证有效邮箱', () => {\n>>> 68:         expect(isValidEmail('test@example.com')).toBe(true)\n    69:         expect(isValidEmail('user.name+tag@domain.co.uk')).toBe(true)\n    70:       })"
+    },
+    {
+      "file": "tests/unit/utils/helpers.test.ts",
+      "line": 69,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "user.name+tag@domain.co.uk",
+      "context": "    67:       it('应该验证有效邮箱', () => {\n    68:         expect(isValidEmail('test@example.com')).toBe(true)\n>>> 69:         expect(isValidEmail('user.name+tag@domain.co.uk')).toBe(true)\n    70:       })\n    71: "
+    },
+    {
+      "file": "tests/unit/utils/helpers.test.ts",
+      "line": 420,
+      "severity": "high",
+      "type": "xss",
+      "category": "xss",
+      "message": "Potential XSS via innerHTML concatenation",
+      "match": "innerHTML = ''\n    })\n\n    describe('createElement', () => {\n      it('应该创建HTML元素', () => {\n        ",
+      "context": "    418:   describe('DOM 工具', () => {\n    419:     beforeEach(() => {\n>>> 420:       document.body.innerHTML = ''\n    421:     })\n    422: "
+    },
+    {
+      "file": "zh/community/index.md",
+      "line": 164,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "zhangsan@example.com",
+      "context": "    162:             user: &User{\n    163:                 Name:  \"张三\",\n>>> 164:                 Email: \"zhangsan@example.com\",\n    165:             },\n    166:             wantErr: false,"
+    },
+    {
+      "file": "zh/community/index.md",
+      "line": 233,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "test@example.com",
+      "context": "    231:         user := map[string]interface{}{\n    232:             \"name\":  \"测试用户\",\n>>> 233:             \"email\": \"test@example.com\",\n    234:         }\n    235:         "
+    },
+    {
+      "file": "zh/examples/index.md",
+      "line": 82,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "zhangsan@example.com",
+      "context": "    80: curl -X POST http://localhost:9000/api/v1/users \\\n    81:   -H \"Content-Type: application/json\" \\\n>>> 82:   -d '{\"name\": \"张三\", \"email\": \"zhangsan@example.com\"}'\n    83: ```\n    84: "
+    },
+    {
+      "file": "zh/examples/index.md",
+      "line": 354,
+      "severity": "low",
+      "type": "pii",
+      "category": "sensitive",
+      "message": "Email address detected",
+      "match": "zhangsan@example.com",
+      "context": "    352:     user := &User{\n    353:         Name:  \"张三\",\n>>> 354:         Email: \"zhangsan@example.com\",\n    355:     }\n    356:     "
+    }
+  ],
+  "recommendations": [],
+  "metadata": {
+    "scannerVersion": "1.0.0",
+    "rulesVersion": "1.0.0",
+    "projectRoot": "/Users/liyanjie/VSCodeProjects/swit/docs/pages"
+  }
+}

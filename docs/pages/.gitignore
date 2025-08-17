@@ -1,0 +1,101 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+.vitepress/cache/
+.vitepress/dist/
+
+# Temporary files
+.tmp/
+temp/
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output/
+
+# Performance reports and artifacts
+performance-report.json
+build-info.json
+
+# Generated API documentation (if regenerated from source)
+# Comment out these lines if you want to commit generated API docs
+# en/api/switauth.md
+# en/api/switserve.md
+# zh/api/switauth.md
+# zh/api/switserve.md
+
+# Backup files
+*.bak
+*.backup
+
+# Lock files (uncomment if using yarn or pnpm exclusively)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Local development files
+.local/
+local/
+
+# Debug files
+debug/
+*.debug
+
+# Test files and directories (if applicable)
+test-results/
+playwright-report/
+test-output/
+
+# Sitemap and robots.txt (generated files)
+/dist/sitemap.xml
+/dist/robots.txt
+/dist/sw.js
+/dist/_headers

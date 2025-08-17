@@ -1,0 +1,97 @@
+{
+  "name": "Swit Framework Documentation",
+  "short_name": "Swit Docs",
+  "description": "Production-ready Go microservice development framework documentation",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#646cff",
+  "orientation": "portrait-primary",
+  "lang": "en",
+  "dir": "ltr",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/images/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/images/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["developer", "productivity", "reference"],
+  "screenshots": [
+    {
+      "src": "/images/screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Desktop view of Swit Framework documentation"
+    },
+    {
+      "src": "/images/screenshot-mobile.png",
+      "sizes": "375x667",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Mobile view of Swit Framework documentation"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Getting Started",
+      "short_name": "Start",
+      "description": "Quick start guide for Swit Framework",
+      "url": "/guide/getting-started",
+      "icons": [
+        {
+          "src": "/images/icon-start.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "API Reference",
+      "short_name": "API",
+      "description": "Complete API reference documentation",
+      "url": "/api/",
+      "icons": [
+        {
+          "src": "/images/icon-api.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Examples",
+      "short_name": "Examples",
+      "description": "Code examples and tutorials",
+      "url": "/examples/",
+      "icons": [
+        {
+          "src": "/images/icon-examples.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ]
+}

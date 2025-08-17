@@ -1,0 +1,343 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Scan Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+        .summary { display: flex; gap: 20px; margin-bottom: 20px; }
+        .metric { background: white; padding: 15px; border-radius: 5px; border-left: 4px solid #007acc; }
+        .critical { border-left-color: #d73027; }
+        .high { border-left-color: #fc8d59; }
+        .medium { border-left-color: #fee08b; }
+        .low { border-left-color: #91bfdb; }
+        .issue { background: #f9f9f9; margin: 10px 0; padding: 15px; border-radius: 5px; }
+        .issue-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .severity { padding: 3px 8px; border-radius: 3px; color: white; font-size: 12px; }
+        .severity.critical { background: #d73027; }
+        .severity.high { background: #fc8d59; }
+        .severity.medium { background: #fee08b; color: #333; }
+        .severity.low { background: #91bfdb; }
+        .context { background: #f0f0f0; padding: 10px; font-family: monospace; font-size: 12px; margin-top: 10px; overflow-x: auto; }
+        .recommendations { background: #e8f5e8; padding: 15px; border-radius: 5px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Security Scan Report</h1>
+        <p>Generated: 2025-08-15T14:45:04.357Z</p>
+        <p>Scanner Version: 1.0.0</p>
+    </div>
+    
+    <div class="summary">
+        <div class="metric">
+            <h3>Files Scanned</h3>
+            <p>84</p>
+        </div>
+        <div class="metric critical">
+            <h3>Critical Issues</h3>
+            <p>3</p>
+        </div>
+        <div class="metric high">
+            <h3>High Issues</h3>
+            <p>4</p>
+        </div>
+        <div class="metric medium">
+            <h3>Medium Issues</h3>
+            <p>4</p>
+        </div>
+        <div class="metric low">
+            <h3>Low Issues</h3>
+            <p>17</p>
+        </div>
+    </div>
+    
+    <h2>Issues Found</h2>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/cache/deps/@sentry_browser.js:22784</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    22782: var SUBMIT_BUTTON_LABEL = "Send Bug Report";<br>    22783: var FORM_TITLE = "Report a Bug";<br>>>> 22784: var EMAIL_PLACEHOLDER = "your.email@example.org";<br>    22785: var EMAIL_LABEL = "Email";<br>    22786: var MESSAGE_PLACEHOLDER = "What's the bug? What did you expect?";</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/cache/deps/vitepress___@vueuse_core.js:8433</strong>
+                <span class="severity critical">CRITICAL</span>
+            </div>
+            <p><strong>Dangerous eval usage</strong></p>
+            <p>Type: xss | Category: xss</p>
+            <div class="context">    8431:     return typeof v === "number" ? v : v.map(toValue);<br>    8432:   };<br>>>> 8433:   const outputRef = ref(sourceVal());<br>    8434:   watch(sourceVal, async (to) => {<br>    8435:     var _a, _b;</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/cache/deps/vitepress___@vueuse_core.js:8457</strong>
+                <span class="severity critical">CRITICAL</span>
+            </div>
+            <p><strong>Dangerous eval usage</strong></p>
+            <p>Type: xss | Category: xss</p>
+            <div class="context">    8455:     if (disabled) {<br>    8456:       currentId++;<br>>>> 8457:       outputRef.value = sourceVal();<br>    8458:     }<br>    8459:   });</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/cache/deps/vitepress___@vueuse_core.js:8463</strong>
+                <span class="severity critical">CRITICAL</span>
+            </div>
+            <p><strong>Dangerous eval usage</strong></p>
+            <p>Type: xss | Category: xss</p>
+            <div class="context">    8461:     currentId++;<br>    8462:   });<br>>>> 8463:   return computed(() => toValue(options.disabled) ? sourceVal() : outputRef.value);<br>    8464: }<br>    8465: function useUrlSearchParams(mode = "history", options = {}) {</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/AnalyticsTracker.vue:186</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    184: const analyticsConfig: AnalyticsConfig = {<br>    185:   googleAnalyticsId: 'G-XXXXXXXXXX', // 替换为实际的 GA4 ID<br>>>> 186:   sentryDsn: 'https://xxx@xxx.ingest.sentry.io/xxx', // 替换为实际的 Sentry DSN<br>    187:   enableDebug: import.meta.env.DEV<br>    188: }</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:334</strong>
+                <span class="severity high">HIGH</span>
+            </div>
+            <p><strong>Hardcoded password detected</strong></p>
+            <p>Type: credential | Category: sensitive</p>
+            <div class="context">    332:               name: '张三',<br>    333:               email: 'zhang@example.com',<br>>>> 334:               password: 'securepassword123'<br>    335:             },<br>    336:             responses: {</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:360</strong>
+                <span class="severity high">HIGH</span>
+            </div>
+            <p><strong>Hardcoded password detected</strong></p>
+            <p>Type: credential | Category: sensitive</p>
+            <div class="context">    358:             requestBody: {<br>    359:               email: 'user@example.com',<br>>>> 360:               password: 'password123'<br>    361:             },<br>    362:             responses: {</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:368</strong>
+                <span class="severity medium">MEDIUM</span>
+            </div>
+            <p><strong>Token detected</strong></p>
+            <p>Type: credential | Category: sensitive</p>
+            <div class="context">    366:                   status: 'success',<br>    367:                   data: {<br>>>> 368:                     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',<br>    369:                     user: { id: 1, name: '张三', email: 'zhang@example.com' }<br>    370:                   }</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:317</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    315:                   data: {<br>    316:                     users: [<br>>>> 317:                       { id: 1, name: '张三', email: 'zhang@example.com' }<br>    318:                     ],<br>    319:                     pagination: { page: 1, limit: 10, total: 100 }</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:333</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    331:             requestBody: {<br>    332:               name: '张三',<br>>>> 333:               email: 'zhang@example.com',<br>    334:               password: 'securepassword123'<br>    335:             },</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:341</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    339:                 example: {<br>    340:                   status: 'success',<br>>>> 341:                   data: { id: 1, name: '张三', email: 'zhang@example.com' }<br>    342:                 }<br>    343:               }</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:359</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    357:             description: '使用邮箱和密码进行用户登录，返回JWT令牌',<br>    358:             requestBody: {<br>>>> 359:               email: 'user@example.com',<br>    360:               password: 'password123'<br>    361:             },</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/ApiDocViewer.vue:369</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    367:                   data: {<br>    368:                     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',<br>>>> 369:                     user: { id: 1, name: '张三', email: 'zhang@example.com' }<br>    370:                   }<br>    371:                 }</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/FeedbackWidget.vue:381</strong>
+                <span class="severity medium">MEDIUM</span>
+            </div>
+            <p><strong>Token detected</strong></p>
+            <p>Type: credential | Category: sensitive</p>
+            <div class="context">    379:   const owner = 'your-org'<br>    380:   const repo = 'your-repo'<br>>>> 381:   const token = 'your-github-token' // 应该从环境变量获取<br>    382:   <br>    383:   const title = `[${feedbackData.type.toUpperCase()}] ${feedbackData.content.substring(0, 50)}...`</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>.vitepress/theme/components/SecurityConfig.vue:348</strong>
+                <span class="severity high">HIGH</span>
+            </div>
+            <p><strong>Potential XSS via innerHTML concatenation</strong></p>
+            <p>Type: xss | Category: xss</p>
+            <div class="context">    346:   // 监听危险的 DOM 操作<br>    347:   const originalInnerHTML = Element.prototype.innerHTML<br>>>> 348:   Element.prototype.innerHTML = function(value) {<br>    349:     if (typeof value === 'string' && containsXSSPattern(value)) {<br>    350:       console.warn('Potential XSS attempt detected:', value)</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>en/community/index.md:164</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    162:             user: &User{<br>    163:                 Name:  "John Doe",<br>>>> 164:                 Email: "john@example.com",<br>    165:             },<br>    166:             wantErr: false,</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>en/community/index.md:233</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    231:         user := map[string]interface{}{<br>    232:             "name":  "Test User",<br>>>> 233:             "email": "test@example.com",<br>    234:         }<br>    235:         </div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>en/examples/index.md:82</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    80: curl -X POST http://localhost:9000/api/v1/users \<br>    81:   -H "Content-Type: application/json" \<br>>>> 82:   -d '{"name": "John Doe", "email": "john@example.com"}'<br>    83: ```<br>    84: </div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>en/examples/index.md:354</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    352:     user := &User{<br>    353:         Name:  "John Doe",<br>>>> 354:         Email: "john@example.com",<br>    355:     }<br>    356:     </div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>package-lock.json:6107</strong>
+                <span class="severity medium">MEDIUM</span>
+            </div>
+            <p><strong>Outdated lodash version (potential prototype pollution)</strong></p>
+            <p>Type: dependency | Category: dependencies</p>
+            <div class="context">    6105:         "lighthouse-logger": "^2.0.1",<br>    6106:         "lighthouse-stack-packs": "1.12.1",<br>>>> 6107:         "lodash": "^4.17.21",<br>    6108:         "lookup-closest-locale": "6.2.0",<br>    6109:         "metaviewport-parser": "0.3.0",</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>package-lock.json:9318</strong>
+                <span class="severity medium">MEDIUM</span>
+            </div>
+            <p><strong>Outdated lodash version (potential prototype pollution)</strong></p>
+            <p>Type: dependency | Category: dependencies</p>
+            <div class="context">    9316:         "espree": "^9.3.1",<br>    9317:         "esquery": "^1.4.0",<br>>>> 9318:         "lodash": "^4.17.21",<br>    9319:         "semver": "^7.3.6"<br>    9320:       },</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>tests/unit/utils/helpers.test.ts:68</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    66:     describe('isValidEmail', () => {<br>    67:       it('应该验证有效邮箱', () => {<br>>>> 68:         expect(isValidEmail('test@example.com')).toBe(true)<br>    69:         expect(isValidEmail('user.name+tag@domain.co.uk')).toBe(true)<br>    70:       })</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>tests/unit/utils/helpers.test.ts:69</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    67:       it('应该验证有效邮箱', () => {<br>    68:         expect(isValidEmail('test@example.com')).toBe(true)<br>>>> 69:         expect(isValidEmail('user.name+tag@domain.co.uk')).toBe(true)<br>    70:       })<br>    71: </div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>tests/unit/utils/helpers.test.ts:420</strong>
+                <span class="severity high">HIGH</span>
+            </div>
+            <p><strong>Potential XSS via innerHTML concatenation</strong></p>
+            <p>Type: xss | Category: xss</p>
+            <div class="context">    418:   describe('DOM 工具', () => {<br>    419:     beforeEach(() => {<br>>>> 420:       document.body.innerHTML = ''<br>    421:     })<br>    422: </div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>zh/community/index.md:164</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    162:             user: &User{<br>    163:                 Name:  "张三",<br>>>> 164:                 Email: "zhangsan@example.com",<br>    165:             },<br>    166:             wantErr: false,</div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>zh/community/index.md:233</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    231:         user := map[string]interface{}{<br>    232:             "name":  "测试用户",<br>>>> 233:             "email": "test@example.com",<br>    234:         }<br>    235:         </div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>zh/examples/index.md:82</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    80: curl -X POST http://localhost:9000/api/v1/users \<br>    81:   -H "Content-Type: application/json" \<br>>>> 82:   -d '{"name": "张三", "email": "zhangsan@example.com"}'<br>    83: ```<br>    84: </div>
+        </div>
+    
+        <div class="issue">
+            <div class="issue-header">
+                <strong>zh/examples/index.md:354</strong>
+                <span class="severity low">LOW</span>
+            </div>
+            <p><strong>Email address detected</strong></p>
+            <p>Type: pii | Category: sensitive</p>
+            <div class="context">    352:     user := &User{<br>    353:         Name:  "张三",<br>>>> 354:         Email: "zhangsan@example.com",<br>    355:     }<br>    356:     </div>
+        </div>
+    
+    
+    
+</body>
+</html>

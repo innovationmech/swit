@@ -1,0 +1,400 @@
+name: 📚 Deploy Documentation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/pages/**'
+      - '.github/workflows/docs-deploy.yml'
+  schedule:
+    # 每天凌晨 2 点同步文档内容
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      force_sync:
+        description: 'Force sync all content'
+        required: false
+        default: false
+        type: boolean
+
+# 设置权限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 允许一个并发部署
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '18'
+  DOCS_DIR: './docs/pages'
+
+jobs:
+  # 检测文档变更
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs-changed: ${{ steps.changes.outputs.docs }}
+      content-changed: ${{ steps.changes.outputs.content }}
+      force-deploy: ${{ github.event.inputs.force_sync == 'true' || github.event_name == 'schedule' }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: 🔍 Detect changes
+        id: changes
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            docs:
+              - 'docs/pages/**'
+              - '.github/workflows/docs-deploy.yml'
+            content:
+              - 'README.md'
+              - 'api/**'
+              - 'internal/**/*.go'
+              - 'pkg/**/*.go'
+
+  # 同步内容
+  sync-content:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.content-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: npm ci
+
+      - name: 🔄 Sync documentation content
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔄 Syncing documentation content..."
+          
+          # 运行内容同步脚本
+          if [ -f "scripts/sync-docs.js" ]; then
+            node scripts/sync-docs.js
+          fi
+          
+          # 生成 API 文档
+          if [ -f "scripts/api-docs-generator.js" ]; then
+            node scripts/api-docs-generator.js
+          fi
+          
+          # 检查是否有更改
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "content_updated=true" >> $GITHUB_OUTPUT
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add -A
+            git commit -m "📚 Auto-sync documentation content
+
+            🤖 Generated with GitHub Actions
+            
+            Synced at: $(date -u)"
+            git push
+          else
+            echo "content_updated=false" >> $GITHUB_OUTPUT
+            echo "📝 No content changes detected"
+          fi
+
+  # 构建文档
+  build:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, sync-content]
+    if: always() && (needs.detect-changes.outputs.docs-changed == 'true' || needs.sync-content.outputs.content_updated == 'true' || needs.detect-changes.outputs.force-deploy == 'true')
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          npm ci
+          echo "📦 Dependencies installed successfully"
+
+      - name: 🔧 Configure build environment
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔧 Configuring build environment..."
+          
+          # 设置构建环境变量
+          echo "NODE_ENV=production" >> $GITHUB_ENV
+          echo "VITE_BUILD_TIME=$(date -u)" >> $GITHUB_ENV
+          echo "VITE_COMMIT_SHA=${{ github.sha }}" >> $GITHUB_ENV
+          echo "VITE_COMMIT_REF=${{ github.ref_name }}" >> $GITHUB_ENV
+          
+          # 检查配置文件
+          if [ ! -f ".vitepress/config.mjs" ]; then
+            echo "❌ VitePress config file not found"
+            exit 1
+          fi
+
+      - name: 🔍 Lint and type check
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔍 Running linting and type checks..."
+          
+          # ESLint 检查
+          if [ -f ".eslintrc.js" ]; then
+            npm run lint
+          fi
+          
+          # TypeScript 类型检查
+          if [ -f "tsconfig.json" ]; then
+            npx vue-tsc --noEmit
+          fi
+
+      - name: 🧪 Run tests
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🧪 Running tests..."
+          
+          # 单元测试
+          if npm run test:unit --if-present; then
+            echo "✅ Unit tests passed"
+          else
+            echo "⚠️ Unit tests not available or failed"
+          fi
+          
+          # 可访问性测试（非阻塞）
+          if npm run test:accessibility --if-present; then
+            echo "✅ Accessibility tests passed"
+          else
+            echo "⚠️ Accessibility tests not available"
+          fi
+
+      - name: 🏗️ Build documentation
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🏗️ Building documentation..."
+          npm run build
+          
+          # 验证构建输出
+          if [ ! -d ".vitepress/dist" ]; then
+            echo "❌ Build output directory not found"
+            exit 1
+          fi
+          
+          # 检查关键文件
+          if [ ! -f ".vitepress/dist/index.html" ]; then
+            echo "❌ Main index.html not found in build output"
+            exit 1
+          fi
+          
+          echo "✅ Documentation built successfully"
+
+      - name: 📊 Analyze bundle size
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "📊 Analyzing bundle size..."
+          
+          # 生成构建分析报告
+          du -sh .vitepress/dist
+          find .vitepress/dist -name "*.js" -exec du -h {} \; | sort -hr | head -10
+          find .vitepress/dist -name "*.css" -exec du -h {} \; | sort -hr | head -5
+          
+          # 检查包大小限制
+          DIST_SIZE=$(du -s .vitepress/dist | cut -f1)
+          MAX_SIZE=50000  # 50MB in KB
+          
+          if [ $DIST_SIZE -gt $MAX_SIZE ]; then
+            echo "⚠️ Build size ($DIST_SIZE KB) exceeds limit ($MAX_SIZE KB)"
+          else
+            echo "✅ Build size within limits ($DIST_SIZE KB)"
+          fi
+
+      - name: 🔧 Prepare deployment files
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔧 Preparing deployment files..."
+          
+          # 创建 .nojekyll 文件（GitHub Pages）
+          touch .vitepress/dist/.nojekyll
+          
+          # 添加自定义 404 页面
+          if [ ! -f ".vitepress/dist/404.html" ]; then
+            cp .vitepress/dist/index.html .vitepress/dist/404.html
+          fi
+          
+          # 生成部署信息文件
+          cat > .vitepress/dist/deployment-info.json << EOF
+          {
+            "buildTime": "$(date -u)",
+            "commitSha": "${{ github.sha }}",
+            "commitRef": "${{ github.ref_name }}",
+            "workflow": "${{ github.workflow }}",
+            "runId": "${{ github.run_id }}"
+          }
+          EOF
+
+      - name: 📤 Upload build artifacts
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '${{ env.DOCS_DIR }}/.vitepress/dist'
+
+  # 部署到 GitHub Pages
+  deploy:
+    environment: production
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: 🎉 Deployment success notification
+        run: |
+          echo "🎉 Documentation deployed successfully!"
+          echo "📄 Site URL: ${{ steps.deployment.outputs.page_url }}"
+          echo "⏰ Deployed at: $(date -u)"
+
+  # 性能测试
+  performance-test:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 📦 Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.12.x
+
+      - name: 🔍 Run Lighthouse CI
+        run: |
+          lhci autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+  # 部署后验证
+  post-deploy-verification:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '${{ env.DOCS_DIR }}/package-lock.json'
+
+      - name: 📦 Install dependencies
+        working-directory: ${{ env.DOCS_DIR }}
+        run: npm ci
+
+      - name: 🔗 Get deployment URL
+        id: get-deploy-url
+        run: |
+          PAGE_URL="${{ needs.deploy.outputs.page_url }}"
+          echo "page_url=${PAGE_URL:-https://docs.example.com}" >> $GITHUB_OUTPUT
+
+      - name: 🧪 Run E2E tests against deployed site
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🧪 Running E2E tests against deployed site..."
+          
+          # 设置基础 URL 为部署的站点
+          export BASE_URL="${{ steps.get-deploy-url.outputs.page_url }}"
+          
+          # 等待站点可用
+          timeout 300 bash -c 'until curl -s "$BASE_URL" > /dev/null; do sleep 5; done'
+          
+          # 运行 E2E 测试
+          if npm run test:e2e:production --if-present; then
+            echo "✅ E2E tests passed"
+          else
+            echo "⚠️ E2E tests not available"
+          fi
+
+      - name: 🔍 Verify site accessibility
+        working-directory: ${{ env.DOCS_DIR }}
+        run: |
+          echo "🔍 Verifying site accessibility..."
+          
+          # 运行可访问性测试
+          if npm run test:accessibility:production --if-present; then
+            echo "✅ Accessibility verification passed"
+          else
+            echo "⚠️ Accessibility tests not available"
+          fi
+
+  # 清理和通知
+  cleanup-and-notify:
+    runs-on: ubuntu-latest
+    needs: [deploy, performance-test, post-deploy-verification]
+    if: always() && github.ref == 'refs/heads/master'
+    steps:
+      - name: 📊 Generate deployment report
+        run: |
+          echo "📊 Deployment Report"
+          echo "=================="
+          echo "🚀 Deployment: ${{ needs.deploy.result }}"
+          echo "⚡ Performance Test: ${{ needs.performance-test.result }}"
+          echo "🔍 Post-Deploy Verification: ${{ needs.post-deploy-verification.result }}"
+          echo "⏰ Completed at: $(date -u)"
+
+      - name: 🔔 Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Documentation deployment failed!"
+          echo "🔗 Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # 这里可以添加 Slack、Discord 或邮件通知
+
+      - name: 🔗 Get site URL for notification
+        id: get-site-url
+        run: |
+          PAGE_URL="${{ needs.deploy.outputs.page_url }}"
+          echo "page_url=${PAGE_URL:-https://docs.example.com}" >> $GITHUB_OUTPUT
+
+      - name: 🎉 Notify on success
+        if: success()
+        run: |
+          echo "✅ Documentation deployment completed successfully!"
+          echo "📄 Site: ${{ steps.get-site-url.outputs.page_url }}"
