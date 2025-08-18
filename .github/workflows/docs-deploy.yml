@@ -67,12 +67,19 @@ jobs:
             echo "📝 Changed files:"
             cat changed_files.txt
             
-            # 统计变更
+            # 统计变更 - 使用更安全的方法
             TOTAL_CHANGES=$(wc -l < changed_files.txt)
-            MD_CHANGES=$(grep -c '\.md$' changed_files.txt || echo 0)
-            VUE_CHANGES=$(grep -c '\.vue$' changed_files.txt || echo 0)
-            CONFIG_CHANGES=$(grep -c -E 'config|\.json$|\.yaml$|\.yml$' changed_files.txt || echo 0)
             
+            # 统计 Markdown 文件
+            MD_CHANGES=$(grep '\.md$' changed_files.txt | wc -l || echo 0)
+            
+            # 统计 Vue 文件
+            VUE_CHANGES=$(grep '\.vue$' changed_files.txt | wc -l || echo 0)
+            
+            # 统计配置文件
+            CONFIG_CHANGES=$(grep -E '\.(json|yaml|yml)$|config' changed_files.txt | wc -l || echo 0)
+            
+            # 输出结果
             echo "total=${TOTAL_CHANGES}" >> $GITHUB_OUTPUT
             echo "markdown=${MD_CHANGES}" >> $GITHUB_OUTPUT
             echo "vue=${VUE_CHANGES}" >> $GITHUB_OUTPUT
