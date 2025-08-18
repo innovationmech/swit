@@ -8,10 +8,7 @@ import CodeExample from './components/CodeExample.vue'
 import ApiDocViewer from './components/ApiDocViewer.vue'
 import SearchBox from './components/SearchBox.vue'
 import AccessibilityControls from './components/AccessibilityControls.vue'
-import PerformanceMonitor from './components/PerformanceMonitor.vue'
-import FeedbackWidget from './components/FeedbackWidget.vue'
-import SecurityConfig from './components/SecurityConfig.vue'
-import PrivacyPolicy from './components/PrivacyPolicy.vue'
+// 删除了不必要的组件：PerformanceMonitor, FeedbackWidget, SecurityConfig, PrivacyPolicy
 import Layout from './Layout.vue'
 
 export default {
@@ -27,9 +24,6 @@ export default {
     app.component('ApiDocViewer', ApiDocViewer)
     app.component('SearchBox', SearchBox)
     app.component('AccessibilityControls', AccessibilityControls)
-    app.component('PerformanceMonitor', PerformanceMonitor)
-    app.component('FeedbackWidget', FeedbackWidget)
-    app.component('SecurityConfig', SecurityConfig)
-    app.component('PrivacyPolicy', PrivacyPolicy)
+    // 已删除不必要的组件注册
   }
 }
