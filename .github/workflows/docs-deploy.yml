@@ -153,7 +153,11 @@ jobs:
   sync-content:
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.content-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+    # 仅在 PR（代码/内容变更）或手动触发且 force_sync=true 时执行；
+    # 避免在受保护的 master push / schedule 上尝试提交。
+    if: >
+      (github.event_name == 'pull_request' && needs.detect-changes.outputs.content-changed == 'true') ||
+      (github.event_name == 'workflow_dispatch' && needs.detect-changes.outputs.force-deploy == 'true')
     permissions:
       contents: write  # 明确设置写权限
     outputs:
@@ -193,16 +197,27 @@ jobs:
           fi
           
           # 检查是否有更改
+          # 仅在当前 ref 不是受保护主分支时推送
+          CURRENT_REF="${GITHUB_REF#refs/heads/}"
+          if [ "$CURRENT_REF" = "master" ]; then
+            echo "ℹ️ Protected branch (master) – skip committing changes."
+            echo "content_updated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 避免无限循环：若最近一次提交已经是 docs-sync 则跳过
+          if git log -1 --pretty=%B | grep -q "[docs-sync]"; then
+            echo "ℹ️ Last commit already a docs-sync commit – skipping to avoid loop."
+            echo "content_updated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           if [ -n "$(git status --porcelain)" ]; then
             echo "content_updated=true" >> $GITHUB_OUTPUT
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
             git add -A
-            git commit -m "📚 Auto-sync documentation content
-
-            🤖 Generated with GitHub Actions
-            
-            Synced at: $(date -u)"
+            git commit -m "[docs-sync] docs auto-sync at $(date -u)"
             git push
           else
             echo "content_updated=false" >> $GITHUB_OUTPUT
@@ -212,15 +227,15 @@ jobs:
   # 构建文档
   build:
     runs-on: ubuntu-latest
-    needs: [analyze-changes, detect-changes, sync-content]
+    # 不再强制依赖 sync-content（该 job 在 master push 会被跳过以避免提交失败）
+    needs: [analyze-changes, detect-changes]
     # PR 场景：如果有 docs 目录变更（来自 paths-filter）或 analyze-changes 有统计则构建
     # push / schedule / workflow_dispatch: 沿用原逻辑
     if: >
       always() && (
-        github.event_name == 'pull_request' && (needs.analyze-changes.outputs.total-changes != '0') ||
+        (github.event_name == 'pull_request' && needs.analyze-changes.outputs.total-changes != '0') ||
         needs.detect-changes.outputs.docs-changed == 'true' ||
         needs.analyze-changes.outputs.total-changes != '0' ||
-        (needs.sync-content.result == 'success' && needs.sync-content.outputs.content_updated == 'true') ||
         needs.detect-changes.outputs.force-deploy == 'true'
       )
     steps:
