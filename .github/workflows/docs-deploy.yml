@@ -204,13 +204,13 @@ jobs:
           npm run build
           
           # 验证构建输出
-          if [ ! -d ".vitepress/dist" ]; then
+          if [ ! -d "dist" ]; then
             echo "❌ Build output directory not found"
             exit 1
           fi
           
           # 检查关键文件
-          if [ ! -f ".vitepress/dist/index.html" ]; then
+          if [ ! -f "dist/index.html" ]; then
             echo "❌ Main index.html not found in build output"
             exit 1
           fi
@@ -223,12 +223,12 @@ jobs:
           echo "📊 Analyzing bundle size..."
           
           # 生成构建分析报告
-          du -sh .vitepress/dist
-          find .vitepress/dist -name "*.js" -exec du -h {} \; | sort -hr | head -10
-          find .vitepress/dist -name "*.css" -exec du -h {} \; | sort -hr | head -5
+          du -sh dist
+          find dist -name "*.js" -exec du -h {} \; | sort -hr | head -10
+          find dist -name "*.css" -exec du -h {} \; | sort -hr | head -5
           
           # 检查包大小限制
-          DIST_SIZE=$(du -s .vitepress/dist | cut -f1)
+          DIST_SIZE=$(du -s dist | cut -f1)
           MAX_SIZE=50000  # 50MB in KB
           
           if [ $DIST_SIZE -gt $MAX_SIZE ]; then
@@ -243,15 +243,15 @@ jobs:
           echo "🔧 Preparing deployment files..."
           
           # 创建 .nojekyll 文件（GitHub Pages）
-          touch .vitepress/dist/.nojekyll
+          touch dist/.nojekyll
           
           # 添加自定义 404 页面
-          if [ ! -f ".vitepress/dist/404.html" ]; then
-            cp .vitepress/dist/index.html .vitepress/dist/404.html
+          if [ ! -f "dist/404.html" ]; then
+            cp dist/index.html dist/404.html
           fi
           
           # 生成部署信息文件
-          cat > .vitepress/dist/deployment-info.json << EOF
+          cat > dist/deployment-info.json << EOF
           {
             "buildTime": "$(date -u)",
             "commitSha": "${{ github.sha }}",
@@ -264,11 +264,9 @@ jobs:
       - name: 📤 Upload build artifacts
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '${{ env.DOCS_DIR }}/.vitepress/dist'
-
+          path: ${{ env.DOCS_DIR }}/dist
   # 部署到 GitHub Pages
   deploy:
-    environment: production
     runs-on: ubuntu-latest
     needs: build
     permissions:
