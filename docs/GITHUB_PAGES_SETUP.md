@@ -8,6 +8,9 @@
 确保你的GitHub仓库有以下权限：
 - 在仓库的 Settings > Actions > General 中，确保 "Workflow permissions" 设置为 "Read and write permissions"
 - 确保 "Allow GitHub Actions to create and approve pull requests" 已启用
+- **重要**：如果遇到 `Permission denied` 错误，请确保：
+  - Workflow 文件中的 `permissions.contents` 设置为 `write`
+  - 仓库设置中允许 Actions 写入仓库内容
 
 ### 2. GitHub Pages 设置
 1. 进入仓库的 `Settings` > `Pages`
@@ -54,15 +57,39 @@
 
 ## 常见问题解决
 
-### 问题1：deploy步骤被跳过
+### 问题1：Permission denied 错误
+```
+remote: Permission to innovationmech/swit.git denied to github-actions[bot].
+fatal: unable to access 'https://github.com/innovationmech/swit/': The requested URL returned error: 403
+```
+
+**解决方案**：
+1. 确保 workflow 文件中设置了正确的权限：
+   ```yaml
+   permissions:
+     contents: write  # 需要写权限
+     pages: write
+     id-token: write
+   ```
+
+2. 检查仓库设置：
+   - 进入 Settings > Actions > General
+   - 将 "Workflow permissions" 设置为 "Read and write permissions"
+   - 启用 "Allow GitHub Actions to create and approve pull requests"
+
+3. 如果问题仍然存在，可能需要：
+   - 重新触发 workflow
+   - 检查是否有分支保护规则阻止 Actions 推送
+
+### 问题2：deploy步骤被跳过
 - 原因：只有在 `master` 分支才会部署
 - 解决：确保代码已合并到 `master` 分支
 
-### 问题2：第一次部署失败
+### 问题3：第一次部署失败
 - 可能需要手动创建 `github-pages` environment
 - 在仓库 Settings > Environments 中创建名为 `github-pages` 的环境
 
-### 问题3：页面显示404
+### 问题4：页面显示404
 - 检查 `dist/index.html` 是否存在
 - 检查 GitHub Pages 设置是否正确
 - 等待几分钟让DNS传播
