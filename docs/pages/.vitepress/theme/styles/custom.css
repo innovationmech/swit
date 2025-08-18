@@ -218,18 +218,24 @@
 
 /* 可访问性增强 */
 
-/* Focus 样式增强 - 支持键盘导航 */
-a:focus,
-button:focus,
+/* Focus 样式增强 - 支持键盘导航，但不包括标题 */
+a:focus-visible,
+button:focus-visible,
 input:focus,
 select:focus,
-textarea:focus,
-[tabindex]:focus {
+textarea:focus {
   outline: 2px solid var(--vp-c-brand-1);
   outline-offset: 2px;
   border-radius: var(--swit-radius-sm);
   box-shadow: 0 0 0 4px rgba(100, 108, 255, 0.25);
   transition: all 0.2s ease;
+}
+
+/* 鼠标点击时不显示焦点框 */
+a:focus:not(:focus-visible),
+button:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
 }
 
 /* 确保 focus 在高对比度模式下可见 */
@@ -318,108 +324,44 @@ textarea:focus,
   }
 }
 
-/* 字体大小调节支持 */
-.font-size-controls {
-  position: fixed;
-  top: 50%;
-  right: 16px;
-  transform: translateY(-50%);
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--vp-c-bg);
-  border: 1px solid var(--vp-c-border);
-  border-radius: var(--swit-radius-md);
-  padding: 8px;
-  box-shadow: var(--swit-shadow-lg);
+/* 移除标题焦点框样式 */
+
+/* 移除所有标题的鼠标点击焦点框 */
+.vp-doc h1:focus,
+.vp-doc h2:focus,
+.vp-doc h3:focus,
+.vp-doc h4:focus,
+.vp-doc h5:focus,
+.vp-doc h6:focus {
+  outline: none !important;
 }
 
-.font-size-btn {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--vp-c-border);
-  border-radius: var(--swit-radius-sm);
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
+/* 移除标题锤点链接的焦点框 */
+.vp-doc .header-anchor:focus {
+  outline: none !important;
 }
 
-.font-size-btn:hover {
-  background: var(--vp-c-brand-1);
-  color: white;
-  border-color: var(--vp-c-brand-1);
+/* 也移除其他可能的焦点框 */
+.vp-doc [tabindex]:focus {
+  outline: none !important;
 }
 
-.font-size-btn:focus {
-  outline: 2px solid var(--vp-c-brand-1);
-  outline-offset: 1px;
-}
-
-/* 字体大小类 */
-.font-small {
-  font-size: 14px;
-}
-
-.font-normal {
-  font-size: 16px;
-}
-
-.font-large {
-  font-size: 18px;
-}
-
-.font-xlarge {
-  font-size: 20px;
-}
-
-/* 高对比度主题切换 */
-.contrast-toggle {
-  position: fixed;
-  top: 100px;
-  right: 16px;
-  z-index: 1000;
-  width: 48px;
-  height: 48px;
-  border: 1px solid var(--vp-c-border);
-  border-radius: 50%;
-  background: var(--vp-c-bg);
-  color: var(--vp-c-text-1);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  box-shadow: var(--swit-shadow-md);
-}
-
-.contrast-toggle:hover {
-  background: var(--vp-c-brand-1);
-  color: white;
-  border-color: var(--vp-c-brand-1);
-}
-
-.contrast-toggle:focus {
+/* 但保留键盘用户的可访问性 - 只在键盘导航时显示焦点 */
+.vp-doc h1:focus-visible,
+.vp-doc h2:focus-visible,
+.vp-doc h3:focus-visible,
+.vp-doc h4:focus-visible,
+.vp-doc h5:focus-visible,
+.vp-doc h6:focus-visible,
+.vp-doc .header-anchor:focus-visible {
   outline: 2px solid var(--vp-c-brand-1);
   outline-offset: 2px;
+  border-radius: 2px;
 }
 
-/* 高对比度主题 */
-.high-contrast {
-  --vp-c-bg: #000000;
-  --vp-c-bg-alt: #111111;
-  --vp-c-bg-soft: #222222;
-  --vp-c-text-1: #ffffff;
-  --vp-c-text-2: #cccccc;
-  --vp-c-border: #ffffff;
-  --vp-c-brand-1: #ffff00;
-  --vp-c-brand-2: #ffff66;
-}
+/* 已精简化，移除了不必要的控制样式 */
+
+/* 已移除高对比度主题功能 */
 
 /* 语义化 HTML 增强 */
 main[role="main"] {
@@ -516,6 +458,8 @@ textarea[required] + label::after {
     height: 44px;
   }
 }
+
+/* 删除了字体大小控制功能 */
 
 /* 打印样式 */
 @media print {
