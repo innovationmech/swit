@@ -249,11 +249,12 @@ jobs:
             echo "📝 Changed files:"
             cat changed_files.txt
             
-            # 统计变更
+            # 统计变更（避免 grep -c 失败时输出额外的 0 行导致 GITHUB_OUTPUT 解析错误）
             TOTAL_CHANGES=$(wc -l < changed_files.txt)
-            MD_CHANGES=$(grep -c '\.md$' changed_files.txt || echo 0)
-            VUE_CHANGES=$(grep -c '\.vue$' changed_files.txt || echo 0)
-            CONFIG_CHANGES=$(grep -c 'config\|\.json$\|\.yaml$\|\.yml$' changed_files.txt || echo 0)
+            # 使用 grep | wc -l，如果没有匹配 grep 退出码为 1 但不会输出内容，不会产生孤立的 "0" 行
+            MD_CHANGES=$(grep '\.md$' changed_files.txt | wc -l || echo 0)
+            VUE_CHANGES=$(grep '\.vue$' changed_files.txt | wc -l || echo 0)
+            CONFIG_CHANGES=$(grep -E 'config|\.(json|yaml|yml)$' changed_files.txt | wc -l || echo 0)
             
             echo "total=${TOTAL_CHANGES}" >> $GITHUB_OUTPUT
             echo "markdown=${MD_CHANGES}" >> $GITHUB_OUTPUT
