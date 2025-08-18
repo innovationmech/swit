@@ -6,6 +6,13 @@ on:
     paths:
       - 'docs/pages/**'
       - '.github/workflows/docs-deploy.yml'
+  # PR 仍然会运行 docs 构建检查（如果你希望保留 build，可单独保留 pull_request 触发。
+  # 这里移除对 deploy 的 PR 部署，真正部署仅在合并产生的 push 上进行。）
+  pull_request:
+    branches: [master]
+    paths:
+      - 'docs/pages/**'
+      - '.github/workflows/docs-deploy.yml'
   schedule:
     # 每天凌晨 2 点同步文档内容
     - cron: '0 2 * * *'
@@ -41,7 +48,7 @@ env:
   DOCS_DIR: './docs/pages'
 
 jobs:
-  # 分析文档变更
+  # 分析文档变更（支持 PR / push）
   analyze-changes:
     runs-on: ubuntu-latest
     outputs:
@@ -59,9 +66,24 @@ jobs:
         id: analyze
         run: |
           echo "🔍 Analyzing documentation changes..."
-          
-          # 获取变更的文件列表
-          git diff --name-only origin/master...HEAD -- docs/pages/ > changed_files.txt
+          echo "Event: $GITHUB_EVENT_NAME  Ref: $GITHUB_REF  Base: $GITHUB_BASE_REF"
+
+          # 计算对比范围：
+          # PR: 使用 merge base (github.event.pull_request.base.sha) 与 HEAD
+          # push 到 master: 对比 HEAD^...HEAD 以捕获刚合并的 commit 变更
+          # 定时/手动: 仍使用 origin/master...HEAD（可能包含多个 commit 聚合变更）
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            RANGE="$BASE_SHA...HEAD"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/master" ]; then
+            # 避免整个历史 diff
+            RANGE="HEAD^...HEAD"
+          else
+            RANGE="origin/master...HEAD"
+          fi
+
+          echo "Using diff range: $RANGE"
+          git diff --name-only $RANGE -- docs/pages/ > changed_files.txt
           
           if [ -s changed_files.txt ]; then
             echo "📝 Changed files:"
@@ -191,7 +213,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: [analyze-changes, detect-changes, sync-content]
-    if: always() && (needs.detect-changes.outputs.docs-changed == 'true' || needs.analyze-changes.outputs.total-changes != '0' || (needs.sync-content.result == 'success' && needs.sync-content.outputs.content_updated == 'true') || needs.detect-changes.outputs.force-deploy == 'true')
+    # PR 场景：如果有 docs 目录变更（来自 paths-filter）或 analyze-changes 有统计则构建
+    # push / schedule / workflow_dispatch: 沿用原逻辑
+    if: >
+      always() && (
+        github.event_name == 'pull_request' && (needs.analyze-changes.outputs.total-changes != '0') ||
+        needs.detect-changes.outputs.docs-changed == 'true' ||
+        needs.analyze-changes.outputs.total-changes != '0' ||
+        (needs.sync-content.result == 'success' && needs.sync-content.outputs.content_updated == 'true') ||
+        needs.detect-changes.outputs.force-deploy == 'true'
+      )
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -340,6 +371,7 @@ jobs:
     permissions:
       pages: write
       id-token: write
+    # 仅在合并 PR 后的 master push 执行部署（合并会触发 push 事件且 ref=refs/heads/master）
     if: github.ref == 'refs/heads/master'
     outputs:
       page_url: ${{ steps.deployment.outputs.page_url }}
