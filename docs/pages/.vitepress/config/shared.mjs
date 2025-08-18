@@ -2,6 +2,8 @@
 export const sharedConfig = {
   title: 'Swit Framework',
   description: 'Modern Go Microservice Framework',
+  // GitHub Pages 仓库项目路径需要 base，默认 /swit/；允许通过环境变量覆盖（本地 dev 可 unset 使用根路径）。
+  base: process.env.VITEPRESS_BASE || '/swit/',
   
   // Build configuration
   outDir: 'dist',
