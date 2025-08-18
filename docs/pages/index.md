@@ -3,6 +3,7 @@ layout: home
 title: Swit Framework
 description: Modern Go Microservice Development Framework
 titleTemplate: Production-ready microservice foundation
+# Last updated: 2025-08-18
 
 hero:
   name: "Swit"
