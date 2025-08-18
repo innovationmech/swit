@@ -41,13 +41,65 @@ env:
   DOCS_DIR: './docs/pages'
 
 jobs:
+  # 分析文档变更
+  analyze-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      total-changes: ${{ steps.analyze.outputs.total }}
+      markdown-changes: ${{ steps.analyze.outputs.markdown }}
+      vue-changes: ${{ steps.analyze.outputs.vue }}
+      config-changes: ${{ steps.analyze.outputs.config }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Analyze documentation changes
+        id: analyze
+        run: |
+          echo "🔍 Analyzing documentation changes..."
+          
+          # 获取变更的文件列表
+          git diff --name-only origin/master...HEAD -- docs/pages/ > changed_files.txt
+          
+          if [ -s changed_files.txt ]; then
+            echo "📝 Changed files:"
+            cat changed_files.txt
+            
+            # 统计变更
+            TOTAL_CHANGES=$(wc -l < changed_files.txt)
+            MD_CHANGES=$(grep -c '\.md$' changed_files.txt || echo 0)
+            VUE_CHANGES=$(grep -c '\.vue$' changed_files.txt || echo 0)
+            CONFIG_CHANGES=$(grep -c -E 'config|\.json$|\.yaml$|\.yml$' changed_files.txt || echo 0)
+            
+            echo "total=${TOTAL_CHANGES}" >> $GITHUB_OUTPUT
+            echo "markdown=${MD_CHANGES}" >> $GITHUB_OUTPUT
+            echo "vue=${VUE_CHANGES}" >> $GITHUB_OUTPUT
+            echo "config=${CONFIG_CHANGES}" >> $GITHUB_OUTPUT
+            
+            echo "📊 Change summary:"
+            echo "  Total files: $TOTAL_CHANGES"
+            echo "  Markdown files: $MD_CHANGES"
+            echo "  Vue components: $VUE_CHANGES"
+            echo "  Config files: $CONFIG_CHANGES"
+          else
+            echo "📝 No documentation files changed"
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "markdown=0" >> $GITHUB_OUTPUT
+            echo "vue=0" >> $GITHUB_OUTPUT
+            echo "config=0" >> $GITHUB_OUTPUT
+          fi
+
   # 检测文档变更
   detect-changes:
     runs-on: ubuntu-latest
+    needs: analyze-changes
     outputs:
       docs-changed: ${{ steps.changes.outputs.docs }}
       content-changed: ${{ steps.changes.outputs.content }}
       force-deploy: ${{ github.event.inputs.force_sync == 'true' || github.event_name == 'schedule' }}
+      has-doc-changes: ${{ needs.analyze-changes.outputs.total-changes != '0' }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -131,8 +183,8 @@ jobs:
   # 构建文档
   build:
     runs-on: ubuntu-latest
-    needs: [detect-changes, sync-content]
-    if: always() && (needs.detect-changes.outputs.docs-changed == 'true' || (needs.sync-content.result == 'success' && needs.sync-content.outputs.content_updated == 'true') || needs.detect-changes.outputs.force-deploy == 'true')
+    needs: [analyze-changes, detect-changes, sync-content]
+    if: always() && (needs.detect-changes.outputs.docs-changed == 'true' || needs.analyze-changes.outputs.total-changes != '0' || (needs.sync-content.result == 'success' && needs.sync-content.outputs.content_updated == 'true') || needs.detect-changes.outputs.force-deploy == 'true')
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
