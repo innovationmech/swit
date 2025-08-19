@@ -499,3 +499,90 @@ func TestMiddlewareManager_GRPCInterceptorExecution(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "response", resp)
 }
+
+// Test uncovered gRPC stream interceptors
+
+func TestMiddlewareManager_GRPCStreamInterceptors(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+
+	// Test recovery stream interceptor
+	recoveryInterceptor := manager.createGRPCRecoveryStreamInterceptor()
+
+	mockStream := &mockServerStream{}
+	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+
+	panicHandler := func(srv interface{}, stream grpc.ServerStream) error {
+		panic("test panic")
+	}
+
+	// This should not panic due to recovery
+	assert.NotPanics(t, func() {
+		_ = recoveryInterceptor(nil, mockStream, info, panicHandler)
+	})
+
+	// Test logging stream interceptor
+	loggingInterceptor := manager.createGRPCLoggingStreamInterceptor()
+
+	normalHandler := func(srv interface{}, stream grpc.ServerStream) error {
+		return nil
+	}
+
+	// This should execute without error
+	err := loggingInterceptor(nil, mockStream, info, normalHandler)
+	assert.NoError(t, err)
+
+	// Test metrics stream interceptor
+	metricsInterceptor := manager.createGRPCMetricsStreamInterceptor()
+	err = metricsInterceptor(nil, mockStream, info, normalHandler)
+	assert.NoError(t, err)
+
+	// Test auth stream interceptor
+	authInterceptor := manager.createGRPCAuthStreamInterceptor()
+	err = authInterceptor(nil, mockStream, info, normalHandler)
+	assert.NoError(t, err)
+
+	// Test rate limit stream interceptor
+	rateLimitInterceptor := manager.createGRPCRateLimitStreamInterceptor()
+	err = rateLimitInterceptor(nil, mockStream, info, normalHandler)
+	assert.NoError(t, err)
+}
+
+// Test uncovered gRPC unary interceptors functionality
+
+func TestMiddlewareManager_GRPCUnaryInterceptors_Extended(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	normalHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "response", nil
+	}
+
+	// Test metrics unary interceptor
+	metricsInterceptor := manager.createGRPCMetricsUnaryInterceptor()
+	resp, err := metricsInterceptor(context.Background(), nil, info, normalHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, "response", resp)
+
+	// Test auth unary interceptor
+	authInterceptor := manager.createGRPCAuthUnaryInterceptor()
+	resp, err = authInterceptor(context.Background(), nil, info, normalHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, "response", resp)
+
+	// Test rate limit unary interceptor
+	rateLimitInterceptor := manager.createGRPCRateLimitUnaryInterceptor()
+	resp, err = rateLimitInterceptor(context.Background(), nil, info, normalHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, "response", resp)
+}
+
+// Mock ServerStream for testing
+type mockServerStream struct {
+	grpc.ServerStream
+}
+
+func (m *mockServerStream) Context() context.Context {
+	return context.Background()
+}

@@ -23,6 +23,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -412,4 +413,159 @@ func TestBaseServer_TransportHealth(t *testing.T) {
 
 	// Should return health status map (may be empty if no services are registered)
 	assert.NotNil(t, health)
+}
+
+// Test missing coverage methods
+
+func TestBaseServer_GetPerformanceMonitor(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+
+	mockRegistrar := &mockBusinessServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockBusinessDependencyContainer{}
+
+	server, err := NewBusinessServerCore(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	monitor := server.GetPerformanceMonitor()
+	assert.NotNil(t, monitor)
+}
+
+func TestBaseServer_CastToBusinessServerWithPerformance(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+
+	mockRegistrar := &mockBusinessServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockBusinessDependencyContainer{}
+
+	server, err := NewBusinessServerCore(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	// Test that server has performance methods
+	metrics := server.GetPerformanceMetrics()
+	assert.NotNil(t, metrics)
+
+	monitor := server.GetPerformanceMonitor()
+	assert.NotNil(t, monitor)
+}
+
+func TestBaseServer_ServiceRegistration_ErrorPaths(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+
+	// Test with a registrar that returns an error
+	errorRegistrar := &mockBusinessServiceRegistrar{}
+	errorRegistrar.On("RegisterServices", mock.Anything).Return(fmt.Errorf("registration error"))
+
+	mockDeps := &mockBusinessDependencyContainer{}
+
+	_, err := NewBusinessServerCore(config, errorRegistrar, mockDeps)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to register services")
+}
+
+func TestBaseServer_InterfaceCompliance(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+
+	mockRegistrar := &mockBusinessServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockBusinessDependencyContainer{}
+
+	server, err := NewBusinessServerCore(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	// Verify server was created successfully and has expected interface methods
+	assert.NotNil(t, server)
+
+	// Test basic interface methods
+	assert.Equal(t, ":8080", server.GetHTTPAddress())
+	assert.Equal(t, ":9080", server.GetGRPCAddress())
+
+	transports := server.GetTransports()
+	assert.NotNil(t, transports)
+
+	status := server.GetTransportStatus()
+	assert.NotNil(t, status)
+
+	ctx := context.Background()
+	health := server.GetTransportHealth(ctx)
+	assert.NotNil(t, health)
+}
+
+func TestBaseServer_DiscoveryRegistration_ErrorPaths(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = true
+	config.Discovery.Address = "invalid-consul-address"
+	config.Discovery.ServiceName = "test-service"
+
+	mockRegistrar := &mockBusinessServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockBusinessDependencyContainer{}
+
+	server, err := NewBusinessServerCore(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Starting with invalid discovery should not fail due to graceful failure mode
+	err = server.Start(ctx)
+	require.NoError(t, err)
+
+	err = server.Stop(ctx)
+	require.NoError(t, err)
+}
+
+func TestBaseServer_Uptime(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+
+	mockRegistrar := &mockBusinessServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockBusinessDependencyContainer{}
+
+	server, err := NewBusinessServerCore(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = server.Start(ctx)
+	require.NoError(t, err)
+
+	// Wait a tiny bit and check uptime
+	time.Sleep(1 * time.Millisecond)
+	uptime := server.GetUptime()
+	assert.True(t, uptime > 0)
+
+	err = server.Stop(ctx)
+	require.NoError(t, err)
+}
+
+func TestBaseServer_HTTPMiddlewareConfiguration_ErrorPath(t *testing.T) {
+	config := NewServerConfig()
+	config.Discovery.Enabled = false
+	config.HTTP.Middleware.EnableCORS = true
+
+	mockRegistrar := &mockBusinessServiceRegistrar{}
+	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
+
+	mockDeps := &mockBusinessDependencyContainer{}
+
+	server, err := NewBusinessServerCore(config, mockRegistrar, mockDeps)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Should start successfully with default middleware configuration
+	err = server.Start(ctx)
+	require.NoError(t, err)
+
+	err = server.Stop(ctx)
+	require.NoError(t, err)
 }

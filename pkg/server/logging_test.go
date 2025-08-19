@@ -547,3 +547,120 @@ func TestLoggingConfig_OptionalFeatures(t *testing.T) {
 	assert.NotNil(t, logger)
 	// The logger should be created successfully even with features disabled
 }
+
+// Test uncovered logging methods
+
+func TestServerLogger_UncoveredMethods(t *testing.T) {
+	core, recorded := observer.New(zapcore.DebugLevel)
+	zapLogger := zap.New(core)
+
+	logger := &ServerLogger{
+		logger:      zapLogger,
+		serviceName: "test-service",
+		config:      DefaultLoggingConfig(),
+		baseFields: []zap.Field{
+			zap.String("service", "test-service"),
+			zap.String("component", "server"),
+		},
+	}
+
+	t.Run("LogTransportStarted", func(t *testing.T) {
+		logger.LogTransportStarted("http", "localhost:8080")
+
+		entries := recorded.TakeAll()
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.Equal(t, "Transport started", entry.Message)
+		assert.Contains(t, entry.Context, zap.String("event", "transport_started"))
+		assert.Contains(t, entry.Context, zap.String("transport_type", "http"))
+		assert.Contains(t, entry.Context, zap.String("address", "localhost:8080"))
+	})
+
+	t.Run("LogTransportStopped", func(t *testing.T) {
+		shutdownDuration := 100 * time.Millisecond
+		logger.LogTransportStopped("grpc", shutdownDuration)
+
+		entries := recorded.TakeAll()
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.Equal(t, "Transport stopped", entry.Message)
+		assert.Contains(t, entry.Context, zap.String("event", "transport_stopped"))
+		assert.Contains(t, entry.Context, zap.String("transport_type", "grpc"))
+		assert.Contains(t, entry.Context, zap.Duration("shutdown_duration", shutdownDuration))
+	})
+
+	t.Run("LogDiscoveryDeregistered", func(t *testing.T) {
+		logger.LogDiscoveryDeregistered("consul", 2)
+
+		entries := recorded.TakeAll()
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.Equal(t, "Service deregistered from discovery", entry.Message)
+		assert.Contains(t, entry.Context, zap.String("event", "discovery_deregistered"))
+		assert.Contains(t, entry.Context, zap.String("discovery_service", "consul"))
+		assert.Contains(t, entry.Context, zap.Int("endpoint_count", 2))
+	})
+}
+
+func TestServerLoggerWithHooks_UncoveredMethods(t *testing.T) {
+	core, recorded := observer.New(zapcore.DebugLevel)
+	zapLogger := zap.New(core)
+
+	baseLogger := &ServerLogger{
+		logger:      zapLogger,
+		serviceName: "test-service",
+		config:      DefaultLoggingConfig(),
+		baseFields: []zap.Field{
+			zap.String("service", "test-service"),
+			zap.String("component", "server"),
+		},
+	}
+
+	logger := &ServerLoggerWithHooks{
+		ServerLogger: baseLogger,
+		hooks:        make(map[LogLevel][]LoggingHook),
+	}
+
+	// Track hook executions
+	var hookExecutions []string
+
+	// Add hooks for different levels
+	logger.AddHook(LogLevelWarn, func(level LogLevel, message string, fields []zap.Field) {
+		hookExecutions = append(hookExecutions, "warn_hook")
+	})
+
+	logger.AddHook(LogLevelDebug, func(level LogLevel, message string, fields []zap.Field) {
+		hookExecutions = append(hookExecutions, "debug_hook")
+	})
+
+	t.Run("LogWarning with hooks", func(t *testing.T) {
+		hookExecutions = nil
+		logger.LogWarning("Test warning message", zap.String("test", "value"))
+
+		assert.Contains(t, hookExecutions, "warn_hook")
+		assert.NotContains(t, hookExecutions, "debug_hook")
+
+		// Verify log was still written
+		entries := recorded.TakeAll()
+		require.Len(t, entries, 1)
+		assert.Equal(t, "Test warning message", entries[0].Message)
+		assert.Equal(t, zapcore.WarnLevel, entries[0].Level)
+	})
+
+	t.Run("LogDebug with hooks", func(t *testing.T) {
+		hookExecutions = nil
+		logger.LogDebug("Test debug message", zap.String("test", "value"))
+
+		assert.Contains(t, hookExecutions, "debug_hook")
+		assert.NotContains(t, hookExecutions, "warn_hook")
+
+		// Verify log was still written
+		entries := recorded.TakeAll()
+		require.Len(t, entries, 1)
+		assert.Equal(t, "Test debug message", entries[0].Message)
+		assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
+	})
+}
