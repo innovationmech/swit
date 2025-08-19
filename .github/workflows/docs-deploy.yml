@@ -137,7 +137,7 @@ jobs:
 
       - name: 🔍 Detect changes
         id: changes
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v3
         with:
           filters: |
             docs:
