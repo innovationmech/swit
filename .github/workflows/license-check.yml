@@ -166,7 +166,7 @@ jobs:
 
     - name: Create PR for copyright fixes
       if: steps.copyright_check.outputs.missing_copyright == 'true' && github.event_name == 'push'
-      uses: peter-evans/create-pull-request@v5
+      uses: peter-evans/create-pull-request@v7
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         commit-message: "chore: add missing copyright headers"
