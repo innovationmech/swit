@@ -474,7 +474,13 @@ ${processed}`;
 // CLI interface
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const command = args[0] || 'sync';
+  let command = args[0] || 'sync';
+  // 向后兼容: 之前 workflow 误使用 --source=readme / --source=examples
+  if (command && command.startsWith('--source=')) {
+    const requested = command.split('=')[1];
+    console.log(`ℹ️ 检测到已废弃参数形式 --source=${requested}，将执行通用同步命令 sync`);
+    command = 'sync';
+  }
   
   const synchronizer = new DocumentSynchronizer();
   

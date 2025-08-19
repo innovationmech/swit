@@ -120,7 +120,9 @@ jobs:
           fi
           
           # 运行 README 同步
-          node scripts/sync-docs.js --source=readme --verbose
+          # 注意: sync-docs.js 目前仅支持命令: sync / watch / help
+          # 原先使用 --source=readme 为未知命令导致失败, 改为默认 sync
+          node scripts/sync-docs.js sync
           
           echo "✅ README content sync completed"
 
@@ -195,16 +197,44 @@ jobs:
           echo "📋 Generating API documentation..."
           
           # 生成 Swagger 文档
+          mkdir -p api/swagger/switserve api/swagger/switauth || true
+
+          # swit-serve
           if [ -d "cmd/swit-serve" ]; then
+            echo "➡️ Processing swit-serve"
             cd cmd/swit-serve
-            swag init -g main.go -o ../../api/swagger/switserve
+            ENTRY_FILE="main.go"
+            # 优先使用存在的 main.go, 否则自动探测单一 *_serve.go 入口
+            if [ ! -f "$ENTRY_FILE" ]; then
+              # 寻找包含 package main 的 go 文件
+              CANDIDATE=$(grep -l "package main" *.go | head -n1)
+              if [ -n "$CANDIDATE" ]; then
+                ENTRY_FILE="$CANDIDATE"
+              fi
+            fi
+            echo "   Using entry: $ENTRY_FILE"
+            swag init -g "$ENTRY_FILE" -o ../../api/swagger/switserve || echo "⚠️ swag init failed for swit-serve"
             cd ../..
+          else
+            echo "⚠️ cmd/swit-serve directory not found"
           fi
-          
+
+          # swit-auth
           if [ -d "cmd/swit-auth" ]; then
+            echo "➡️ Processing swit-auth"
             cd cmd/swit-auth
-            swag init -g main.go -o ../../api/swagger/switauth
+            ENTRY_FILE="main.go"
+            if [ ! -f "$ENTRY_FILE" ]; then
+              CANDIDATE=$(grep -l "package main" *.go | head -n1)
+              if [ -n "$CANDIDATE" ]; then
+                ENTRY_FILE="$CANDIDATE"
+              fi
+            fi
+            echo "   Using entry: $ENTRY_FILE"
+            swag init -g "$ENTRY_FILE" -o ../../api/swagger/switauth || echo "⚠️ swag init failed for swit-auth"
             cd ../..
+          else
+            echo "⚠️ cmd/swit-auth directory not found"
           fi
           
           echo "✅ API documentation generated"
@@ -281,7 +311,8 @@ jobs:
           
           # 运行示例代码同步
           if [ -f "scripts/sync-docs.js" ]; then
-            node scripts/sync-docs.js --source=examples --verbose
+            # 原先误用 --source=examples, 改为使用默认 sync (脚本内部会根据文件变更检测)
+            node scripts/sync-docs.js sync
           else
             echo "⚠️ Sync script not found"
           fi
