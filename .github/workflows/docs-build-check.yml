@@ -32,7 +32,7 @@ jobs:
       lint-success: ${{ steps.lint.outputs.success }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
@@ -90,7 +90,7 @@ jobs:
       build-size: ${{ steps.analyze.outputs.size }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
@@ -186,7 +186,7 @@ jobs:
       validation-success: ${{ steps.validate.outputs.success }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
@@ -233,7 +233,7 @@ jobs:
       config-changes: ${{ steps.changes.outputs.config }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

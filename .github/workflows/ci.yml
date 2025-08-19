@@ -31,7 +31,7 @@ jobs:
       cache-hit: ${{ steps.cache.outputs.cache-hit }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -81,7 +81,7 @@ jobs:
     needs: setup
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -125,7 +125,7 @@ jobs:
     needs: [setup, test]
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Go
       uses: actions/setup-go@v4
