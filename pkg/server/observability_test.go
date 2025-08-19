@@ -661,3 +661,27 @@ func TestSystemInfo(t *testing.T) {
 	assert.GreaterOrEqual(t, status.SystemInfo.MemStats.Sys, uint64(0))
 	assert.GreaterOrEqual(t, status.SystemInfo.MemStats.NumGC, uint32(0))
 }
+
+// Test uncovered observability methods
+
+func TestObservabilityManager_GetMetrics(t *testing.T) {
+	collector := NewSimpleMetricsCollector()
+	manager := NewObservabilityManager("test-service", collector)
+
+	// Add some test metrics
+	collector.IncrementCounter("test_counter", map[string]string{"label": "value"})
+	collector.SetGauge("test_gauge", 42.0, map[string]string{"label": "value"})
+	collector.ObserveHistogram("test_histogram", 1.5, map[string]string{"label": "value"})
+
+	// Test GetMetrics method
+	metrics := manager.GetMetrics()
+	assert.NotNil(t, metrics)
+
+	// Verify that metrics are included
+	allMetrics := collector.GetMetrics()
+	assert.NotEmpty(t, allMetrics)
+
+	// The GetMetrics method should return some kind of metrics representation
+	// Since the method returns interface{}, we just verify it's not nil
+	assert.NotNil(t, metrics)
+}
