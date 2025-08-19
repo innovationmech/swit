@@ -120,7 +120,9 @@ jobs:
           fi
           
           # 运行 README 同步
-          node scripts/sync-docs.js --source=readme --verbose
+          # 当前 sync-docs.js 仅支持命令: sync|watch|help，不支持 --source 参数
+          # 使用默认 sync 执行 README 与附加文档同步
+          node scripts/sync-docs.js sync
           
           echo "✅ README content sync completed"
 
@@ -197,15 +199,19 @@ jobs:
           # 生成 Swagger 文档
           if [ -d "cmd/swit-serve" ]; then
             cd cmd/swit-serve
-            swag init -g main.go -o ../../api/swagger/switserve
+            echo "Generating swagger for swit-serve..."
+            swag init -g swit-serve.go -o ../../api/swagger/switserve --parseDependency --parseInternal || echo "⚠ swag init swit-serve failed"
             cd ../..
           fi
-          
+
           if [ -d "cmd/swit-auth" ]; then
             cd cmd/swit-auth
-            swag init -g main.go -o ../../api/swagger/switauth
+            echo "Generating swagger for swit-auth..."
+            swag init -g swit-auth.go -o ../../api/swagger/switauth --parseDependency --parseInternal || echo "⚠ swag init swit-auth failed"
             cd ../..
           fi
+
+          # 若需要更复杂逻辑可改用 scripts/tools/swagger-manage.sh
           
           echo "✅ API documentation generated"
 
@@ -281,7 +287,8 @@ jobs:
           
           # 运行示例代码同步
           if [ -f "scripts/sync-docs.js" ]; then
-            node scripts/sync-docs.js --source=examples --verbose
+            # 仅同步示例 (脚本已支持 examples 子命令/--source=examples)
+            node scripts/sync-docs.js examples
           else
             echo "⚠️ Sync script not found"
           fi

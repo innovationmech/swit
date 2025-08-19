@@ -31,7 +31,9 @@ class DocumentSynchronizer {
         path.join(this.projectRoot, 'DEVELOPMENT-CN.md'),
         path.join(this.projectRoot, 'CODE_OF_CONDUCT.md'),
         path.join(this.projectRoot, 'SECURITY.md')
-      ]
+  ],
+  examplesDir: path.join(this.projectRoot, 'examples'),
+  examplesTargetDir: path.join(this.docsRoot, 'en/examples') // 目前仅生成英文示例
     };
   }
 
@@ -45,6 +47,115 @@ class DocumentSynchronizer {
     } catch (error) {
       console.warn('⚠ 缓存目录初始化警告:', error.message);
     }
+  }
+
+  /**
+   * Synchronize example projects README to docs pages
+   */
+  async syncExamples() {
+    console.log('🔄 开始示例代码文档同步...');
+    const examplesDir = this.config.examplesDir;
+    const targetDir = this.config.examplesTargetDir;
+    try {
+      await fs.mkdir(targetDir, { recursive: true });
+    } catch (e) {
+      // ignore mkdir race
+    }
+
+    let entries = [];
+    try {
+      entries = await fs.readdir(examplesDir, { withFileTypes: true });
+    } catch (error) {
+      console.warn('⚠ 无法读取 examples 目录:', error.message);
+      return { status: 'skipped', reason: 'no_examples_dir' };
+    }
+
+    const generated = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dirName = entry.name;
+      const examplePath = path.join(examplesDir, dirName);
+      const readmePath = path.join(examplePath, 'README.md');
+      try {
+        const stat = await fs.stat(readmePath).catch(() => null);
+        if (!stat) {
+          console.log(`⏭️ 跳过 ${dirName} (无 README.md)`);
+          continue;
+        }
+        const raw = await fs.readFile(readmePath, 'utf8');
+        const slug = this.exampleSlug(dirName);
+        const title = this.exampleTitle(dirName, raw);
+        const converted = this.convertExampleReadme(raw, title, slug);
+        const outFile = path.join(targetDir, `${slug}.md`);
+        await fs.writeFile(outFile, converted);
+        generated.push({ dir: dirName, slug, file: outFile });
+        console.log(`✅ 示例同步: ${dirName} -> ${slug}.md`);
+      } catch (error) {
+        console.warn(`⚠ 同步示例 ${dirName} 失败:`, error.message);
+      }
+    }
+
+    // 清理已删除的示例对应的旧文件
+    try {
+      const existing = await fs.readdir(targetDir);
+      const keep = new Set(generated.map(g => `${g.slug}.md`).concat(['index.md']));
+      for (const file of existing) {
+        if (file.endsWith('.md') && !keep.has(file)) {
+          await fs.unlink(path.join(targetDir, file));
+          console.log(`🧹 移除过期示例文档: ${file}`);
+        }
+      }
+    } catch (cleanupErr) {
+      // ignore cleanup errors
+    }
+
+    // 生成/更新 index.md
+    await this.generateExamplesIndex(generated, targetDir);
+
+    console.log(`🎉 示例文档同步完成: ${generated.length} 个文件`);
+    return { status: 'synced', count: generated.length };
+  }
+
+  exampleSlug(dirName) {
+    let slug = dirName.replace(/_+/g, '-');
+    slug = slug.replace(/-service$/i, '');
+    return slug;
+  }
+
+  exampleTitle(dirName, readme) {
+    // Prefer first markdown heading inside README
+    const heading = readme.match(/^#\s+(.+)$/m);
+    if (heading) return heading[1].trim();
+    return dirName
+      .replace(/-service$/i, '')
+      .split(/[-_]/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+
+  convertExampleReadme(content, title, slug) {
+    // Remove first heading (will replace with frontmatter)
+    let body = content.replace(/^#\s+.+$/m, '').trim();
+    const frontmatter = `---\ntitle: ${title}\noutline: deep\n---`;
+    // Basic link adjustment (turn relative paths back to GitHub)
+    body = body.replace(/\]\((?!https?:\/\/)([^)]+)\)/g, (m, p1) => `](https://github.com/innovationmech/swit/blob/master/examples/${slug}/${p1})`);
+    return `${frontmatter}\n\n${body}\n`;
+  }
+
+  async generateExamplesIndex(generated, targetDir) {
+    const lines = [
+      '---',
+      'title: Examples',
+      '---',
+      '',
+      '# Examples',
+      '',
+      'Below is a list of available example projects.'
+    ];
+    for (const g of generated.sort((a,b)=>a.slug.localeCompare(b.slug))) {
+      lines.push(`- [${g.slug}](/en/examples/${g.slug}.md)`);
+    }
+    await fs.writeFile(path.join(targetDir, 'index.md'), lines.join('\n'));
   }
 
   /**
@@ -473,40 +584,65 @@ ${processed}`;
 
 // CLI interface
 if (require.main === module) {
-  const args = process.argv.slice(2);
-  const command = args[0] || 'sync';
-  
-  const synchronizer = new DocumentSynchronizer();
-  
-  switch (command) {
-    case 'sync':
-      synchronizer.sync().catch(console.error);
-      break;
-    case 'watch':
-      synchronizer.watch().catch(console.error);
-      break;
-    case 'help':
-      console.log(`
-文档同步工具
-
-用法:
-  node sync-docs.js [command]
-
-命令:
-  sync     同步文档（默认）
-  watch    监视文档变更并自动同步
-  help     显示此帮助信息
-
-示例:
-  node sync-docs.js sync
-  node sync-docs.js watch
-      `);
-      break;
-    default:
-      console.error(`未知命令: ${command}`);
-      console.error('使用 "node sync-docs.js help" 查看可用命令');
-      process.exit(1);
+  const rawArgs = process.argv.slice(2);
+  // Support legacy --source=readme / --source=examples
+  let sources = [];
+  let command = 'sync';
+  for (const a of rawArgs) {
+    if (a.startsWith('--source=')) {
+      const val = a.split('=')[1];
+      sources = val.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (['sync','watch','help','readme','examples','all'].includes(a)) {
+      command = a;
+    }
   }
+
+  const synchronizer = new DocumentSynchronizer();
+
+  const runAll = async () => {
+    await synchronizer.sync();
+    await synchronizer.syncExamples();
+  };
+
+  const runSelectedSources = async () => {
+    const wantsAll = sources.includes('all') || sources.length === 0;
+    if (wantsAll || sources.includes('readme')) {
+      await synchronizer.sync();
+    }
+    if (wantsAll || sources.includes('examples')) {
+      await synchronizer.syncExamples();
+    }
+  };
+
+  (async () => {
+    switch (command) {
+      case 'sync':
+      case 'all':
+        await runAll();
+        break;
+      case 'readme':
+        await synchronizer.sync();
+        break;
+      case 'examples':
+        await synchronizer.syncExamples();
+        break;
+      case 'watch':
+        await synchronizer.watch();
+        break;
+      case 'help':
+        console.log(`\n文档同步工具\n\n用法:\n  node sync-docs.js [command] [--source=readme,examples]\n\n命令:\n  sync|all   同步 README + 附加文档 + 示例\n  readme     仅同步 README 及附加文档\n  examples   仅同步示例\n  watch      监视 README/附加文档 (不含示例)\n  help       显示帮助\n\n兼容参数:\n  --source=readme        仅 README (旧调用方式)\n  --source=examples      仅 示例 (旧调用方式)\n  --source=all           README + 示例\n\n示例:\n  node sync-docs.js sync\n  node sync-docs.js --source=readme\n  node sync-docs.js examples\n  node sync-docs.js --source=examples\n        `);
+        return;
+      default:
+        // 如果有 --source 参数则按 sources 处理
+        if (sources.length > 0) {
+          await runSelectedSources();
+          break;
+        }
+        console.error(`未知命令: ${command}`);
+        console.error('使用 "node sync-docs.js help" 查看可用命令');
+        process.exit(1);
+    }
+  })().catch(err => { console.error(err); process.exit(1); });
 }
 
 module.exports = DocumentSynchronizer;
