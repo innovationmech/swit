@@ -1,25 +1,11 @@
 version: 2
-updates:
-  # Go Modules updates (root go.mod)
-  - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: daily
-      time: "02:00"
-      timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "go"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    groups:
-      minor-and-patch:
-        applies-to: version-updates
-        update-types: ["minor", "patch"]
 
-  # GitHub Actions updates
+# 仅启用 GitHub Actions 常规版本更新。
+# Go / 其他生态的常规版本更新已关闭，仍然会收到：
+#  - Dependabot Security Updates（若开启仓库安全设置）
+#  - GitHub Advisory Database 中涉及到的安全补丁 PR
+# 如需恢复 Go 模块或其他生态更新，在下方添加相应条目即可。
+updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -34,58 +20,3 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
-
-  # Docker (for Dockerfiles)
-  - package-ecosystem: "docker"
-    directory: "/build/docker"
-    schedule:
-      interval: weekly
-      day: "sunday"
-      time: "04:00"
-      timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "docker"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-
-  # NPM dependencies for docs site if present
-  - package-ecosystem: "npm"
-    directory: "/docs/pages"
-    schedule:
-      interval: weekly
-      day: "monday"
-      time: "05:00"
-      timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "docs"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    ignore:
-      - dependency-name: "playwright*"
-        update-types: ["version-update:semver-major"]
-
-  # Go modules for examples folder (if separate go.mod files exist)
-  - package-ecosystem: "gomod"
-    directory: "/examples/full-featured-service"
-    schedule:
-      interval: weekly
-      day: "tuesday"
-      time: "02:30"
-      timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "examples"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    groups:
-      minor-and-patch:
-        applies-to: version-updates
-        update-types: ["minor", "patch"]
