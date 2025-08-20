@@ -629,7 +629,38 @@ func CreateMockAPIConfig() APIConfig {
 				Streaming: StreamingNone,
 			},
 		},
-		Models:   []string{"User", "UserList"},
+		Models: []Model{
+			{
+				Name:        "User",
+				Description: "User model",
+				Fields: []Field{
+					{
+						Name:     "id",
+						Type:     "string",
+						Required: true,
+					},
+					{
+						Name:     "name",
+						Type:     "string",
+						Required: true,
+					},
+				},
+			},
+			{
+				Name:        "UserList",
+				Description: "User list model",
+				Fields: []Field{
+					{
+						Name: "users",
+						Type: "[]User",
+					},
+					{
+						Name: "total",
+						Type: "int",
+					},
+				},
+			},
+		},
 		Auth:     true,
 		Metadata: map[string]string{"version": "v1"},
 	}

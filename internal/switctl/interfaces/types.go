@@ -89,9 +89,10 @@ type APIConfig struct {
 	Name        string            `yaml:"name" json:"name" validate:"required"`
 	Version     string            `yaml:"version" json:"version" default:"v1"`
 	Service     string            `yaml:"service" json:"service" validate:"required"`
+	BasePath    string            `yaml:"base_path" json:"base_path"`
 	Methods     []HTTPMethod      `yaml:"methods" json:"methods"`
 	GRPCMethods []GRPCMethod      `yaml:"grpc_methods" json:"grpc_methods"`
-	Models      []string          `yaml:"models" json:"models"`
+	Models      []Model           `yaml:"models" json:"models"`
 	Middleware  []string          `yaml:"middleware" json:"middleware"`
 	Auth        bool              `yaml:"auth" json:"auth" default:"false"`
 	Metadata    map[string]string `yaml:"metadata" json:"metadata"`
@@ -144,20 +145,31 @@ type ResponseModel struct {
 	Errors []ErrorModel `yaml:"errors" json:"errors"`
 }
 
+// Model represents a data model.
+type Model struct {
+	Name        string  `yaml:"name" json:"name" validate:"required"`
+	Description string  `yaml:"description" json:"description"`
+	Fields      []Field `yaml:"fields" json:"fields"`
+}
+
 // ModelConfig represents configuration for model generation.
 type ModelConfig struct {
-	Name       string            `yaml:"name" json:"name" validate:"required"`
-	Package    string            `yaml:"package" json:"package"`
-	Fields     []Field           `yaml:"fields" json:"fields"`
-	Table      string            `yaml:"table" json:"table"`
-	Database   string            `yaml:"database" json:"database"`
-	CRUD       bool              `yaml:"crud" json:"crud" default:"true"`
-	Validation bool              `yaml:"validation" json:"validation" default:"true"`
-	Timestamps bool              `yaml:"timestamps" json:"timestamps" default:"true"`
-	SoftDelete bool              `yaml:"soft_delete" json:"soft_delete" default:"false"`
-	Indexes    []Index           `yaml:"indexes" json:"indexes"`
-	Relations  []Relation        `yaml:"relations" json:"relations"`
-	Metadata   map[string]string `yaml:"metadata" json:"metadata"`
+	Name         string            `yaml:"name" json:"name" validate:"required"`
+	Description  string            `yaml:"description" json:"description"`
+	Package      string            `yaml:"package" json:"package"`
+	Fields       []Field           `yaml:"fields" json:"fields"`
+	Table        string            `yaml:"table" json:"table"`
+	TableName    string            `yaml:"table_name" json:"table_name"`
+	Database     string            `yaml:"database" json:"database"`
+	CRUD         bool              `yaml:"crud" json:"crud" default:"true"`
+	GenerateCRUD bool              `yaml:"generate_crud" json:"generate_crud" default:"true"`
+	GenerateAPI  bool              `yaml:"generate_api" json:"generate_api" default:"false"`
+	Validation   bool              `yaml:"validation" json:"validation" default:"true"`
+	Timestamps   bool              `yaml:"timestamps" json:"timestamps" default:"true"`
+	SoftDelete   bool              `yaml:"soft_delete" json:"soft_delete" default:"false"`
+	Indexes      []Index           `yaml:"indexes" json:"indexes"`
+	Relations    []Relation        `yaml:"relations" json:"relations"`
+	Metadata     map[string]string `yaml:"metadata" json:"metadata"`
 }
 
 // Field represents a model field.
@@ -200,12 +212,14 @@ type Relation struct {
 
 // MiddlewareConfig represents configuration for middleware generation.
 type MiddlewareConfig struct {
-	Name     string            `yaml:"name" json:"name" validate:"required"`
-	Type     string            `yaml:"type" json:"type" validate:"required"`
-	Package  string            `yaml:"package" json:"package"`
-	Features []string          `yaml:"features" json:"features"`
-	Config   map[string]string `yaml:"config" json:"config"`
-	Metadata map[string]string `yaml:"metadata" json:"metadata"`
+	Name         string                 `yaml:"name" json:"name" validate:"required"`
+	Type         string                 `yaml:"type" json:"type" validate:"required"`
+	Description  string                 `yaml:"description" json:"description"`
+	Package      string                 `yaml:"package" json:"package"`
+	Features     []string               `yaml:"features" json:"features"`
+	Dependencies []string               `yaml:"dependencies" json:"dependencies"`
+	Config       map[string]interface{} `yaml:"config" json:"config"`
+	Metadata     map[string]string      `yaml:"metadata" json:"metadata"`
 }
 
 // ProjectConfig represents configuration for project initialization.
@@ -560,10 +574,11 @@ func (vr *ValidationResult) Error() string {
 
 // ValidationError represents a validation error.
 type ValidationError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-	Value   string `json:"value,omitempty"`
-	Rule    string `json:"rule,omitempty"`
+	Field   string      `json:"field"`
+	Message string      `json:"message"`
+	Value   interface{} `json:"value,omitempty"`
+	Rule    string      `json:"rule,omitempty"`
+	Code    string      `json:"code,omitempty"`
 }
 
 // AuditResult represents the result of dependency audit.

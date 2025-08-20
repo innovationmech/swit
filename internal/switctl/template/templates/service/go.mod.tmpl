@@ -1,0 +1,28 @@
+module {{.Service.ModulePath}}
+
+go {{.Service.GoVersion | default "1.19"}}
+
+require (
+	github.com/gin-gonic/gin v1.9.1
+	github.com/spf13/cobra v1.7.0
+	github.com/innovationmech/swit v0.1.0
+{{- if .Service.Features.Database}}
+{{- if eq .Service.Database.Type "mysql"}}
+	gorm.io/driver/mysql v1.5.1
+{{- else if eq .Service.Database.Type "postgres"}}
+	gorm.io/driver/postgres v1.5.2
+{{- else if eq .Service.Database.Type "sqlite"}}
+	gorm.io/driver/sqlite v1.5.2
+{{- end}}
+	gorm.io/gorm v1.25.2
+{{- end}}
+{{- if .Service.Features.Cache}}
+	github.com/go-redis/redis/v8 v8.11.5
+{{- end}}
+{{- if .Service.Features.Authentication}}
+	github.com/golang-jwt/jwt/v4 v4.5.0
+{{- end}}
+{{- if .Service.Features.MessageQueue}}
+	github.com/streadway/amqp v1.1.0
+{{- end}}
+)
