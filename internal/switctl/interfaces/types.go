@@ -31,6 +31,7 @@ type ServiceConfig struct {
 	Description string            `yaml:"description" json:"description"`
 	Author      string            `yaml:"author" json:"author"`
 	Version     string            `yaml:"version" json:"version" default:"0.1.0"`
+	GoVersion   string            `yaml:"go_version" json:"go_version" default:"1.19"`
 	Features    ServiceFeatures   `yaml:"features" json:"features"`
 	Database    DatabaseConfig    `yaml:"database" json:"database"`
 	Auth        AuthConfig        `yaml:"auth" json:"auth"`

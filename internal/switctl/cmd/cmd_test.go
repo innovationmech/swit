@@ -397,24 +397,28 @@ func (s *CmdTestSuite) TestRootCommand_FlagInheritance() {
 	if len(subcommands) > 0 {
 		subCmd := subcommands[0]
 
-		// Check that persistent flags are inherited
+		// Trigger flag initialization to ensure flags are properly loaded
+		subCmd.ParseFlags([]string{})
+
+		// Check that persistent flags are available (either in local flags or inherited)
+		// Some subcommands may redefine these flags, which is expected behavior
 		verboseFlag := subCmd.Flags().Lookup("verbose")
 		if verboseFlag == nil {
 			// If not found in local flags, check inherited flags
 			verboseFlag = subCmd.InheritedFlags().Lookup("verbose")
 		}
-		assert.NotNil(s.T(), verboseFlag, "Subcommands should inherit verbose flag")
+		assert.NotNil(s.T(), verboseFlag, "Subcommands should have access to verbose flag")
 
 		noColorFlag := subCmd.Flags().Lookup("no-color")
 		if noColorFlag == nil {
 			noColorFlag = subCmd.InheritedFlags().Lookup("no-color")
 		}
-		assert.NotNil(s.T(), noColorFlag, "Subcommands should inherit no-color flag")
+		assert.NotNil(s.T(), noColorFlag, "Subcommands should have access to no-color flag")
 
 		configFlag := subCmd.Flags().Lookup("config")
 		if configFlag == nil {
 			configFlag = subCmd.InheritedFlags().Lookup("config")
 		}
-		assert.NotNil(s.T(), configFlag, "Subcommands should inherit config flag")
+		assert.NotNil(s.T(), configFlag, "Subcommands should have access to config flag")
 	}
 }

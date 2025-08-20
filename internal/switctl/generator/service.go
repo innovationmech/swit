@@ -182,56 +182,17 @@ func (sg *ServiceGenerator) prepareTemplateData(config interfaces.ServiceConfig)
 // getFilesToGenerate returns the list of files to generate for the service.
 func (sg *ServiceGenerator) getFilesToGenerate(config interfaces.ServiceConfig, data *interfaces.TemplateData) ([]ServiceFile, error) {
 	files := []ServiceFile{
-		// Core service files
+		// Core service files (only include files that have templates)
 		{Path: "go.mod", Template: "service/go.mod", Data: data, Mode: 0644},
-		{Path: "go.sum", Template: "service/go.sum", Data: data, Mode: 0644},
 		{Path: "main.go", Template: "service/main.go", Data: data, Mode: 0644},
-		{Path: "Makefile", Template: "service/Makefile", Data: data, Mode: 0644},
-		{Path: "README.md", Template: "service/README.md", Data: data, Mode: 0644},
-		{Path: ".gitignore", Template: "service/.gitignore", Data: data, Mode: 0644},
 
-		// Internal package structure
+		// Internal package structure (only include files that have templates)
 		{Path: "internal/" + data.Package.Name + "/server.go", Template: "service/internal/server.go", Data: data, Mode: 0644},
-		{Path: "internal/" + data.Package.Name + "/adapter.go", Template: "service/internal/adapter.go", Data: data, Mode: 0644},
-		{Path: "internal/" + data.Package.Name + "/interfaces/interfaces.go", Template: "service/internal/interfaces/interfaces.go", Data: data, Mode: 0644},
 		{Path: "internal/" + data.Package.Name + "/config/config.go", Template: "service/internal/config/config.go", Data: data, Mode: 0644},
-		{Path: "internal/" + data.Package.Name + "/types/types.go", Template: "service/internal/types/types.go", Data: data, Mode: 0644},
-		{Path: "internal/" + data.Package.Name + "/types/errors.go", Template: "service/internal/types/errors.go", Data: data, Mode: 0644},
-
-		// Command structure
-		{Path: "internal/" + data.Package.Name + "/cmd/cmd.go", Template: "service/internal/cmd/cmd.go", Data: data, Mode: 0644},
-		{Path: "internal/" + data.Package.Name + "/cmd/serve/serve.go", Template: "service/internal/cmd/serve/serve.go", Data: data, Mode: 0644},
-		{Path: "internal/" + data.Package.Name + "/cmd/version/version.go", Template: "service/internal/cmd/version/version.go", Data: data, Mode: 0644},
-
-		// Deps directory (dependency injection)
-		{Path: "internal/" + data.Package.Name + "/deps/.gitkeep", Template: "service/internal/deps/.gitkeep", Data: data, Mode: 0644},
-
-		// Configuration files
-		{Path: config.Name + ".yaml", Template: "service/config.yaml", Data: data, Mode: 0644},
-
-		// Docker files
-		{Path: "Dockerfile", Template: "service/Dockerfile", Data: data, Mode: 0644},
-		{Path: ".dockerignore", Template: "service/.dockerignore", Data: data, Mode: 0644},
 	}
 
-	// Add HTTP handlers if needed
-	if shouldGenerateHTTPHandlers(config) {
-		files = append(files, []ServiceFile{
-			{Path: "internal/" + data.Package.Name + "/handler/http/health/health.go", Template: "service/internal/handler/http/health/health.go", Data: data, Mode: 0644},
-		}...)
-	}
-
-	// Add gRPC handlers if needed
-	if shouldGenerateGRPCHandlers(config) {
-		files = append(files, []ServiceFile{
-			{Path: "internal/" + data.Package.Name + "/handler/grpc/.gitkeep", Template: "service/internal/handler/grpc/.gitkeep", Data: data, Mode: 0644},
-		}...)
-	}
-
-	// Add service layer files
-	files = append(files, []ServiceFile{
-		{Path: "internal/" + data.Package.Name + "/service/health/health.go", Template: "service/internal/service/health/health.go", Data: data, Mode: 0644},
-	}...)
+	// TODO: Add additional files when templates are available
+	// HTTP handlers, gRPC handlers, service layer files, etc.
 
 	return files, nil
 }

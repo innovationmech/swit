@@ -272,6 +272,7 @@ func (e *Engine) registerBuiltinFunctions() {
 	e.funcMap["and"] = and
 	e.funcMap["or"] = or
 	e.funcMap["not"] = not
+	e.funcMap["default"] = defaultValue
 
 	// Date/time functions
 	e.funcMap["now"] = time.Now
@@ -506,6 +507,34 @@ func ge(a, b interface{}) bool {
 func and(a, b bool) bool { return a && b }
 func or(a, b bool) bool  { return a || b }
 func not(a bool) bool    { return !a }
+
+// defaultValue returns the default value if the first value is empty/nil/zero.
+func defaultValue(value, defaultVal interface{}) interface{} {
+	if isEmptyValue(value) {
+		return defaultVal
+	}
+	return value
+}
+
+// isEmptyValue checks if a value is considered "empty" for default purposes.
+func isEmptyValue(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+
+	switch val := v.(type) {
+	case string:
+		return val == ""
+	case int, int32, int64:
+		return val == 0
+	case float32, float64:
+		return val == 0.0
+	case bool:
+		return !val
+	default:
+		return false
+	}
+}
 
 func compareNumbers(a, b interface{}) int {
 	aFloat := toFloat64(a)

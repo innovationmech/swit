@@ -22,6 +22,7 @@
 package cmd
 
 import (
+	"github.com/innovationmech/swit/internal/switctl/cmd/new"
 	"github.com/innovationmech/swit/internal/switctl/cmd/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -57,9 +58,11 @@ Use switctl to:
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Config file path")
 
-	// Add subcommands (will be implemented in future tasks)
+	// Add subcommands
 	rootCmd.AddCommand(version.NewSwitctlVersionCmd())
-	// TODO: Add new commands (new, generate, check, init, dev, deps, config)
+	rootCmd.AddCommand(new.NewNewCommand())
+
+	// TODO: Add remaining commands (generate, check, init, dev, deps, config)
 
 	// Bind flags to viper
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))

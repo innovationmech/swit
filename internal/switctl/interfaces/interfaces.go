@@ -53,6 +53,26 @@ type InteractiveUI interface {
 	ShowError(err error) error
 	// ShowTable displays tabular data.
 	ShowTable(headers []string, rows [][]string) error
+	// PromptConfirm prompts the user for yes/no confirmation.
+	PromptConfirm(prompt string, defaultValue bool) (bool, error)
+	// ShowInfo displays an informational message.
+	ShowInfo(message string) error
+	// PrintSeparator prints a visual separator line.
+	PrintSeparator()
+	// PrintHeader prints a formatted header.
+	PrintHeader(title string)
+	// PrintSubHeader prints a formatted subheader.
+	PrintSubHeader(title string)
+	// GetStyle returns the UI styling configuration.
+	GetStyle() *UIStyle
+	// PromptPassword prompts for password input (hidden).
+	PromptPassword(prompt string) (string, error)
+	// ShowFeatureSelectionMenu shows a feature selection menu.
+	ShowFeatureSelectionMenu() (ServiceFeatures, error)
+	// ShowDatabaseSelectionMenu shows a database selection menu.
+	ShowDatabaseSelectionMenu() (string, error)
+	// ShowAuthSelectionMenu shows an authentication selection menu.
+	ShowAuthSelectionMenu() (string, error)
 }
 
 // Generator provides code generation capabilities.
