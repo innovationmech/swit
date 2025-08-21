@@ -98,6 +98,11 @@ func (m *MockTerminalUI) ShowAuthSelectionMenu() (string, error) {
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockTerminalUI) ShowMultiSelectMenu(title string, options []interfaces.MenuOption) ([]int, error) {
+	args := m.Called(title, options)
+	return args.Get(0).([]int), args.Error(1)
+}
+
 func (m *MockTerminalUI) ShowMenu(title string, options []interfaces.MenuOption) (int, error) {
 	args := m.Called(title, options)
 	return args.Int(0), args.Error(1)

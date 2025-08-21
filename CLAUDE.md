@@ -281,3 +281,9 @@ func (s *MyGRPCService) GetServiceName() string {
 **Documentation Generation** - Update OpenAPI docs with `make swagger`
 **Transport Testing** - Test both gRPC and HTTP endpoints for dual-protocol support
 **API Versioning** - Maintain proper versioning in proto packages for framework APIs
+
+
+## Workflow
+- Must create or update unit test when you’re done making a series of code changes
+- Make sure tests your are making or updates all pass
+- Prefer running single tests, and not the whole test suite, for performance

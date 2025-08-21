@@ -71,6 +71,9 @@ func (m *mockUIAdapter) ShowFeatureSelectionMenu() (interfaces.ServiceFeatures, 
 }
 func (m *mockUIAdapter) ShowDatabaseSelectionMenu() (string, error) { return "sqlite", nil }
 func (m *mockUIAdapter) ShowAuthSelectionMenu() (string, error)     { return "none", nil }
+func (m *mockUIAdapter) ShowMultiSelectMenu(title string, options []interfaces.MenuOption) ([]int, error) {
+	return []int{0}, nil
+}
 
 // mockProgressBar is a test-friendly progress bar
 type mockProgressBar struct{}

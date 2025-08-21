@@ -73,6 +73,8 @@ type InteractiveUI interface {
 	ShowDatabaseSelectionMenu() (string, error)
 	// ShowAuthSelectionMenu shows an authentication selection menu.
 	ShowAuthSelectionMenu() (string, error)
+	// ShowMultiSelectMenu displays a multi-select menu and returns selected option indices.
+	ShowMultiSelectMenu(title string, options []MenuOption) ([]int, error)
 }
 
 // Generator provides code generation capabilities.

@@ -23,7 +23,11 @@ package cmd
 
 import (
 	"github.com/innovationmech/swit/internal/switctl/cmd/check"
+	"github.com/innovationmech/swit/internal/switctl/cmd/config"
+	"github.com/innovationmech/swit/internal/switctl/cmd/deps"
+	"github.com/innovationmech/swit/internal/switctl/cmd/dev"
 	"github.com/innovationmech/swit/internal/switctl/cmd/generate"
+	initcmd "github.com/innovationmech/swit/internal/switctl/cmd/init"
 	"github.com/innovationmech/swit/internal/switctl/cmd/new"
 	"github.com/innovationmech/swit/internal/switctl/cmd/version"
 	"github.com/spf13/cobra"
@@ -65,8 +69,10 @@ Use switctl to:
 	rootCmd.AddCommand(new.NewNewCommand())
 	rootCmd.AddCommand(check.NewCheckCommand())
 	rootCmd.AddCommand(generate.NewGenerateCommand())
-
-	// TODO: Add remaining commands (init, dev, deps, config)
+	rootCmd.AddCommand(initcmd.NewInitCommand())
+	rootCmd.AddCommand(dev.NewDevCommand())
+	rootCmd.AddCommand(deps.NewDepsCommand())
+	rootCmd.AddCommand(config.NewConfigCommand())
 
 	// Bind flags to viper
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))

@@ -902,6 +902,9 @@ func (a *uiAdapter) ShowDatabaseSelectionMenu() (string, error) {
 func (a *uiAdapter) ShowAuthSelectionMenu() (string, error) {
 	return a.terminalUI.ShowAuthSelectionMenu()
 }
+func (a *uiAdapter) ShowMultiSelectMenu(title string, options []interfaces.MenuOption) ([]int, error) {
+	return a.terminalUI.ShowMultiSelectMenu(title, options)
+}
 
 // mockLogger is a simple logger implementation for demonstration
 type mockLogger struct{}
