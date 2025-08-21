@@ -96,9 +96,10 @@ func (sc *SecurityChecker) Check(ctx context.Context) (interfaces.CheckResult, e
 		highCount := 0
 		mediumCount := 0
 		for _, issue := range securityResult.Issues {
-			if issue.Severity == "high" || issue.Severity == "critical" {
+			switch issue.Severity {
+			case "high", "critical":
 				highCount++
-			} else if issue.Severity == "medium" {
+			case "medium":
 				mediumCount++
 			}
 		}
@@ -223,11 +224,12 @@ func (sc *SecurityChecker) runGosec() ([]interfaces.SecurityIssue, int) {
 		args = append(args, "-include", strings.Join(sc.config.IncludeRules, ","))
 	}
 
-	cmd := exec.Command("gosec", args...)
-	cmd.Dir = sc.workDir
-
-	_, cancel := context.WithTimeout(context.Background(), sc.getTimeoutDuration())
+	// Create context for timeout
+	ctx, cancel := context.WithTimeout(context.Background(), sc.getTimeoutDuration())
 	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gosec", args...)
+	cmd.Dir = sc.workDir
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -320,11 +322,12 @@ func (sc *SecurityChecker) runNancy() []interfaces.SecurityIssue {
 		return issues
 	}
 
-	cmd := exec.Command("nancy", "sleuth", "--loud", "--output", "json")
-	cmd.Dir = sc.workDir
+	// Create context for timeout
+	ctx, cancel := context.WithTimeout(context.Background(), sc.getTimeoutDuration())
+	defer cancel()
 
 	// Pipe go list output to nancy
-	goListCmd := exec.Command("go", "list", "-json", "-m", "all")
+	goListCmd := exec.CommandContext(ctx, "go", "list", "-json", "-m", "all")
 	goListCmd.Dir = sc.workDir
 
 	goListOutput, err := goListCmd.Output()
@@ -333,10 +336,9 @@ func (sc *SecurityChecker) runNancy() []interfaces.SecurityIssue {
 		return issues
 	}
 
+	cmd := exec.CommandContext(ctx, "nancy", "sleuth", "--loud", "--output", "json")
+	cmd.Dir = sc.workDir
 	cmd.Stdin = strings.NewReader(string(goListOutput))
-
-	_, cancel := context.WithTimeout(context.Background(), sc.getTimeoutDuration())
-	defer cancel()
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -362,13 +364,13 @@ func (sc *SecurityChecker) parseNancyOutput(output string) []interfaces.Security
 		}
 
 		// Try to parse as JSON
-		var nancyIssue map[string]interface{}
+		var nancyIssue map[string]any
 		if err := json.Unmarshal([]byte(line), &nancyIssue); err != nil {
 			continue
 		}
 
 		// Extract vulnerability information
-		if vuln, ok := nancyIssue["vulnerability"].(map[string]interface{}); ok {
+		if vuln, ok := nancyIssue["vulnerability"].(map[string]any); ok {
 			issue := interfaces.SecurityIssue{
 				ID:          fmt.Sprintf("NANCY-%s", vuln["id"]),
 				Title:       fmt.Sprintf("Dependency vulnerability: %s", vuln["title"]),
@@ -397,12 +399,13 @@ func (sc *SecurityChecker) runTrivy() []interfaces.SecurityIssue {
 		return issues
 	}
 
-	// Scan filesystem
-	cmd := exec.Command("trivy", "fs", "--format", "json", "--security-checks", "vuln", ".")
-	cmd.Dir = sc.workDir
-
-	_, cancel := context.WithTimeout(context.Background(), sc.getTimeoutDuration())
+	// Create context for timeout
+	ctx, cancel := context.WithTimeout(context.Background(), sc.getTimeoutDuration())
 	defer cancel()
+
+	// Scan filesystem
+	cmd := exec.CommandContext(ctx, "trivy", "fs", "--format", "json", "--security-checks", "vuln", ".")
+	cmd.Dir = sc.workDir
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -615,11 +618,11 @@ func (sc *SecurityChecker) containsUnsafeHTTP(line string) bool {
 	for _, pattern := range httpPatterns {
 		if matched, _ := regexp.MatchString(pattern, line); matched {
 			// Allow localhost and development URLs
-			if !strings.Contains(line, "localhost") &&
-				!strings.Contains(line, "127.0.0.1") &&
-				!strings.Contains(line, "example.com") {
-				return true
+			if strings.Contains(line, "localhost") ||
+				strings.Contains(line, "127.0.0.1") {
+				return false
 			}
+			return true
 		}
 	}
 
@@ -633,7 +636,7 @@ func (sc *SecurityChecker) containsWeakCrypto(line string) bool {
 		`sha1\.New\(\)`,
 		`des\.New`,
 		`rc4\.New`,
-		`rand\.Read\(\)`, // Should use crypto/rand
+		// Note: rand.Read analysis removed as it requires import-aware checking
 	}
 
 	for _, pattern := range weakCryptoPatterns {
@@ -820,8 +823,24 @@ func (sc *SecurityChecker) findGoFiles() ([]string, error) {
 // isExcludedFile checks if a file should be excluded.
 func (sc *SecurityChecker) isExcludedFile(file string) bool {
 	for _, pattern := range sc.config.ExcludePatterns {
-		if matched, _ := filepath.Match(pattern, filepath.Base(file)); matched {
-			return true
+		// Handle path-based patterns (containing /)
+		if strings.Contains(pattern, "/") {
+			// Convert glob pattern to regex for path matching
+			if strings.HasSuffix(pattern, "/*") {
+				prefix := strings.TrimSuffix(pattern, "/*")
+				if strings.HasPrefix(file, prefix+"/") {
+					return true
+				}
+			}
+			// Exact path match
+			if matched, _ := filepath.Match(pattern, file); matched {
+				return true
+			}
+		} else {
+			// Filename-only patterns
+			if matched, _ := filepath.Match(pattern, filepath.Base(file)); matched {
+				return true
+			}
 		}
 	}
 	return false

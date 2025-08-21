@@ -22,6 +22,7 @@
 package cmd
 
 import (
+	"github.com/innovationmech/swit/internal/switctl/cmd/check"
 	"github.com/innovationmech/swit/internal/switctl/cmd/new"
 	"github.com/innovationmech/swit/internal/switctl/cmd/version"
 	"github.com/spf13/cobra"
@@ -61,8 +62,9 @@ Use switctl to:
 	// Add subcommands
 	rootCmd.AddCommand(version.NewSwitctlVersionCmd())
 	rootCmd.AddCommand(new.NewNewCommand())
+	rootCmd.AddCommand(check.NewCheckCommand())
 
-	// TODO: Add remaining commands (generate, check, init, dev, deps, config)
+	// TODO: Add remaining commands (generate, init, dev, deps, config)
 
 	// Bind flags to viper
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))

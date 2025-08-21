@@ -697,7 +697,7 @@ func TestAdd(t *testing.T) {
 	}
 }
 
-func BenchmarkTestRunnerWithCoverage(b *testing.B) {
+func BenchmarkTestRunnerLargeCoverage(b *testing.B) {
 	tempDir, err := os.MkdirTemp("", "test-runner-coverage-bench-*")
 	if err != nil {
 		b.Fatal(err)

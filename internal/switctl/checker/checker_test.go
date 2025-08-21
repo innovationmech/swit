@@ -44,31 +44,31 @@ type MockLogger struct {
 type LogMessage struct {
 	Level  string
 	Msg    string
-	Fields map[string]interface{}
+	Fields map[string]any
 }
 
-func (m *MockLogger) Debug(msg string, fields ...interface{}) {
+func (m *MockLogger) Debug(msg string, fields ...any) {
 	m.messages = append(m.messages, LogMessage{Level: "DEBUG", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
-func (m *MockLogger) Info(msg string, fields ...interface{}) {
+func (m *MockLogger) Info(msg string, fields ...any) {
 	m.messages = append(m.messages, LogMessage{Level: "INFO", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
-func (m *MockLogger) Warn(msg string, fields ...interface{}) {
+func (m *MockLogger) Warn(msg string, fields ...any) {
 	m.messages = append(m.messages, LogMessage{Level: "WARN", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
-func (m *MockLogger) Error(msg string, fields ...interface{}) {
+func (m *MockLogger) Error(msg string, fields ...any) {
 	m.messages = append(m.messages, LogMessage{Level: "ERROR", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
-func (m *MockLogger) Fatal(msg string, fields ...interface{}) {
+func (m *MockLogger) Fatal(msg string, fields ...any) {
 	m.messages = append(m.messages, LogMessage{Level: "FATAL", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
-func (m *MockLogger) fieldsToMap(fields []interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
+func (m *MockLogger) fieldsToMap(fields []any) map[string]any {
+	result := make(map[string]any)
 	for i := 0; i < len(fields)-1; i += 2 {
 		if key, ok := fields[i].(string); ok && i+1 < len(fields) {
 			result[key] = fields[i+1]

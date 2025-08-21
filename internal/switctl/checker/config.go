@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -100,20 +101,42 @@ func (cc *ConfigChecker) Check(ctx context.Context) (interfaces.CheckResult, err
 	// Convert validation errors to check details
 	var details []interfaces.CheckDetail
 	for _, err := range validationResult.Errors {
+		rule := err.Rule
+		if rule == "" {
+			rule = err.Code // Use Code as Rule if Rule is empty
+		}
 		details = append(details, interfaces.CheckDetail{
+			File:     err.Field, // Use Field as File
 			Message:  err.Message,
-			Rule:     err.Rule,
+			Rule:     rule,
 			Severity: "error",
 			Context:  err,
 		})
 	}
 	for _, warn := range validationResult.Warnings {
+		rule := warn.Rule
+		if rule == "" {
+			rule = warn.Code // Use Code as Rule if Rule is empty
+		}
 		details = append(details, interfaces.CheckDetail{
+			File:     warn.Field, // Use Field as File
 			Message:  warn.Message,
-			Rule:     warn.Rule,
+			Rule:     rule,
 			Severity: "warning",
 			Context:  warn,
 		})
+	}
+
+	// Calculate score based on validation results
+	score := 100
+	if !validationResult.Valid {
+		score = 0 // No score if there are errors
+	} else if len(validationResult.Warnings) > 0 {
+		// Reduce score based on warnings
+		score = 100 - (len(validationResult.Warnings) * 10)
+		if score < 0 {
+			score = 0
+		}
 	}
 
 	return interfaces.CheckResult{
@@ -122,7 +145,7 @@ func (cc *ConfigChecker) Check(ctx context.Context) (interfaces.CheckResult, err
 		Message:  message,
 		Details:  details,
 		Duration: time.Since(startTime),
-		Score:    100, // Full score if valid, 0 if not
+		Score:    score,
 		MaxScore: 100,
 		Fixable:  false, // Config issues are generally not automatically fixable
 	}, nil
@@ -213,21 +236,34 @@ func (cc *ConfigChecker) validateConfigFile(filename string) ([]interfaces.Valid
 
 	// Determine file type
 	ext := strings.ToLower(filepath.Ext(filename))
+	baseName := filepath.Base(filename)
 
-	switch ext {
-	case ".yaml", ".yml":
+	switch {
+	case baseName == "go.mod":
+		fileErrors, fileWarnings := cc.validateGoModFile(filename)
+		errors = append(errors, fileErrors...)
+		warnings = append(warnings, fileWarnings...)
+	case baseName == ".env":
+		fileErrors, fileWarnings := cc.validateEnvFile(filename)
+		errors = append(errors, fileErrors...)
+		warnings = append(warnings, fileWarnings...)
+	case baseName == ".gitignore":
+		fileErrors, fileWarnings := cc.validateGitignoreFile(filename)
+		errors = append(errors, fileErrors...)
+		warnings = append(warnings, fileWarnings...)
+	case ext == ".yaml" || ext == ".yml":
 		if cc.config.YAMLValidation {
 			fileErrors, fileWarnings := cc.validateYAMLFile(filename)
 			errors = append(errors, fileErrors...)
 			warnings = append(warnings, fileWarnings...)
 		}
-	case ".json":
+	case ext == ".json":
 		if cc.config.JSONValidation {
 			fileErrors, fileWarnings := cc.validateJSONFile(filename)
 			errors = append(errors, fileErrors...)
 			warnings = append(warnings, fileWarnings...)
 		}
-	case ".toml":
+	case ext == ".toml":
 		if cc.config.TOMLValidation {
 			fileErrors, fileWarnings := cc.validateTOMLFile(filename)
 			errors = append(errors, fileErrors...)
@@ -261,8 +297,18 @@ func (cc *ConfigChecker) validateYAMLFile(filename string) ([]interfaces.Validat
 		return errors, warnings
 	}
 
+	// Check for empty file
+	if len(content) == 0 {
+		warnings = append(warnings, interfaces.ValidationError{
+			Field:   filename,
+			Message: "Configuration file is empty",
+			Code:    "EMPTY_CONFIG",
+		})
+		return errors, warnings
+	}
+
 	// Parse YAML
-	var yamlData interface{}
+	var yamlData any
 	err = yaml.Unmarshal(content, &yamlData)
 	if err != nil {
 		errors = append(errors, interfaces.ValidationError{
@@ -304,7 +350,7 @@ func (cc *ConfigChecker) validateJSONFile(filename string) ([]interfaces.Validat
 	}
 
 	// Parse JSON
-	var jsonData interface{}
+	var jsonData any
 	err = json.Unmarshal(content, &jsonData)
 	if err != nil {
 		errors = append(errors, interfaces.ValidationError{
@@ -350,12 +396,12 @@ func (cc *ConfigChecker) validateTOMLFile(filename string) ([]interfaces.Validat
 }
 
 // checkYAMLStructure checks YAML structure for common issues.
-func (cc *ConfigChecker) checkYAMLStructure(filename string, data interface{}) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+func (cc *ConfigChecker) checkYAMLStructure(filename string, data any) ([]interfaces.ValidationError, []interfaces.ValidationError) {
 	var errors []interfaces.ValidationError
 	var warnings []interfaces.ValidationError
 
 	// Check if root is a map (most config files should be)
-	if _, isMap := data.(map[string]interface{}); !isMap {
+	if _, isMap := data.(map[string]any); !isMap {
 		warnings = append(warnings, interfaces.ValidationError{
 			Field:   filename,
 			Message: "Root element is not a map/object - this may be intentional",
@@ -364,7 +410,7 @@ func (cc *ConfigChecker) checkYAMLStructure(filename string, data interface{}) (
 		return errors, warnings
 	}
 
-	rootMap := data.(map[string]interface{})
+	rootMap := data.(map[string]any)
 
 	// Check for empty configuration
 	if len(rootMap) == 0 {
@@ -388,12 +434,12 @@ func (cc *ConfigChecker) checkYAMLStructure(filename string, data interface{}) (
 }
 
 // checkJSONStructure checks JSON structure for common issues.
-func (cc *ConfigChecker) checkJSONStructure(filename string, data interface{}) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+func (cc *ConfigChecker) checkJSONStructure(filename string, data any) ([]interfaces.ValidationError, []interfaces.ValidationError) {
 	var errors []interfaces.ValidationError
 	var warnings []interfaces.ValidationError
 
 	// Similar checks as YAML
-	if _, isMap := data.(map[string]interface{}); !isMap {
+	if _, isMap := data.(map[string]any); !isMap {
 		warnings = append(warnings, interfaces.ValidationError{
 			Field:   filename,
 			Message: "Root element is not an object - this may be intentional",
@@ -402,7 +448,7 @@ func (cc *ConfigChecker) checkJSONStructure(filename string, data interface{}) (
 		return errors, warnings
 	}
 
-	rootMap := data.(map[string]interface{})
+	rootMap := data.(map[string]any)
 	if len(rootMap) == 0 {
 		warnings = append(warnings, interfaces.ValidationError{
 			Field:   filename,
@@ -447,7 +493,7 @@ func (cc *ConfigChecker) validateConfigKey(filename, key string) ([]interfaces.V
 }
 
 // validateConfigSchema validates configuration against known schemas.
-func (cc *ConfigChecker) validateConfigSchema(filename string, data interface{}) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+func (cc *ConfigChecker) validateConfigSchema(filename string, data any) ([]interfaces.ValidationError, []interfaces.ValidationError) {
 	var errors []interfaces.ValidationError
 	var warnings []interfaces.ValidationError
 
@@ -455,7 +501,7 @@ func (cc *ConfigChecker) validateConfigSchema(filename string, data interface{})
 	baseName := filepath.Base(filename)
 
 	switch {
-	case strings.Contains(baseName, "swit"):
+	case strings.Contains(baseName, "swit") || strings.Contains(baseName, "server"):
 		schemaErrors, schemaWarnings := cc.validateSwitConfig(filename, data)
 		errors = append(errors, schemaErrors...)
 		warnings = append(warnings, schemaWarnings...)
@@ -469,11 +515,11 @@ func (cc *ConfigChecker) validateConfigSchema(filename string, data interface{})
 }
 
 // validateSwitConfig validates Swit framework configuration files.
-func (cc *ConfigChecker) validateSwitConfig(filename string, data interface{}) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+func (cc *ConfigChecker) validateSwitConfig(filename string, data any) ([]interfaces.ValidationError, []interfaces.ValidationError) {
 	var errors []interfaces.ValidationError
 	var warnings []interfaces.ValidationError
 
-	rootMap, ok := data.(map[string]interface{})
+	rootMap, ok := data.(map[string]any)
 	if !ok {
 		return errors, warnings
 	}
@@ -508,11 +554,11 @@ func (cc *ConfigChecker) validateSwitConfig(filename string, data interface{}) (
 }
 
 // validateServerConfig validates server configuration section.
-func (cc *ConfigChecker) validateServerConfig(filename string, serverConfig interface{}) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+func (cc *ConfigChecker) validateServerConfig(filename string, serverConfig any) ([]interfaces.ValidationError, []interfaces.ValidationError) {
 	var errors []interfaces.ValidationError
 	var warnings []interfaces.ValidationError
 
-	serverMap, ok := serverConfig.(map[string]interface{})
+	serverMap, ok := serverConfig.(map[string]any)
 	if !ok {
 		errors = append(errors, interfaces.ValidationError{
 			Field:   fmt.Sprintf("%s:server", filename),
@@ -547,11 +593,11 @@ func (cc *ConfigChecker) validateServerConfig(filename string, serverConfig inte
 }
 
 // validateDatabaseConfig validates database configuration section.
-func (cc *ConfigChecker) validateDatabaseConfig(filename string, dbConfig interface{}) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+func (cc *ConfigChecker) validateDatabaseConfig(filename string, dbConfig any) ([]interfaces.ValidationError, []interfaces.ValidationError) {
 	var errors []interfaces.ValidationError
 	var warnings []interfaces.ValidationError
 
-	dbMap, ok := dbConfig.(map[string]interface{})
+	dbMap, ok := dbConfig.(map[string]any)
 	if !ok {
 		errors = append(errors, interfaces.ValidationError{
 			Field:   fmt.Sprintf("%s:database", filename),
@@ -565,14 +611,7 @@ func (cc *ConfigChecker) validateDatabaseConfig(filename string, dbConfig interf
 	if dbType, exists := dbMap["type"]; exists {
 		if typeStr, ok := dbType.(string); ok {
 			supportedTypes := []string{"mysql", "postgresql", "mongodb", "sqlite"}
-			supported := false
-			for _, supported_type := range supportedTypes {
-				if typeStr == supported_type {
-					supported = true
-					break
-				}
-			}
-			if !supported {
+			if !slices.Contains(supportedTypes, typeStr) {
 				warnings = append(warnings, interfaces.ValidationError{
 					Field:   fmt.Sprintf("%s:database.type", filename),
 					Message: fmt.Sprintf("Database type '%s' may not be fully supported", typeStr),
@@ -627,11 +666,12 @@ func (cc *ConfigChecker) validateProtoWithBuf() ([]interfaces.ValidationError, [
 	var errors []interfaces.ValidationError
 	var warnings []interfaces.ValidationError
 
-	cmd := exec.Command("buf", "lint")
-	cmd.Dir = cc.workDir
-
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Create context for timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "buf", "lint")
+	cmd.Dir = cc.workDir
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -820,6 +860,7 @@ func (cc *ConfigChecker) findConfigFiles() ([]string, error) {
 	}
 
 	configExtensions := []string{".yaml", ".yml", ".json", ".toml"}
+	specialConfigFiles := []string{"go.mod", "go.sum", ".env", ".gitignore"}
 
 	for _, searchPath := range searchPaths {
 		err := filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
@@ -836,17 +877,27 @@ func (cc *ConfigChecker) findConfigFiles() ([]string, error) {
 				return nil
 			}
 
-			// Check if file is a configuration file
-			ext := strings.ToLower(filepath.Ext(path))
-			for _, configExt := range configExtensions {
-				if ext == configExt {
-					if !cc.isExcludedFile(path) {
-						relPath, err := filepath.Rel(cc.workDir, path)
-						if err == nil {
-							files = append(files, relPath)
-						}
+			fileName := info.Name()
+
+			// Check for special config files (go.mod, .env, etc.)
+			if slices.Contains(specialConfigFiles, fileName) {
+				if !cc.isExcludedFile(path) {
+					relPath, err := filepath.Rel(cc.workDir, path)
+					if err == nil {
+						files = append(files, relPath)
 					}
-					break
+				}
+				return nil
+			}
+
+			// Check if file is a configuration file by extension
+			ext := strings.ToLower(filepath.Ext(path))
+			if slices.Contains(configExtensions, ext) {
+				if !cc.isExcludedFile(path) {
+					relPath, err := filepath.Rel(cc.workDir, path)
+					if err == nil {
+						files = append(files, relPath)
+					}
 				}
 			}
 
@@ -956,4 +1007,154 @@ func defaultConfigValidationConfig() ConfigValidationConfig {
 			"*.lock",
 		},
 	}
+}
+
+// validateGoModFile validates a Go module file.
+func (cc *ConfigChecker) validateGoModFile(filename string) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+	var errors []interfaces.ValidationError
+	var warnings []interfaces.ValidationError
+
+	// Read file content
+	fullPath := filepath.Join(cc.workDir, filename)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		errors = append(errors, interfaces.ValidationError{
+			Field:   filename,
+			Message: fmt.Sprintf("Failed to read go.mod file: %v", err),
+			Code:    "FILE_READ_ERROR",
+		})
+		return errors, warnings
+	}
+
+	contentStr := string(content)
+	lines := strings.Split(contentStr, "\n")
+
+	// Check for module declaration
+	hasModule := false
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "module ") {
+			hasModule = true
+			// Validate module name
+			moduleName := strings.TrimSpace(strings.TrimPrefix(line, "module"))
+			if moduleName == "" {
+				errors = append(errors, interfaces.ValidationError{
+					Field:   filename,
+					Message: fmt.Sprintf("Module name cannot be empty (line %d)", i+1),
+					Code:    "EMPTY_MODULE_NAME",
+				})
+			}
+			break
+		}
+	}
+
+	if !hasModule {
+		errors = append(errors, interfaces.ValidationError{
+			Field:   filename,
+			Message: "missing module declaration in go.mod",
+			Code:    "MISSING_MODULE_DECLARATION",
+		})
+	}
+
+	// Check Go version if present
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "go ") {
+			version := strings.TrimSpace(strings.TrimPrefix(line, "go"))
+			if !regexp.MustCompile(`^\d+\.\d+(\.\d+)?$`).MatchString(version) {
+				warnings = append(warnings, interfaces.ValidationError{
+					Field:   filename,
+					Message: fmt.Sprintf("Invalid Go version format: %s (line %d)", version, i+1),
+					Code:    "INVALID_GO_VERSION",
+				})
+			}
+			break
+		}
+	}
+
+	return errors, warnings
+}
+
+// validateEnvFile validates an environment file.
+func (cc *ConfigChecker) validateEnvFile(filename string) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+	var errors []interfaces.ValidationError
+	var warnings []interfaces.ValidationError
+
+	// Read file content
+	fullPath := filepath.Join(cc.workDir, filename)
+	_, err := os.ReadFile(fullPath)
+	if err != nil {
+		errors = append(errors, interfaces.ValidationError{
+			Field:   filename,
+			Message: fmt.Sprintf("Failed to read .env file: %v", err),
+			Code:    "FILE_READ_ERROR",
+		})
+		return errors, warnings
+	}
+
+	// Warn about environment files
+	warnings = append(warnings, interfaces.ValidationError{
+		Field:   filename,
+		Message: "Environment file found - ensure it's not committed to version control",
+		Code:    "ENV_FILE_FOUND",
+	})
+
+	// Check if .env is in .gitignore
+	gitignorePath := filepath.Join(cc.workDir, ".gitignore")
+	if gitignoreContent, err := os.ReadFile(gitignorePath); err == nil {
+		gitignoreStr := string(gitignoreContent)
+		if !strings.Contains(gitignoreStr, ".env") {
+			warnings = append(warnings, interfaces.ValidationError{
+				Field:   filename,
+				Message: "Add *.env to .gitignore to prevent committing sensitive data",
+				Code:    "ENV_NOT_IGNORED",
+			})
+		}
+	}
+
+	return errors, warnings
+}
+
+// validateGitignoreFile validates a .gitignore file.
+func (cc *ConfigChecker) validateGitignoreFile(filename string) ([]interfaces.ValidationError, []interfaces.ValidationError) {
+	var errors []interfaces.ValidationError
+	var warnings []interfaces.ValidationError
+
+	// Read file content
+	fullPath := filepath.Join(cc.workDir, filename)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		errors = append(errors, interfaces.ValidationError{
+			Field:   filename,
+			Message: fmt.Sprintf("Failed to read .gitignore file: %v", err),
+			Code:    "FILE_READ_ERROR",
+		})
+		return errors, warnings
+	}
+
+	contentStr := string(content)
+
+	// Check for common patterns that should be ignored
+	commonPatterns := []string{"*.log", "tmp/", "build/", "dist/", ".env"}
+	missing := []string{}
+
+	for _, pattern := range commonPatterns {
+		if !strings.Contains(contentStr, pattern) {
+			missing = append(missing, pattern)
+		}
+	}
+
+	if len(missing) > 0 {
+		warnings = append(warnings, interfaces.ValidationError{
+			Field:   filename,
+			Message: fmt.Sprintf("Consider adding common patterns to .gitignore: %s", strings.Join(missing, ", ")),
+			Code:    "MISSING_COMMON_PATTERNS",
+		})
+	}
+
+	return errors, warnings
 }
