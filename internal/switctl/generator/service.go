@@ -502,8 +502,10 @@ func toPascalCase(s string) string {
 		return s
 	}
 
-	// Split by hyphens and capitalize each part
-	parts := strings.Split(s, "-")
+	// Split by hyphens, underscores, and spaces
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' '
+	})
 	var result strings.Builder
 
 	for _, part := range parts {

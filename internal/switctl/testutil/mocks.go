@@ -50,6 +50,9 @@ func (m *MockTemplateEngine) RenderTemplate(template interfaces.Template, data i
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	args := m.Called(template, data)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]byte), args.Error(1)
 }
 
@@ -83,6 +86,9 @@ func (m *MockTemplate) Name() string {
 // Render mocks the Render method.
 func (m *MockTemplate) Render(data interface{}) ([]byte, error) {
 	args := m.Called(data)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]byte), args.Error(1)
 }
 
@@ -147,6 +153,7 @@ func NewMockFileSystem() *MockFileSystem {
 func (m *MockFileSystem) WriteFile(path string, content []byte, perm int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	args := m.Called(path, content, perm)
 	if args.Error(0) == nil {
 		m.files[path] = content
@@ -422,6 +429,105 @@ func (m *MockProgressBar) GetTotal() int {
 	defer m.mu.RUnlock()
 	return m.total
 }
+
+// MockLogger is a mock implementation of Logger for testing.
+type MockLogger struct {
+	mock.Mock
+	mu sync.RWMutex
+}
+
+// NewMockLogger creates a new mock logger.
+func NewMockLogger() *MockLogger {
+	return &MockLogger{}
+}
+
+// Debug mocks the Debug method.
+func (m *MockLogger) Debug(msg string, fields ...interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	args := make([]interface{}, 0, len(fields)+1)
+	args = append(args, msg)
+	for _, field := range fields {
+		args = append(args, field)
+	}
+	m.Called(args...)
+}
+
+// Info mocks the Info method.
+func (m *MockLogger) Info(msg string, fields ...interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	args := make([]interface{}, 0, len(fields)+1)
+	args = append(args, msg)
+	for _, field := range fields {
+		args = append(args, field)
+	}
+	m.Called(args...)
+}
+
+// Warn mocks the Warn method.
+func (m *MockLogger) Warn(msg string, fields ...interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	args := make([]interface{}, 0, len(fields)+1)
+	args = append(args, msg)
+	for _, field := range fields {
+		args = append(args, field)
+	}
+	m.Called(args...)
+}
+
+// Error mocks the Error method.
+func (m *MockLogger) Error(msg string, fields ...interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	args := make([]interface{}, 0, len(fields)+1)
+	args = append(args, msg)
+	for _, field := range fields {
+		args = append(args, field)
+	}
+	m.Called(args...)
+}
+
+// Fatal mocks the Fatal method.
+func (m *MockLogger) Fatal(msg string, fields ...interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	args := make([]interface{}, 0, len(fields)+1)
+	args = append(args, msg)
+	for _, field := range fields {
+		args = append(args, field)
+	}
+	m.Called(args...)
+}
+
+// NewMockTemplateEngine creates a new mock template engine.
+func NewMockTemplateEngine() *MockTemplateEngine {
+	return &MockTemplateEngine{}
+}
+
+// NoOpLogger is a logger that does nothing - useful for tests where we don't want to mock every log call.
+type NoOpLogger struct{}
+
+// NewNoOpLogger creates a new no-op logger.
+func NewNoOpLogger() *NoOpLogger {
+	return &NoOpLogger{}
+}
+
+// Debug does nothing.
+func (n *NoOpLogger) Debug(msg string, fields ...interface{}) {}
+
+// Info does nothing.
+func (n *NoOpLogger) Info(msg string, fields ...interface{}) {}
+
+// Warn does nothing.
+func (n *NoOpLogger) Warn(msg string, fields ...interface{}) {}
+
+// Error does nothing.
+func (n *NoOpLogger) Error(msg string, fields ...interface{}) {}
+
+// Fatal does nothing.
+func (n *NoOpLogger) Fatal(msg string, fields ...interface{}) {}
 
 // ErrorTemplateEngine is a mock that always returns errors for testing error scenarios.
 type ErrorTemplateEngine struct{}

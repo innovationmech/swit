@@ -50,7 +50,7 @@ func (ag *APIGenerator) GenerateAPI(config interfaces.APIConfig) error {
 	ag.logger.Info("Starting API generation", "api", config.Name, "service", config.Service)
 
 	// Validate configuration
-	if err := ag.validateAPIConfig(config); err != nil {
+	if err := ag.validateAPIConfig(&config); err != nil {
 		return fmt.Errorf("invalid API configuration: %w", err)
 	}
 
@@ -101,7 +101,7 @@ func (ag *APIGenerator) GenerateAPI(config interfaces.APIConfig) error {
 }
 
 // validateAPIConfig validates the API configuration.
-func (ag *APIGenerator) validateAPIConfig(config interfaces.APIConfig) error {
+func (ag *APIGenerator) validateAPIConfig(config *interfaces.APIConfig) error {
 	if config.Name == "" {
 		return fmt.Errorf("API name is required")
 	}

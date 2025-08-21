@@ -77,6 +77,7 @@ func TestServiceConfig() interfaces.ServiceConfig {
 // TestAPIConfig returns a sample API configuration for testing.
 func TestAPIConfig() interfaces.APIConfig {
 	return interfaces.APIConfig{
+		Name:     "test-api",
 		Service:  "test-service",
 		Version:  "v1",
 		BasePath: "/api/v1",

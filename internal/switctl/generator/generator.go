@@ -93,7 +93,7 @@ func (mg *ModelGenerator) GenerateModel(config interfaces.ModelConfig) error {
 	mg.logger.Info("Starting model generation", "model", config.Name)
 
 	// Validate configuration
-	if err := mg.validateModelConfig(config); err != nil {
+	if err := mg.validateModelConfig(&config); err != nil {
 		return fmt.Errorf("invalid model configuration: %w", err)
 	}
 
@@ -127,7 +127,7 @@ func (mg *ModelGenerator) GenerateModel(config interfaces.ModelConfig) error {
 }
 
 // validateModelConfig validates the model configuration.
-func (mg *ModelGenerator) validateModelConfig(config interfaces.ModelConfig) error {
+func (mg *ModelGenerator) validateModelConfig(config *interfaces.ModelConfig) error {
 	if config.Name == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -401,7 +401,7 @@ func (mw *MiddlewareGenerator) GenerateMiddleware(config interfaces.MiddlewareCo
 	mw.logger.Info("Starting middleware generation", "middleware", config.Name, "type", config.Type)
 
 	// Validate configuration
-	if err := mw.validateMiddlewareConfig(config); err != nil {
+	if err := mw.validateMiddlewareConfig(&config); err != nil {
 		return fmt.Errorf("invalid middleware configuration: %w", err)
 	}
 
@@ -426,7 +426,7 @@ func (mw *MiddlewareGenerator) GenerateMiddleware(config interfaces.MiddlewareCo
 }
 
 // validateMiddlewareConfig validates the middleware configuration.
-func (mw *MiddlewareGenerator) validateMiddlewareConfig(config interfaces.MiddlewareConfig) error {
+func (mw *MiddlewareGenerator) validateMiddlewareConfig(config *interfaces.MiddlewareConfig) error {
 	if config.Name == "" {
 		return fmt.Errorf("middleware name is required")
 	}
@@ -587,9 +587,12 @@ func pluralize(s string) string {
 		return s[:len(s)-1] + "ies"
 	}
 	if strings.HasSuffix(s, "s") || strings.HasSuffix(s, "x") ||
-		strings.HasSuffix(s, "z") || strings.HasSuffix(s, "ch") ||
-		strings.HasSuffix(s, "sh") {
+		strings.HasSuffix(s, "ch") || strings.HasSuffix(s, "sh") {
 		return s + "es"
+	}
+	// Special case for words ending in 'z' - double the 'z' and add 'es'
+	if strings.HasSuffix(s, "z") {
+		return s + "zes"
 	}
 	return s + "s"
 }
