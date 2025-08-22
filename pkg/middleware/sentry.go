@@ -242,7 +242,7 @@ func GRPCUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 			case codes.OK:
 				transaction.Status = sentry.SpanStatusOK
 			case codes.Canceled, codes.DeadlineExceeded, codes.Aborted:
-				transaction.Status = sentry.SpanStatusCancelled
+				transaction.Status = sentry.SpanStatusCanceled
 			case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.PermissionDenied, codes.Unauthenticated:
 				transaction.Status = sentry.SpanStatusInvalidArgument
 			case codes.ResourceExhausted:
