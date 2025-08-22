@@ -68,6 +68,13 @@ type BusinessServerWithPerformance interface {
 	GetPerformanceMonitor() *PerformanceMonitor
 }
 
+// BusinessServerWithSentry extends BusinessServerCore with Sentry error monitoring capabilities
+type BusinessServerWithSentry interface {
+	BusinessServerCore
+	// GetSentryManager returns the Sentry manager instance
+	GetSentryManager() *SentryManager
+}
+
 // BusinessServiceRegistrar defines the interface for services to register themselves
 // with the server's transport layer
 type BusinessServiceRegistrar interface {

@@ -51,6 +51,23 @@ func InitLogger() {
 	}
 }
 
+// GetLogger returns the global logger, initializing it if necessary.
+func GetLogger() *zap.Logger {
+	mu.RLock()
+	if initialized && Logger != nil {
+		defer mu.RUnlock()
+		return Logger
+	}
+	mu.RUnlock()
+
+	// Initialize logger if not done yet
+	InitLogger()
+	
+	mu.RLock()
+	defer mu.RUnlock()
+	return Logger
+}
+
 // ResetLogger resets the logger for testing purposes.
 // This should only be used in tests.
 func ResetLogger() {

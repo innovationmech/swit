@@ -38,6 +38,7 @@ type ServerConfig struct {
 	GRPC            GRPCConfig       `yaml:"grpc" json:"grpc"`
 	Discovery       DiscoveryConfig  `yaml:"discovery" json:"discovery"`
 	Middleware      MiddlewareConfig `yaml:"middleware" json:"middleware"`
+	Sentry          SentryConfig     `yaml:"sentry" json:"sentry"`
 	ShutdownTimeout time.Duration    `yaml:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
@@ -63,6 +64,7 @@ type HTTPMiddleware struct {
 	EnableRateLimit bool              `yaml:"enable_rate_limit" json:"enable_rate_limit"`
 	EnableLogging   bool              `yaml:"enable_logging" json:"enable_logging"`
 	EnableTimeout   bool              `yaml:"enable_timeout" json:"enable_timeout"`
+	EnableSentry    bool              `yaml:"enable_sentry" json:"enable_sentry"`
 	CORSConfig      CORSConfig        `yaml:"cors" json:"cors"`
 	RateLimitConfig RateLimitConfig   `yaml:"rate_limit" json:"rate_limit"`
 	TimeoutConfig   TimeoutConfig     `yaml:"timeout" json:"timeout"`
@@ -133,6 +135,7 @@ type GRPCInterceptorConfig struct {
 	EnableMetrics   bool `yaml:"enable_metrics" json:"enable_metrics"`
 	EnableRecovery  bool `yaml:"enable_recovery" json:"enable_recovery"`
 	EnableRateLimit bool `yaml:"enable_rate_limit" json:"enable_rate_limit"`
+	EnableSentry    bool `yaml:"enable_sentry" json:"enable_sentry"`
 }
 
 // GRPCTLSConfig holds gRPC TLS configuration
@@ -180,6 +183,25 @@ type MiddlewareConfig struct {
 	EnableLogging   bool `yaml:"enable_logging" json:"enable_logging"`
 }
 
+// SentryConfig holds Sentry error monitoring configuration
+type SentryConfig struct {
+	Enabled           bool              `yaml:"enabled" json:"enabled"`
+	DSN               string            `yaml:"dsn" json:"dsn"`
+	Environment       string            `yaml:"environment" json:"environment"`
+	Release           string            `yaml:"release" json:"release"`
+	Debug             bool              `yaml:"debug" json:"debug"`
+	SampleRate        float64           `yaml:"sample_rate" json:"sample_rate"`
+	TracesSampleRate  float64           `yaml:"traces_sample_rate" json:"traces_sample_rate"`
+	ProfilesSampleRate float64          `yaml:"profiles_sample_rate" json:"profiles_sample_rate"`
+	AttachStacktrace  bool              `yaml:"attach_stacktrace" json:"attach_stacktrace"`
+	ServerName        string            `yaml:"server_name" json:"server_name"`
+	Tags              map[string]string `yaml:"tags" json:"tags"`
+	BeforeSend        string            `yaml:"before_send" json:"before_send"`
+	EnableTracing     bool              `yaml:"enable_tracing" json:"enable_tracing"`
+	EnableProfiling   bool              `yaml:"enable_profiling" json:"enable_profiling"`
+	FlushTimeout      time.Duration     `yaml:"flush_timeout" json:"flush_timeout"`
+}
+
 // NewServerConfig creates a new ServerConfig with default values
 func NewServerConfig() *ServerConfig {
 	config := &ServerConfig{}
@@ -221,6 +243,7 @@ func (c *ServerConfig) SetDefaults() {
 	c.HTTP.Middleware.EnableRateLimit = false
 	c.HTTP.Middleware.EnableLogging = true
 	c.HTTP.Middleware.EnableTimeout = true
+	c.HTTP.Middleware.EnableSentry = c.Sentry.Enabled
 
 	// CORS defaults - use secure development defaults instead of wildcard
 	if len(c.HTTP.Middleware.CORSConfig.AllowOrigins) == 0 {
@@ -327,6 +350,7 @@ func (c *ServerConfig) SetDefaults() {
 	c.GRPC.Interceptors.EnableMetrics = false
 	c.GRPC.Interceptors.EnableRecovery = true
 	c.GRPC.Interceptors.EnableRateLimit = false
+	c.GRPC.Interceptors.EnableSentry = c.Sentry.Enabled
 
 	// gRPC TLS defaults
 	c.GRPC.TLS.Enabled = false
@@ -357,6 +381,28 @@ func (c *ServerConfig) SetDefaults() {
 	c.Middleware.EnableAuth = false
 	c.Middleware.EnableRateLimit = false
 	c.Middleware.EnableLogging = true
+
+	// Sentry defaults
+	c.Sentry.Enabled = false
+	c.Sentry.Debug = false
+	c.Sentry.SampleRate = 1.0
+	c.Sentry.TracesSampleRate = 0.1
+	c.Sentry.ProfilesSampleRate = 0.1
+	c.Sentry.AttachStacktrace = true
+	c.Sentry.EnableTracing = true
+	c.Sentry.EnableProfiling = false
+	if c.Sentry.FlushTimeout == 0 {
+		c.Sentry.FlushTimeout = 2 * time.Second
+	}
+	if c.Sentry.Environment == "" {
+		c.Sentry.Environment = "production"
+	}
+	if c.Sentry.ServerName == "" {
+		c.Sentry.ServerName = c.ServiceName
+	}
+	if c.Sentry.Tags == nil {
+		c.Sentry.Tags = make(map[string]string)
+	}
 
 	// Server defaults
 	if c.ShutdownTimeout == 0 {
@@ -511,6 +557,28 @@ func (c *ServerConfig) Validate() error {
 		}
 		if c.Discovery.RegistrationTimeout > 5*time.Minute {
 			return fmt.Errorf("discovery.registration_timeout should not exceed 5 minutes")
+		}
+	}
+
+	// Validate Sentry configuration
+	if c.Sentry.Enabled {
+		if c.Sentry.DSN == "" {
+			return fmt.Errorf("sentry.dsn is required when Sentry is enabled")
+		}
+		if c.Sentry.SampleRate < 0 || c.Sentry.SampleRate > 1 {
+			return fmt.Errorf("sentry.sample_rate must be between 0 and 1")
+		}
+		if c.Sentry.TracesSampleRate < 0 || c.Sentry.TracesSampleRate > 1 {
+			return fmt.Errorf("sentry.traces_sample_rate must be between 0 and 1")
+		}
+		if c.Sentry.ProfilesSampleRate < 0 || c.Sentry.ProfilesSampleRate > 1 {
+			return fmt.Errorf("sentry.profiles_sample_rate must be between 0 and 1")
+		}
+		if c.Sentry.FlushTimeout <= 0 {
+			return fmt.Errorf("sentry.flush_timeout must be positive")
+		}
+		if c.Sentry.Environment == "" {
+			return fmt.Errorf("sentry.environment cannot be empty when Sentry is enabled")
 		}
 	}
 

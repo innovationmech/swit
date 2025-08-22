@@ -124,6 +124,15 @@ func (m *MiddlewareManager) ConfigureHTTPMiddleware(router *gin.Engine) error {
 		logger.Logger.Debug("Auth middleware configured")
 	}
 
+	// Configure Sentry middleware
+	if middlewareConfig.EnableSentry && m.config.Sentry.Enabled {
+		sentryMiddleware := m.createSentryMiddleware()
+		if err := sentryMiddleware(router); err != nil {
+			return fmt.Errorf("failed to configure Sentry middleware: %w", err)
+		}
+		logger.Logger.Debug("Sentry middleware configured")
+	}
+
 	// Configure custom headers middleware
 	if len(middlewareConfig.CustomHeaders) > 0 {
 		headersMiddleware := m.createCustomHeadersMiddleware(middlewareConfig.CustomHeaders)
@@ -146,6 +155,7 @@ func (m *MiddlewareManager) ConfigureHTTPMiddleware(router *gin.Engine) error {
 		zap.Bool("rate_limit", middlewareConfig.EnableRateLimit),
 		zap.Bool("logging", middlewareConfig.EnableLogging),
 		zap.Bool("timeout", middlewareConfig.EnableTimeout),
+		zap.Bool("sentry", middlewareConfig.EnableSentry && m.config.Sentry.Enabled),
 		zap.Int("custom_middleware_count", len(m.httpMiddlewares)))
 
 	return nil
@@ -196,6 +206,13 @@ func (m *MiddlewareManager) GetGRPCInterceptors() ([]grpc.UnaryServerInterceptor
 		logger.Logger.Debug("gRPC rate limit interceptors configured")
 	}
 
+	// Add Sentry interceptor
+	if interceptorConfig.EnableSentry && m.config.Sentry.Enabled {
+		unaryInterceptors = append(unaryInterceptors, middleware.GRPCUnaryServerInterceptor())
+		streamInterceptors = append(streamInterceptors, middleware.GRPCStreamServerInterceptor())
+		logger.Logger.Debug("gRPC Sentry interceptors configured")
+	}
+
 	// Add custom interceptors
 	unaryInterceptors = append(unaryInterceptors, m.grpcUnaryInterceptors...)
 	streamInterceptors = append(streamInterceptors, m.grpcStreamInterceptors...)
@@ -206,6 +223,7 @@ func (m *MiddlewareManager) GetGRPCInterceptors() ([]grpc.UnaryServerInterceptor
 		zap.Bool("metrics", interceptorConfig.EnableMetrics),
 		zap.Bool("auth", interceptorConfig.EnableAuth),
 		zap.Bool("rate_limit", interceptorConfig.EnableRateLimit),
+		zap.Bool("sentry", interceptorConfig.EnableSentry && m.config.Sentry.Enabled),
 		zap.Int("custom_unary_count", len(m.grpcUnaryInterceptors)),
 		zap.Int("custom_stream_count", len(m.grpcStreamInterceptors)))
 
@@ -245,6 +263,15 @@ func (m *MiddlewareManager) createConfigurableCORSMiddleware(config CORSConfig) 
 		zap.Int("max_age_seconds", config.MaxAge))
 
 	return cors.New(corsConfig)
+}
+
+// createSentryMiddleware creates Sentry middleware for error reporting
+func (m *MiddlewareManager) createSentryMiddleware() HTTPMiddlewareFunc {
+	return func(router *gin.Engine) error {
+		sentryMiddleware := middleware.SentryMiddleware(false) // Don't repanic, handle gracefully
+		router.Use(sentryMiddleware)
+		return nil
+	}
 }
 
 // createLoggingMiddleware creates logging middleware

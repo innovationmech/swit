@@ -1,0 +1,68 @@
+# Example configuration for Sentry integration
+# This file demonstrates how to configure Sentry error monitoring in the swit framework
+
+service_name: "swit-example-service"
+
+# Sentry configuration for error monitoring and alerting
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN}" # Set via environment variable for security
+  environment: "${SENTRY_ENVIRONMENT:-production}"
+  release: "${SENTRY_RELEASE:-v1.0.0}"
+  debug: false
+  sample_rate: 1.0          # Capture 100% of error events
+  traces_sample_rate: 0.1   # Capture 10% of performance traces
+  profiles_sample_rate: 0.1 # Capture 10% of performance profiles
+  attach_stacktrace: true
+  server_name: "swit-example-service"
+  enable_tracing: true
+  enable_profiling: false
+  flush_timeout: "2s"
+  tags:
+    component: "swit-framework"
+    version: "v1.0.0"
+
+# HTTP transport configuration
+http:
+  port: "8080"
+  address: ":8080"
+  enabled: true
+  middleware:
+    enable_cors: true
+    enable_auth: false
+    enable_rate_limit: false
+    enable_logging: true
+    enable_timeout: true
+    enable_sentry: true  # Automatically set to match sentry.enabled
+
+# gRPC transport configuration
+grpc:
+  port: "9080"
+  address: ":9080"
+  enabled: true
+  enable_reflection: true
+  enable_health_service: true
+  interceptors:
+    enable_auth: false
+    enable_logging: true
+    enable_metrics: false
+    enable_recovery: true
+    enable_rate_limit: false
+    enable_sentry: true  # Automatically set to match sentry.enabled
+
+# Service discovery configuration
+discovery:
+  enabled: true
+  address: "127.0.0.1:8500"
+  service_name: "swit-example-service"
+  tags: ["v1", "sentry-enabled"]
+  failure_mode: "graceful"
+
+# Global middleware configuration
+middleware:
+  enable_cors: true
+  enable_auth: false
+  enable_rate_limit: false
+  enable_logging: true
+
+shutdown_timeout: "5s"

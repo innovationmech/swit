@@ -21,7 +21,7 @@ Swit is a comprehensive microservice framework for Go that provides a unified, p
 - **Configuration Management**: Comprehensive configuration validation with environment-based overrides and sensible defaults
 - **Performance Monitoring**: Built-in metrics collection, performance profiling, and monitoring hooks with threshold violation detection
 - **Service Discovery Integration**: Consul-based service registration with health check integration and automatic deregistration
-- **Middleware Framework**: Configurable middleware stack for both HTTP and gRPC transports including CORS, rate limiting, and timeouts
+- **Middleware Framework**: Configurable middleware stack for both HTTP and gRPC transports including CORS, rate limiting, timeouts, and Sentry error monitoring
 - **Health Check System**: Comprehensive health monitoring with service aggregation and timeout handling
 - **Graceful Lifecycle Management**: Phased startup/shutdown with proper resource cleanup and error handling
 - **Protocol Buffer Integration**: Buf toolchain support for API versioning and automatic documentation generation

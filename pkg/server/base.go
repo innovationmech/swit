@@ -48,6 +48,9 @@ type BusinessServerImpl struct {
 	dependencies         BusinessDependencyContainer
 	serviceRegistrar     BusinessServiceRegistrar
 
+	// Error monitoring
+	sentryManager *SentryManager
+
 	// State management
 	mu      sync.RWMutex
 	started bool
@@ -86,6 +89,13 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 	server.monitor.AddHook(PerformanceLoggingHook)
 	server.monitor.AddHook(PerformanceThresholdViolationHook)
 	server.monitor.AddHook(PerformanceMetricsCollectionHook)
+
+	// Initialize Sentry manager
+	baseLogger := logger.GetLogger() // Assuming the logger package provides a logger instance
+	server.sentryManager = NewSentryManager(&config.Sentry, baseLogger)
+	if err := server.sentryManager.Initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize Sentry: %w", err)
+	}
 
 	// Initialize transports based on configuration
 	if err := server.initializeTransports(); err != nil {
@@ -382,6 +392,13 @@ func (s *BusinessServerImpl) Shutdown() error {
 		}
 	}
 
+	// Shutdown Sentry and flush any pending events
+	if s.sentryManager != nil {
+		if err := s.sentryManager.Shutdown(ctx); err != nil {
+			logger.Logger.Error("Failed to shutdown Sentry", zap.Error(err))
+		}
+	}
+
 	logger.Logger.Info("Base server shutdown completed", zap.String("service", s.config.ServiceName))
 	return nil
 }
@@ -443,6 +460,13 @@ func (s *BusinessServerImpl) GetPerformanceMetrics() *PerformanceMetrics {
 // GetPerformanceMonitor returns the performance monitor instance
 func (s *BusinessServerImpl) GetPerformanceMonitor() *PerformanceMonitor {
 	return s.monitor
+}
+
+// GetSentryManager returns the Sentry manager instance
+func (s *BusinessServerImpl) GetSentryManager() *SentryManager {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sentryManager
 }
 
 // GetUptime returns the server uptime
