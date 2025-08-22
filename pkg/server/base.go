@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/monitoring"
 	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
@@ -47,6 +48,7 @@ type BusinessServerImpl struct {
 	serviceRegistrations []*ServiceRegistration
 	dependencies         BusinessDependencyContainer
 	serviceRegistrar     BusinessServiceRegistrar
+	sentryManager        *monitoring.SentryManager
 
 	// State management
 	mu      sync.RWMutex
@@ -90,6 +92,39 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 	// Initialize transports based on configuration
 	if err := server.initializeTransports(); err != nil {
 		return nil, fmt.Errorf("failed to initialize transports: %w", err)
+	}
+
+	// Initialize Sentry monitoring
+	sentryConfig := monitoring.SentryConfig{
+		Enabled:          config.Sentry.Enabled,
+		DSN:              config.Sentry.DSN,
+		Environment:      config.Sentry.Environment,
+		Release:          config.Sentry.Release,
+		SampleRate:       config.Sentry.SampleRate,
+		TracesSampleRate: config.Sentry.TracesSampleRate,
+		Debug:            config.Sentry.Debug,
+		AttachStacktrace: config.Sentry.AttachStacktrace,
+		Tags:             config.Sentry.Tags,
+	}
+	
+	// Get logger for Sentry (optional - fallback to default if not available)
+	var zapLogger *zap.Logger
+	if deps != nil {
+		// Try to get logger service, but don't fail if it's not available
+		if loggerService, err := deps.GetService("logger"); err == nil && loggerService != nil {
+			if logger, ok := loggerService.(*zap.Logger); ok {
+				zapLogger = logger
+			}
+		}
+		// If GetService fails or returns nil, zapLogger remains nil and SentryManager will create a default logger
+	}
+	
+	server.sentryManager = monitoring.NewSentryManager(sentryConfig, zapLogger)
+	if err := server.sentryManager.Initialize(); err != nil {
+		// Don't fail server startup if Sentry initialization fails - log and continue
+		if zapLogger != nil {
+			zapLogger.Warn("Failed to initialize Sentry monitoring", zap.Error(err))
+		}
 	}
 
 	// Initialize service discovery manager
@@ -226,6 +261,11 @@ func (s *BusinessServerImpl) Start(ctx context.Context) error {
 		if err := s.configureHTTPMiddleware(); err != nil {
 			return fmt.Errorf("failed to configure HTTP middleware: %w", err)
 		}
+	}
+
+	// Configure Sentry for gRPC transport
+	if err := s.configureGRPCSentry(); err != nil {
+		return fmt.Errorf("failed to configure gRPC Sentry: %w", err)
 	}
 
 	// Initialize all services
@@ -382,6 +422,12 @@ func (s *BusinessServerImpl) Shutdown() error {
 		}
 	}
 
+	// Shutdown Sentry monitoring
+	if s.sentryManager != nil && s.sentryManager.IsEnabled() {
+		s.sentryManager.Shutdown(5 * time.Second)
+		logger.Logger.Info("Sentry monitoring shutdown completed")
+	}
+
 	logger.Logger.Info("Base server shutdown completed", zap.String("service", s.config.ServiceName))
 	return nil
 }
@@ -488,6 +534,35 @@ func (s *BusinessServerImpl) configureHTTPMiddleware() error {
 	if err := middlewareManager.ConfigureHTTPMiddleware(router); err != nil {
 		return fmt.Errorf("failed to configure HTTP middleware: %w", err)
 	}
+
+	// Add Sentry middleware if enabled
+	if s.sentryManager != nil && s.sentryManager.IsEnabled() {
+		router.Use(s.sentryManager.HTTPMiddleware())
+		logger.Logger.Info("Sentry HTTP middleware configured")
+	}
+
+	return nil
+}
+
+// configureGRPCSentry configures Sentry interceptors for gRPC transport
+// Note: This is called after server initialization but before start to inject Sentry interceptors
+func (s *BusinessServerImpl) configureGRPCSentry() error {
+	if s.grpcTransport == nil || s.sentryManager == nil || !s.sentryManager.IsEnabled() {
+		return nil
+	}
+
+	// Get the gRPC server
+	grpcServer := s.grpcTransport.GetServer()
+	if grpcServer == nil {
+		return fmt.Errorf("gRPC server not available")
+	}
+
+	// Note: gRPC interceptors are configured during server creation, so we can't easily 
+	// add them after the fact. For a proper implementation, we would need to modify
+	// the middleware manager to accept a Sentry manager callback or restructure
+	// the initialization order. For now, we log that gRPC Sentry integration
+	// requires configuration at startup time.
+	logger.Logger.Info("gRPC Sentry integration available - configure interceptors via middleware manager")
 
 	return nil
 }

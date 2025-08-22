@@ -31,13 +31,14 @@ import (
 )
 
 // ServerConfig holds the complete configuration for a base server instance
-// It includes transport, discovery, and middleware configuration
+// It includes transport, discovery, middleware, and monitoring configuration
 type ServerConfig struct {
 	ServiceName     string           `yaml:"service_name" json:"service_name"`
 	HTTP            HTTPConfig       `yaml:"http" json:"http"`
 	GRPC            GRPCConfig       `yaml:"grpc" json:"grpc"`
 	Discovery       DiscoveryConfig  `yaml:"discovery" json:"discovery"`
 	Middleware      MiddlewareConfig `yaml:"middleware" json:"middleware"`
+	Sentry          SentryConfig     `yaml:"sentry" json:"sentry"`
 	ShutdownTimeout time.Duration    `yaml:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
@@ -178,6 +179,19 @@ type MiddlewareConfig struct {
 	EnableAuth      bool `yaml:"enable_auth" json:"enable_auth"`
 	EnableRateLimit bool `yaml:"enable_rate_limit" json:"enable_rate_limit"`
 	EnableLogging   bool `yaml:"enable_logging" json:"enable_logging"`
+}
+
+// SentryConfig holds Sentry error monitoring configuration
+type SentryConfig struct {
+	Enabled          bool              `yaml:"enabled" json:"enabled"`
+	DSN              string            `yaml:"dsn" json:"dsn"`
+	Environment      string            `yaml:"environment" json:"environment"`
+	Release          string            `yaml:"release" json:"release"`
+	SampleRate       float64           `yaml:"sample_rate" json:"sample_rate"`
+	TracesSampleRate float64           `yaml:"traces_sample_rate" json:"traces_sample_rate"`
+	Debug            bool              `yaml:"debug" json:"debug"`
+	AttachStacktrace bool              `yaml:"attach_stacktrace" json:"attach_stacktrace"`
+	Tags             map[string]string `yaml:"tags" json:"tags"`
 }
 
 // NewServerConfig creates a new ServerConfig with default values
@@ -362,6 +376,21 @@ func (c *ServerConfig) SetDefaults() {
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 5 * time.Second
 	}
+
+	// Sentry defaults
+	if c.Sentry.SampleRate == 0 {
+		c.Sentry.SampleRate = 1.0 // Capture all errors by default
+	}
+	if c.Sentry.TracesSampleRate == 0 {
+		c.Sentry.TracesSampleRate = 0.1 // 10% trace sampling to reduce overhead
+	}
+	c.Sentry.AttachStacktrace = true
+	if c.Sentry.Environment == "" {
+		c.Sentry.Environment = "development"
+	}
+	if c.Sentry.Tags == nil {
+		c.Sentry.Tags = make(map[string]string)
+	}
 }
 
 // Validate validates the configuration and returns any errors
@@ -511,6 +540,19 @@ func (c *ServerConfig) Validate() error {
 		}
 		if c.Discovery.RegistrationTimeout > 5*time.Minute {
 			return fmt.Errorf("discovery.registration_timeout should not exceed 5 minutes")
+		}
+	}
+
+	// Validate Sentry configuration
+	if c.Sentry.Enabled {
+		if c.Sentry.DSN == "" {
+			return fmt.Errorf("sentry.dsn is required when Sentry is enabled")
+		}
+		if c.Sentry.SampleRate < 0 || c.Sentry.SampleRate > 1 {
+			return fmt.Errorf("sentry.sample_rate must be between 0 and 1")
+		}
+		if c.Sentry.TracesSampleRate < 0 || c.Sentry.TracesSampleRate > 1 {
+			return fmt.Errorf("sentry.traces_sample_rate must be between 0 and 1")
 		}
 	}
 

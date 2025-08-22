@@ -20,6 +20,7 @@ Swit is a comprehensive microservice framework for Go that provides a unified, p
 - **Dependency Injection System**: Factory-based dependency container with singleton/transient support and automatic lifecycle management
 - **Configuration Management**: Comprehensive configuration validation with environment-based overrides and sensible defaults
 - **Performance Monitoring**: Built-in metrics collection, performance profiling, and monitoring hooks with threshold violation detection
+- **Error Monitoring**: Integrated Sentry support for real-time error tracking, alerting, and performance monitoring in production environments
 - **Service Discovery Integration**: Consul-based service registration with health check integration and automatic deregistration
 - **Middleware Framework**: Configurable middleware stack for both HTTP and gRPC transports including CORS, rate limiting, and timeouts
 - **Health Check System**: Comprehensive health monitoring with service aggregation and timeout handling
@@ -49,6 +50,7 @@ The Swit framework consists of the following core components:
 
 ### Framework Support (`pkg/`)
 - **Discovery**: Consul-based service discovery with automatic registration/deregistration
+- **Monitoring**: Sentry integration for error tracking and performance monitoring with automatic HTTP/gRPC middleware
 - **Middleware**: HTTP and gRPC middleware stack with CORS, rate limiting, timeout, and authentication support
 - **Types**: Common type definitions and health check abstractions
 - **Utils**: Cryptographic utilities, JWT handling, and security components

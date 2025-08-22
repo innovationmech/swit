@@ -157,6 +157,10 @@ func TestNewBaseServer(t *testing.T) {
 			if mockReg, ok := tt.registrar.(*mockBusinessServiceRegistrar); ok {
 				mockReg.On("RegisterServices", mock.Anything).Return(nil)
 			}
+			if mockDeps, ok := tt.deps.(*mockBusinessDependencyContainer); ok {
+				// Mock GetService call for logger (return nil to indicate no logger service)
+				mockDeps.On("GetService", "logger").Return(nil, fmt.Errorf("service not found"))
+			}
 
 			server, err := NewBusinessServerCore(tt.config, tt.registrar, tt.deps)
 

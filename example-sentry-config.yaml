@@ -1,0 +1,43 @@
+# Example configuration with Sentry monitoring enabled
+service_name: "my-service"
+
+# HTTP server configuration
+http:
+  port: "8080"
+  enabled: true
+  middleware:
+    enable_cors: true
+    enable_logging: true
+
+# gRPC server configuration  
+grpc:
+  port: "9090"
+  enabled: true
+  enable_reflection: true
+
+# Sentry error monitoring configuration
+sentry:
+  enabled: true
+  dsn: "https://your-dsn-key@your-org.sentry.io/your-project-id"
+  environment: "production"
+  release: "v1.0.0"
+  sample_rate: 1.0        # Capture 100% of errors
+  traces_sample_rate: 0.1 # Capture 10% of performance traces
+  debug: false
+  attach_stacktrace: true
+  tags:
+    service: "my-service"
+    team: "backend"
+    region: "us-west-2"
+
+# Service discovery (optional)
+discovery:
+  enabled: false
+
+# Middleware settings
+middleware:
+  enable_cors: true
+  enable_logging: true
+
+# Server shutdown timeout
+shutdown_timeout: 30s
