@@ -887,8 +887,7 @@ func (a *uiAdapter) PrintSeparator()               { a.terminalUI.PrintSeparator
 func (a *uiAdapter) PrintHeader(title string)      { a.terminalUI.PrintHeader(title) }
 func (a *uiAdapter) PrintSubHeader(title string)   { a.terminalUI.PrintSubHeader(title) }
 func (a *uiAdapter) GetStyle() *interfaces.UIStyle {
-	style := a.terminalUI.GetStyle()
-	return &style
+	return a.terminalUI.GetStyle()
 }
 func (a *uiAdapter) PromptPassword(prompt string) (string, error) {
 	return a.terminalUI.PromptPassword(prompt)

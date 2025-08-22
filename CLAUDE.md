@@ -34,6 +34,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make setup-quick` - Quick setup for essential components
 - `make ci` - Run full CI pipeline locally
 
+
+
+### CLI Tool (switctl)
+- `./switctl --help` - Show all available commands
+- `./switctl new service <name>` - Generate new service from template
+- `./switctl version` - Show version information
+
 ### Running Examples
 - Run simple HTTP service: `cd examples/simple-http-service && go run main.go`
 - Run gRPC service: `cd examples/grpc-service && go run main.go`

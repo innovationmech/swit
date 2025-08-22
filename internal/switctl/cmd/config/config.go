@@ -32,6 +32,7 @@ import (
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
+	"github.com/innovationmech/swit/internal/switctl/config"
 	"github.com/innovationmech/swit/internal/switctl/deps"
 	"github.com/innovationmech/swit/internal/switctl/filesystem"
 	"github.com/innovationmech/swit/internal/switctl/interfaces"
@@ -697,7 +698,22 @@ var createDependencyContainer = func() (interfaces.DependencyContainer, error) {
 
 	// Register config manager
 	if err := container.RegisterSingleton("config_manager", func() (interface{}, error) {
-		return NewConfigManager(workDir), nil
+		// Get filesystem service for logger (if available)
+		var logger interfaces.Logger
+		if loggerService, err := container.GetService("logger"); err == nil {
+			logger = loggerService.(interfaces.Logger)
+		}
+
+		// Use the new hierarchical config manager
+		configManager := config.NewHierarchicalConfigManager(workDir, logger)
+
+		// Load configuration
+		if err := configManager.Load(); err != nil && verbose {
+			// Log warning but continue - configuration loading is optional for commands
+			fmt.Fprintf(os.Stderr, "Warning: failed to load configuration: %v\n", err)
+		}
+
+		return configManager, nil
 	}); err != nil {
 		return nil, fmt.Errorf("failed to register config manager: %w", err)
 	}

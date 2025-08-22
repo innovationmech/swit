@@ -28,6 +28,9 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// AnyString returns a mock matcher for any string value
+var AnyString = mock.AnythingOfType("string")
+
 // MockTemplateEngine is a mock implementation of TemplateEngine for testing.
 type MockTemplateEngine struct {
 	mock.Mock
@@ -632,4 +635,100 @@ func (f *FailingFileSystem) Copy(src, dst string) error {
 		return errors.New("copy operation failed")
 	}
 	return nil
+}
+
+// MockConfigManager is a mock implementation of ConfigManager for testing.
+type MockConfigManager struct {
+	mock.Mock
+	config map[string]interface{}
+	mu     sync.RWMutex
+}
+
+// NewMockConfigManager creates a new mock config manager.
+func NewMockConfigManager() *MockConfigManager {
+	return &MockConfigManager{
+		config: make(map[string]interface{}),
+	}
+}
+
+// Get mocks the Get method.
+func (m *MockConfigManager) Get(key string) interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	args := m.Called(key)
+	if args.Get(0) == nil {
+		if value, exists := m.config[key]; exists {
+			return value
+		}
+		return nil
+	}
+	return args.Get(0)
+}
+
+// GetString mocks the GetString method.
+func (m *MockConfigManager) GetString(key string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	args := m.Called(key)
+	return args.String(0)
+}
+
+// GetInt mocks the GetInt method.
+func (m *MockConfigManager) GetInt(key string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	args := m.Called(key)
+	return args.Int(0)
+}
+
+// GetBool mocks the GetBool method.
+func (m *MockConfigManager) GetBool(key string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	args := m.Called(key)
+	return args.Bool(0)
+}
+
+// Set mocks the Set method.
+func (m *MockConfigManager) Set(key string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config[key] = value
+	m.Called(key, value)
+}
+
+// Load mocks the Load method.
+func (m *MockConfigManager) Load() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// Save mocks the Save method.
+func (m *MockConfigManager) Save(path string) error {
+	args := m.Called(path)
+	return args.Error(0)
+}
+
+// Validate mocks the Validate method.
+func (m *MockConfigManager) Validate() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// SetConfig sets a config value directly for testing.
+func (m *MockConfigManager) SetConfig(key string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config[key] = value
+}
+
+// GetConfig returns all config values for testing.
+func (m *MockConfigManager) GetConfig() map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make(map[string]interface{})
+	for k, v := range m.config {
+		result[k] = v
+	}
+	return result
 }

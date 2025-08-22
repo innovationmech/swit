@@ -478,10 +478,10 @@ func max(a, b int) int {
 }
 
 // GetStyle returns the current UI style.
-func (ui *TerminalUI) GetStyle() interfaces.UIStyle {
+func (ui *TerminalUI) GetStyle() *interfaces.UIStyle {
 	ui.mu.RLock()
 	defer ui.mu.RUnlock()
-	return ui.style
+	return &ui.style
 }
 
 // SetStyle sets the UI style.

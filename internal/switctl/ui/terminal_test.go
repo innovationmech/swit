@@ -168,7 +168,7 @@ func TestUIStyleMethods(t *testing.T) {
 	// Test setter
 	newStyle := DefaultUIStyle()
 	ui.SetStyle(newStyle)
-	assert.Equal(t, newStyle, ui.GetStyle())
+	assert.Equal(t, &newStyle, ui.GetStyle())
 
 	// Test verbose methods
 	assert.False(t, ui.IsVerbose())
