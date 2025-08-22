@@ -126,8 +126,9 @@ func (sm *SentryManager) CaptureError(err error, tags map[string]string, extra m
 		return nil
 	}
 
-	// Configure scope with additional context
-	eventID := sm.hub.WithScope(func(scope *sentry.Scope) {
+	// Configure scope with additional context and capture the error
+	var eventID *sentry.EventID
+	sm.hub.WithScope(func(scope *sentry.Scope) {
 		// Add tags
 		for key, value := range tags {
 			scope.SetTag(key, value)
@@ -139,7 +140,7 @@ func (sm *SentryManager) CaptureError(err error, tags map[string]string, extra m
 		}
 
 		// Capture the error
-		sm.hub.CaptureException(err)
+		eventID = sm.hub.CaptureException(err)
 	})
 
 	return eventID
@@ -151,8 +152,9 @@ func (sm *SentryManager) CaptureMessage(message string, level sentry.Level, tags
 		return nil
 	}
 
-	// Configure scope with additional context
-	eventID := sm.hub.WithScope(func(scope *sentry.Scope) {
+	// Configure scope with additional context and capture the message
+	var eventID *sentry.EventID
+	sm.hub.WithScope(func(scope *sentry.Scope) {
 		scope.SetLevel(level)
 
 		// Add tags
@@ -166,7 +168,7 @@ func (sm *SentryManager) CaptureMessage(message string, level sentry.Level, tags
 		}
 
 		// Capture the message
-		sm.hub.CaptureMessage(message)
+		eventID = sm.hub.CaptureMessage(message)
 	})
 
 	return eventID
