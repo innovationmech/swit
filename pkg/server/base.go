@@ -56,6 +56,9 @@ type BusinessServerImpl struct {
 	startTime time.Time
 	metrics   *PerformanceMetrics
 	monitor   *PerformanceMonitor
+
+	// Error monitoring
+	sentryManager *SentryManager
 }
 
 // NewBusinessServerCore creates a new base server instance with the provided configuration
@@ -80,6 +83,7 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		transportManager: transport.NewTransportCoordinator(),
 		metrics:          NewPerformanceMetrics(),
 		monitor:          NewPerformanceMonitor(),
+		sentryManager:    NewSentryManager(&config.Sentry),
 	}
 
 	// Add default performance monitoring hooks
@@ -208,8 +212,21 @@ func (s *BusinessServerImpl) Start(ctx context.Context) error {
 	logger.Logger.Info("Starting base server",
 		zap.String("service", s.config.ServiceName),
 		zap.Bool("discovery_enabled", s.config.IsDiscoveryEnabled()),
+		zap.Bool("sentry_enabled", s.config.Sentry.Enabled),
 		zap.String("discovery_failure_mode", string(s.config.Discovery.FailureMode)),
 		zap.String("discovery_description", s.config.GetDiscoveryFailureModeDescription()))
+
+	// Initialize Sentry if enabled
+	if s.config.Sentry.Enabled {
+		if err := s.sentryManager.Initialize(ctx); err != nil {
+			return fmt.Errorf("failed to initialize Sentry: %w", err)
+		}
+
+		// Add context tags for the service
+		s.sentryManager.AddContextTags(s.config.ServiceName, "", s.config.Sentry.Environment)
+		logger.Logger.Info("Sentry error monitoring initialized",
+			zap.String("environment", s.config.Sentry.Environment))
+	}
 
 	// Initialize dependencies if available
 	if s.dependencies != nil {
@@ -358,6 +375,15 @@ func (s *BusinessServerImpl) Shutdown() error {
 		logger.Logger.Error("Error during server stop", zap.Error(err))
 	}
 
+	// Close Sentry manager
+	if s.sentryManager != nil {
+		if err := s.sentryManager.Close(); err != nil {
+			logger.Logger.Error("Failed to close Sentry manager", zap.Error(err))
+		} else if s.sentryManager.IsEnabled() {
+			logger.Logger.Info("Sentry manager closed successfully")
+		}
+	}
+
 	// Close dependencies if available
 	if s.dependencies != nil {
 		// Create a separate timeout context for dependency cleanup
@@ -454,6 +480,11 @@ func (s *BusinessServerImpl) GetUptime() time.Duration {
 		return 0
 	}
 	return time.Since(s.startTime)
+}
+
+// GetSentryManager returns the Sentry manager instance
+func (s *BusinessServerImpl) GetSentryManager() *SentryManager {
+	return s.sentryManager
 }
 
 // isTransportRunning checks if a transport is currently running

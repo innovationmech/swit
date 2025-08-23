@@ -31,13 +31,14 @@ import (
 )
 
 // ServerConfig holds the complete configuration for a base server instance
-// It includes transport, discovery, and middleware configuration
+// It includes transport, discovery, middleware, and monitoring configuration
 type ServerConfig struct {
 	ServiceName     string           `yaml:"service_name" json:"service_name"`
 	HTTP            HTTPConfig       `yaml:"http" json:"http"`
 	GRPC            GRPCConfig       `yaml:"grpc" json:"grpc"`
 	Discovery       DiscoveryConfig  `yaml:"discovery" json:"discovery"`
 	Middleware      MiddlewareConfig `yaml:"middleware" json:"middleware"`
+	Sentry          SentryConfig     `yaml:"sentry" json:"sentry"`
 	ShutdownTimeout time.Duration    `yaml:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
@@ -178,6 +179,29 @@ type MiddlewareConfig struct {
 	EnableAuth      bool `yaml:"enable_auth" json:"enable_auth"`
 	EnableRateLimit bool `yaml:"enable_rate_limit" json:"enable_rate_limit"`
 	EnableLogging   bool `yaml:"enable_logging" json:"enable_logging"`
+}
+
+// SentryConfig holds Sentry error monitoring configuration
+type SentryConfig struct {
+	Enabled              bool              `yaml:"enabled" json:"enabled"`
+	DSN                  string            `yaml:"dsn" json:"dsn"`
+	Environment          string            `yaml:"environment" json:"environment"`
+	Release              string            `yaml:"release" json:"release"`
+	SampleRate           float64           `yaml:"sample_rate" json:"sample_rate"`
+	TracesSampleRate     float64           `yaml:"traces_sample_rate" json:"traces_sample_rate"`
+	AttachStacktrace     bool              `yaml:"attach_stacktrace" json:"attach_stacktrace"`
+	EnableTracing        bool              `yaml:"enable_tracing" json:"enable_tracing"`
+	Debug                bool              `yaml:"debug" json:"debug"`
+	ServerName           string            `yaml:"server_name" json:"server_name"`
+	Tags                 map[string]string `yaml:"tags" json:"tags"`
+	BeforeSend           bool              `yaml:"before_send" json:"before_send"`
+	IntegrateHTTP        bool              `yaml:"integrate_http" json:"integrate_http"`
+	IntegrateGRPC        bool              `yaml:"integrate_grpc" json:"integrate_grpc"`
+	CapturePanics        bool              `yaml:"capture_panics" json:"capture_panics"`
+	MaxBreadcrumbs       int               `yaml:"max_breadcrumbs" json:"max_breadcrumbs"`
+	IgnoreErrors         []string          `yaml:"ignore_errors" json:"ignore_errors"`
+	HTTPIgnorePaths      []string          `yaml:"http_ignore_paths" json:"http_ignore_paths"`
+	HTTPIgnoreStatusCode []int             `yaml:"http_ignore_status_codes" json:"http_ignore_status_codes"`
 }
 
 // NewServerConfig creates a new ServerConfig with default values
@@ -358,6 +382,27 @@ func (c *ServerConfig) SetDefaults() {
 	c.Middleware.EnableRateLimit = false
 	c.Middleware.EnableLogging = true
 
+	// Sentry defaults
+	c.Sentry.Enabled = false
+	c.Sentry.Environment = "development"
+	c.Sentry.SampleRate = 1.0
+	c.Sentry.TracesSampleRate = 0.0
+	c.Sentry.AttachStacktrace = true
+	c.Sentry.EnableTracing = false
+	c.Sentry.Debug = false
+	c.Sentry.BeforeSend = false
+	c.Sentry.IntegrateHTTP = true
+	c.Sentry.IntegrateGRPC = true
+	c.Sentry.CapturePanics = true
+	c.Sentry.MaxBreadcrumbs = 30
+	if c.Sentry.Tags == nil {
+		c.Sentry.Tags = make(map[string]string)
+	}
+	if len(c.Sentry.HTTPIgnoreStatusCode) == 0 {
+		// Default to not capture client errors (4xx)
+		c.Sentry.HTTPIgnoreStatusCode = []int{400, 401, 403, 404}
+	}
+
 	// Server defaults
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 5 * time.Second
@@ -511,6 +556,38 @@ func (c *ServerConfig) Validate() error {
 		}
 		if c.Discovery.RegistrationTimeout > 5*time.Minute {
 			return fmt.Errorf("discovery.registration_timeout should not exceed 5 minutes")
+		}
+	}
+
+	// Validate Sentry configuration
+	if c.Sentry.Enabled {
+		if c.Sentry.DSN == "" {
+			return fmt.Errorf("sentry.dsn is required when Sentry is enabled")
+		}
+
+		// Validate sample rates
+		if c.Sentry.SampleRate < 0.0 || c.Sentry.SampleRate > 1.0 {
+			return fmt.Errorf("sentry.sample_rate must be between 0.0 and 1.0")
+		}
+		if c.Sentry.TracesSampleRate < 0.0 || c.Sentry.TracesSampleRate > 1.0 {
+			return fmt.Errorf("sentry.traces_sample_rate must be between 0.0 and 1.0")
+		}
+
+		// Validate environment
+		if c.Sentry.Environment == "" {
+			return fmt.Errorf("sentry.environment cannot be empty when Sentry is enabled")
+		}
+
+		// Validate max breadcrumbs
+		if c.Sentry.MaxBreadcrumbs < 0 || c.Sentry.MaxBreadcrumbs > 100 {
+			return fmt.Errorf("sentry.max_breadcrumbs must be between 0 and 100")
+		}
+
+		// Validate HTTP ignore status codes
+		for _, code := range c.Sentry.HTTPIgnoreStatusCode {
+			if code < 100 || code > 599 {
+				return fmt.Errorf("sentry.http_ignore_status_codes contains invalid HTTP status code: %d", code)
+			}
 		}
 	}
 

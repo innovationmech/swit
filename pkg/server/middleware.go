@@ -29,6 +29,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
@@ -133,6 +134,15 @@ func (m *MiddlewareManager) ConfigureHTTPMiddleware(router *gin.Engine) error {
 		logger.Logger.Debug("Custom headers middleware configured", zap.Any("headers", middlewareConfig.CustomHeaders))
 	}
 
+	// Configure Sentry middleware if enabled
+	if m.config.Sentry.Enabled && m.config.Sentry.IntegrateHTTP {
+		sentryMiddleware := m.createSentryHTTPMiddleware()
+		if err := sentryMiddleware(router); err != nil {
+			return fmt.Errorf("failed to configure Sentry middleware: %w", err)
+		}
+		logger.Logger.Debug("Sentry HTTP middleware configured")
+	}
+
 	// Apply custom middleware functions
 	for i, middlewareFunc := range m.httpMiddlewares {
 		if err := middlewareFunc(router); err != nil {
@@ -146,6 +156,7 @@ func (m *MiddlewareManager) ConfigureHTTPMiddleware(router *gin.Engine) error {
 		zap.Bool("rate_limit", middlewareConfig.EnableRateLimit),
 		zap.Bool("logging", middlewareConfig.EnableLogging),
 		zap.Bool("timeout", middlewareConfig.EnableTimeout),
+		zap.Bool("sentry", m.config.Sentry.Enabled && m.config.Sentry.IntegrateHTTP),
 		zap.Int("custom_middleware_count", len(m.httpMiddlewares)))
 
 	return nil
@@ -196,6 +207,14 @@ func (m *MiddlewareManager) GetGRPCInterceptors() ([]grpc.UnaryServerInterceptor
 		logger.Logger.Debug("gRPC rate limit interceptors configured")
 	}
 
+	// Add Sentry interceptors if enabled
+	if m.config.Sentry.Enabled && m.config.Sentry.IntegrateGRPC {
+		sentryUnary, sentryStream := m.createSentryGRPCInterceptors()
+		unaryInterceptors = append(unaryInterceptors, sentryUnary)
+		streamInterceptors = append(streamInterceptors, sentryStream)
+		logger.Logger.Debug("Sentry gRPC interceptors configured")
+	}
+
 	// Add custom interceptors
 	unaryInterceptors = append(unaryInterceptors, m.grpcUnaryInterceptors...)
 	streamInterceptors = append(streamInterceptors, m.grpcStreamInterceptors...)
@@ -206,6 +225,7 @@ func (m *MiddlewareManager) GetGRPCInterceptors() ([]grpc.UnaryServerInterceptor
 		zap.Bool("metrics", interceptorConfig.EnableMetrics),
 		zap.Bool("auth", interceptorConfig.EnableAuth),
 		zap.Bool("rate_limit", interceptorConfig.EnableRateLimit),
+		zap.Bool("sentry", m.config.Sentry.Enabled && m.config.Sentry.IntegrateGRPC),
 		zap.Int("custom_unary_count", len(m.grpcUnaryInterceptors)),
 		zap.Int("custom_stream_count", len(m.grpcStreamInterceptors)))
 
@@ -295,6 +315,18 @@ func (m *MiddlewareManager) createCustomHeadersMiddleware(headers map[string]str
 			c.Next()
 		}
 		router.Use(headersMiddleware)
+		return nil
+	}
+}
+
+// createSentryHTTPMiddleware creates Sentry HTTP middleware
+func (m *MiddlewareManager) createSentryHTTPMiddleware() HTTPMiddlewareFunc {
+	return func(router *gin.Engine) error {
+		sentryMiddleware := middleware.NewSentryHTTPMiddleware(middleware.SentryHTTPMiddlewareOptions{
+			IgnorePaths:       m.config.Sentry.HTTPIgnorePaths,
+			IgnoreStatusCodes: m.config.Sentry.HTTPIgnoreStatusCode,
+		})
+		router.Use(sentryMiddleware.GinMiddleware())
 		return nil
 	}
 }
@@ -443,6 +475,15 @@ func (m *MiddlewareManager) createGRPCRateLimitStreamInterceptor() grpc.StreamSe
 		// This would typically use a rate limiter similar to HTTP middleware
 		return handler(srv, stream)
 	}
+}
+
+// createSentryGRPCInterceptors creates Sentry gRPC interceptors
+func (m *MiddlewareManager) createSentryGRPCInterceptors() (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor) {
+	sentryInterceptor := middleware.NewSentryGRPCInterceptor(middleware.SentryGRPCInterceptorOptions{
+		// Default ignore codes - can be configured
+		IgnoreStatusCodes: []codes.Code{codes.NotFound, codes.InvalidArgument},
+	})
+	return sentryInterceptor.UnaryServerInterceptor(), sentryInterceptor.StreamServerInterceptor()
 }
 
 // ServiceSpecificMiddlewareConfig allows services to customize middleware configuration
