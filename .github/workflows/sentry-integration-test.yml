@@ -31,16 +31,13 @@ permissions:
   contents: read
 
 jobs:
-  sentry-integration-test:
-    name: Test Sentry Integration
+  sentry-basic-test:
+    name: Test Sentry Integration (Basic)
     runs-on: ubuntu-latest
     
     strategy:
       matrix:
-        sentry_mode: [disabled, mock_dsn, real_dsn]
-        exclude:
-          # Only test real DSN when explicitly requested or on master branch
-          - sentry_mode: real_dsn
+        sentry_mode: [disabled, mock_dsn]
     
     steps:
     - name: Checkout code
@@ -134,8 +131,79 @@ jobs:
         
         echo "✅ Sentry mock DSN mode test completed"
 
+
+    - name: Test Sentry Configuration Validation
+      run: |
+        cd examples/sentry-example-service
+        echo "Testing Sentry configuration validation..."
+        
+        # Test invalid DSN format
+        export SENTRY_DSN="invalid-dsn"
+        if timeout 5s ./sentry-service 2>/dev/null; then
+          echo "❌ Should fail with invalid DSN"
+          exit 1
+        else
+          echo "✅ Correctly rejected invalid DSN"
+        fi
+        
+        echo "✅ Configuration validation test completed"
+
+    - name: Run Unit Tests for Sentry Components
+      run: |
+        echo "Running unit tests for Sentry-related components..."
+        go test -v ./pkg/server -run ".*Sentry.*" || true
+        go test -v ./pkg/middleware -run ".*Sentry.*" || true
+        echo "✅ Unit tests completed"
+
+    - name: Generate Test Summary
+      if: always()
+      run: |
+        echo "## Sentry Integration Test Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Mode**: ${{ matrix.sentry_mode }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Go Version**: ${{ env.GO_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ All tests passed successfully" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+
+  sentry-real-dsn-test:
+    name: Test Sentry Integration (Real DSN)
+    runs-on: ubuntu-latest
+    # Only run when explicitly requested or on master branch
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.test_real_sentry == true) || github.ref == 'refs/heads/master' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Build sentry example service
+      run: |
+        cd examples/sentry-example-service
+        go build -v -o sentry-service main.go
+
     - name: Test Sentry Real DSN Mode
-      if: matrix.sentry_mode == 'real_dsn' && (github.event_name == 'workflow_dispatch' && github.event.inputs.test_real_sentry == 'true' || github.ref == 'refs/heads/master')
       env:
         SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       run: |
@@ -184,46 +252,17 @@ jobs:
         # Give Sentry time to flush events
         sleep 3
 
-    - name: Test Sentry Configuration Validation
-      run: |
-        cd examples/sentry-example-service
-        echo "Testing Sentry configuration validation..."
-        
-        # Test invalid DSN format
-        export SENTRY_DSN="invalid-dsn"
-        if timeout 5s ./sentry-service 2>/dev/null; then
-          echo "❌ Should fail with invalid DSN"
-          exit 1
-        else
-          echo "✅ Correctly rejected invalid DSN"
-        fi
-        
-        echo "✅ Configuration validation test completed"
-
-    - name: Run Unit Tests for Sentry Components
-      run: |
-        echo "Running unit tests for Sentry-related components..."
-        go test -v ./pkg/server -run ".*Sentry.*" || true
-        go test -v ./pkg/middleware -run ".*Sentry.*" || true
-        echo "✅ Unit tests completed"
-
     - name: Generate Test Summary
       if: always()
       run: |
-        echo "## Sentry Integration Test Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **Mode**: ${{ matrix.sentry_mode }}" >> $GITHUB_STEP_SUMMARY
+        echo "## Sentry Real DSN Test Summary" >> $GITHUB_STEP_SUMMARY
         echo "- **Go Version**: ${{ env.GO_VERSION }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Test Results" >> $GITHUB_STEP_SUMMARY
         if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ All tests passed successfully" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
-        fi
-        
-        if [ "${{ matrix.sentry_mode }}" == "real_dsn" ] && [ -n "${{ secrets.SENTRY_DSN }}" ]; then
+          echo "✅ Real DSN test passed successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Sentry Dashboard" >> $GITHUB_STEP_SUMMARY
           echo "🔍 Check your [Sentry Dashboard](https://sentry.io/) for new events from this test run." >> $GITHUB_STEP_SUMMARY
@@ -232,13 +271,15 @@ jobs:
           echo "- HTTP 500 error from `/api/v1/error`" >> $GITHUB_STEP_SUMMARY
           echo "- Custom event from `/api/v1/custom-sentry`" >> $GITHUB_STEP_SUMMARY
           echo "- Performance transaction from `/api/v1/users`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Real DSN test failed" >> $GITHUB_STEP_SUMMARY
         fi
 
   notify-completion:
     name: Notify Test Completion
     runs-on: ubuntu-latest
-    needs: sentry-integration-test
-    if: always() && github.event_name == 'workflow_dispatch' && github.event.inputs.test_real_sentry == 'true'
+    needs: [sentry-basic-test, sentry-real-dsn-test]
+    if: always() && github.event_name == 'workflow_dispatch' && github.event.inputs.test_real_sentry == true
     
     # This job needs additional permissions to write PR comments
     permissions:
@@ -251,12 +292,12 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const status = '${{ needs.sentry-integration-test.result }}' === 'success' ? '✅' : '❌';
-          const body = `## Sentry Integration Test ${status}
+          const realDsnStatus = '${{ needs.sentry-real-dsn-test.result }}' === 'success' ? '✅' : '❌';
+          const body = `## Sentry Real DSN Integration Test ${realDsnStatus}
           
-          The Sentry integration test has completed with status: **${{ needs.sentry-integration-test.result }}**
+          The Sentry real DSN integration test has completed with status: **${{ needs.sentry-real-dsn-test.result }}**
           
-          ${status === '✅' ? '🔍 Check your Sentry dashboard for new events from this test run.' : ''}
+          ${realDsnStatus === '✅' ? '🔍 Check your Sentry dashboard for new events from this test run.' : ''}
           
           <details>
           <summary>Test Details</summary>
