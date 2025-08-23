@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ import (
 
 // MockLogger implements a simple logger for testing.
 type MockLogger struct {
+	mu       sync.Mutex
 	messages []LogMessage
 }
 
@@ -49,22 +51,32 @@ type LogMessage struct {
 }
 
 func (m *MockLogger) Debug(msg string, fields ...any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.messages = append(m.messages, LogMessage{Level: "DEBUG", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
 func (m *MockLogger) Info(msg string, fields ...any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.messages = append(m.messages, LogMessage{Level: "INFO", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
 func (m *MockLogger) Warn(msg string, fields ...any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.messages = append(m.messages, LogMessage{Level: "WARN", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
 func (m *MockLogger) Error(msg string, fields ...any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.messages = append(m.messages, LogMessage{Level: "ERROR", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
 func (m *MockLogger) Fatal(msg string, fields ...any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.messages = append(m.messages, LogMessage{Level: "FATAL", Msg: msg, Fields: m.fieldsToMap(fields)})
 }
 
@@ -79,6 +91,8 @@ func (m *MockLogger) fieldsToMap(fields []any) map[string]any {
 }
 
 func (m *MockLogger) GetMessages(level string) []LogMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var filtered []LogMessage
 	for _, msg := range m.messages {
 		if msg.Level == level {

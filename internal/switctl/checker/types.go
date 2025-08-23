@@ -23,6 +23,7 @@ package checker
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/innovationmech/swit/internal/switctl/interfaces"
@@ -103,6 +104,7 @@ type Manager struct {
 	checkers []interfaces.QualityChecker
 	timeout  time.Duration
 	parallel bool
+	mu       sync.RWMutex // protects concurrent access to fields
 }
 
 // NewManager creates a new quality checker manager
@@ -117,22 +119,33 @@ func NewManager(logger interfaces.Logger) *Manager {
 
 // SetTimeout sets the timeout for quality checks
 func (m *Manager) SetTimeout(timeout time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.timeout = timeout
 }
 
 // SetParallel sets whether to run checks in parallel
 func (m *Manager) SetParallel(parallel bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.parallel = parallel
 }
 
 // RegisterChecker registers a quality checker with the manager
 func (m *Manager) RegisterChecker(checker interfaces.QualityChecker) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.checkers = append(m.checkers, checker)
 }
 
 // RunAllChecks runs all registered quality checkers
 func (m *Manager) RunAllChecks(ctx context.Context) (*QualityReport, error) {
-	if len(m.checkers) == 0 {
+	m.mu.RLock()
+	checkers := make([]interfaces.QualityChecker, len(m.checkers))
+	copy(checkers, m.checkers)
+	m.mu.RUnlock()
+
+	if len(checkers) == 0 {
 		return &QualityReport{
 			Overall: QualityOverall{
 				Status:  interfaces.CheckStatusSkip,
@@ -142,8 +155,8 @@ func (m *Manager) RunAllChecks(ctx context.Context) (*QualityReport, error) {
 	}
 
 	// For simplicity, run the first checker (usually CompositeChecker)
-	if len(m.checkers) > 0 {
-		checker := m.checkers[0]
+	if len(checkers) > 0 {
+		checker := checkers[0]
 
 		// Create a simple report structure
 		report := &QualityReport{
