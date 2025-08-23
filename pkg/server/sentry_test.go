@@ -575,8 +575,35 @@ func TestSentryConfig_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Store the original Sentry settings
+			originalSentry := tt.config.Sentry
+
 			// Always set defaults first to get valid base config
 			tt.config.SetDefaults()
+
+			// Restore important Sentry settings that were overridden by SetDefaults
+			tt.config.Sentry.Enabled = originalSentry.Enabled
+			if originalSentry.DSN != "" {
+				tt.config.Sentry.DSN = originalSentry.DSN
+			}
+			if originalSentry.SampleRate != 0 {
+				tt.config.Sentry.SampleRate = originalSentry.SampleRate
+			}
+			if originalSentry.TracesSampleRate != 0 {
+				tt.config.Sentry.TracesSampleRate = originalSentry.TracesSampleRate
+			}
+			if originalSentry.Environment != "" {
+				tt.config.Sentry.Environment = originalSentry.Environment
+			}
+			if originalSentry.MaxBreadcrumbs != 0 {
+				tt.config.Sentry.MaxBreadcrumbs = originalSentry.MaxBreadcrumbs
+			}
+			if len(originalSentry.HTTPIgnoreStatusCode) > 0 {
+				tt.config.Sentry.HTTPIgnoreStatusCode = originalSentry.HTTPIgnoreStatusCode
+			}
+			if originalSentry.Tags != nil {
+				tt.config.Sentry.Tags = originalSentry.Tags
+			}
 
 			// Then override specific values for testing
 			if strings.Contains(tt.name, "without DSN") {
