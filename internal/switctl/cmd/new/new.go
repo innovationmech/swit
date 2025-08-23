@@ -40,21 +40,23 @@ import (
 	"github.com/innovationmech/swit/internal/switctl/ui"
 )
 
-var (
-	// Global flags for new commands
-	interactive    bool
-	outputDir      string
-	configFile     string
-	templateDir    string
-	verbose        bool
-	noColor        bool
-	force          bool
-	dryRun         bool
-	skipValidation bool
-)
+// NewCommandConfig holds configuration for new commands
+type NewCommandConfig struct {
+	Interactive    bool
+	OutputDir      string
+	ConfigFile     string
+	TemplateDir    string
+	Verbose        bool
+	NoColor        bool
+	Force          bool
+	DryRun         bool
+	SkipValidation bool
+}
 
 // NewNewCommand creates the main 'new' command with subcommands.
 func NewNewCommand() *cobra.Command {
+	config := &NewCommandConfig{}
+
 	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Create new projects and components",
@@ -80,34 +82,42 @@ Examples:
   # Dry run to preview what will be created
   switctl new service my-service --dry-run`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			return initializeNewCommandConfig(cmd)
+			return initializeNewCommandConfig(cmd, config)
 		},
 	}
 
 	// Add persistent flags
-	cmd.PersistentFlags().BoolVarP(&interactive, "interactive", "i", false, "Use interactive mode for configuration")
-	cmd.PersistentFlags().StringVarP(&outputDir, "output-dir", "o", "", "Output directory for generated files")
-	cmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Configuration file to use")
-	cmd.PersistentFlags().StringVar(&templateDir, "template-dir", "", "Custom template directory")
-	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
-	cmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
-	cmd.PersistentFlags().BoolVar(&force, "force", false, "Overwrite existing files without confirmation")
-	cmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Preview what will be created without actually creating files")
-	cmd.PersistentFlags().BoolVar(&skipValidation, "skip-validation", false, "Skip configuration validation")
+	cmd.PersistentFlags().BoolVarP(&config.Interactive, "interactive", "i", false, "Use interactive mode for configuration")
+	cmd.PersistentFlags().StringVarP(&config.OutputDir, "output-dir", "o", "", "Output directory for generated files")
+	cmd.PersistentFlags().StringVarP(&config.ConfigFile, "config", "c", "", "Configuration file to use")
+	cmd.PersistentFlags().StringVar(&config.TemplateDir, "template-dir", "", "Custom template directory")
+	cmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "Enable verbose output")
+	cmd.PersistentFlags().BoolVar(&config.NoColor, "no-color", false, "Disable colored output")
+	cmd.PersistentFlags().BoolVar(&config.Force, "force", false, "Overwrite existing files without confirmation")
+	cmd.PersistentFlags().BoolVar(&config.DryRun, "dry-run", false, "Preview what will be created without actually creating files")
+	cmd.PersistentFlags().BoolVar(&config.SkipValidation, "skip-validation", false, "Skip configuration validation")
+
+	// Create a new viper instance for this command to avoid global state conflicts
+	v := viper.New()
 
 	// Bind flags to viper
-	viper.BindPFlag("new.interactive", cmd.PersistentFlags().Lookup("interactive"))
-	viper.BindPFlag("new.output_dir", cmd.PersistentFlags().Lookup("output-dir"))
-	viper.BindPFlag("new.config_file", cmd.PersistentFlags().Lookup("config"))
-	viper.BindPFlag("new.template_dir", cmd.PersistentFlags().Lookup("template-dir"))
-	viper.BindPFlag("new.verbose", cmd.PersistentFlags().Lookup("verbose"))
-	viper.BindPFlag("new.no_color", cmd.PersistentFlags().Lookup("no-color"))
-	viper.BindPFlag("new.force", cmd.PersistentFlags().Lookup("force"))
-	viper.BindPFlag("new.dry_run", cmd.PersistentFlags().Lookup("dry-run"))
-	viper.BindPFlag("new.skip_validation", cmd.PersistentFlags().Lookup("skip-validation"))
+	v.BindPFlag("new.interactive", cmd.PersistentFlags().Lookup("interactive"))
+	v.BindPFlag("new.output_dir", cmd.PersistentFlags().Lookup("output-dir"))
+	v.BindPFlag("new.config_file", cmd.PersistentFlags().Lookup("config"))
+	v.BindPFlag("new.template_dir", cmd.PersistentFlags().Lookup("template-dir"))
+	v.BindPFlag("new.verbose", cmd.PersistentFlags().Lookup("verbose"))
+	v.BindPFlag("new.no_color", cmd.PersistentFlags().Lookup("no-color"))
+	v.BindPFlag("new.force", cmd.PersistentFlags().Lookup("force"))
+	v.BindPFlag("new.dry_run", cmd.PersistentFlags().Lookup("dry-run"))
+	v.BindPFlag("new.skip_validation", cmd.PersistentFlags().Lookup("skip-validation"))
+
+	// Store the viper instance and config in command context
+	ctx := context.WithValue(context.Background(), "viper", v)
+	ctx = context.WithValue(ctx, "config", config)
+	cmd.SetContext(ctx)
 
 	// Add subcommands
-	cmd.AddCommand(NewServiceCommand())
+	cmd.AddCommand(NewServiceCommand(config))
 	// TODO: Add more subcommands as needed
 	// cmd.AddCommand(NewProjectCommand())
 	// cmd.AddCommand(NewAPICommand())
@@ -117,69 +127,75 @@ Examples:
 }
 
 // initializeNewCommandConfig initializes configuration for new commands.
-func initializeNewCommandConfig(cmd *cobra.Command) error {
+func initializeNewCommandConfig(cmd *cobra.Command, config *NewCommandConfig) error {
+	// Get viper instance from context
+	v, ok := cmd.Context().Value("viper").(*viper.Viper)
+	if !ok {
+		v = viper.GetViper() // fallback to global viper
+	}
+
 	// Get config values from viper (environment variables, config files, etc.)
-	if viper.IsSet("new.interactive") {
-		interactive = viper.GetBool("new.interactive")
+	if v.IsSet("new.interactive") {
+		config.Interactive = v.GetBool("new.interactive")
 	}
-	if viper.IsSet("new.output_dir") {
-		outputDir = viper.GetString("new.output_dir")
+	if v.IsSet("new.output_dir") {
+		config.OutputDir = v.GetString("new.output_dir")
 	}
-	if viper.IsSet("new.config_file") {
-		configFile = viper.GetString("new.config_file")
+	if v.IsSet("new.config_file") {
+		config.ConfigFile = v.GetString("new.config_file")
 	}
-	if viper.IsSet("new.template_dir") {
-		templateDir = viper.GetString("new.template_dir")
+	if v.IsSet("new.template_dir") {
+		config.TemplateDir = v.GetString("new.template_dir")
 	}
-	if viper.IsSet("new.verbose") {
-		verbose = viper.GetBool("new.verbose")
+	if v.IsSet("new.verbose") {
+		config.Verbose = v.GetBool("new.verbose")
 	}
-	if viper.IsSet("new.no_color") {
-		noColor = viper.GetBool("new.no_color")
+	if v.IsSet("new.no_color") {
+		config.NoColor = v.GetBool("new.no_color")
 	}
-	if viper.IsSet("new.force") {
-		force = viper.GetBool("new.force")
+	if v.IsSet("new.force") {
+		config.Force = v.GetBool("new.force")
 	}
-	if viper.IsSet("new.dry_run") {
-		dryRun = viper.GetBool("new.dry_run")
+	if v.IsSet("new.dry_run") {
+		config.DryRun = v.GetBool("new.dry_run")
 	}
-	if viper.IsSet("new.skip_validation") {
-		skipValidation = viper.GetBool("new.skip_validation")
+	if v.IsSet("new.skip_validation") {
+		config.SkipValidation = v.GetBool("new.skip_validation")
 	}
 
 	// Set default template directory if not provided
-	if templateDir == "" {
+	if config.TemplateDir == "" {
 		// Try to find templates in the switctl binary directory
 		execPath, err := os.Executable()
 		if err == nil {
-			templateDir = filepath.Join(filepath.Dir(execPath), "templates")
+			config.TemplateDir = filepath.Join(filepath.Dir(execPath), "templates")
 		}
 
 		// Fallback to embedded templates or current directory
-		if templateDir == "" || !dirExists(templateDir) {
+		if config.TemplateDir == "" || !dirExists(config.TemplateDir) {
 			// Use embedded templates or fallback
 			wd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get working directory: %w", err)
 			}
-			templateDir = filepath.Join(wd, "internal", "switctl", "template", "templates")
+			config.TemplateDir = filepath.Join(wd, "internal", "switctl", "template", "templates")
 		}
 	}
 
 	// Validate template directory exists
-	if !dirExists(templateDir) {
-		return fmt.Errorf("template directory does not exist: %s", templateDir)
+	if !dirExists(config.TemplateDir) {
+		return fmt.Errorf("template directory does not exist: %s", config.TemplateDir)
 	}
 
-	if verbose {
-		fmt.Printf("Using template directory: %s\n", templateDir)
+	if config.Verbose {
+		fmt.Printf("Using template directory: %s\n", config.TemplateDir)
 	}
 
 	return nil
 }
 
 // createDependencyContainer creates and configures the dependency injection container for new commands.
-var createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+var createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 	// Create a simple dependency container implementation
 	container := &SimpleDependencyContainer{
 		services:   make(map[string]interface{}),
@@ -188,7 +204,7 @@ var createDependencyContainer = func() (interfaces.DependencyContainer, error) {
 	}
 
 	// Register core services
-	if err := registerCoreServices(container); err != nil {
+	if err := registerCoreServices(container, config); err != nil {
 		return nil, fmt.Errorf("failed to register core services: %w", err)
 	}
 
@@ -196,7 +212,7 @@ var createDependencyContainer = func() (interfaces.DependencyContainer, error) {
 }
 
 // registerCoreServices registers core services with the dependency container.
-func registerCoreServices(container *SimpleDependencyContainer) error {
+func registerCoreServices(container *SimpleDependencyContainer, config *NewCommandConfig) error {
 	// Register filesystem service
 	if err := container.RegisterSingleton("filesystem", func() (interface{}, error) {
 		return filesystem.NewOSFileSystem(""), nil
@@ -206,7 +222,7 @@ func registerCoreServices(container *SimpleDependencyContainer) error {
 
 	// Register template engine
 	if err := container.RegisterSingleton("template_engine", func() (interface{}, error) {
-		engine := template.NewEngine(templateDir)
+		engine := template.NewEngine(config.TemplateDir)
 		return engine, nil
 	}); err != nil {
 		return fmt.Errorf("failed to register template engine: %w", err)
@@ -215,8 +231,8 @@ func registerCoreServices(container *SimpleDependencyContainer) error {
 	// Register UI service
 	if err := container.RegisterSingleton("ui", func() (interface{}, error) {
 		return ui.NewTerminalUI(
-			ui.WithVerbose(verbose),
-			ui.WithNoColor(noColor),
+			ui.WithVerbose(config.Verbose),
+			ui.WithNoColor(config.NoColor),
 		), nil
 	}); err != nil {
 		return fmt.Errorf("failed to register UI service: %w", err)
@@ -224,7 +240,7 @@ func registerCoreServices(container *SimpleDependencyContainer) error {
 
 	// Register logger service
 	if err := container.RegisterSingleton("logger", func() (interface{}, error) {
-		return NewSimpleLogger(verbose), nil
+		return NewSimpleLogger(config.Verbose), nil
 	}); err != nil {
 		return fmt.Errorf("failed to register logger service: %w", err)
 	}
@@ -410,23 +426,23 @@ func (l *SimpleLogger) Fatal(msg string, fields ...interface{}) {
 }
 
 // ExecutionContext creates an execution context for command execution.
-func createExecutionContext(ctx context.Context) *interfaces.ExecutionContext {
+func createExecutionContext(ctx context.Context, config *NewCommandConfig) *interfaces.ExecutionContext {
 	wd, _ := os.Getwd()
 
 	return &interfaces.ExecutionContext{
 		WorkDir:    wd,
-		ConfigFile: configFile,
-		Verbose:    verbose,
-		NoColor:    noColor,
+		ConfigFile: config.ConfigFile,
+		Verbose:    config.Verbose,
+		NoColor:    config.NoColor,
 		Options: map[string]interface{}{
-			"output_dir":      outputDir,
-			"template_dir":    templateDir,
-			"force":           force,
-			"dry_run":         dryRun,
-			"skip_validation": skipValidation,
-			"interactive":     interactive,
+			"output_dir":      config.OutputDir,
+			"template_dir":    config.TemplateDir,
+			"force":           config.Force,
+			"dry_run":         config.DryRun,
+			"skip_validation": config.SkipValidation,
+			"interactive":     config.Interactive,
 		},
-		Logger:    NewSimpleLogger(verbose),
+		Logger:    NewSimpleLogger(config.Verbose),
 		StartTime: ctx.Value("start_time").(time.Time),
 		Writer:    os.Stdout,
 	}

@@ -72,8 +72,7 @@ func (s *IntegrationTestSuite) SetupTest() {
 	err = os.Chdir(s.tempDir)
 	s.Require().NoError(err)
 
-	// Reset global variables before each test
-	s.resetGlobalFlags()
+	// No need to reset global flags since we removed them
 }
 
 // TearDownTest runs after each integration test
@@ -86,38 +85,12 @@ func (s *IntegrationTestSuite) TearDownTest() {
 		os.RemoveAll(s.tempDir)
 	}
 
-	// Reset global variables
-	s.resetGlobalFlags()
+	// No need to reset global flags since we removed them
 }
 
 // TearDownSuite runs after all integration tests
 func (s *IntegrationTestSuite) TearDownSuite() {
 	os.Chdir(s.originalWd)
-}
-
-// resetGlobalFlags resets all global flags to default values
-func (s *IntegrationTestSuite) resetGlobalFlags() {
-	// Reset new command flags
-	interactive = false
-	outputDir = ""
-	configFile = ""
-	templateDir = ""
-	verbose = false
-	noColor = false
-	force = false
-	dryRun = false
-	skipValidation = false
-
-	// Reset service command flags
-	serviceName = ""
-	serviceDesc = ""
-	serviceAuthor = ""
-	serviceVersion = "0.1.0"
-	modulePathFlag = ""
-	httpPort = 9000
-	grpcPort = 10000
-	fromConfig = ""
-	quickMode = false
 }
 
 // createTestTemplates creates basic test templates
@@ -191,9 +164,6 @@ func (s *IntegrationTestSuite) createTestConfig() {
 
 // TestNewCommand_CompleteWorkflow tests the complete new command workflow
 func (s *IntegrationTestSuite) TestNewCommand_CompleteWorkflow() {
-	// Set template directory
-	templateDir = s.templateDir
-
 	// Create the new command with service subcommand
 	rootCmd := NewNewCommand()
 
@@ -224,11 +194,13 @@ func (s *IntegrationTestSuite) TestNewServiceCommand_NonInteractiveFlow() {
 	// Skip this test as it requires actual generator implementation
 	s.T().Skip("Skipping actual generation test - requires full implementation")
 
-	// Set template directory
-	templateDir = s.templateDir
+	// Create command configuration
+	config := &NewCommandConfig{
+		TemplateDir: s.templateDir,
+	}
 
 	// Create service command
-	serviceCmd := NewServiceCommand()
+	serviceCmd := NewServiceCommand(config)
 	serviceCmd.SetArgs([]string{
 		"test-service",
 		"--description", "Test service description",
@@ -258,11 +230,13 @@ func (s *IntegrationTestSuite) TestNewServiceCommand_ConfigFile() {
 	// Skip this test as it requires actual generator implementation
 	s.T().Skip("Skipping actual generation test - requires full implementation")
 
-	// Set template directory
-	templateDir = s.templateDir
+	// Create command configuration
+	config := &NewCommandConfig{
+		TemplateDir: s.templateDir,
+	}
 
 	// Create service command with config file
-	serviceCmd := NewServiceCommand()
+	serviceCmd := NewServiceCommand(config)
 	serviceCmd.SetArgs([]string{
 		"--from-config", s.configFile,
 		"--dry-run", // Use dry run
@@ -284,11 +258,13 @@ func (s *IntegrationTestSuite) TestNewServiceCommand_QuickMode() {
 	// Skip this test as it requires actual generator implementation
 	s.T().Skip("Skipping actual generation test - requires full implementation")
 
-	// Set template directory
-	templateDir = s.templateDir
+	// Create command configuration
+	config := &NewCommandConfig{
+		TemplateDir: s.templateDir,
+	}
 
 	// Create service command in quick mode
-	serviceCmd := NewServiceCommand()
+	serviceCmd := NewServiceCommand(config)
 	serviceCmd.SetArgs([]string{
 		"quick-service",
 		"--quick",
@@ -437,7 +413,10 @@ func (s *IntegrationTestSuite) TestServiceCommand_FlagParsing() {
 
 	for _, tc := range testCases {
 		s.T().Run(tc.name, func(t *testing.T) {
-			cmd := NewServiceCommand()
+			config := &NewCommandConfig{
+				TemplateDir: s.templateDir,
+			}
+			cmd := NewServiceCommand(config)
 			tc.test(cmd, tc.args)
 		})
 	}
@@ -456,15 +435,20 @@ func (s *IntegrationTestSuite) TestConfigurationLoading() {
 	assert.True(s.T(), config.Features.Database)
 	assert.Equal(s.T(), "mysql", config.Database.Type)
 
-	// Test building config from flags
-	serviceName = "flag-service"
-	serviceDesc = "Flag description"
-	serviceAuthor = "Flag Author"
-	httpPort = 7070
-	grpcPort = 8080
-	quickMode = true
+	// Test building config from flags - now using configuration structs
+	newConfig := &NewCommandConfig{
+		TemplateDir: s.templateDir,
+	}
+	serviceConfig := &ServiceCommandConfig{
+		ServiceName:   "flag-service",
+		ServiceDesc:   "Flag description",
+		ServiceAuthor: "Flag Author",
+		HTTPPort:      7070,
+		GRPCPort:      8080,
+		QuickMode:     true,
+	}
 
-	flagConfig, err := buildServiceConfigFromFlags()
+	flagConfig, err := buildServiceConfigFromFlags(newConfig, serviceConfig)
 	assert.NoError(s.T(), err)
 	assert.NotNil(s.T(), flagConfig)
 	assert.Equal(s.T(), "flag-service", flagConfig.Name)
@@ -495,18 +479,17 @@ func (s *IntegrationTestSuite) TestErrorHandling() {
 	assert.Contains(s.T(), err.Error(), "configuration file does not exist")
 
 	// Test template directory validation
-	templateDir = "/nonexistent/templates"
+	invalidConfig := &NewCommandConfig{
+		TemplateDir: "/nonexistent/templates",
+	}
 	cmd := NewNewCommand()
-	err = initializeNewCommandConfig(cmd)
+	err = initializeNewCommandConfig(cmd, invalidConfig)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "template directory does not exist")
 }
 
 // TestCommandExecution tests actual command execution scenarios
 func (s *IntegrationTestSuite) TestCommandExecution() {
-	// Set valid template directory
-	templateDir = s.templateDir
-
 	testCases := []struct {
 		name        string
 		args        []string
@@ -558,9 +541,6 @@ func (s *IntegrationTestSuite) TestCommandExecution() {
 
 // TestConcurrentExecution tests concurrent command execution
 func (s *IntegrationTestSuite) TestConcurrentExecution() {
-	// Set valid template directory
-	templateDir = s.templateDir
-
 	const numGoroutines = 5
 	results := make(chan error, numGoroutines)
 
@@ -706,8 +686,11 @@ func (s *IntegrationTestSuite) TestMemoryUsage() {
 	const numIterations = 100
 
 	for i := 0; i < numIterations; i++ {
+		config := &NewCommandConfig{
+			TemplateDir: s.templateDir,
+		}
 		cmd := NewNewCommand()
-		serviceCmd := NewServiceCommand()
+		serviceCmd := NewServiceCommand(config)
 
 		// Basic validation that commands are created properly
 		assert.NotNil(s.T(), cmd)

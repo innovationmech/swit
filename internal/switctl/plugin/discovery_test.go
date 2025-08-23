@@ -490,9 +490,20 @@ func (m *MockPluginDiscovery) DiscoverPlugins() (*DiscoveryResult, error) {
 		m.mu.RLock()
 		if cached, exists := m.cache[cacheKey]; exists {
 			if time.Since(cached.Timestamp) < m.config.CacheTTL {
-				cached.CacheHit = true
+				// Create a copy to avoid race conditions
+				result := &DiscoveryResult{
+					Plugins:            make([]PluginDiscovery, len(cached.Plugins)),
+					ScanTime:           cached.ScanTime,
+					DirectoriesScanned: cached.DirectoriesScanned,
+					FilesScanned:       cached.FilesScanned,
+					Errors:             make([]DiscoveryError, len(cached.Errors)),
+					CacheHit:           true,
+					Timestamp:          cached.Timestamp,
+				}
+				copy(result.Plugins, cached.Plugins)
+				copy(result.Errors, cached.Errors)
 				m.mu.RUnlock()
-				return cached, nil
+				return result, nil
 			}
 		}
 		m.mu.RUnlock()
@@ -523,8 +534,21 @@ func (m *MockPluginDiscovery) DiscoverPlugins() (*DiscoveryResult, error) {
 	// Cache result if enabled
 	if m.config.CacheResults && m.cache != nil {
 		cacheKey := fmt.Sprintf("%v", m.dirs)
+		// Create a copy for caching to avoid race conditions
+		cachedResult := &DiscoveryResult{
+			Plugins:            make([]PluginDiscovery, len(result.Plugins)),
+			ScanTime:           result.ScanTime,
+			DirectoriesScanned: result.DirectoriesScanned,
+			FilesScanned:       result.FilesScanned,
+			Errors:             make([]DiscoveryError, len(result.Errors)),
+			CacheHit:           false,
+			Timestamp:          result.Timestamp,
+		}
+		copy(cachedResult.Plugins, result.Plugins)
+		copy(cachedResult.Errors, result.Errors)
+
 		m.mu.Lock()
-		m.cache[cacheKey] = result
+		m.cache[cacheKey] = cachedResult
 		m.mu.Unlock()
 	}
 

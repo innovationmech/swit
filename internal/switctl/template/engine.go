@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 	"unicode"
@@ -47,6 +48,7 @@ type Engine struct {
 	funcMap     template.FuncMap
 	templates   map[string]*template.Template
 	store       *Store
+	mu          sync.RWMutex // Protects templates map from concurrent access
 }
 
 // GoTemplate wraps a Go text/template.Template to implement the Template interface.
@@ -91,10 +93,13 @@ func NewEngineWithEmbedded() *Engine {
 
 // LoadTemplate loads a template by name.
 func (e *Engine) LoadTemplate(name string) (interfaces.Template, error) {
-	// Check if template is already loaded
+	// Check if template is already loaded (read lock)
+	e.mu.RLock()
 	if tmpl, exists := e.templates[name]; exists {
+		e.mu.RUnlock()
 		return &GoTemplate{template: tmpl, name: name}, nil
 	}
+	e.mu.RUnlock()
 
 	// Load from store
 	content, err := e.store.GetTemplate(name)
@@ -108,8 +113,15 @@ func (e *Engine) LoadTemplate(name string) (interfaces.Template, error) {
 		return nil, fmt.Errorf("failed to parse template %s: %w", name, err)
 	}
 
-	// Cache the template
+	// Cache the template (write lock)
+	e.mu.Lock()
+	// Double-check after acquiring write lock (another goroutine might have loaded it)
+	if existingTmpl, exists := e.templates[name]; exists {
+		e.mu.Unlock()
+		return &GoTemplate{template: existingTmpl, name: name}, nil
+	}
 	e.templates[name] = tmpl
+	e.mu.Unlock()
 
 	return &GoTemplate{template: tmpl, name: name}, nil
 }
@@ -162,7 +174,9 @@ func (e *Engine) RegisterFunction(name string, fn interface{}) error {
 	e.funcMap[name] = fn
 
 	// Clear template cache to force recompilation with new function
+	e.mu.Lock()
 	e.templates = make(map[string]*template.Template)
+	e.mu.Unlock()
 
 	return nil
 }
@@ -180,7 +194,9 @@ func (e *Engine) SetTemplateDir(dir string) error {
 	e.store = NewStore(dir)
 
 	// Clear template cache
+	e.mu.Lock()
 	e.templates = make(map[string]*template.Template)
+	e.mu.Unlock()
 
 	return nil
 }
@@ -222,6 +238,9 @@ func (e *Engine) LoadTemplatesFromDirectory(dir string) error {
 
 // GetLoadedTemplates returns a list of loaded template names.
 func (e *Engine) GetLoadedTemplates() []string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
 	var names []string
 	for name := range e.templates {
 		names = append(names, name)
@@ -231,6 +250,9 @@ func (e *Engine) GetLoadedTemplates() []string {
 
 // ClearCache clears the template cache.
 func (e *Engine) ClearCache() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	e.templates = make(map[string]*template.Template)
 }
 

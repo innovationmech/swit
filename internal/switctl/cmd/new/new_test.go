@@ -66,16 +66,7 @@ func (s *NewCommandTestSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.tempDir = tempDir
 
-	// Reset global variables
-	interactive = false
-	outputDir = ""
-	configFile = ""
-	templateDir = ""
-	verbose = false
-	noColor = false
-	force = false
-	dryRun = false
-	skipValidation = false
+	// No need to reset global variables since we removed them
 
 	// Reset viper
 	viper.Reset()
@@ -104,16 +95,7 @@ func (s *NewCommandTestSuite) TearDownTest() {
 		os.RemoveAll(s.tempDir)
 	}
 
-	// Reset global variables
-	interactive = false
-	outputDir = ""
-	configFile = ""
-	templateDir = ""
-	verbose = false
-	noColor = false
-	force = false
-	dryRun = false
-	skipValidation = false
+	// No need to reset global variables since we removed them
 
 	// Reset viper
 	viper.Reset()
@@ -240,24 +222,31 @@ func (s *NewCommandTestSuite) TestInitializeNewCommandConfig() {
 	err := os.MkdirAll(testTemplateDir, 0755)
 	s.Require().NoError(err)
 
-	// Set the template directory through viper to avoid fallback behavior
-	viper.Set("new.template_dir", testTemplateDir)
-
-	// Test with default values
+	// Test with default values (but with valid template dir set)
 	cmd := NewNewCommand()
-	err = initializeNewCommandConfig(cmd)
+
+	// Get the viper instance from the command context
+	v, ok := cmd.Context().Value("viper").(*viper.Viper)
+	s.Require().True(ok, "Failed to get viper from command context")
+
+	// Set the template directory through the command's viper to avoid fallback behavior
+	v.Set("new.template_dir", testTemplateDir)
+
+	config := &NewCommandConfig{}
+	err = initializeNewCommandConfig(cmd, config)
 	assert.NoError(s.T(), err)
 
 	// Test with viper values set
-	viper.Set("new.interactive", true)
-	viper.Set("new.output_dir", "/custom/output")
-	viper.Set("new.verbose", true)
+	v.Set("new.interactive", true)
+	v.Set("new.output_dir", "/custom/output")
+	v.Set("new.verbose", true)
 
-	err = initializeNewCommandConfig(cmd)
+	config2 := &NewCommandConfig{}
+	err = initializeNewCommandConfig(cmd, config2)
 	assert.NoError(s.T(), err)
-	assert.True(s.T(), interactive)
-	assert.Equal(s.T(), "/custom/output", outputDir)
-	assert.True(s.T(), verbose)
+	assert.True(s.T(), config2.Interactive)
+	assert.Equal(s.T(), "/custom/output", config2.OutputDir)
+	assert.True(s.T(), config2.Verbose)
 }
 
 // TestInitializeNewCommandConfig_TemplateDirectory tests template directory configuration
@@ -267,29 +256,40 @@ func (s *NewCommandTestSuite) TestInitializeNewCommandConfig_TemplateDirectory()
 	err := os.MkdirAll(testTemplateDir, 0755)
 	s.Require().NoError(err)
 
-	// Set template directory through viper (simulates config file or env var)
-	viper.Set("new.template_dir", testTemplateDir)
-
 	cmd := NewNewCommand()
-	err = initializeNewCommandConfig(cmd)
+	config := &NewCommandConfig{} // Start with empty config
+
+	// Get the viper instance from the command context
+	v, ok := cmd.Context().Value("viper").(*viper.Viper)
+	s.Require().True(ok, "Failed to get viper from command context")
+
+	// Set template directory through the command's viper instance
+	v.Set("new.template_dir", testTemplateDir)
+
+	err = initializeNewCommandConfig(cmd, config)
 	assert.NoError(s.T(), err)
-	assert.Equal(s.T(), testTemplateDir, templateDir)
+	assert.Equal(s.T(), testTemplateDir, config.TemplateDir)
 }
 
 // TestInitializeNewCommandConfig_InvalidTemplateDirectory tests error handling for invalid template directory
 func (s *NewCommandTestSuite) TestInitializeNewCommandConfig_InvalidTemplateDirectory() {
-	// Set non-existent template directory
-	templateDir = "/nonexistent/templates"
+	// Create config with non-existent template directory
+	config := &NewCommandConfig{
+		TemplateDir: "/nonexistent/templates",
+	}
 
 	cmd := NewNewCommand()
-	err := initializeNewCommandConfig(cmd)
+	err := initializeNewCommandConfig(cmd, config)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "template directory does not exist")
 }
 
 // TestCreateDependencyContainer tests dependency container creation
 func (s *NewCommandTestSuite) TestCreateDependencyContainer() {
-	container, err := createDependencyContainer()
+	config := &NewCommandConfig{
+		TemplateDir: s.tempDir,
+	}
+	container, err := createDependencyContainer(config)
 	assert.NoError(s.T(), err)
 	assert.NotNil(s.T(), container)
 
@@ -444,15 +444,17 @@ func (s *NewCommandTestSuite) TestSimpleLogger() {
 func (s *NewCommandTestSuite) TestCreateExecutionContext() {
 	ctx := context.WithValue(context.Background(), "start_time", time.Now())
 
-	// Set some global variables
-	configFile = "/test/config.yaml"
-	verbose = true
-	noColor = true
-	outputDir = "/test/output"
-	force = true
-	dryRun = true
+	// Create configuration with test values
+	config := &NewCommandConfig{
+		ConfigFile: "/test/config.yaml",
+		Verbose:    true,
+		NoColor:    true,
+		OutputDir:  "/test/output",
+		Force:      true,
+		DryRun:     true,
+	}
 
-	execCtx := createExecutionContext(ctx)
+	execCtx := createExecutionContext(ctx, config)
 
 	assert.NotNil(s.T(), execCtx)
 	assert.Equal(s.T(), "/test/config.yaml", execCtx.ConfigFile)
@@ -527,7 +529,8 @@ func (s *NewCommandTestSuite) TestErrorHandling() {
 
 	// This should still work because we don't change working directory
 	ctx := context.WithValue(context.Background(), "start_time", time.Now())
-	execCtx := createExecutionContext(ctx)
+	config := &NewCommandConfig{}
+	execCtx := createExecutionContext(ctx, config)
 	assert.NotNil(s.T(), execCtx)
 }
 
@@ -568,7 +571,10 @@ func (s *NewCommandTestSuite) TestFlagCombinations() {
 
 // TestConcurrentAccess tests concurrent access to the dependency container
 func (s *NewCommandTestSuite) TestConcurrentAccess() {
-	container, err := createDependencyContainer()
+	config := &NewCommandConfig{
+		TemplateDir: s.tempDir,
+	}
+	container, err := createDependencyContainer(config)
 	s.Require().NoError(err)
 	defer container.Close()
 
@@ -606,7 +612,10 @@ func (s *NewCommandTestSuite) TestServiceRegistration() {
 		singletons: make(map[string]bool),
 	}
 
-	err := registerCoreServices(container)
+	config := &NewCommandConfig{
+		TemplateDir: s.tempDir,
+	}
+	err := registerCoreServices(container, config)
 	assert.NoError(s.T(), err)
 
 	requiredServices := []string{
@@ -645,11 +654,13 @@ func BenchmarkCreateDependencyContainer(b *testing.B) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	templateDir = tempDir
+	config := &NewCommandConfig{
+		TemplateDir: tempDir,
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		container, err := createDependencyContainer()
+		container, err := createDependencyContainer(config)
 		if err != nil {
 			b.Fatal(err)
 		}

@@ -37,21 +37,23 @@ import (
 	"github.com/innovationmech/swit/internal/switctl/ui"
 )
 
-var (
-	// Service command specific flags
-	serviceName    string
-	serviceDesc    string
-	serviceAuthor  string
-	serviceVersion string
-	modulePathFlag string
-	httpPort       int
-	grpcPort       int
-	fromConfig     string
-	quickMode      bool
-)
+// ServiceCommandConfig holds configuration for service commands
+type ServiceCommandConfig struct {
+	ServiceName    string
+	ServiceDesc    string
+	ServiceAuthor  string
+	ServiceVersion string
+	ModulePathFlag string
+	HTTPPort       int
+	GRPCPort       int
+	FromConfig     string
+	QuickMode      bool
+}
 
 // NewServiceCommand creates the 'new service' command.
-func NewServiceCommand() *cobra.Command {
+func NewServiceCommand(parentConfig *NewCommandConfig) *cobra.Command {
+	serviceConfig := &ServiceCommandConfig{}
+
 	cmd := &cobra.Command{
 		Use:   "service [name]",
 		Short: "Create a new microservice",
@@ -99,42 +101,42 @@ Configuration File:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Set service name from argument if provided
 			if len(args) > 0 {
-				serviceName = args[0]
+				serviceConfig.ServiceName = args[0]
 			}
 
 			// Use interactive mode if explicitly requested or no service name provided
-			if interactive || (len(args) == 0 && fromConfig == "") {
-				return runInteractiveServiceCreation(cmd.Context())
+			if parentConfig.Interactive || (len(args) == 0 && serviceConfig.FromConfig == "") {
+				return runInteractiveServiceCreation(cmd.Context(), parentConfig, serviceConfig)
 			}
 
 			// Use configuration file if specified
-			if fromConfig != "" {
-				return runServiceCreationFromConfig(cmd.Context(), fromConfig)
+			if serviceConfig.FromConfig != "" {
+				return runServiceCreationFromConfig(cmd.Context(), serviceConfig.FromConfig, parentConfig, serviceConfig)
 			}
 
 			// Use non-interactive mode with provided arguments
-			return runNonInteractiveServiceCreation(cmd.Context())
+			return runNonInteractiveServiceCreation(cmd.Context(), parentConfig, serviceConfig)
 		},
 	}
 
 	// Add service-specific flags
-	cmd.Flags().StringVarP(&serviceName, "name", "n", "", "Service name (lowercase, hyphen-separated)")
-	cmd.Flags().StringVarP(&serviceDesc, "description", "d", "", "Service description")
-	cmd.Flags().StringVarP(&serviceAuthor, "author", "a", "", "Service author (Name <email@example.com>)")
-	cmd.Flags().StringVar(&serviceVersion, "version", "0.1.0", "Initial service version")
-	cmd.Flags().StringVarP(&modulePathFlag, "module-path", "m", "", "Go module path (e.g., github.com/org/service)")
-	cmd.Flags().IntVar(&httpPort, "http-port", 9000, "HTTP server port")
-	cmd.Flags().IntVar(&grpcPort, "grpc-port", 10000, "gRPC server port")
-	cmd.Flags().StringVar(&fromConfig, "from-config", "", "Load configuration from YAML file")
-	cmd.Flags().BoolVar(&quickMode, "quick", false, "Create service with minimal features")
+	cmd.Flags().StringVarP(&serviceConfig.ServiceName, "name", "n", "", "Service name (lowercase, hyphen-separated)")
+	cmd.Flags().StringVarP(&serviceConfig.ServiceDesc, "description", "d", "", "Service description")
+	cmd.Flags().StringVarP(&serviceConfig.ServiceAuthor, "author", "a", "", "Service author (Name <email@example.com>)")
+	cmd.Flags().StringVar(&serviceConfig.ServiceVersion, "version", "0.1.0", "Initial service version")
+	cmd.Flags().StringVarP(&serviceConfig.ModulePathFlag, "module-path", "m", "", "Go module path (e.g., github.com/org/service)")
+	cmd.Flags().IntVar(&serviceConfig.HTTPPort, "http-port", 9000, "HTTP server port")
+	cmd.Flags().IntVar(&serviceConfig.GRPCPort, "grpc-port", 10000, "gRPC server port")
+	cmd.Flags().StringVar(&serviceConfig.FromConfig, "from-config", "", "Load configuration from YAML file")
+	cmd.Flags().BoolVar(&serviceConfig.QuickMode, "quick", false, "Create service with minimal features")
 
 	return cmd
 }
 
 // runInteractiveServiceCreation runs the interactive service creation flow.
-func runInteractiveServiceCreation(ctx context.Context) error {
+func runInteractiveServiceCreation(ctx context.Context, parentConfig *NewCommandConfig, serviceConfig *ServiceCommandConfig) error {
 	// Create dependency container
-	container, err := createDependencyContainer()
+	container, err := createDependencyContainer(parentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create dependency container: %w", err)
 	}
@@ -184,13 +186,13 @@ func runInteractiveServiceCreation(ctx context.Context) error {
 	}
 
 	// Generate the service
-	return generateService(ctx, container, config)
+	return generateService(ctx, container, config, parentConfig)
 }
 
 // runNonInteractiveServiceCreation runs non-interactive service creation with flags/defaults.
-func runNonInteractiveServiceCreation(ctx context.Context) error {
+func runNonInteractiveServiceCreation(ctx context.Context, parentConfig *NewCommandConfig, serviceConfig *ServiceCommandConfig) error {
 	// Create dependency container
-	container, err := createDependencyContainer()
+	container, err := createDependencyContainer(parentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create dependency container: %w", err)
 	}
@@ -204,12 +206,12 @@ func runNonInteractiveServiceCreation(ctx context.Context) error {
 	logger := loggerService.(interfaces.Logger)
 
 	// Validate required parameters
-	if serviceName == "" {
+	if serviceConfig.ServiceName == "" {
 		return fmt.Errorf("service name is required. Use --name flag or run in interactive mode")
 	}
 
 	// Build configuration from flags and defaults
-	config, err := buildServiceConfigFromFlags()
+	config, err := buildServiceConfigFromFlags(parentConfig, serviceConfig)
 	if err != nil {
 		return fmt.Errorf("failed to build service configuration: %w", err)
 	}
@@ -217,13 +219,13 @@ func runNonInteractiveServiceCreation(ctx context.Context) error {
 	logger.Info("Creating service with non-interactive mode", "service", config.Name)
 
 	// Generate the service
-	return generateService(ctx, container, config)
+	return generateService(ctx, container, config, parentConfig)
 }
 
 // runServiceCreationFromConfig loads configuration from a file and creates the service.
-func runServiceCreationFromConfig(ctx context.Context, configPath string) error {
+func runServiceCreationFromConfig(ctx context.Context, configPath string, parentConfig *NewCommandConfig, serviceConfig *ServiceCommandConfig) error {
 	// Create dependency container
-	container, err := createDependencyContainer()
+	container, err := createDependencyContainer(parentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create dependency container: %w", err)
 	}
@@ -245,7 +247,7 @@ func runServiceCreationFromConfig(ctx context.Context, configPath string) error 
 	logger.Info("Creating service from configuration file", "config", configPath, "service", config.Name)
 
 	// Generate the service
-	return generateService(ctx, container, config)
+	return generateService(ctx, container, config, parentConfig)
 }
 
 // collectServiceConfigurationInteractively collects service configuration through interactive prompts.
@@ -497,23 +499,23 @@ func showFeatureStatus(terminalUI interfaces.InteractiveUI, name string, enabled
 }
 
 // buildServiceConfigFromFlags builds service configuration from command line flags.
-func buildServiceConfigFromFlags() (*interfaces.ServiceConfig, error) {
+func buildServiceConfigFromFlags(parentConfig *NewCommandConfig, serviceConfig *ServiceCommandConfig) (*interfaces.ServiceConfig, error) {
 	config := &interfaces.ServiceConfig{
-		Name:        serviceName,
-		Description: serviceDesc,
-		Author:      serviceAuthor,
-		Version:     serviceVersion,
-		ModulePath:  modulePathFlag,
-		OutputDir:   outputDir,
+		Name:        serviceConfig.ServiceName,
+		Description: serviceConfig.ServiceDesc,
+		Author:      serviceConfig.ServiceAuthor,
+		Version:     serviceConfig.ServiceVersion,
+		ModulePath:  serviceConfig.ModulePathFlag,
+		OutputDir:   parentConfig.OutputDir,
 		Metadata:    make(map[string]string),
 		Ports: interfaces.PortConfig{
-			HTTP: httpPort,
-			GRPC: grpcPort,
+			HTTP: serviceConfig.HTTPPort,
+			GRPC: serviceConfig.GRPCPort,
 		},
 	}
 
 	// Apply quick mode defaults
-	if quickMode {
+	if serviceConfig.QuickMode {
 		config.Features = interfaces.ServiceFeatures{
 			Database:       false,
 			Authentication: false,
@@ -608,7 +610,7 @@ func loadServiceConfigFromFile(configPath string) (*interfaces.ServiceConfig, er
 }
 
 // generateService generates the service using the provided configuration.
-func generateService(ctx context.Context, container interfaces.DependencyContainer, config *interfaces.ServiceConfig) error {
+func generateService(ctx context.Context, container interfaces.DependencyContainer, config *interfaces.ServiceConfig, parentConfig *NewCommandConfig) error {
 	// Get services from container
 	generatorService, err := container.GetService("service_generator")
 	if err != nil {
@@ -629,7 +631,7 @@ func generateService(ctx context.Context, container interfaces.DependencyContain
 	logger := loggerService.(interfaces.Logger)
 
 	// Check if output directory exists and handle accordingly
-	if !force && dirExists(config.OutputDir) {
+	if !parentConfig.Force && dirExists(config.OutputDir) {
 		confirmed, err := terminalUI.PromptConfirm(
 			fmt.Sprintf("Directory '%s' already exists. Overwrite?", config.OutputDir),
 			false,
@@ -647,7 +649,7 @@ func generateService(ctx context.Context, container interfaces.DependencyContain
 	progress := terminalUI.ShowProgress("Generating service", 100)
 
 	// Dry run mode
-	if dryRun {
+	if parentConfig.DryRun {
 		terminalUI.ShowInfo("DRY RUN MODE - No files will be created")
 		terminalUI.PrintSeparator()
 

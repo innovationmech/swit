@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -40,6 +41,8 @@ import (
 // ServiceCommandTestSuite tests the 'new service' command functionality
 type ServiceCommandTestSuite struct {
 	suite.Suite
+	newConfig          *NewCommandConfig
+	serviceConfig      *ServiceCommandConfig
 	tempDir            string
 	testConfigFile     string
 	mockContainer      *MockDependencyContainer
@@ -53,32 +56,38 @@ type ServiceCommandTestSuite struct {
 
 // SetupTest runs before each test
 func (s *ServiceCommandTestSuite) SetupTest() {
+	// Initialize configurations
+	s.newConfig = &NewCommandConfig{
+		Interactive:    false,
+		OutputDir:      "",
+		ConfigFile:     "",
+		TemplateDir:    "",
+		Verbose:        false,
+		NoColor:        false,
+		Force:          false,
+		DryRun:         false,
+		SkipValidation: false,
+	}
+
+	s.serviceConfig = &ServiceCommandConfig{
+		ServiceName:    "",
+		ServiceDesc:    "",
+		ServiceAuthor:  "",
+		ServiceVersion: "0.1.0",
+		ModulePathFlag: "",
+		HTTPPort:       9000,
+		GRPCPort:       10000,
+		FromConfig:     "",
+		QuickMode:      false,
+	}
+
 	// Create temporary directory
 	tempDir, err := os.MkdirTemp("", "switctl-service-test-*")
 	s.Require().NoError(err)
 	s.tempDir = tempDir
 
-	// Reset service command specific flags
-	serviceName = ""
-	serviceDesc = ""
-	serviceAuthor = ""
-	serviceVersion = "0.1.0"
-	modulePathFlag = ""
-	httpPort = 9000
-	grpcPort = 10000
-	fromConfig = ""
-	quickMode = false
-
-	// Reset global new command flags
-	interactive = false
-	outputDir = ""
-	configFile = ""
-	templateDir = s.tempDir // Set to temp dir to avoid template directory errors
-	verbose = false
-	noColor = false
-	force = false
-	dryRun = false
-	skipValidation = false
+	// Reset viper
+	viper.Reset()
 
 	// Create test config file
 	s.testConfigFile = filepath.Join(s.tempDir, "test-config.yaml")
@@ -98,32 +107,31 @@ func (s *ServiceCommandTestSuite) SetupTest() {
 }
 
 // TearDownTest runs after each test
-func (s *ServiceCommandTestSuite) TearDownTest() {
-	// Clean up temporary directory
-	if s.tempDir != "" {
-		os.RemoveAll(s.tempDir)
+func (suite *ServiceCommandTestSuite) TearDownTest() {
+	// Reset configuration values
+	suite.newConfig = &NewCommandConfig{
+		Interactive:    false,
+		OutputDir:      "",
+		ConfigFile:     "",
+		TemplateDir:    "",
+		Verbose:        false,
+		NoColor:        false,
+		Force:          false,
+		DryRun:         false,
+		SkipValidation: false,
 	}
 
-	// Reset all flags
-	serviceName = ""
-	serviceDesc = ""
-	serviceAuthor = ""
-	serviceVersion = "0.1.0"
-	modulePathFlag = ""
-	httpPort = 9000
-	grpcPort = 10000
-	fromConfig = ""
-	quickMode = false
-
-	interactive = false
-	outputDir = ""
-	configFile = ""
-	templateDir = ""
-	verbose = false
-	noColor = false
-	force = false
-	dryRun = false
-	skipValidation = false
+	suite.serviceConfig = &ServiceCommandConfig{
+		ServiceName:    "",
+		ServiceDesc:    "",
+		ServiceAuthor:  "",
+		ServiceVersion: "0.1.0",
+		ModulePathFlag: "",
+		HTTPPort:       9000,
+		GRPCPort:       10000,
+		FromConfig:     "",
+		QuickMode:      false,
+	}
 }
 
 // createTestConfigFile creates a test configuration file
@@ -168,7 +176,7 @@ func (s *ServiceCommandTestSuite) createTestConfigFile() {
 
 // TestNewServiceCommand_BasicProperties tests basic command properties
 func (s *ServiceCommandTestSuite) TestNewServiceCommand_BasicProperties() {
-	cmd := NewServiceCommand()
+	cmd := NewServiceCommand(s.newConfig)
 
 	assert.NotNil(s.T(), cmd)
 	assert.Equal(s.T(), "service [name]", cmd.Use)
@@ -181,7 +189,7 @@ func (s *ServiceCommandTestSuite) TestNewServiceCommand_BasicProperties() {
 
 // TestNewServiceCommand_Flags tests all service command flags
 func (s *ServiceCommandTestSuite) TestNewServiceCommand_Flags() {
-	cmd := NewServiceCommand()
+	cmd := NewServiceCommand(s.newConfig)
 	flags := cmd.Flags()
 
 	testCases := []struct {
@@ -214,7 +222,7 @@ func (s *ServiceCommandTestSuite) TestNewServiceCommand_Flags() {
 
 // TestNewServiceCommand_Help tests help output
 func (s *ServiceCommandTestSuite) TestNewServiceCommand_Help() {
-	cmd := NewServiceCommand()
+	cmd := NewServiceCommand(s.newConfig)
 
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
@@ -245,17 +253,17 @@ func (s *ServiceCommandTestSuite) TestRunNonInteractiveServiceCreation() {
 
 	// Mock the createDependencyContainer function behavior
 	originalCreateDependencyContainer := createDependencyContainer
-	createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+	createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 		return mockContainer, nil
 	}
 	defer func() { createDependencyContainer = originalCreateDependencyContainer }()
 
-	// Set up service parameters
-	serviceName = "test-service"
-	serviceDesc = "Test service description"
-	serviceAuthor = "Test Author"
-	modulePathFlag = "github.com/test/test-service"
-	outputDir = "test-service"
+	// Set up service parameters in configuration
+	s.serviceConfig.ServiceName = "test-service"
+	s.serviceConfig.ServiceDesc = "Test service description"
+	s.serviceConfig.ServiceAuthor = "Test Author"
+	s.serviceConfig.ModulePathFlag = "github.com/test/test-service"
+	s.newConfig.OutputDir = "test-service"
 
 	// Mock logger calls
 	s.mockLogger.On("Info", "Creating service with non-interactive mode", "service", "test-service").Return()
@@ -283,7 +291,7 @@ func (s *ServiceCommandTestSuite) TestRunNonInteractiveServiceCreation() {
 	SetupMockUIStyle(style)
 
 	ctx := context.Background()
-	err := runNonInteractiveServiceCreation(ctx)
+	err := runNonInteractiveServiceCreation(ctx, s.newConfig, s.serviceConfig)
 	assert.NoError(s.T(), err)
 
 	// Verify mock expectations
@@ -301,16 +309,16 @@ func (s *ServiceCommandTestSuite) TestRunNonInteractiveServiceCreation_MissingSe
 
 	// Mock the createDependencyContainer function behavior
 	originalCreateDependencyContainer := createDependencyContainer
-	createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+	createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 		return mockContainer, nil
 	}
 	defer func() { createDependencyContainer = originalCreateDependencyContainer }()
 
-	// Don't set serviceName (should cause error)
-	serviceName = ""
+	// Don't set serviceName (should cause error) - reset service config
+	s.serviceConfig.ServiceName = ""
 
 	ctx := context.Background()
-	err := runNonInteractiveServiceCreation(ctx)
+	err := runNonInteractiveServiceCreation(ctx, s.newConfig, s.serviceConfig)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "service name is required")
 
@@ -329,7 +337,7 @@ func (s *ServiceCommandTestSuite) TestRunServiceCreationFromConfig() {
 
 	// Mock the createDependencyContainer function behavior
 	originalCreateDependencyContainer := createDependencyContainer
-	createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+	createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 		return mockContainer, nil
 	}
 	defer func() { createDependencyContainer = originalCreateDependencyContainer }()
@@ -362,7 +370,7 @@ func (s *ServiceCommandTestSuite) TestRunServiceCreationFromConfig() {
 	SetupMockUIStyle(style)
 
 	ctx := context.Background()
-	err := runServiceCreationFromConfig(ctx, s.testConfigFile)
+	err := runServiceCreationFromConfig(ctx, s.testConfigFile, s.newConfig, s.serviceConfig)
 	assert.NoError(s.T(), err)
 
 	// Verify mock expectations
@@ -380,7 +388,7 @@ func (s *ServiceCommandTestSuite) TestRunServiceCreationFromConfig_InvalidFile()
 
 	// Mock the createDependencyContainer function behavior
 	originalCreateDependencyContainer := createDependencyContainer
-	createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+	createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 		return mockContainer, nil
 	}
 	defer func() { createDependencyContainer = originalCreateDependencyContainer }()
@@ -388,7 +396,7 @@ func (s *ServiceCommandTestSuite) TestRunServiceCreationFromConfig_InvalidFile()
 	nonExistentFile := filepath.Join(s.tempDir, "nonexistent.yaml")
 
 	ctx := context.Background()
-	err := runServiceCreationFromConfig(ctx, nonExistentFile)
+	err := runServiceCreationFromConfig(ctx, nonExistentFile, s.newConfig, s.serviceConfig)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "configuration file does not exist")
 
@@ -407,7 +415,7 @@ func (s *ServiceCommandTestSuite) TestRunInteractiveServiceCreation() {
 
 	// Mock the createDependencyContainer function behavior
 	originalCreateDependencyContainer := createDependencyContainer
-	createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+	createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 		return mockContainer, nil
 	}
 	defer func() { createDependencyContainer = originalCreateDependencyContainer }()
@@ -483,7 +491,7 @@ func (s *ServiceCommandTestSuite) TestRunInteractiveServiceCreation() {
 	s.mockUI.On("PrintHeader", "Next Steps").Return()
 
 	ctx := context.Background()
-	err := runInteractiveServiceCreation(ctx)
+	err := runInteractiveServiceCreation(ctx, s.newConfig, s.serviceConfig)
 	assert.NoError(s.T(), err)
 
 	// Verify mock expectations
@@ -503,7 +511,7 @@ func (s *ServiceCommandTestSuite) TestRunInteractiveServiceCreation_UserCancella
 
 	// Mock the createDependencyContainer function behavior
 	originalCreateDependencyContainer := createDependencyContainer
-	createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+	createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 		return mockContainer, nil
 	}
 	defer func() { createDependencyContainer = originalCreateDependencyContainer }()
@@ -549,7 +557,7 @@ func (s *ServiceCommandTestSuite) TestRunInteractiveServiceCreation_UserCancella
 	s.mockUI.On("ShowInfo", "Service generation cancelled.").Return(nil)
 
 	ctx := context.Background()
-	err := runInteractiveServiceCreation(ctx)
+	err := runInteractiveServiceCreation(ctx, s.newConfig, s.serviceConfig)
 	assert.NoError(s.T(), err) // Should not error when user cancels
 
 	// Verify mock expectations
@@ -561,18 +569,18 @@ func (s *ServiceCommandTestSuite) TestRunInteractiveServiceCreation_UserCancella
 
 // TestBuildServiceConfigFromFlags tests building configuration from command line flags
 func (s *ServiceCommandTestSuite) TestBuildServiceConfigFromFlags() {
-	// Set flags
-	serviceName = "flag-service"
-	serviceDesc = "Service from flags"
-	serviceAuthor = "Flag Author"
-	serviceVersion = "2.0.0"
-	modulePathFlag = "github.com/test/flag-service"
-	httpPort = 8000
-	grpcPort = 9000
-	outputDir = "custom-output"
-	quickMode = false
+	// Set flags in configuration
+	s.serviceConfig.ServiceName = "flag-service"
+	s.serviceConfig.ServiceDesc = "Service from flags"
+	s.serviceConfig.ServiceAuthor = "Flag Author"
+	s.serviceConfig.ServiceVersion = "2.0.0"
+	s.serviceConfig.ModulePathFlag = "github.com/test/flag-service"
+	s.serviceConfig.HTTPPort = 8000
+	s.serviceConfig.GRPCPort = 9000
+	s.newConfig.OutputDir = "custom-output"
+	s.serviceConfig.QuickMode = false
 
-	config, err := buildServiceConfigFromFlags()
+	config, err := buildServiceConfigFromFlags(s.newConfig, s.serviceConfig)
 	assert.NoError(s.T(), err)
 	assert.NotNil(s.T(), config)
 
@@ -595,10 +603,10 @@ func (s *ServiceCommandTestSuite) TestBuildServiceConfigFromFlags() {
 // TestBuildServiceConfigFromFlags_QuickMode tests quick mode configuration
 func (s *ServiceCommandTestSuite) TestBuildServiceConfigFromFlags_QuickMode() {
 	// Set flags with quick mode
-	serviceName = "quick-service"
-	quickMode = true
+	s.serviceConfig.ServiceName = "quick-service"
+	s.serviceConfig.QuickMode = true
 
-	config, err := buildServiceConfigFromFlags()
+	config, err := buildServiceConfigFromFlags(s.newConfig, s.serviceConfig)
 	assert.NoError(s.T(), err)
 	assert.NotNil(s.T(), config)
 
@@ -618,9 +626,9 @@ func (s *ServiceCommandTestSuite) TestBuildServiceConfigFromFlags_QuickMode() {
 // TestBuildServiceConfigFromFlags_Defaults tests default value handling
 func (s *ServiceCommandTestSuite) TestBuildServiceConfigFromFlags_Defaults() {
 	// Set only required fields
-	serviceName = "default-service"
+	s.serviceConfig.ServiceName = "default-service"
 
-	config, err := buildServiceConfigFromFlags()
+	config, err := buildServiceConfigFromFlags(s.newConfig, s.serviceConfig)
 	assert.NoError(s.T(), err)
 	assert.NotNil(s.T(), config)
 
@@ -703,7 +711,7 @@ func (s *ServiceCommandTestSuite) TestGenerateService() {
 	s.mockGenerator.On("GenerateService", config).Return(nil)
 
 	ctx := context.Background()
-	err := generateService(ctx, mockContainer, &config)
+	err := generateService(ctx, mockContainer, &config, s.newConfig)
 	assert.NoError(s.T(), err)
 
 	// Verify mock expectations
@@ -721,7 +729,7 @@ func (s *ServiceCommandTestSuite) TestGenerateService_WithForce() {
 	mockContainer.On("GetService", "logger").Return(s.mockLogger, nil)
 
 	config := CreateTestServiceConfig()
-	force = true // Enable force flag
+	s.newConfig.Force = true // Enable force flag
 
 	// Mock progress bar and UI calls for generation
 	s.mockUI.On("ShowProgress", "Generating service", 100).Return(s.mockProgressBar)
@@ -742,7 +750,7 @@ func (s *ServiceCommandTestSuite) TestGenerateService_WithForce() {
 	s.mockGenerator.On("GenerateService", config).Return(nil)
 
 	ctx := context.Background()
-	err := generateService(ctx, mockContainer, &config)
+	err := generateService(ctx, mockContainer, &config, s.newConfig)
 	assert.NoError(s.T(), err)
 
 	// Verify mock expectations
@@ -758,7 +766,7 @@ func (s *ServiceCommandTestSuite) TestGenerateService_DryRun() {
 	mockContainer.On("GetService", "logger").Return(s.mockLogger, nil)
 
 	config := CreateTestServiceConfig()
-	dryRun = true // Enable dry run
+	s.newConfig.DryRun = true // Enable dry run
 
 	// Mock progress bar creation
 	s.mockUI.On("ShowProgress", "Generating service", 100).Return(s.mockProgressBar)
@@ -773,7 +781,7 @@ func (s *ServiceCommandTestSuite) TestGenerateService_DryRun() {
 	s.mockUI.On("ShowInfo", "Run without --dry-run to create these files.").Return(nil)
 
 	ctx := context.Background()
-	err := generateService(ctx, mockContainer, &config)
+	err := generateService(ctx, mockContainer, &config, s.newConfig)
 	assert.NoError(s.T(), err)
 
 	// Generator should not be called in dry run mode
@@ -800,7 +808,7 @@ func (s *ServiceCommandTestSuite) TestGenerateService_GeneratorError() {
 	s.mockGenerator.On("GenerateService", config).Return(fmt.Errorf("generation failed"))
 
 	ctx := context.Background()
-	err := generateService(ctx, mockContainer, &config)
+	err := generateService(ctx, mockContainer, &config, s.newConfig)
 	assert.Error(s.T(), err)
 	assert.Contains(s.T(), err.Error(), "failed to generate service")
 	assert.Contains(s.T(), err.Error(), "generation failed")
@@ -845,7 +853,7 @@ func (s *ServiceCommandTestSuite) TestUtilityFunctions() {
 
 // TestServiceCommandIntegration tests basic integration scenarios
 func (s *ServiceCommandTestSuite) TestServiceCommandIntegration() {
-	cmd := NewServiceCommand()
+	cmd := NewServiceCommand(s.newConfig)
 
 	// Test help
 	var buf bytes.Buffer
@@ -896,7 +904,7 @@ func (s *ServiceCommandTestSuite) TestServiceCommandValidation() {
 
 	for _, tc := range testCases {
 		s.T().Run(tc.name, func(t *testing.T) {
-			cmd := NewServiceCommand()
+			cmd := NewServiceCommand(s.newConfig)
 			cmd.SetArgs(tc.args)
 
 			err := cmd.ParseFlags(tc.args)
@@ -991,14 +999,14 @@ func (s *ServiceCommandTestSuite) TestErrorScenarios() {
 			expectedError: "failed to create dependency container",
 			testFunc: func() error {
 				originalCreateDependencyContainer := createDependencyContainer
-				createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+				createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 					return nil, fmt.Errorf("container creation failed")
 				}
 				defer func() { createDependencyContainer = originalCreateDependencyContainer }()
 
-				serviceName = "test-service"
+				s.serviceConfig.ServiceName = "test-service"
 				ctx := context.Background()
-				return runNonInteractiveServiceCreation(ctx)
+				return runNonInteractiveServiceCreation(ctx, s.newConfig, s.serviceConfig)
 			},
 		},
 		{
@@ -1009,13 +1017,13 @@ func (s *ServiceCommandTestSuite) TestErrorScenarios() {
 			expectedError: "failed to get UI service",
 			testFunc: func() error {
 				originalCreateDependencyContainer := createDependencyContainer
-				createDependencyContainer = func() (interfaces.DependencyContainer, error) {
+				createDependencyContainer = func(config *NewCommandConfig) (interfaces.DependencyContainer, error) {
 					return s.mockContainer, nil
 				}
 				defer func() { createDependencyContainer = originalCreateDependencyContainer }()
 
 				ctx := context.Background()
-				return runInteractiveServiceCreation(ctx)
+				return runInteractiveServiceCreation(ctx, s.newConfig, s.serviceConfig)
 			},
 		},
 	}
@@ -1037,14 +1045,17 @@ func (s *ServiceCommandTestSuite) TestErrorScenarios() {
 
 // Benchmark tests
 func BenchmarkBuildServiceConfigFromFlags(b *testing.B) {
-	serviceName = "benchmark-service"
-	serviceDesc = "Benchmark description"
-	serviceAuthor = "Benchmark Author"
-	modulePathFlag = "github.com/test/benchmark"
+	newConfig := &NewCommandConfig{}
+	serviceConfig := &ServiceCommandConfig{
+		ServiceName:    "benchmark-service",
+		ServiceDesc:    "Benchmark description",
+		ServiceAuthor:  "Benchmark Author",
+		ModulePathFlag: "github.com/test/benchmark",
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		config, err := buildServiceConfigFromFlags()
+		config, err := buildServiceConfigFromFlags(newConfig, serviceConfig)
 		if err != nil {
 			b.Fatal(err)
 		}
