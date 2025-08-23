@@ -1,0 +1,471 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package security provides security headers middleware for {{.Service.Name}}.
+package security
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// SecurityHeadersConfig holds security headers configuration.
+type SecurityHeadersConfig struct {
+	// Content Security Policy
+	ContentSecurityPolicy string `yaml:"content_security_policy" json:"content_security_policy" mapstructure:"content_security_policy"`
+	
+	// X-Content-Type-Options
+	ContentTypeOptions string `yaml:"content_type_options" json:"content_type_options" mapstructure:"content_type_options"`
+	
+	// X-Frame-Options
+	FrameOptions string `yaml:"frame_options" json:"frame_options" mapstructure:"frame_options"`
+	
+	// X-XSS-Protection
+	XSSProtection string `yaml:"xss_protection" json:"xss_protection" mapstructure:"xss_protection"`
+	
+	// Strict-Transport-Security
+	StrictTransportSecurity string `yaml:"strict_transport_security" json:"strict_transport_security" mapstructure:"strict_transport_security"`
+	
+	// Referrer-Policy
+	ReferrerPolicy string `yaml:"referrer_policy" json:"referrer_policy" mapstructure:"referrer_policy"`
+	
+	// Permissions-Policy (formerly Feature-Policy)
+	PermissionsPolicy string `yaml:"permissions_policy" json:"permissions_policy" mapstructure:"permissions_policy"`
+	
+	// Cross-Origin-Embedder-Policy
+	CrossOriginEmbedderPolicy string `yaml:"cross_origin_embedder_policy" json:"cross_origin_embedder_policy" mapstructure:"cross_origin_embedder_policy"`
+	
+	// Cross-Origin-Opener-Policy
+	CrossOriginOpenerPolicy string `yaml:"cross_origin_opener_policy" json:"cross_origin_opener_policy" mapstructure:"cross_origin_opener_policy"`
+	
+	// Cross-Origin-Resource-Policy
+	CrossOriginResourcePolicy string `yaml:"cross_origin_resource_policy" json:"cross_origin_resource_policy" mapstructure:"cross_origin_resource_policy"`
+	
+	// Custom headers
+	CustomHeaders map[string]string `yaml:"custom_headers" json:"custom_headers" mapstructure:"custom_headers"`
+	
+	// Headers to remove
+	RemoveHeaders []string `yaml:"remove_headers" json:"remove_headers" mapstructure:"remove_headers"`
+	
+	// Enable HSTS preload
+	HSTSPreload bool `yaml:"hsts_preload" json:"hsts_preload" mapstructure:"hsts_preload"`
+	
+	// HSTS max age in seconds
+	HSTSMaxAge int `yaml:"hsts_max_age" json:"hsts_max_age" mapstructure:"hsts_max_age"`
+	
+	// Include subdomains in HSTS
+	HSTSIncludeSubdomains bool `yaml:"hsts_include_subdomains" json:"hsts_include_subdomains" mapstructure:"hsts_include_subdomains"`
+}
+
+// DefaultSecurityHeadersConfig returns a default security headers configuration.
+func DefaultSecurityHeadersConfig() *SecurityHeadersConfig {
+	return &SecurityHeadersConfig{
+		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self'; frame-ancestors 'none';",
+		ContentTypeOptions:    "nosniff",
+		FrameOptions:         "DENY",
+		XSSProtection:        "1; mode=block",
+		ReferrerPolicy:       "strict-origin-when-cross-origin",
+		PermissionsPolicy:    "geolocation=(), microphone=(), camera=()",
+		CrossOriginEmbedderPolicy: "require-corp",
+		CrossOriginOpenerPolicy:   "same-origin",
+		CrossOriginResourcePolicy: "same-origin",
+		HSTSMaxAge:               31536000, // 1 year
+		HSTSIncludeSubdomains:    true,
+		HSTSPreload:              false,
+		RemoveHeaders: []string{
+			"Server",
+			"X-Powered-By",
+		},
+	}
+}
+
+{{if .Security.Headers.Strict}}
+// StrictSecurityHeadersConfig returns a strict security headers configuration.
+func StrictSecurityHeadersConfig() *SecurityHeadersConfig {
+	return &SecurityHeadersConfig{
+		ContentSecurityPolicy: "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
+		ContentTypeOptions:    "nosniff",
+		FrameOptions:         "DENY",
+		XSSProtection:        "1; mode=block",
+		ReferrerPolicy:       "no-referrer",
+		PermissionsPolicy:    "geolocation=(), microphone=(), camera=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=(), accelerometer=()",
+		CrossOriginEmbedderPolicy: "require-corp",
+		CrossOriginOpenerPolicy:   "same-origin",
+		CrossOriginResourcePolicy: "same-origin",
+		HSTSMaxAge:               63072000, // 2 years
+		HSTSIncludeSubdomains:    true,
+		HSTSPreload:              true,
+		RemoveHeaders: []string{
+			"Server",
+			"X-Powered-By",
+			"X-AspNet-Version",
+			"X-AspNetMvc-Version",
+		},
+	}
+}
+{{end}}
+
+{{if .Security.Headers.API}}
+// APISecurityHeadersConfig returns a security headers configuration for APIs.
+func APISecurityHeadersConfig() *SecurityHeadersConfig {
+	return &SecurityHeadersConfig{
+		ContentSecurityPolicy: "default-src 'none'; frame-ancestors 'none';",
+		ContentTypeOptions:    "nosniff",
+		FrameOptions:         "DENY",
+		ReferrerPolicy:       "no-referrer",
+		CrossOriginResourcePolicy: "cross-origin",
+		HSTSMaxAge:               31536000, // 1 year
+		HSTSIncludeSubdomains:    true,
+		HSTSPreload:              false,
+		RemoveHeaders: []string{
+			"Server",
+			"X-Powered-By",
+		},
+	}
+}
+{{end}}
+
+{{if .Security.Headers.Development}}
+// DevelopmentSecurityHeadersConfig returns a relaxed configuration for development.
+func DevelopmentSecurityHeadersConfig() *SecurityHeadersConfig {
+	return &SecurityHeadersConfig{
+		ContentSecurityPolicy: "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: blob: https:; connect-src 'self' ws: wss:;",
+		ContentTypeOptions:    "nosniff",
+		FrameOptions:         "SAMEORIGIN",
+		XSSProtection:        "1; mode=block",
+		ReferrerPolicy:       "unsafe-url",
+		PermissionsPolicy:    "",
+		HSTSMaxAge:           0, // Disable HSTS in development
+		HSTSIncludeSubdomains: false,
+		HSTSPreload:          false,
+		RemoveHeaders: []string{
+			"Server",
+		},
+	}
+}
+{{end}}
+
+// SecurityHeaders returns a security headers middleware.
+func SecurityHeaders(config *SecurityHeadersConfig) gin.HandlerFunc {
+	if config == nil {
+		config = DefaultSecurityHeadersConfig()
+	}
+
+	return func(c *gin.Context) {
+		// Set security headers
+		if config.ContentSecurityPolicy != "" {
+			c.Header("Content-Security-Policy", config.ContentSecurityPolicy)
+		}
+
+		if config.ContentTypeOptions != "" {
+			c.Header("X-Content-Type-Options", config.ContentTypeOptions)
+		}
+
+		if config.FrameOptions != "" {
+			c.Header("X-Frame-Options", config.FrameOptions)
+		}
+
+		if config.XSSProtection != "" {
+			c.Header("X-XSS-Protection", config.XSSProtection)
+		}
+
+		if config.ReferrerPolicy != "" {
+			c.Header("Referrer-Policy", config.ReferrerPolicy)
+		}
+
+		if config.PermissionsPolicy != "" {
+			c.Header("Permissions-Policy", config.PermissionsPolicy)
+		}
+
+		if config.CrossOriginEmbedderPolicy != "" {
+			c.Header("Cross-Origin-Embedder-Policy", config.CrossOriginEmbedderPolicy)
+		}
+
+		if config.CrossOriginOpenerPolicy != "" {
+			c.Header("Cross-Origin-Opener-Policy", config.CrossOriginOpenerPolicy)
+		}
+
+		if config.CrossOriginResourcePolicy != "" {
+			c.Header("Cross-Origin-Resource-Policy", config.CrossOriginResourcePolicy)
+		}
+
+		// Set HSTS header for HTTPS connections
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			hstsValue := buildHSTSHeader(config)
+			if hstsValue != "" {
+				c.Header("Strict-Transport-Security", hstsValue)
+			}
+		}
+
+		// Set custom headers
+		for key, value := range config.CustomHeaders {
+			c.Header(key, value)
+		}
+
+		// Process the request first
+		c.Next()
+
+		// Remove unwanted headers after processing
+		for _, header := range config.RemoveHeaders {
+			c.Writer.Header().Del(header)
+		}
+	}
+}
+
+func buildHSTSHeader(config *SecurityHeadersConfig) string {
+	if config.HSTSMaxAge <= 0 {
+		return ""
+	}
+
+	parts := []string{fmt.Sprintf("max-age=%d", config.HSTSMaxAge)}
+
+	if config.HSTSIncludeSubdomains {
+		parts = append(parts, "includeSubDomains")
+	}
+
+	if config.HSTSPreload {
+		parts = append(parts, "preload")
+	}
+
+	return strings.Join(parts, "; ")
+}
+
+// SetCustomHeaders sets custom security headers from configuration.
+// Example usage: SetCustomHeaders(c, config.SecurityHeaders)
+func SetCustomHeaders(c *gin.Context, config *SecurityHeadersConfig) {
+	// Apply headers from config.SecurityHeaders
+	if config != nil && config.CustomHeaders != nil {
+		for key, value := range config.CustomHeaders {
+			c.Header(key, value)
+		}
+	}
+}
+
+{{if .Security.Headers.CSP}}
+// CSPBuilder helps build Content Security Policy headers.
+type CSPBuilder struct {
+	directives map[string][]string
+}
+
+// NewCSPBuilder creates a new CSP builder.
+func NewCSPBuilder() *CSPBuilder {
+	return &CSPBuilder{
+		directives: make(map[string][]string),
+	}
+}
+
+// DefaultSrc sets the default-src directive.
+func (b *CSPBuilder) DefaultSrc(sources ...string) *CSPBuilder {
+	b.directives["default-src"] = sources
+	return b
+}
+
+// ScriptSrc sets the script-src directive.
+func (b *CSPBuilder) ScriptSrc(sources ...string) *CSPBuilder {
+	b.directives["script-src"] = sources
+	return b
+}
+
+// StyleSrc sets the style-src directive.
+func (b *CSPBuilder) StyleSrc(sources ...string) *CSPBuilder {
+	b.directives["style-src"] = sources
+	return b
+}
+
+// ImgSrc sets the img-src directive.
+func (b *CSPBuilder) ImgSrc(sources ...string) *CSPBuilder {
+	b.directives["img-src"] = sources
+	return b
+}
+
+// ConnectSrc sets the connect-src directive.
+func (b *CSPBuilder) ConnectSrc(sources ...string) *CSPBuilder {
+	b.directives["connect-src"] = sources
+	return b
+}
+
+// FontSrc sets the font-src directive.
+func (b *CSPBuilder) FontSrc(sources ...string) *CSPBuilder {
+	b.directives["font-src"] = sources
+	return b
+}
+
+// FrameAncestors sets the frame-ancestors directive.
+func (b *CSPBuilder) FrameAncestors(sources ...string) *CSPBuilder {
+	b.directives["frame-ancestors"] = sources
+	return b
+}
+
+// BaseURI sets the base-uri directive.
+func (b *CSPBuilder) BaseURI(sources ...string) *CSPBuilder {
+	b.directives["base-uri"] = sources
+	return b
+}
+
+// FormAction sets the form-action directive.
+func (b *CSPBuilder) FormAction(sources ...string) *CSPBuilder {
+	b.directives["form-action"] = sources
+	return b
+}
+
+// Custom sets a custom directive.
+func (b *CSPBuilder) Custom(directive string, sources ...string) *CSPBuilder {
+	b.directives[directive] = sources
+	return b
+}
+
+// Build builds the CSP header value.
+func (b *CSPBuilder) Build() string {
+	var parts []string
+	
+	// Common directive order for consistency
+	order := []string{
+		"default-src", "script-src", "style-src", "img-src", "font-src",
+		"connect-src", "frame-src", "frame-ancestors", "base-uri", "form-action",
+	}
+	
+	// Add ordered directives
+	for _, directive := range order {
+		if sources, exists := b.directives[directive]; exists {
+			parts = append(parts, fmt.Sprintf("%s %s", directive, strings.Join(sources, " ")))
+			delete(b.directives, directive)
+		}
+	}
+	
+	// Add remaining custom directives
+	for directive, sources := range b.directives {
+		parts = append(parts, fmt.Sprintf("%s %s", directive, strings.Join(sources, " ")))
+	}
+	
+	return strings.Join(parts, "; ") + ";"
+}
+
+// Common CSP source values
+const (
+	CSPSelf         = "'self'"
+	CSPNone         = "'none'"
+	CSPUnsafeInline = "'unsafe-inline'"
+	CSPUnsafeEval   = "'unsafe-eval'"
+	CSPData         = "data:"
+	CSPBlob         = "blob:"
+	CSPHTTPS        = "https:"
+)
+{{end}}
+
+{{if .Security.Headers.HPKP}}
+// HPKPConfig holds HTTP Public Key Pinning configuration.
+type HPKPConfig struct {
+	Pins               []string      `yaml:"pins" json:"pins" mapstructure:"pins"`
+	MaxAge             int           `yaml:"max_age" json:"max_age" mapstructure:"max_age"`
+	IncludeSubdomains  bool          `yaml:"include_subdomains" json:"include_subdomains" mapstructure:"include_subdomains"`
+	ReportURI          string        `yaml:"report_uri" json:"report_uri" mapstructure:"report_uri"`
+	ReportOnly         bool          `yaml:"report_only" json:"report_only" mapstructure:"report_only"`
+}
+
+// HPKP returns an HTTP Public Key Pinning middleware.
+func HPKP(config *HPKPConfig) gin.HandlerFunc {
+	if config == nil || len(config.Pins) == 0 {
+		return func(c *gin.Context) { c.Next() }
+	}
+
+	headerName := "Public-Key-Pins"
+	if config.ReportOnly {
+		headerName = "Public-Key-Pins-Report-Only"
+	}
+
+	value := buildHPKPHeader(config)
+
+	return func(c *gin.Context) {
+		// Only set HPKP for HTTPS connections
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			c.Header(headerName, value)
+		}
+		c.Next()
+	}
+}
+
+func buildHPKPHeader(config *HPKPConfig) string {
+	var parts []string
+
+	// Add pins
+	for _, pin := range config.Pins {
+		parts = append(parts, fmt.Sprintf("pin-sha256=\"%s\"", pin))
+	}
+
+	// Add max-age
+	parts = append(parts, fmt.Sprintf("max-age=%d", config.MaxAge))
+
+	// Add includeSubDomains if enabled
+	if config.IncludeSubdomains {
+		parts = append(parts, "includeSubDomains")
+	}
+
+	// Add report-uri if specified
+	if config.ReportURI != "" {
+		parts = append(parts, fmt.Sprintf("report-uri=\"%s\"", config.ReportURI))
+	}
+
+	return strings.Join(parts, "; ")
+}
+{{end}}
+
+{{if .Security.Headers.Conditional}}
+// ConditionalSecurityHeaders applies different security headers based on request characteristics.
+func ConditionalSecurityHeaders(configs map[string]*SecurityHeadersConfig, defaultConfig *SecurityHeadersConfig) gin.HandlerFunc {
+	middlewares := make(map[string]gin.HandlerFunc)
+	for key, config := range configs {
+		middlewares[key] = SecurityHeaders(config)
+	}
+	defaultMiddleware := SecurityHeaders(defaultConfig)
+
+	return func(c *gin.Context) {
+		// Determine which configuration to use
+		configKey := determineSecurityConfig(c)
+		
+		if middleware, exists := middlewares[configKey]; exists {
+			middleware(c)
+		} else {
+			defaultMiddleware(c)
+		}
+	}
+}
+
+func determineSecurityConfig(c *gin.Context) string {
+	// Example: Different headers for API vs web endpoints
+	if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+		return "api"
+	}
+	
+	// Example: Strict headers for admin endpoints
+	if strings.HasPrefix(c.Request.URL.Path, "/admin/") {
+		return "admin"
+	}
+	
+	// Example: Relaxed headers for development
+	if c.GetHeader("X-Development") != "" {
+		return "development"
+	}
+	
+	return "default"
+}
+{{end}}

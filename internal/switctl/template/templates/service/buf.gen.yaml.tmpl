@@ -1,0 +1,28 @@
+{{- if .Service.Features.GRPC -}}
+version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    default: {{.Service.ModulePath}}/api/gen
+    except:
+      - buf.build/googleapis/googleapis
+      - buf.build/protocolbuffers/wellknowntypes
+plugins:
+  - plugin: buf.build/protocolbuffers/go
+    out: api/gen
+    opt:
+      - paths=source_relative
+  - plugin: buf.build/grpc/go
+    out: api/gen
+    opt:
+      - paths=source_relative
+  - plugin: buf.build/grpc-ecosystem/gateway
+    out: api/gen
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=true
+  - plugin: buf.build/grpc-ecosystem/openapiv2
+    out: api/gen
+    opt:
+      - generate_unbound_methods=true
+{{- end -}}

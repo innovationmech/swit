@@ -1,0 +1,359 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package http provides HTTP handlers for {{.Service.Name}}.
+package http
+
+import (
+	"context"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/interfaces"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// Handler implements the HTTP handler for {{.Service.Name}}.
+type Handler struct {
+	{{.Service.Name | camelCase}}Service interfaces.{{.Service.Name | pascalCase}}Service
+	healthService    interfaces.HealthService
+}
+
+// NewHTTPHandler creates a new HTTP handler instance.
+func NewHTTPHandler({{.Service.Name | camelCase}}Service interfaces.{{.Service.Name | pascalCase}}Service, healthService interfaces.HealthService) (*Handler, error) {
+	return &Handler{
+		{{.Service.Name | camelCase}}Service: {{.Service.Name | camelCase}}Service,
+		healthService:    healthService,
+	}, nil
+}
+
+// RegisterRoutes registers HTTP routes with the router.
+func (h *Handler) RegisterRoutes(router interface{}) error {
+	ginRouter, ok := router.(*gin.Engine)
+	if !ok {
+		return ErrInvalidRouter
+	}
+
+	// API version group
+	v1 := ginRouter.Group("/api/v1")
+
+	// Health endpoints
+	v1.GET("/health", h.handleHealth)
+	v1.GET("/health/ready", h.handleReadiness)
+	v1.GET("/health/live", h.handleLiveness)
+
+	// {{.Service.Name | titleCase}} endpoints
+	{{.Service.Name | camelCase}}Group := v1.Group("/{{.Service.Name | kebabCase | pluralize}}")
+	{
+		{{.Service.Name | camelCase}}Group.POST("", h.handleCreate{{.Service.Name | pascalCase}})
+		{{.Service.Name | camelCase}}Group.GET("/:id", h.handleGet{{.Service.Name | pascalCase}})
+		{{.Service.Name | camelCase}}Group.PUT("/:id", h.handleUpdate{{.Service.Name | pascalCase}})
+		{{.Service.Name | camelCase}}Group.DELETE("/:id", h.handleDelete{{.Service.Name | pascalCase}})
+		{{.Service.Name | camelCase}}Group.GET("", h.handleList{{.Service.Name | pascalCase | pluralize}})
+	}
+
+	return nil
+}
+
+// GetServiceName returns the service name.
+func (h *Handler) GetServiceName() string {
+	return "{{.Service.Name}}-http"
+}
+
+// Health check handlers
+
+func (h *Handler) handleHealth(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	// Perform health checks
+	checks := make(map[string]types.HealthCheck)
+
+	// Check main service
+	serviceCheck := types.HealthCheck{Time: time.Now()}
+	if err := h.{{.Service.Name | camelCase}}Service.HealthCheck(ctx); err != nil {
+		serviceCheck.Status = "unhealthy"
+		serviceCheck.Message = err.Error()
+	} else {
+		serviceCheck.Status = "healthy"
+	}
+	checks["{{.Service.Name | kebabCase}}_service"] = serviceCheck
+
+	// Check health service
+	healthCheck := types.HealthCheck{Time: time.Now()}
+	if err := h.healthService.Check(ctx); err != nil {
+		healthCheck.Status = "unhealthy"
+		healthCheck.Message = err.Error()
+	} else {
+		healthCheck.Status = "healthy"
+	}
+	checks["health_service"] = healthCheck
+
+	// Determine overall status
+	overallStatus := "healthy"
+	for _, check := range checks {
+		if check.Status != "healthy" {
+			overallStatus = "unhealthy"
+			break
+		}
+	}
+
+	response := &types.HealthResponse{
+		Status:    overallStatus,
+		Service:   "{{.Service.Name}}",
+		Version:   "{{.Service.Version}}",
+		Timestamp: time.Now(),
+		Checks:    checks,
+	}
+
+	statusCode := http.StatusOK
+	if overallStatus != "healthy" {
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	c.JSON(statusCode, response)
+}
+
+func (h *Handler) handleReadiness(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.{{.Service.Name | camelCase}}Service.HealthCheck(ctx); err != nil {
+		c.JSON(http.StatusServiceUnavailable, types.Response{
+			Success: false,
+			Message: "Service not ready",
+			Error: &types.ErrorInfo{
+				Code:    "SERVICE_NOT_READY",
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "Service is ready",
+	})
+}
+
+func (h *Handler) handleLiveness(c *gin.Context) {
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "Service is alive",
+	})
+}
+
+// Business logic handlers
+// TODO: Implement these methods based on your business requirements
+
+func (h *Handler) handleCreate{{.Service.Name | pascalCase}}(c *gin.Context) {
+	var req types.Create{{.Service.Name | pascalCase}}Request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Invalid request body",
+			Error: &types.ErrorInfo{
+				Code:    "INVALID_REQUEST",
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	// TODO: Implement create logic
+	// Example:
+	// ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	// defer cancel()
+	//
+	// response, err := h.{{.Service.Name | camelCase}}Service.Create{{.Service.Name | pascalCase}}(ctx, &req)
+	// if err != nil {
+	//     handleError(c, err)
+	//     return
+	// }
+
+	c.JSON(http.StatusCreated, types.Response{
+		Success: true,
+		Message: "{{.Service.Name | titleCase}} created successfully",
+		Data:    nil, // Replace with actual response
+	})
+}
+
+func (h *Handler) handleGet{{.Service.Name | pascalCase}}(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Missing {{.Service.Name | camelCase}} ID",
+			Error: &types.ErrorInfo{
+				Code:    "MISSING_ID",
+				Message: "{{.Service.Name | titleCase}} ID is required",
+			},
+		})
+		return
+	}
+
+	// TODO: Implement get logic
+	// Example:
+	// ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	// defer cancel()
+	//
+	// response, err := h.{{.Service.Name | camelCase}}Service.Get{{.Service.Name | pascalCase}}(ctx, id)
+	// if err != nil {
+	//     handleError(c, err)
+	//     return
+	// }
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "{{.Service.Name | titleCase}} retrieved successfully",
+		Data:    nil, // Replace with actual response
+	})
+}
+
+func (h *Handler) handleUpdate{{.Service.Name | pascalCase}}(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Missing {{.Service.Name | camelCase}} ID",
+			Error: &types.ErrorInfo{
+				Code:    "MISSING_ID",
+				Message: "{{.Service.Name | titleCase}} ID is required",
+			},
+		})
+		return
+	}
+
+	var req types.Update{{.Service.Name | pascalCase}}Request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Invalid request body",
+			Error: &types.ErrorInfo{
+				Code:    "INVALID_REQUEST",
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	// TODO: Implement update logic
+	// Example:
+	// ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	// defer cancel()
+	//
+	// response, err := h.{{.Service.Name | camelCase}}Service.Update{{.Service.Name | pascalCase}}(ctx, id, &req)
+	// if err != nil {
+	//     handleError(c, err)
+	//     return
+	// }
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "{{.Service.Name | titleCase}} updated successfully",
+		Data:    nil, // Replace with actual response
+	})
+}
+
+func (h *Handler) handleDelete{{.Service.Name | pascalCase}}(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Missing {{.Service.Name | camelCase}} ID",
+			Error: &types.ErrorInfo{
+				Code:    "MISSING_ID",
+				Message: "{{.Service.Name | titleCase}} ID is required",
+			},
+		})
+		return
+	}
+
+	// TODO: Implement delete logic
+	// Example:
+	// ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	// defer cancel()
+	//
+	// err := h.{{.Service.Name | camelCase}}Service.Delete{{.Service.Name | pascalCase}}(ctx, id)
+	// if err != nil {
+	//     handleError(c, err)
+	//     return
+	// }
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "{{.Service.Name | titleCase}} deleted successfully",
+	})
+}
+
+func (h *Handler) handleList{{.Service.Name | pascalCase | pluralize}}(c *gin.Context) {
+	// Parse query parameters
+	var req types.List{{.Service.Name | pascalCase | pluralize}}Request
+	
+	// Parse pagination
+	if page := c.Query("page"); page != "" {
+		if p, err := strconv.Atoi(page); err == nil {
+			req.Page = p
+		}
+	}
+	if size := c.Query("size"); size != "" {
+		if s, err := strconv.Atoi(size); err == nil {
+			req.Size = s
+		}
+	}
+
+	// Parse other filters
+	req.Search = c.Query("search")
+	req.Sort = c.Query("sort")
+	req.Order = c.Query("order")
+
+	// TODO: Implement list logic
+	// Example:
+	// ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	// defer cancel()
+	//
+	// response, err := h.{{.Service.Name | camelCase}}Service.List{{.Service.Name | pascalCase | pluralize}}(ctx, &req)
+	// if err != nil {
+	//     handleError(c, err)
+	//     return
+	// }
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "{{.Service.Name | titleCase | pluralize}} retrieved successfully",
+		Data:    nil, // Replace with actual response
+	})
+}
+
+// Helper function to handle errors
+func handleError(c *gin.Context, err error) {
+	// TODO: Implement proper error handling based on error types
+	c.JSON(http.StatusInternalServerError, types.Response{
+		Success: false,
+		Message: "Internal server error",
+		Error: &types.ErrorInfo{
+			Code:    "INTERNAL_ERROR",
+			Message: err.Error(),
+		},
+	})
+}

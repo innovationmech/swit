@@ -1,0 +1,199 @@
+{{- if and .Service.Features.Database (eq .Service.Database.Type "mysql") -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package db provides MySQL database connectivity for {{.Service.Name}}.
+package db
+
+import (
+	"fmt"
+	"time"
+)
+
+// MySQLConfig represents MySQL-specific configuration.
+type MySQLConfig struct {
+	Host             string        `yaml:"host" json:"host" default:"{{.Service.Database.Host}}"`
+	Port             int           `yaml:"port" json:"port" default:"{{.Service.Database.Port}}"`
+	Database         string        `yaml:"database" json:"database" default:"{{.Service.Database.Database}}"`
+	Username         string        `yaml:"username" json:"username" default:"{{.Service.Database.Username}}"`
+	Password         string        `yaml:"password" json:"password" default:"{{.Service.Database.Password}}"`
+	Charset          string        `yaml:"charset" json:"charset" default:"utf8mb4"`
+	Collation        string        `yaml:"collation" json:"collation" default:"utf8mb4_unicode_ci"`
+	ParseTime        bool          `yaml:"parse_time" json:"parse_time" default:"true"`
+	Loc              string        `yaml:"loc" json:"loc" default:"Local"`
+	Timeout          time.Duration `yaml:"timeout" json:"timeout" default:"10s"`
+	ReadTimeout      time.Duration `yaml:"read_timeout" json:"read_timeout" default:"30s"`
+	WriteTimeout     time.Duration `yaml:"write_timeout" json:"write_timeout" default:"30s"`
+	MaxIdleConns     int           `yaml:"max_idle_conns" json:"max_idle_conns" default:"10"`
+	MaxOpenConns     int           `yaml:"max_open_conns" json:"max_open_conns" default:"100"`
+	ConnMaxLifetime  time.Duration `yaml:"conn_max_lifetime" json:"conn_max_lifetime" default:"1h"`
+	ConnMaxIdleTime  time.Duration `yaml:"conn_max_idle_time" json:"conn_max_idle_time" default:"10m"`
+	TLS              TLSConfig     `yaml:"tls" json:"tls"`
+	EnableLogging    bool          `yaml:"enable_logging" json:"enable_logging" default:"true"`
+	SlowQueryTime    time.Duration `yaml:"slow_query_time" json:"slow_query_time" default:"200ms"`
+}
+
+// TLSConfig represents MySQL TLS configuration.
+type TLSConfig struct {
+	Enabled            bool   `yaml:"enabled" json:"enabled" default:"false"`
+	CertFile           string `yaml:"cert_file" json:"cert_file"`
+	KeyFile            string `yaml:"key_file" json:"key_file"`
+	CAFile             string `yaml:"ca_file" json:"ca_file"`
+	ServerName         string `yaml:"server_name" json:"server_name"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify" json:"insecure_skip_verify" default:"false"`
+}
+
+// DSN generates the MySQL Data Source Name.
+func (c *MySQLConfig) DSN() string {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+		c.Username,
+		c.Password,
+		c.Host,
+		c.Port,
+		c.Database,
+	)
+
+	params := make(map[string]string)
+	
+	// Add connection parameters
+	params["charset"] = c.Charset
+	if c.Collation != "" {
+		params["collation"] = c.Collation
+	}
+	params["parseTime"] = fmt.Sprintf("%t", c.ParseTime)
+	params["loc"] = c.Loc
+	
+	if c.Timeout > 0 {
+		params["timeout"] = c.Timeout.String()
+	}
+	if c.ReadTimeout > 0 {
+		params["readTimeout"] = c.ReadTimeout.String()
+	}
+	if c.WriteTimeout > 0 {
+		params["writeTimeout"] = c.WriteTimeout.String()
+	}
+
+	// Add TLS configuration
+	if c.TLS.Enabled {
+		if c.TLS.InsecureSkipVerify {
+			params["tls"] = "skip-verify"
+		} else {
+			params["tls"] = "true"
+		}
+	}
+
+	// Build parameter string
+	var paramStr string
+	first := true
+	for key, value := range params {
+		if first {
+			paramStr += "?"
+			first = false
+		} else {
+			paramStr += "&"
+		}
+		paramStr += fmt.Sprintf("%s=%s", key, value)
+	}
+
+	return dsn + paramStr
+}
+
+// Validate validates the MySQL configuration.
+func (c *MySQLConfig) Validate() error {
+	if c.Host == "" {
+		return fmt.Errorf("MySQL host is required")
+	}
+
+	if c.Port <= 0 || c.Port > 65535 {
+		return fmt.Errorf("invalid MySQL port: %d", c.Port)
+	}
+
+	if c.Database == "" {
+		return fmt.Errorf("MySQL database name is required")
+	}
+
+	if c.Username == "" {
+		return fmt.Errorf("MySQL username is required")
+	}
+
+	if c.MaxIdleConns < 0 {
+		return fmt.Errorf("max idle connections cannot be negative")
+	}
+
+	if c.MaxOpenConns <= 0 {
+		return fmt.Errorf("max open connections must be positive")
+	}
+
+	if c.MaxIdleConns > c.MaxOpenConns {
+		return fmt.Errorf("max idle connections cannot exceed max open connections")
+	}
+
+	return nil
+}
+
+// LoadDefaults loads default values for MySQL configuration.
+func (c *MySQLConfig) LoadDefaults() {
+	if c.Host == "" {
+		c.Host = "{{.Service.Database.Host}}"
+	}
+	if c.Port == 0 {
+		c.Port = {{.Service.Database.Port}}
+	}
+	if c.Database == "" {
+		c.Database = "{{.Service.Database.Database}}"
+	}
+	if c.Username == "" {
+		c.Username = "{{.Service.Database.Username}}"
+	}
+	if c.Charset == "" {
+		c.Charset = "utf8mb4"
+	}
+	if c.Collation == "" {
+		c.Collation = "utf8mb4_unicode_ci"
+	}
+	if c.Loc == "" {
+		c.Loc = "Local"
+	}
+	if c.Timeout == 0 {
+		c.Timeout = 10 * time.Second
+	}
+	if c.ReadTimeout == 0 {
+		c.ReadTimeout = 30 * time.Second
+	}
+	if c.WriteTimeout == 0 {
+		c.WriteTimeout = 30 * time.Second
+	}
+	if c.MaxIdleConns == 0 {
+		c.MaxIdleConns = 10
+	}
+	if c.MaxOpenConns == 0 {
+		c.MaxOpenConns = 100
+	}
+	if c.ConnMaxLifetime == 0 {
+		c.ConnMaxLifetime = time.Hour
+	}
+	if c.ConnMaxIdleTime == 0 {
+		c.ConnMaxIdleTime = 10 * time.Minute
+	}
+	if c.SlowQueryTime == 0 {
+		c.SlowQueryTime = 200 * time.Millisecond
+	}
+}
+{{- end -}}

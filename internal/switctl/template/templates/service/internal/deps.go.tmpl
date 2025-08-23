@@ -1,0 +1,264 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package {{.Package.Name}} provides dependency injection for {{.Service.Name}}.
+package {{.Package.Name}}
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/config"
+{{- if .Service.Features.Database}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/db"
+{{- end}}
+{{- if .Service.Features.Cache}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/cache"
+{{- end}}
+{{- if .Service.Features.MessageQueue}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/queue"
+{{- end}}
+{{- if .Service.Features.Authentication}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/auth"
+{{- end}}
+)
+
+// DependencyContainer manages service dependencies.
+type DependencyContainer struct {
+	config *config.Config
+	mutex  sync.RWMutex
+
+	// Core dependencies
+{{- if .Service.Features.Database}}
+	database *db.Database
+{{- end}}
+{{- if .Service.Features.Cache}}
+	cache    *cache.Cache
+{{- end}}
+{{- if .Service.Features.MessageQueue}}
+	queue    *queue.Queue
+{{- end}}
+{{- if .Service.Features.Authentication}}
+	auth     *auth.Auth
+{{- end}}
+}
+
+// NewDependencyContainer creates a new dependency container.
+func NewDependencyContainer(cfg *config.Config) *DependencyContainer {
+	return &DependencyContainer{
+		config: cfg,
+	}
+}
+
+// Initialize initializes all dependencies.
+func (d *DependencyContainer) Initialize(ctx context.Context) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+{{- if .Service.Features.Database}}
+	// Initialize database
+	if err := d.initializeDatabase(); err != nil {
+		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+{{- end}}
+
+{{- if .Service.Features.Cache}}
+	// Initialize cache
+	if err := d.initializeCache(); err != nil {
+		return fmt.Errorf("failed to initialize cache: %w", err)
+	}
+{{- end}}
+
+{{- if .Service.Features.MessageQueue}}
+	// Initialize message queue
+	if err := d.initializeQueue(); err != nil {
+		return fmt.Errorf("failed to initialize message queue: %w", err)
+	}
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+	// Initialize authentication
+	if err := d.initializeAuth(); err != nil {
+		return fmt.Errorf("failed to initialize authentication: %w", err)
+	}
+{{- end}}
+
+	return nil
+}
+
+// Close closes all dependencies.
+func (d *DependencyContainer) Close() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	var errors []error
+
+{{- if .Service.Features.Authentication}}
+	// Close authentication
+	if d.auth != nil {
+		if err := d.auth.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close auth: %w", err))
+		}
+		d.auth = nil
+	}
+{{- end}}
+
+{{- if .Service.Features.MessageQueue}}
+	// Close message queue
+	if d.queue != nil {
+		if err := d.queue.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close queue: %w", err))
+		}
+		d.queue = nil
+	}
+{{- end}}
+
+{{- if .Service.Features.Cache}}
+	// Close cache
+	if d.cache != nil {
+		if err := d.cache.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close cache: %w", err))
+		}
+		d.cache = nil
+	}
+{{- end}}
+
+{{- if .Service.Features.Database}}
+	// Close database
+	if d.database != nil {
+		if err := d.database.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close database: %w", err))
+		}
+		d.database = nil
+	}
+{{- end}}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("errors occurred while closing dependencies: %v", errors)
+	}
+
+	return nil
+}
+
+{{- if .Service.Features.Database}}
+
+// GetDatabase returns the database instance.
+func (d *DependencyContainer) GetDatabase() (*db.Database, error) {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+
+	if d.database == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	return d.database, nil
+}
+
+func (d *DependencyContainer) initializeDatabase() error {
+	database, err := db.NewDatabase(&d.config.Database)
+	if err != nil {
+		return err
+	}
+
+	d.database = database
+	return nil
+}
+{{- end}}
+
+{{- if .Service.Features.Cache}}
+
+// GetCache returns the cache instance.
+func (d *DependencyContainer) GetCache() (*cache.Cache, error) {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+
+	if d.cache == nil {
+		return nil, fmt.Errorf("cache not initialized")
+	}
+
+	return d.cache, nil
+}
+
+func (d *DependencyContainer) initializeCache() error {
+	cacheInstance, err := cache.NewCache(&d.config.Cache)
+	if err != nil {
+		return err
+	}
+
+	d.cache = cacheInstance
+	return nil
+}
+{{- end}}
+
+{{- if .Service.Features.MessageQueue}}
+
+// GetQueue returns the message queue instance.
+func (d *DependencyContainer) GetQueue() (*queue.Queue, error) {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+
+	if d.queue == nil {
+		return nil, fmt.Errorf("message queue not initialized")
+	}
+
+	return d.queue, nil
+}
+
+func (d *DependencyContainer) initializeQueue() error {
+	queueInstance, err := queue.NewQueue(&d.config.MessageQueue)
+	if err != nil {
+		return err
+	}
+
+	d.queue = queueInstance
+	return nil
+}
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+
+// GetAuth returns the authentication instance.
+func (d *DependencyContainer) GetAuth() (*auth.Auth, error) {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
+
+	if d.auth == nil {
+		return nil, fmt.Errorf("authentication not initialized")
+	}
+
+	return d.auth, nil
+}
+
+func (d *DependencyContainer) initializeAuth() error {
+	authInstance, err := auth.NewAuth(&d.config.Auth)
+	if err != nil {
+		return err
+	}
+
+	d.auth = authInstance
+	return nil
+}
+{{- end}}
+
+// GetConfig returns the configuration.
+func (d *DependencyContainer) GetConfig() *config.Config {
+	return d.config
+}

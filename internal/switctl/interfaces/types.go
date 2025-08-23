@@ -17,6 +17,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+//
 
 package interfaces
 
@@ -54,6 +55,10 @@ type ServiceFeatures struct {
 	Metrics        bool `yaml:"metrics" json:"metrics" default:"true"`
 	Docker         bool `yaml:"docker" json:"docker" default:"true"`
 	Kubernetes     bool `yaml:"kubernetes" json:"kubernetes" default:"false"`
+	GRPC           bool `yaml:"grpc" json:"grpc" default:"true"`
+	REST           bool `yaml:"rest" json:"rest" default:"true"`
+	WebSocket      bool `yaml:"websocket" json:"websocket" default:"false"`
+	GraphQL        bool `yaml:"graphql" json:"graphql" default:"false"`
 }
 
 // DatabaseConfig represents database configuration.
@@ -314,18 +319,103 @@ type LoggingConfig struct {
 	Output string `yaml:"output" json:"output" default:"stdout"`
 }
 
+// SecurityConfig represents security configuration for templates.
+type SecurityConfig struct {
+	TLS         TLSConfig     `json:"tls" yaml:"tls"`
+	Headers     HeadersConfig `json:"headers" yaml:"headers"`
+	Config      SecurityMode  `json:"config" yaml:"config"`
+	Environment string        `json:"environment" yaml:"environment"`
+	Mode        string        `json:"mode" yaml:"mode"`
+}
+
+// TLSConfig represents TLS security configuration.
+type TLSConfig struct {
+	Enabled      bool   `json:"enabled" yaml:"enabled"`
+	Modern       bool   `json:"modern" yaml:"modern"`
+	Intermediate bool   `json:"intermediate" yaml:"intermediate"`
+	MutualAuth   bool   `json:"mutual_auth" yaml:"mutual_auth"`
+	HSTS         bool   `json:"hsts" yaml:"hsts"`
+	OCSP         bool   `json:"ocsp" yaml:"ocsp"`
+	MinVersion   string `json:"min_version" yaml:"min_version"`
+	CertFile     string `json:"cert_file" yaml:"cert_file"`
+	KeyFile      string `json:"key_file" yaml:"key_file"`
+}
+
+// HeadersConfig represents security headers configuration.
+type HeadersConfig struct {
+	Enabled     bool   `json:"enabled" yaml:"enabled"`
+	Strict      bool   `json:"strict" yaml:"strict"`
+	API         bool   `json:"api" yaml:"api"`
+	Development bool   `json:"development" yaml:"development"`
+	CSP         string `json:"csp" yaml:"csp"`
+	HPKP        bool   `json:"hpkp" yaml:"hpkp"`
+	Conditional bool   `json:"conditional" yaml:"conditional"`
+	HSTS        bool   `json:"hsts" yaml:"hsts"`
+}
+
+// SecurityMode represents security mode configuration.
+type SecurityMode struct {
+	Development bool `json:"development" yaml:"development"`
+	Production  bool `json:"production" yaml:"production"`
+}
+
+// MiddlewareConfig represents middleware configuration for templates.
+type MiddlewareTemplateConfig struct {
+	CORS      CORSMiddlewareConfig      `json:"cors" yaml:"cors"`
+	RateLimit RateLimitMiddlewareConfig `json:"rate_limit" yaml:"rate_limit"`
+	RequestID RequestIDMiddlewareConfig `json:"request_id" yaml:"request_id"`
+	Logging   LoggingMiddlewareConfig   `json:"logging" yaml:"logging"`
+}
+
+// CORSMiddlewareConfig represents CORS middleware configuration.
+type CORSMiddlewareConfig struct {
+	Strict      bool `json:"strict" yaml:"strict"`
+	Development bool `json:"development" yaml:"development"`
+	Conditional bool `json:"conditional" yaml:"conditional"`
+	Logging     bool `json:"logging" yaml:"logging"`
+}
+
+// RateLimitMiddlewareConfig represents rate limiting middleware configuration.
+type RateLimitMiddlewareConfig struct {
+	Advanced    bool `json:"advanced" yaml:"advanced"`
+	Sliding     bool `json:"sliding" yaml:"sliding"`
+	Distributed bool `json:"distributed" yaml:"distributed"`
+	Adaptive    bool `json:"adaptive" yaml:"adaptive"`
+}
+
+// RequestIDMiddlewareConfig represents request ID middleware configuration.
+type RequestIDMiddlewareConfig struct {
+	UUID         bool `json:"uuid" yaml:"uuid"`
+	Hierarchical bool `json:"hierarchical" yaml:"hierarchical"`
+	Sequential   bool `json:"sequential" yaml:"sequential"`
+	Tracing      bool `json:"tracing" yaml:"tracing"`
+	Correlation  bool `json:"correlation" yaml:"correlation"`
+}
+
+// LoggingMiddlewareConfig represents logging middleware configuration.
+type LoggingMiddlewareConfig struct {
+	Structured  bool `json:"structured" yaml:"structured"`
+	Debug       bool `json:"debug" yaml:"debug"`
+	Conditional bool `json:"conditional" yaml:"conditional"`
+	Sampling    bool `json:"sampling" yaml:"sampling"`
+	Metrics     bool `json:"metrics" yaml:"metrics"`
+	Audit       bool `json:"audit" yaml:"audit"`
+}
+
 // TemplateData represents data passed to templates.
 type TemplateData struct {
-	Service    ServiceConfig     `json:"service"`
-	Package    PackageInfo       `json:"package"`
-	Imports    []ImportInfo      `json:"imports"`
-	Functions  []FunctionInfo    `json:"functions"`
-	Structs    []StructInfo      `json:"structs"`
-	Interfaces []InterfaceInfo   `json:"interfaces"`
-	Metadata   map[string]string `json:"metadata"`
-	Timestamp  time.Time         `json:"timestamp"`
-	Author     string            `json:"author"`
-	Version    string            `json:"version"`
+	Service    ServiceConfig            `json:"service"`
+	Package    PackageInfo              `json:"package"`
+	Imports    []ImportInfo             `json:"imports"`
+	Functions  []FunctionInfo           `json:"functions"`
+	Structs    []StructInfo             `json:"structs"`
+	Interfaces []InterfaceInfo          `json:"interfaces"`
+	Metadata   map[string]string        `json:"metadata"`
+	Timestamp  time.Time                `json:"timestamp"`
+	Author     string                   `json:"author"`
+	Version    string                   `json:"version"`
+	Security   SecurityConfig           `json:"security"`
+	Middleware MiddlewareTemplateConfig `json:"middleware"`
 }
 
 // PackageInfo represents Go package information.

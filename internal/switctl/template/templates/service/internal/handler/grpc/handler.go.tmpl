@@ -1,0 +1,244 @@
+{{- if .Service.Features.GRPC -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package grpc provides gRPC handlers for {{.Service.Name}}.
+package grpc
+
+import (
+	"context"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/interfaces"
+	// TODO: Import your protobuf generated files here
+	// "{{.Service.ModulePath}}/api/gen/{{.Service.Name | kebabCase}}/v1"
+)
+
+// Handler implements the gRPC server for {{.Service.Name}}.
+type Handler struct {
+	{{.Service.Name | camelCase}}Service interfaces.{{.Service.Name | pascalCase}}Service
+	healthService    interfaces.HealthService
+	// TODO: Embed your protobuf service server here
+	// {{.Service.Name | camelCase}}v1.Unimplemented{{.Service.Name | pascalCase}}ServiceServer
+}
+
+// NewGRPCHandler creates a new gRPC handler instance.
+func NewGRPCHandler({{.Service.Name | camelCase}}Service interfaces.{{.Service.Name | pascalCase}}Service, healthService interfaces.HealthService) (*Handler, error) {
+	return &Handler{
+		{{.Service.Name | camelCase}}Service: {{.Service.Name | camelCase}}Service,
+		healthService:    healthService,
+	}, nil
+}
+
+// RegisterGRPC registers gRPC services with the server.
+func (h *Handler) RegisterGRPC(server interface{}) error {
+	grpcServer, ok := server.(*grpc.Server)
+	if !ok {
+		return ErrInvalidGRPCServer
+	}
+
+	// TODO: Register your protobuf service here
+	// {{.Service.Name | camelCase}}v1.Register{{.Service.Name | pascalCase}}ServiceServer(grpcServer, h)
+
+	return nil
+}
+
+// GetServiceName returns the service name.
+func (h *Handler) GetServiceName() string {
+	return "{{.Service.Name}}-grpc"
+}
+
+// TODO: Implement your gRPC service methods here
+// Example implementation:
+
+// Create{{.Service.Name | pascalCase}} creates a new {{.Service.Name}}.
+// func (h *Handler) Create{{.Service.Name | pascalCase}}(ctx context.Context, req *{{.Service.Name | camelCase}}v1.Create{{.Service.Name | pascalCase}}Request) (*{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response, error) {
+//     // Validate request
+//     if req == nil {
+//         return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+//     }
+//
+//     // Convert protobuf request to internal type
+//     createReq := &types.Create{{.Service.Name | pascalCase}}Request{
+//         Name:        req.Name,
+//         Description: req.Description,
+//     }
+//
+//     // Call service method
+//     response, err := h.{{.Service.Name | camelCase}}Service.Create{{.Service.Name | pascalCase}}(ctx, createReq)
+//     if err != nil {
+//         return nil, handleGRPCError(err)
+//     }
+//
+//     // Convert internal response to protobuf
+//     return &{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response{
+//         Id:          response.ID,
+//         Name:        response.Name,
+//         Description: response.Description,
+//         Status:      string(response.Status),
+//         CreatedAt:   timestamppb.New(response.CreatedAt),
+//         UpdatedAt:   timestamppb.New(response.UpdatedAt),
+//     }, nil
+// }
+
+// Get{{.Service.Name | pascalCase}} retrieves a {{.Service.Name}} by ID.
+// func (h *Handler) Get{{.Service.Name | pascalCase}}(ctx context.Context, req *{{.Service.Name | camelCase}}v1.Get{{.Service.Name | pascalCase}}Request) (*{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response, error) {
+//     // Validate request
+//     if req == nil {
+//         return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+//     }
+//
+//     if req.Id == "" {
+//         return nil, status.Error(codes.InvalidArgument, "{{.Service.Name | camelCase}} ID is required")
+//     }
+//
+//     // Call service method
+//     response, err := h.{{.Service.Name | camelCase}}Service.Get{{.Service.Name | pascalCase}}(ctx, req.Id)
+//     if err != nil {
+//         return nil, handleGRPCError(err)
+//     }
+//
+//     // Convert internal response to protobuf
+//     return &{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response{
+//         Id:          response.ID,
+//         Name:        response.Name,
+//         Description: response.Description,
+//         Status:      string(response.Status),
+//         CreatedAt:   timestamppb.New(response.CreatedAt),
+//         UpdatedAt:   timestamppb.New(response.UpdatedAt),
+//     }, nil
+// }
+
+// Update{{.Service.Name | pascalCase}} updates an existing {{.Service.Name}}.
+// func (h *Handler) Update{{.Service.Name | pascalCase}}(ctx context.Context, req *{{.Service.Name | camelCase}}v1.Update{{.Service.Name | pascalCase}}Request) (*{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response, error) {
+//     // Validate request
+//     if req == nil {
+//         return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+//     }
+//
+//     if req.Id == "" {
+//         return nil, status.Error(codes.InvalidArgument, "{{.Service.Name | camelCase}} ID is required")
+//     }
+//
+//     // Convert protobuf request to internal type
+//     updateReq := &types.Update{{.Service.Name | pascalCase}}Request{}
+//     if req.Name != nil {
+//         updateReq.Name = &req.Name.Value
+//     }
+//     if req.Description != nil {
+//         updateReq.Description = &req.Description.Value
+//     }
+//
+//     // Call service method
+//     response, err := h.{{.Service.Name | camelCase}}Service.Update{{.Service.Name | pascalCase}}(ctx, req.Id, updateReq)
+//     if err != nil {
+//         return nil, handleGRPCError(err)
+//     }
+//
+//     // Convert internal response to protobuf
+//     return &{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response{
+//         Id:          response.ID,
+//         Name:        response.Name,
+//         Description: response.Description,
+//         Status:      string(response.Status),
+//         CreatedAt:   timestamppb.New(response.CreatedAt),
+//         UpdatedAt:   timestamppb.New(response.UpdatedAt),
+//     }, nil
+// }
+
+// Delete{{.Service.Name | pascalCase}} deletes a {{.Service.Name}} by ID.
+// func (h *Handler) Delete{{.Service.Name | pascalCase}}(ctx context.Context, req *{{.Service.Name | camelCase}}v1.Delete{{.Service.Name | pascalCase}}Request) (*emptypb.Empty, error) {
+//     // Validate request
+//     if req == nil {
+//         return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+//     }
+//
+//     if req.Id == "" {
+//         return nil, status.Error(codes.InvalidArgument, "{{.Service.Name | camelCase}} ID is required")
+//     }
+//
+//     // Call service method
+//     err := h.{{.Service.Name | camelCase}}Service.Delete{{.Service.Name | pascalCase}}(ctx, req.Id)
+//     if err != nil {
+//         return nil, handleGRPCError(err)
+//     }
+//
+//     return &emptypb.Empty{}, nil
+// }
+
+// List{{.Service.Name | pascalCase | pluralize}} lists {{.Service.Name | pluralize}} with pagination.
+// func (h *Handler) List{{.Service.Name | pascalCase | pluralize}}(ctx context.Context, req *{{.Service.Name | camelCase}}v1.List{{.Service.Name | pascalCase | pluralize}}Request) (*{{.Service.Name | camelCase}}v1.List{{.Service.Name | pascalCase | pluralize}}Response, error) {
+//     // Validate request
+//     if req == nil {
+//         return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+//     }
+//
+//     // Convert protobuf request to internal type
+//     listReq := &types.List{{.Service.Name | pascalCase | pluralize}}Request{
+//         ListFilter: types.ListFilter{
+//             Page:   int(req.Page),
+//             Size:   int(req.Size),
+//             Search: req.Search,
+//             Sort:   req.Sort,
+//             Order:  req.Order,
+//         },
+//     }
+//
+//     // Call service method
+//     response, err := h.{{.Service.Name | camelCase}}Service.List{{.Service.Name | pascalCase | pluralize}}(ctx, listReq)
+//     if err != nil {
+//         return nil, handleGRPCError(err)
+//     }
+//
+//     // Convert internal response to protobuf
+//     items := make([]*{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response, len(response.Items))
+//     for i, item := range response.Items {
+//         items[i] = &{{.Service.Name | camelCase}}v1.{{.Service.Name | pascalCase}}Response{
+//             Id:          item.ID,
+//             Name:        item.Name,
+//             Description: item.Description,
+//             Status:      string(item.Status),
+//             CreatedAt:   timestamppb.New(item.CreatedAt),
+//             UpdatedAt:   timestamppb.New(item.UpdatedAt),
+//         }
+//     }
+//
+//     return &{{.Service.Name | camelCase}}v1.List{{.Service.Name | pascalCase | pluralize}}Response{
+//         Items: items,
+//         Pagination: &{{.Service.Name | camelCase}}v1.Pagination{
+//             Page:    int32(response.Pagination.Page),
+//             Size:    int32(response.Pagination.Size),
+//             Total:   response.Pagination.Total,
+//             Pages:   int32(response.Pagination.Pages),
+//             HasNext: response.Pagination.HasNext,
+//             HasPrev: response.Pagination.HasPrev,
+//         },
+//     }, nil
+// }
+
+// Helper function to convert internal errors to gRPC errors
+func handleGRPCError(err error) error {
+	// TODO: Implement proper error mapping based on your error types
+	return status.Error(codes.Internal, err.Error())
+}
+{{- end -}}

@@ -1,0 +1,159 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package {{.Package.Name}} provides adapters for integrating with the Swit framework.
+package {{.Package.Name}}
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/innovationmech/swit/pkg/server"
+{{- if .Service.Features.Database}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/db"
+{{- end}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/handler/http"
+{{- if .Service.Features.GRPC}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/handler/grpc"
+{{- end}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/interfaces"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/service"
+{{- if .Service.Features.Repository}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/repository"
+{{- end}}
+)
+
+// ServiceAdapter adapts the {{.Service.Name}} service to work with the Swit framework.
+type ServiceAdapter struct {
+	// Services
+	{{.Service.Name | camelCase}}Service interfaces.{{.Service.Name | pascalCase}}Service
+	healthService    interfaces.HealthService
+
+	// HTTP Handlers
+	httpHandler interfaces.HTTPHandler
+{{- if .Service.Features.GRPC}}
+	// gRPC Handlers  
+	grpcHandler interfaces.GRPCHandler
+{{- end}}
+
+{{- if .Service.Features.Database}}
+	// Database
+	db *db.Database
+{{- end}}
+
+{{- if .Service.Features.Repository}}
+	// Repositories
+	{{.Service.Name | camelCase}}Repository interfaces.{{.Service.Name | pascalCase}}Repository
+{{- end}}
+}
+
+// NewServiceAdapter creates a new service adapter instance.
+func NewServiceAdapter(deps *DependencyContainer) (*ServiceAdapter, error) {
+	adapter := &ServiceAdapter{}
+
+{{- if .Service.Features.Database}}
+	// Get database from dependencies
+	database, err := deps.GetDatabase()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database: %w", err)
+	}
+	adapter.db = database
+{{- end}}
+
+{{- if .Service.Features.Repository}}
+	// Initialize repositories
+	{{.Service.Name | camelCase}}Repo, err := repository.New{{.Service.Name | pascalCase}}Repository({{if .Service.Features.Database}}database{{else}}nil{{end}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create {{.Service.Name | camelCase}} repository: %w", err)
+	}
+	adapter.{{.Service.Name | camelCase}}Repository = {{.Service.Name | camelCase}}Repo
+{{- end}}
+
+	// Initialize services
+	{{.Service.Name | camelCase}}Svc, err := service.New{{.Service.Name | pascalCase}}Service({{if .Service.Features.Repository}}{{.Service.Name | camelCase}}Repo{{else}}nil{{end}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create {{.Service.Name | camelCase}} service: %w", err)
+	}
+	adapter.{{.Service.Name | camelCase}}Service = {{.Service.Name | camelCase}}Svc
+
+	// Initialize health service
+	healthSvc, err := service.NewHealthService({{if .Service.Features.Database}}database{{else}}nil{{end}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create health service: %w", err)
+	}
+	adapter.healthService = healthSvc
+
+	// Initialize HTTP handlers
+	httpHandler, err := http.NewHTTPHandler({{.Service.Name | camelCase}}Svc, healthSvc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP handler: %w", err)
+	}
+	adapter.httpHandler = httpHandler
+
+{{- if .Service.Features.GRPC}}
+	// Initialize gRPC handlers
+	grpcHandler, err := grpc.NewGRPCHandler({{.Service.Name | camelCase}}Svc, healthSvc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gRPC handler: %w", err)
+	}
+	adapter.grpcHandler = grpcHandler
+{{- end}}
+
+	return adapter, nil
+}
+
+// RegisterServices registers all service components with the business server registry.
+func (a *ServiceAdapter) RegisterServices(registry server.BusinessServiceRegistry) error {
+	// Register HTTP handler
+	if err := registry.RegisterBusinessHTTPHandler("{{.Service.Name | kebabCase}}", a.httpHandler); err != nil {
+		return fmt.Errorf("failed to register HTTP handler: %w", err)
+	}
+
+{{- if .Service.Features.GRPC}}
+	// Register gRPC handler
+	if err := registry.RegisterBusinessGRPCService("{{.Service.Name | kebabCase}}", a.grpcHandler); err != nil {
+		return fmt.Errorf("failed to register gRPC handler: %w", err)
+	}
+{{- end}}
+
+	// Register health check
+	if err := registry.RegisterBusinessHealthCheck("health", a.healthService); err != nil {
+		return fmt.Errorf("failed to register health check: %w", err)
+	}
+
+	return nil
+}
+
+// GetServiceName returns the service name.
+func (a *ServiceAdapter) GetServiceName() string {
+	return "{{.Service.Name}}"
+}
+
+// Close closes all resources used by the adapter.
+func (a *ServiceAdapter) Close(ctx context.Context) error {
+{{- if .Service.Features.Database}}
+	if a.db != nil {
+		if err := a.db.Close(); err != nil {
+			return fmt.Errorf("failed to close database: %w", err)
+		}
+	}
+{{- end}}
+	return nil
+}

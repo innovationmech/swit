@@ -1,0 +1,543 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// gormAuthRepository implements the AuthRepository interface using GORM.
+type gormAuthRepository struct {
+	db *gorm.DB
+}
+
+// NewGormAuthRepository creates a new GORM-based authentication repository.
+func NewGormAuthRepository(db *gorm.DB) AuthRepository {
+	return &gormAuthRepository{db: db}
+}
+
+// User operations
+
+// CreateUser creates a new user.
+func (r *gormAuthRepository) CreateUser(ctx context.Context, user *User) error {
+	return r.db.WithContext(ctx).Create(user).Error
+}
+
+// GetUserByID retrieves a user by ID.
+func (r *gormAuthRepository) GetUserByID(ctx context.Context, id string) (*User, error) {
+	var user User
+	err := r.db.WithContext(ctx).
+		Preload("Roles").
+		{{if .Auth.Features.OAuth2}}
+		Preload("OAuthTokens").
+		{{end}}
+		First(&user, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUserByUsername retrieves a user by username.
+func (r *gormAuthRepository) GetUserByUsername(ctx context.Context, username string) (*User, error) {
+	var user User
+	err := r.db.WithContext(ctx).
+		Preload("Roles").
+		{{if .Auth.Features.OAuth2}}
+		Preload("OAuthTokens").
+		{{end}}
+		First(&user, "username = ?", username).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUserByEmail retrieves a user by email.
+func (r *gormAuthRepository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	var user User
+	err := r.db.WithContext(ctx).
+		Preload("Roles").
+		{{if .Auth.Features.OAuth2}}
+		Preload("OAuthTokens").
+		{{end}}
+		First(&user, "email = ?", email).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// UpdateUser updates a user.
+func (r *gormAuthRepository) UpdateUser(ctx context.Context, user *User) error {
+	return r.db.WithContext(ctx).Save(user).Error
+}
+
+// DeleteUser deletes a user.
+func (r *gormAuthRepository) DeleteUser(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Delete(&User{}, "id = ?", id).Error
+}
+
+// Session operations
+
+// CreateSession creates a new session.
+func (r *gormAuthRepository) CreateSession(ctx context.Context, session *Session) error {
+	return r.db.WithContext(ctx).Create(session).Error
+}
+
+// GetSession retrieves a session by ID.
+func (r *gormAuthRepository) GetSession(ctx context.Context, id string) (*Session, error) {
+	var session Session
+	err := r.db.WithContext(ctx).
+		Preload("User").
+		First(&session, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+// UpdateSession updates a session.
+func (r *gormAuthRepository) UpdateSession(ctx context.Context, session *Session) error {
+	return r.db.WithContext(ctx).Save(session).Error
+}
+
+// DeleteSession deletes a session.
+func (r *gormAuthRepository) DeleteSession(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Delete(&Session{}, "id = ?", id).Error
+}
+
+// GetUserSessions retrieves all sessions for a user.
+func (r *gormAuthRepository) GetUserSessions(ctx context.Context, userID string) ([]Session, error) {
+	var sessions []Session
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND is_active = ?", userID, true).
+		Order("created_at DESC").
+		Find(&sessions).Error
+	return sessions, err
+}
+
+// DeleteUserSessions deletes all sessions for a user.
+func (r *gormAuthRepository) DeleteUserSessions(ctx context.Context, userID string) error {
+	return r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Delete(&Session{}).Error
+}
+
+{{if .Auth.Features.RBAC}}
+// Role operations
+
+// CreateRole creates a new role.
+func (r *gormAuthRepository) CreateRole(ctx context.Context, role *Role) error {
+	return r.db.WithContext(ctx).Create(role).Error
+}
+
+// GetRole retrieves a role by ID.
+func (r *gormAuthRepository) GetRole(ctx context.Context, id string) (*Role, error) {
+	var role Role
+	err := r.db.WithContext(ctx).
+		Preload("Permissions").
+		First(&role, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
+// GetRoleByName retrieves a role by name.
+func (r *gormAuthRepository) GetRoleByName(ctx context.Context, name string) (*Role, error) {
+	var role Role
+	err := r.db.WithContext(ctx).
+		Preload("Permissions").
+		First(&role, "name = ?", name).Error
+	if err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
+// UpdateRole updates a role.
+func (r *gormAuthRepository) UpdateRole(ctx context.Context, role *Role) error {
+	return r.db.WithContext(ctx).Save(role).Error
+}
+
+// DeleteRole deletes a role.
+func (r *gormAuthRepository) DeleteRole(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Delete(&Role{}, "id = ?", id).Error
+}
+
+// ListRoles retrieves all roles.
+func (r *gormAuthRepository) ListRoles(ctx context.Context) ([]Role, error) {
+	var roles []Role
+	err := r.db.WithContext(ctx).
+		Preload("Permissions").
+		Where("is_active = ?", true).
+		Find(&roles).Error
+	return roles, err
+}
+
+// Permission operations
+
+// CreatePermission creates a new permission.
+func (r *gormAuthRepository) CreatePermission(ctx context.Context, permission *Permission) error {
+	return r.db.WithContext(ctx).Create(permission).Error
+}
+
+// GetPermission retrieves a permission by ID.
+func (r *gormAuthRepository) GetPermission(ctx context.Context, id string) (*Permission, error) {
+	var permission Permission
+	err := r.db.WithContext(ctx).First(&permission, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &permission, nil
+}
+
+// GetPermissionByName retrieves a permission by name.
+func (r *gormAuthRepository) GetPermissionByName(ctx context.Context, name string) (*Permission, error) {
+	var permission Permission
+	err := r.db.WithContext(ctx).First(&permission, "name = ?", name).Error
+	if err != nil {
+		return nil, err
+	}
+	return &permission, nil
+}
+
+// ListPermissions retrieves all permissions.
+func (r *gormAuthRepository) ListPermissions(ctx context.Context) ([]Permission, error) {
+	var permissions []Permission
+	err := r.db.WithContext(ctx).Find(&permissions).Error
+	return permissions, err
+}
+
+// User-Role operations
+
+// AssignUserRole assigns a role to a user.
+func (r *gormAuthRepository) AssignUserRole(ctx context.Context, userID, roleID string) error {
+	var user User
+	if err := r.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	var role Role
+	if err := r.db.WithContext(ctx).First(&role, "id = ?", roleID).Error; err != nil {
+		return fmt.Errorf("role not found: %w", err)
+	}
+
+	return r.db.WithContext(ctx).Model(&user).Association("Roles").Append(&role)
+}
+
+// RemoveUserRole removes a role from a user.
+func (r *gormAuthRepository) RemoveUserRole(ctx context.Context, userID, roleID string) error {
+	var user User
+	if err := r.db.WithContext(ctx).First(&user, "id = ?", userID).Error; err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	var role Role
+	if err := r.db.WithContext(ctx).First(&role, "id = ?", roleID).Error; err != nil {
+		return fmt.Errorf("role not found: %w", err)
+	}
+
+	return r.db.WithContext(ctx).Model(&user).Association("Roles").Delete(&role)
+}
+
+// GetUserRoles retrieves all roles for a user.
+func (r *gormAuthRepository) GetUserRoles(ctx context.Context, userID string) ([]Role, error) {
+	var user User
+	err := r.db.WithContext(ctx).
+		Preload("Roles.Permissions").
+		First(&user, "id = ?", userID).Error
+	if err != nil {
+		return nil, err
+	}
+	return user.Roles, nil
+}
+
+// GetUserPermissions retrieves all permissions for a user through their roles.
+func (r *gormAuthRepository) GetUserPermissions(ctx context.Context, userID string) ([]Permission, error) {
+	var permissions []Permission
+	
+	err := r.db.WithContext(ctx).
+		Table("permissions").
+		Joins("JOIN role_permissions ON permissions.id = role_permissions.permission_id").
+		Joins("JOIN user_roles ON role_permissions.role_id = user_roles.role_id").
+		Where("user_roles.user_id = ?", userID).
+		Group("permissions.id").
+		Find(&permissions).Error
+	
+	return permissions, err
+}
+{{end}}
+
+{{if .Auth.Features.TokenBlacklist}}
+// Token blacklist operations
+
+// AddBlacklistedToken adds a token to the blacklist.
+func (r *gormAuthRepository) AddBlacklistedToken(ctx context.Context, token *BlacklistedToken) error {
+	return r.db.WithContext(ctx).Create(token).Error
+}
+
+// IsTokenBlacklisted checks if a token is blacklisted.
+func (r *gormAuthRepository) IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&BlacklistedToken{}).
+		Where("token_id = ? AND expires_at > ?", tokenID, time.Now()).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// CleanupExpiredTokens removes expired tokens from the blacklist.
+func (r *gormAuthRepository) CleanupExpiredTokens(ctx context.Context) error {
+	return r.db.WithContext(ctx).
+		Where("expires_at <= ?", time.Now()).
+		Delete(&BlacklistedToken{}).Error
+}
+{{end}}
+
+{{if .Auth.Features.MultiTenant}}
+// Tenant operations
+
+// CreateTenant creates a new tenant.
+func (r *gormAuthRepository) CreateTenant(ctx context.Context, tenant *Tenant) error {
+	return r.db.WithContext(ctx).Create(tenant).Error
+}
+
+// GetTenant retrieves a tenant by ID.
+func (r *gormAuthRepository) GetTenant(ctx context.Context, id string) (*Tenant, error) {
+	var tenant Tenant
+	err := r.db.WithContext(ctx).First(&tenant, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenant, nil
+}
+
+// GetTenantByDomain retrieves a tenant by domain.
+func (r *gormAuthRepository) GetTenantByDomain(ctx context.Context, domain string) (*Tenant, error) {
+	var tenant Tenant
+	err := r.db.WithContext(ctx).First(&tenant, "domain = ?", domain).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenant, nil
+}
+
+// UpdateTenant updates a tenant.
+func (r *gormAuthRepository) UpdateTenant(ctx context.Context, tenant *Tenant) error {
+	return r.db.WithContext(ctx).Save(tenant).Error
+}
+
+// ListTenants retrieves all active tenants.
+func (r *gormAuthRepository) ListTenants(ctx context.Context) ([]Tenant, error) {
+	var tenants []Tenant
+	err := r.db.WithContext(ctx).
+		Where("is_active = ?", true).
+		Find(&tenants).Error
+	return tenants, err
+}
+{{end}}
+
+{{if .Auth.Features.OAuth2}}
+// OAuth token operations
+
+// CreateOAuthToken creates a new OAuth token.
+func (r *gormAuthRepository) CreateOAuthToken(ctx context.Context, token *OAuthToken) error {
+	return r.db.WithContext(ctx).Create(token).Error
+}
+
+// GetOAuthToken retrieves an OAuth token by ID.
+func (r *gormAuthRepository) GetOAuthToken(ctx context.Context, id string) (*OAuthToken, error) {
+	var token OAuthToken
+	err := r.db.WithContext(ctx).
+		Preload("User").
+		First(&token, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &token, nil
+}
+
+// GetOAuthTokenByProvider retrieves OAuth tokens for a user and provider.
+func (r *gormAuthRepository) GetOAuthTokenByProvider(ctx context.Context, userID, provider string) (*OAuthToken, error) {
+	var token OAuthToken
+	err := r.db.WithContext(ctx).
+		First(&token, "user_id = ? AND provider = ?", userID, provider).Error
+	if err != nil {
+		return nil, err
+	}
+	return &token, nil
+}
+
+// UpdateOAuthToken updates an OAuth token.
+func (r *gormAuthRepository) UpdateOAuthToken(ctx context.Context, token *OAuthToken) error {
+	return r.db.WithContext(ctx).Save(token).Error
+}
+
+// DeleteOAuthToken deletes an OAuth token.
+func (r *gormAuthRepository) DeleteOAuthToken(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Delete(&OAuthToken{}, "id = ?", id).Error
+}
+
+// GetUserOAuthTokens retrieves all OAuth tokens for a user.
+func (r *gormAuthRepository) GetUserOAuthTokens(ctx context.Context, userID string) ([]OAuthToken, error) {
+	var tokens []OAuthToken
+	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Find(&tokens).Error
+	return tokens, err
+}
+{{end}}
+
+// Database migration helper
+
+// AutoMigrate runs database migrations for authentication tables.
+func (r *gormAuthRepository) AutoMigrate() error {
+	models := []interface{}{
+		&User{},
+		{{if .Auth.Features.RBAC}}
+		&Role{},
+		&Permission{},
+		{{end}}
+		&Session{},
+		{{if .Auth.Features.TokenBlacklist}}
+		&BlacklistedToken{},
+		{{end}}
+		{{if .Auth.Features.MultiTenant}}
+		&Tenant{},
+		{{end}}
+		{{if .Auth.Features.OAuth2}}
+		&OAuthToken{},
+		{{end}}
+	}
+
+	for _, model := range models {
+		if err := r.db.AutoMigrate(model); err != nil {
+			return fmt.Errorf("failed to migrate %T: %w", model, err)
+		}
+	}
+
+	return nil
+}
+
+{{if .Auth.Features.RBAC}}
+// SeedDefaultRoles creates default roles and permissions.
+func (r *gormAuthRepository) SeedDefaultRoles(ctx context.Context) error {
+	// Default permissions
+	permissions := []*Permission{
+		{ID: "perm_user_read", Name: "user:read", Resource: "user", Action: "read", Description: "Read user information"},
+		{ID: "perm_user_write", Name: "user:write", Resource: "user", Action: "write", Description: "Write user information"},
+		{ID: "perm_user_delete", Name: "user:delete", Resource: "user", Action: "delete", Description: "Delete user"},
+		{ID: "perm_admin_read", Name: "admin:read", Resource: "admin", Action: "read", Description: "Read admin information"},
+		{ID: "perm_admin_write", Name: "admin:write", Resource: "admin", Action: "write", Description: "Write admin information"},
+	}
+
+	for _, perm := range permissions {
+		perm.CreatedAt = time.Now()
+		perm.UpdatedAt = time.Now()
+		
+		// Create only if doesn't exist
+		var existing Permission
+		if err := r.db.WithContext(ctx).Where("name = ?", perm.Name).First(&existing).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				if err := r.db.WithContext(ctx).Create(perm).Error; err != nil {
+					return fmt.Errorf("failed to create permission %s: %w", perm.Name, err)
+				}
+			} else {
+				return fmt.Errorf("failed to check existing permission %s: %w", perm.Name, err)
+			}
+		}
+	}
+
+	// Default roles
+	roles := []*Role{
+		{
+			ID:          "role_user",
+			Name:        "user",
+			Description: "Standard user role",
+			IsActive:    true,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		},
+		{
+			ID:          "role_admin",
+			Name:        "admin",
+			Description: "Administrator role",
+			IsActive:    true,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		},
+	}
+
+	for _, role := range roles {
+		// Create only if doesn't exist
+		var existing Role
+		if err := r.db.WithContext(ctx).Where("name = ?", role.Name).First(&existing).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				if err := r.db.WithContext(ctx).Create(role).Error; err != nil {
+					return fmt.Errorf("failed to create role %s: %w", role.Name, err)
+				}
+			} else {
+				return fmt.Errorf("failed to check existing role %s: %w", role.Name, err)
+			}
+		}
+	}
+
+	// Assign permissions to roles
+	rolePermissions := map[string][]string{
+		"user":  {"user:read", "user:write"},
+		"admin": {"user:read", "user:write", "user:delete", "admin:read", "admin:write"},
+	}
+
+	for roleName, permNames := range rolePermissions {
+		var role Role
+		if err := r.db.WithContext(ctx).Where("name = ?", roleName).First(&role).Error; err != nil {
+			continue
+		}
+
+		for _, permName := range permNames {
+			var perm Permission
+			if err := r.db.WithContext(ctx).Where("name = ?", permName).First(&perm).Error; err != nil {
+				continue
+			}
+
+			// Check if association already exists
+			var count int64
+			r.db.WithContext(ctx).Table("role_permissions").
+				Where("role_id = ? AND permission_id = ?", role.ID, perm.ID).
+				Count(&count)
+			
+			if count == 0 {
+				if err := r.db.WithContext(ctx).Model(&role).Association("Permissions").Append(&perm); err != nil {
+					return fmt.Errorf("failed to assign permission %s to role %s: %w", permName, roleName, err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+{{end}}

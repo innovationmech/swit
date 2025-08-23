@@ -17,6 +17,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+//
 
 // Package testutil provides common utilities and fixtures for testing switctl components.
 package testutil
@@ -44,6 +45,9 @@ func TestServiceConfig() interfaces.ServiceConfig {
 			Tracing:        false,
 			Docker:         true,
 			Kubernetes:     false,
+			GRPC:           true,
+			REST:           true,
+			HealthCheck:    true,
 		},
 		Database: interfaces.DatabaseConfig{
 			Type:     "mysql",
@@ -57,6 +61,7 @@ func TestServiceConfig() interfaces.ServiceConfig {
 			Type:       "jwt",
 			SecretKey:  "test-secret-key",
 			Expiration: 24 * time.Hour,
+			Algorithm:  "HS256",
 		},
 		Ports: interfaces.PortConfig{
 			HTTP:    8080,
@@ -337,6 +342,64 @@ func TestTemplateData() interfaces.TemplateData {
 		Timestamp: time.Now(),
 		Author:    "Test Author",
 		Version:   "1.0.0",
+		Security: interfaces.SecurityConfig{
+			TLS: interfaces.TLSConfig{
+				Enabled:      true,
+				Modern:       true,
+				Intermediate: false,
+				MutualAuth:   false,
+				HSTS:         true,
+				OCSP:         false,
+				MinVersion:   "1.2",
+				CertFile:     "/etc/ssl/certs/server.crt",
+				KeyFile:      "/etc/ssl/private/server.key",
+			},
+			Headers: interfaces.HeadersConfig{
+				Enabled:     true,
+				Strict:      true,
+				API:         false,
+				Development: false,
+				CSP:         "default-src 'self'",
+				HPKP:        false,
+				Conditional: false,
+				HSTS:        true,
+			},
+			Config: interfaces.SecurityMode{
+				Development: false,
+				Production:  true,
+			},
+			Environment: "production",
+			Mode:        "high",
+		},
+		Middleware: interfaces.MiddlewareTemplateConfig{
+			CORS: interfaces.CORSMiddlewareConfig{
+				Strict:      true,
+				Development: false,
+				Conditional: false,
+				Logging:     true,
+			},
+			RateLimit: interfaces.RateLimitMiddlewareConfig{
+				Advanced:    true,
+				Sliding:     false,
+				Distributed: false,
+				Adaptive:    false,
+			},
+			RequestID: interfaces.RequestIDMiddlewareConfig{
+				UUID:         true,
+				Hierarchical: false,
+				Sequential:   false,
+				Tracing:      true,
+				Correlation:  true,
+			},
+			Logging: interfaces.LoggingMiddlewareConfig{
+				Structured:  true,
+				Debug:       false,
+				Conditional: false,
+				Sampling:    true,
+				Metrics:     true,
+				Audit:       true,
+			},
+		},
 	}
 }
 

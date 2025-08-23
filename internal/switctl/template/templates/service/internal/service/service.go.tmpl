@@ -1,0 +1,261 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package service provides business logic implementations for {{.Service.Name}}.
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/interfaces"
+{{- if .Service.Features.Repository}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+{{- end}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// {{.Service.Name | pascalCase}}Service implements the {{.Service.Name}} business logic.
+type {{.Service.Name | pascalCase}}Service struct {
+{{- if .Service.Features.Repository}}
+	repository interfaces.{{.Service.Name | pascalCase}}Repository
+{{- end}}
+}
+
+// New{{.Service.Name | pascalCase}}Service creates a new {{.Service.Name}} service instance.
+func New{{.Service.Name | pascalCase}}Service({{if .Service.Features.Repository}}repository interfaces.{{.Service.Name | pascalCase}}Repository{{else}}{{end}}) (*{{.Service.Name | pascalCase}}Service, error) {
+	return &{{.Service.Name | pascalCase}}Service{
+{{- if .Service.Features.Repository}}
+		repository: repository,
+{{- end}}
+	}, nil
+}
+
+// HealthCheck performs a health check for the service.
+func (s *{{.Service.Name | pascalCase}}Service) HealthCheck(ctx context.Context) error {
+{{- if .Service.Features.Repository}}
+	// Check repository health
+	if s.repository != nil {
+		if err := s.repository.HealthCheck(ctx); err != nil {
+			return fmt.Errorf("repository health check failed: %w", err)
+		}
+	}
+{{- end}}
+
+	// Service is healthy
+	return nil
+}
+
+// GetServiceName returns the service name.
+func (s *{{.Service.Name | pascalCase}}Service) GetServiceName() string {
+	return "{{.Service.Name}}"
+}
+
+// TODO: Implement your business methods here
+// Example implementations:
+
+// Create{{.Service.Name | pascalCase}} creates a new {{.Service.Name}}.
+// func (s *{{.Service.Name | pascalCase}}Service) Create{{.Service.Name | pascalCase}}(ctx context.Context, req *types.Create{{.Service.Name | pascalCase}}Request) (*types.{{.Service.Name | pascalCase}}Response, error) {
+//     // Validate request
+//     if req == nil {
+//         return nil, ErrInvalidRequest
+//     }
+//
+//     if req.Name == "" {
+//         return nil, ErrMissingName
+//     }
+//
+//     // Create model
+//     {{.Service.Name | camelCase}} := &model.{{.Service.Name | pascalCase}}{
+//         ID:          generateID(), // Implement ID generation
+//         Name:        req.Name,
+//         Description: req.Description,
+//         Status:      types.StatusActive,
+//         CreatedAt:   time.Now(),
+//         UpdatedAt:   time.Now(),
+//         Metadata:    req.Metadata,
+//     }
+//
+//     // Save to repository
+//     if err := s.repository.Create(ctx, {{.Service.Name | camelCase}}); err != nil {
+//         return nil, fmt.Errorf("failed to create {{.Service.Name | camelCase}}: %w", err)
+//     }
+//
+//     // Convert to response
+//     return &types.{{.Service.Name | pascalCase}}Response{
+//         ID:          {{.Service.Name | camelCase}}.ID,
+//         Name:        {{.Service.Name | camelCase}}.Name,
+//         Description: {{.Service.Name | camelCase}}.Description,
+//         Status:      {{.Service.Name | camelCase}}.Status,
+//         CreatedAt:   {{.Service.Name | camelCase}}.CreatedAt,
+//         UpdatedAt:   {{.Service.Name | camelCase}}.UpdatedAt,
+//         Metadata:    {{.Service.Name | camelCase}}.Metadata,
+//     }, nil
+// }
+
+// Get{{.Service.Name | pascalCase}} retrieves a {{.Service.Name}} by ID.
+// func (s *{{.Service.Name | pascalCase}}Service) Get{{.Service.Name | pascalCase}}(ctx context.Context, id string) (*types.{{.Service.Name | pascalCase}}Response, error) {
+//     // Validate input
+//     if id == "" {
+//         return nil, ErrMissingID
+//     }
+//
+//     // Get from repository
+//     {{.Service.Name | camelCase}}, err := s.repository.GetByID(ctx, id)
+//     if err != nil {
+//         return nil, fmt.Errorf("failed to get {{.Service.Name | camelCase}}: %w", err)
+//     }
+//
+//     // Convert to response
+//     return &types.{{.Service.Name | pascalCase}}Response{
+//         ID:          {{.Service.Name | camelCase}}.ID,
+//         Name:        {{.Service.Name | camelCase}}.Name,
+//         Description: {{.Service.Name | camelCase}}.Description,
+//         Status:      {{.Service.Name | camelCase}}.Status,
+//         CreatedAt:   {{.Service.Name | camelCase}}.CreatedAt,
+//         UpdatedAt:   {{.Service.Name | camelCase}}.UpdatedAt,
+//         Metadata:    {{.Service.Name | camelCase}}.Metadata,
+//     }, nil
+// }
+
+// Update{{.Service.Name | pascalCase}} updates an existing {{.Service.Name}}.
+// func (s *{{.Service.Name | pascalCase}}Service) Update{{.Service.Name | pascalCase}}(ctx context.Context, id string, req *types.Update{{.Service.Name | pascalCase}}Request) (*types.{{.Service.Name | pascalCase}}Response, error) {
+//     // Validate input
+//     if id == "" {
+//         return nil, ErrMissingID
+//     }
+//
+//     if req == nil {
+//         return nil, ErrInvalidRequest
+//     }
+//
+//     // Get existing record
+//     {{.Service.Name | camelCase}}, err := s.repository.GetByID(ctx, id)
+//     if err != nil {
+//         return nil, fmt.Errorf("failed to get {{.Service.Name | camelCase}}: %w", err)
+//     }
+//
+//     // Update fields
+//     if req.Name != nil {
+//         {{.Service.Name | camelCase}}.Name = *req.Name
+//     }
+//     if req.Description != nil {
+//         {{.Service.Name | camelCase}}.Description = *req.Description
+//     }
+//     if req.Status != nil {
+//         {{.Service.Name | camelCase}}.Status = *req.Status
+//     }
+//     if req.Metadata != nil {
+//         {{.Service.Name | camelCase}}.Metadata = req.Metadata
+//     }
+//     {{.Service.Name | camelCase}}.UpdatedAt = time.Now()
+//
+//     // Save changes
+//     if err := s.repository.Update(ctx, {{.Service.Name | camelCase}}); err != nil {
+//         return nil, fmt.Errorf("failed to update {{.Service.Name | camelCase}}: %w", err)
+//     }
+//
+//     // Convert to response
+//     return &types.{{.Service.Name | pascalCase}}Response{
+//         ID:          {{.Service.Name | camelCase}}.ID,
+//         Name:        {{.Service.Name | camelCase}}.Name,
+//         Description: {{.Service.Name | camelCase}}.Description,
+//         Status:      {{.Service.Name | camelCase}}.Status,
+//         CreatedAt:   {{.Service.Name | camelCase}}.CreatedAt,
+//         UpdatedAt:   {{.Service.Name | camelCase}}.UpdatedAt,
+//         Metadata:    {{.Service.Name | camelCase}}.Metadata,
+//     }, nil
+// }
+
+// Delete{{.Service.Name | pascalCase}} deletes a {{.Service.Name}} by ID.
+// func (s *{{.Service.Name | pascalCase}}Service) Delete{{.Service.Name | pascalCase}}(ctx context.Context, id string) error {
+//     // Validate input
+//     if id == "" {
+//         return ErrMissingID
+//     }
+//
+//     // Delete from repository
+//     if err := s.repository.Delete(ctx, id); err != nil {
+//         return fmt.Errorf("failed to delete {{.Service.Name | camelCase}}: %w", err)
+//     }
+//
+//     return nil
+// }
+
+// List{{.Service.Name | pascalCase | pluralize}} lists {{.Service.Name | pluralize}} with pagination.
+// func (s *{{.Service.Name | pascalCase}}Service) List{{.Service.Name | pascalCase | pluralize}}(ctx context.Context, req *types.List{{.Service.Name | pascalCase | pluralize}}Request) (*types.List{{.Service.Name | pascalCase | pluralize}}Response, error) {
+//     // Validate request
+//     if req == nil {
+//         return nil, ErrInvalidRequest
+//     }
+//
+//     // Set default pagination
+//     filter := &req.ListFilter
+//     if filter.Page <= 0 {
+//         filter.Page = 1
+//     }
+//     if filter.Size <= 0 {
+//         filter.Size = 10
+//     }
+//     if filter.Size > 100 {
+//         filter.Size = 100 // Max page size
+//     }
+//
+//     // Get from repository
+//     items, total, err := s.repository.List(ctx, filter)
+//     if err != nil {
+//         return nil, fmt.Errorf("failed to list {{.Service.Name | pluralize}}: %w", err)
+//     }
+//
+//     // Convert to response
+//     responses := make([]*types.{{.Service.Name | pascalCase}}Response, len(items))
+//     for i, item := range items {
+//         responses[i] = &types.{{.Service.Name | pascalCase}}Response{
+//             ID:          item.ID,
+//             Name:        item.Name,
+//             Description: item.Description,
+//             Status:      item.Status,
+//             CreatedAt:   item.CreatedAt,
+//             UpdatedAt:   item.UpdatedAt,
+//             Metadata:    item.Metadata,
+//         }
+//     }
+//
+//     // Calculate pagination
+//     pages := int(total / int64(filter.Size))
+//     if total%int64(filter.Size) > 0 {
+//         pages++
+//     }
+//
+//     pagination := &types.Pagination{
+//         Page:    filter.Page,
+//         Size:    filter.Size,
+//         Total:   total,
+//         Pages:   pages,
+//         HasNext: filter.Page < pages,
+//         HasPrev: filter.Page > 1,
+//     }
+//
+//     return &types.List{{.Service.Name | pascalCase | pluralize}}Response{
+//         Items:      responses,
+//         Pagination: pagination,
+//     }, nil
+// }

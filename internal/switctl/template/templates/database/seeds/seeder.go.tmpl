@@ -1,0 +1,485 @@
+{{- if .Service.Features.Database -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package seeds provides database seeding functionality for {{.Service.Name}}.
+package seeds
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.uber.org/zap"
+{{- if ne .Service.Database.Type "mongodb"}}
+	"gorm.io/gorm"
+{{- else}}
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+{{- end}}
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/db"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+)
+
+// Seed represents a database seed.
+type Seed struct {
+	Name        string
+	Description string
+	Run         SeedFunc
+	Rollback    SeedFunc
+	Order       int
+	Environment []string // e.g., ["development", "testing"]
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// SeedFunc represents a seed function for SQL databases.
+type SeedFunc func(*gorm.DB) error
+{{- else}}
+// SeedFunc represents a seed function for MongoDB.
+type SeedFunc func(*mongo.Database) error
+{{- end}}
+
+// SeedRecord represents a record of applied seeds.
+type SeedRecord struct {
+{{- if ne .Service.Database.Type "mongodb"}}
+	ID        uint      `gorm:"primaryKey"`
+	SeedName  string    `gorm:"uniqueIndex;not null"`
+	AppliedAt time.Time `gorm:"not null"`
+	Environment string  `gorm:"not null"`
+{{- else}}
+	ID          string    `bson:"_id"`
+	SeedName    string    `bson:"seed_name"`
+	AppliedAt   time.Time `bson:"applied_at"`
+	Environment string    `bson:"environment"`
+{{- end}}
+}
+
+// Seeder handles database seeding.
+type Seeder struct {
+{{- if ne .Service.Database.Type "mongodb"}}
+	db          *gorm.DB
+{{- else}}
+	db          *mongo.Database
+{{- end}}
+	seeds       []Seed
+	environment string
+	logger      *zap.Logger
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// NewSeeder creates a new seeder for SQL databases.
+func NewSeeder(database db.DatabaseManager, environment string, logger *zap.Logger) *Seeder {
+	return &Seeder{
+		db:          database.DB(),
+		seeds:       GetSeeds(),
+		environment: environment,
+		logger:      logger,
+	}
+}
+{{- else}}
+// NewSeeder creates a new seeder for MongoDB.
+func NewSeeder(database db.DatabaseManager, environment string, logger *zap.Logger) *Seeder {
+	return &Seeder{
+		db:          database.Database(),
+		seeds:       GetSeeds(),
+		environment: environment,
+		logger:      logger,
+	}
+}
+{{- end}}
+
+// Seed runs all applicable seeds for the current environment.
+func (s *Seeder) Seed(ctx context.Context) error {
+	// Ensure seed table/collection exists
+	if err := s.createSeedTable(ctx); err != nil {
+		return fmt.Errorf("failed to create seed table: %w", err)
+	}
+
+	// Get applied seeds
+	applied, err := s.getAppliedSeeds(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get applied seeds: %w", err)
+	}
+
+	// Find pending seeds for current environment
+	pending := s.getPendingSeeds(applied)
+	if len(pending) == 0 {
+		s.logger.Info("No pending seeds for environment", zap.String("environment", s.environment))
+		return nil
+	}
+
+	s.logger.Info("Running seeds", 
+		zap.Int("count", len(pending)),
+		zap.String("environment", s.environment),
+	)
+
+	// Run pending seeds in order
+	for _, seed := range pending {
+		if err := s.runSeed(ctx, seed); err != nil {
+			return fmt.Errorf("failed to run seed %s: %w", seed.Name, err)
+		}
+		s.logger.Info("Seed completed", zap.String("seed", seed.Name))
+	}
+
+	s.logger.Info("All seeds completed successfully")
+	return nil
+}
+
+// RollbackSeeds rolls back all seeds for the current environment.
+func (s *Seeder) RollbackSeeds(ctx context.Context) error {
+	// Get applied seeds
+	applied, err := s.getAppliedSeeds(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get applied seeds: %w", err)
+	}
+
+	if len(applied) == 0 {
+		s.logger.Info("No seeds to rollback")
+		return nil
+	}
+
+	s.logger.Info("Rolling back seeds", zap.Int("count", len(applied)))
+
+	// Rollback seeds in reverse order
+	for i := len(applied) - 1; i >= 0; i-- {
+		record := applied[i]
+		seed := s.findSeed(record.SeedName)
+		if seed == nil {
+			s.logger.Warn("Seed not found, skipping rollback", zap.String("seed", record.SeedName))
+			continue
+		}
+
+		if err := s.rollbackSeed(ctx, *seed, record); err != nil {
+			return fmt.Errorf("failed to rollback seed %s: %w", seed.Name, err)
+		}
+		s.logger.Info("Seed rolled back", zap.String("seed", seed.Name))
+	}
+
+	s.logger.Info("Rollback completed successfully")
+	return nil
+}
+
+// Status returns the status of all seeds for the current environment.
+func (s *Seeder) Status(ctx context.Context) ([]SeedStatus, error) {
+	applied, err := s.getAppliedSeeds(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get applied seeds: %w", err)
+	}
+
+	appliedMap := make(map[string]SeedRecord)
+	for _, record := range applied {
+		appliedMap[record.SeedName] = record
+	}
+
+	var status []SeedStatus
+	for _, seed := range s.seeds {
+		// Check if seed is applicable to current environment
+		if !s.isSeedApplicable(seed) {
+			continue
+		}
+
+		if record, exists := appliedMap[seed.Name]; exists {
+			status = append(status, SeedStatus{
+				Seed:      seed,
+				Applied:   true,
+				AppliedAt: &record.AppliedAt,
+			})
+		} else {
+			status = append(status, SeedStatus{
+				Seed:    seed,
+				Applied: false,
+			})
+		}
+	}
+
+	return status, nil
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// createSeedTable creates the seed table if it doesn't exist.
+func (s *Seeder) createSeedTable(ctx context.Context) error {
+	return s.db.WithContext(ctx).AutoMigrate(&SeedRecord{})
+}
+
+// getAppliedSeeds returns all applied seeds for the current environment.
+func (s *Seeder) getAppliedSeeds(ctx context.Context) ([]SeedRecord, error) {
+	var records []SeedRecord
+	err := s.db.WithContext(ctx).
+		Where("environment = ?", s.environment).
+		Order("applied_at ASC").
+		Find(&records).Error
+	return records, err
+}
+
+// runSeed runs a single seed.
+func (s *Seeder) runSeed(ctx context.Context, seed Seed) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Run the seed
+		if err := seed.Run(tx); err != nil {
+			return err
+		}
+
+		// Record the seed
+		record := SeedRecord{
+			SeedName:    seed.Name,
+			AppliedAt:   time.Now(),
+			Environment: s.environment,
+		}
+		return tx.Create(&record).Error
+	})
+}
+
+// rollbackSeed rolls back a single seed.
+func (s *Seeder) rollbackSeed(ctx context.Context, seed Seed, record SeedRecord) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Run the rollback
+		if seed.Rollback != nil {
+			if err := seed.Rollback(tx); err != nil {
+				return err
+			}
+		}
+
+		// Remove the seed record
+		return tx.Delete(&record).Error
+	})
+}
+{{- else}}
+// createSeedTable creates the seed collection if it doesn't exist.
+func (s *Seeder) createSeedTable(ctx context.Context) error {
+	// Create index on seed_name and environment for uniqueness
+	indexModel := mongo.IndexModel{
+		Keys: bson.D{
+			{{`{"seed_name", 1}`}},
+			{{`{"environment", 1}`}},
+		},
+		Options: options.Index().SetUnique(true),
+	}
+	_, err := s.db.Collection("seeds").Indexes().CreateOne(ctx, indexModel)
+	return err
+}
+
+// getAppliedSeeds returns all applied seeds for the current environment.
+func (s *Seeder) getAppliedSeeds(ctx context.Context) ([]SeedRecord, error) {
+	var records []SeedRecord
+	filter := bson.D{ {{`{"environment", s.environment}`}} }
+	cursor, err := s.db.Collection("seeds").Find(ctx, filter, options.Find().SetSort(bson.D{ {{`{"applied_at", 1}`}} }))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	for cursor.Next(ctx) {
+		var record SeedRecord
+		if err := cursor.Decode(&record); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+
+	return records, cursor.Err()
+}
+
+// runSeed runs a single seed.
+func (s *Seeder) runSeed(ctx context.Context, seed Seed) error {
+	// Run the seed
+	if err := seed.Run(s.db); err != nil {
+		return err
+	}
+
+	// Record the seed
+	record := SeedRecord{
+		ID:          seed.Name,
+		SeedName:    seed.Name,
+		AppliedAt:   time.Now(),
+		Environment: s.environment,
+	}
+	_, err := s.db.Collection("seeds").InsertOne(ctx, record)
+	return err
+}
+
+// rollbackSeed rolls back a single seed.
+func (s *Seeder) rollbackSeed(ctx context.Context, seed Seed, record SeedRecord) error {
+	// Run the rollback
+	if seed.Rollback != nil {
+		if err := seed.Rollback(s.db); err != nil {
+			return err
+		}
+	}
+
+	// Remove the seed record
+	filter := bson.D{
+		{{`{"seed_name", record.SeedName}`}},
+		{{`{"environment", record.Environment}`}},
+	}
+	_, err := s.db.Collection("seeds").DeleteOne(ctx, filter)
+	return err
+}
+{{- end}}
+
+// getPendingSeeds returns seeds that haven't been applied yet for the current environment.
+func (s *Seeder) getPendingSeeds(applied []SeedRecord) []Seed {
+	appliedMap := make(map[string]bool)
+	for _, record := range applied {
+		appliedMap[record.SeedName] = true
+	}
+
+	var pending []Seed
+	for _, seed := range s.seeds {
+		if !appliedMap[seed.Name] && s.isSeedApplicable(seed) {
+			pending = append(pending, seed)
+		}
+	}
+
+	// Sort by order
+	for i := 0; i < len(pending); i++ {
+		for j := i + 1; j < len(pending); j++ {
+			if pending[i].Order > pending[j].Order {
+				pending[i], pending[j] = pending[j], pending[i]
+			}
+		}
+	}
+
+	return pending
+}
+
+// isSeedApplicable checks if a seed is applicable to the current environment.
+func (s *Seeder) isSeedApplicable(seed Seed) bool {
+	if len(seed.Environment) == 0 {
+		return true // No environment restriction
+	}
+
+	for _, env := range seed.Environment {
+		if env == s.environment {
+			return true
+		}
+	}
+	return false
+}
+
+// findSeed finds a seed by name.
+func (s *Seeder) findSeed(name string) *Seed {
+	for _, seed := range s.seeds {
+		if seed.Name == name {
+			return &seed
+		}
+	}
+	return nil
+}
+
+// SeedStatus represents the status of a seed.
+type SeedStatus struct {
+	Seed      Seed
+	Applied   bool
+	AppliedAt *time.Time
+}
+
+// GetSeeds returns all available seeds.
+func GetSeeds() []Seed {
+	return []Seed{
+		{
+			Name:        "001_seed_{{.Service.Name | snakeCase}}_data",
+			Description: "Seed initial {{.Service.Name | snakeCase}} data",
+			Run:         seed{{.Service.Name | pascalCase}}Data,
+			Rollback:    rollback{{.Service.Name | pascalCase}}Data,
+			Order:       1,
+			Environment: []string{"development", "testing"},
+		},
+		// Add more seeds here
+	}
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// seed{{.Service.Name | pascalCase}}Data seeds initial data.
+func seed{{.Service.Name | pascalCase}}Data(db *gorm.DB) error {
+	// Example seed data
+	samples := []model.{{.Service.Name | pascalCase}}{
+		{
+			// Add sample fields here
+			// Name: "Sample 1",
+			// Description: "This is a sample record",
+		},
+		{
+			// Name: "Sample 2", 
+			// Description: "This is another sample record",
+		},
+	}
+
+	for _, sample := range samples {
+		if err := db.FirstOrCreate(&sample).Error; err != nil {
+			return fmt.Errorf("failed to create sample data: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// rollback{{.Service.Name | pascalCase}}Data removes seeded data.
+func rollback{{.Service.Name | pascalCase}}Data(db *gorm.DB) error {
+	// Remove sample data
+	// You might want to be more specific about which records to remove
+	return db.Where("created_at >= ?", time.Now().Add(-24*time.Hour)).Delete(&model.{{.Service.Name | pascalCase}}{}).Error
+}
+{{- else}}
+// seed{{.Service.Name | pascalCase}}Data seeds initial data.
+func seed{{.Service.Name | pascalCase}}Data(db *mongo.Database) error {
+	collection := db.Collection("{{.Service.Name | snakeCase}}")
+	
+	// Example seed data
+	samples := []interface{}{
+		bson.D{
+			{{`{"name", "Sample 1"}`}},
+			{{`{"description", "This is a sample record"}`}},
+			{{`{"created_at", time.Now()}`}},
+			{{`{"updated_at", time.Now()}`}},
+		},
+		bson.D{
+			{{`{"name", "Sample 2"}`}},
+			{{`{"description", "This is another sample record"}`}},
+			{{`{"created_at", time.Now()}`}},
+			{{`{"updated_at", time.Now()}`}},
+		},
+	}
+
+	for _, sample := range samples {
+		_, err := collection.InsertOne(context.Background(), sample)
+		if err != nil {
+			return fmt.Errorf("failed to insert sample data: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// rollback{{.Service.Name | pascalCase}}Data removes seeded data.
+func rollback{{.Service.Name | pascalCase}}Data(db *mongo.Database) error {
+	collection := db.Collection("{{.Service.Name | snakeCase}}")
+	
+	// Remove sample data created in the last 24 hours
+	filter := bson.D{
+		{{`{"created_at", bson.D{ {"$gte", time.Now().Add(-24 * time.Hour)} }}`}},
+	}
+	
+	_, err := collection.DeleteMany(context.Background(), filter)
+	return err
+}
+{{- end}}
+{{- end -}}

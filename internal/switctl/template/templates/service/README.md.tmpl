@@ -1,0 +1,352 @@
+# {{.Service.Name | titleCase}}
+
+{{.Service.Description}}
+
+## Overview
+
+{{.Service.Name | titleCase}} is a microservice built with the [Swit framework](https://github.com/innovationmech/swit) that provides {{.Service.Description | lower}}. It exposes both HTTP and gRPC APIs for seamless integration with other services.
+
+## Features
+
+- **HTTP API**: RESTful endpoints for web applications
+{{- if .Service.Features.GRPC}}
+- **gRPC API**: High-performance RPC interface
+{{- end}}
+- **Health Checks**: Built-in health monitoring endpoints
+{{- if .Service.Features.Database}}
+- **Database Integration**: {{.Service.Database.Type | titleCase}} database support
+{{- end}}
+{{- if .Service.Features.Authentication}}
+- **Authentication**: {{.Service.Auth.Type | titleCase}} authentication support
+{{- end}}
+{{- if .Service.Features.Cache}}
+- **Caching**: Redis caching for improved performance
+{{- end}}
+{{- if .Service.Features.MessageQueue}}
+- **Message Queue**: RabbitMQ integration for async processing
+{{- end}}
+- **Docker Support**: Containerized deployment ready
+- **Comprehensive Testing**: Unit and integration tests included
+
+## Quick Start
+
+### Prerequisites
+
+- Go {{.Service.GoVersion | default "1.19"}}+ installed
+{{- if .Service.Features.Database}}
+- {{.Service.Database.Type | titleCase}} database server
+{{- end}}
+{{- if .Service.Features.Cache}}
+- Redis server (optional, for caching)
+{{- end}}
+{{- if .Service.Features.MessageQueue}}
+- RabbitMQ server (optional, for message queue)
+{{- end}}
+- Docker and Docker Compose (for containerized deployment)
+
+### Local Development
+
+1. **Clone and setup the project:**
+   ```bash
+   # Clone the repository
+   git clone <repository-url>
+   cd {{.Service.Name | kebabCase}}
+   
+   # Install dependencies
+   make deps
+   ```
+
+2. **Configure the service:**
+   ```bash
+   # Copy and edit the configuration file
+   cp config.yaml.example config.yaml
+   # Edit config.yaml with your settings
+   ```
+
+3. **Run the service:**
+   ```bash
+   # Development mode with hot reload
+   make dev
+   
+   # Or build and run
+   make build
+   make run
+   ```
+
+### Docker Deployment
+
+1. **Using Docker Compose (recommended):**
+   ```bash
+   # Start all services ({{.Service.Name}}, database, etc.)
+   docker-compose up -d
+   
+   # View logs
+   docker-compose logs -f {{.Service.Name | kebabCase}}
+   
+   # Stop services
+   docker-compose down
+   ```
+
+2. **Using Docker only:**
+   ```bash
+   # Build the image
+   make docker
+   
+   # Run the container
+   make docker-run
+   ```
+
+## API Documentation
+
+### HTTP Endpoints
+
+The service exposes HTTP endpoints on port `{{.Service.Ports.HTTP}}`:
+
+- **Health Check**: `GET /api/v1/health`
+- **Readiness**: `GET /api/v1/health/ready`
+- **Liveness**: `GET /api/v1/health/live`
+
+{{.Service.Name | titleCase}} endpoints:
+- **Create**: `POST /api/v1/{{.Service.Name | kebabCase | pluralize}}`
+- **Get**: `GET /api/v1/{{.Service.Name | kebabCase | pluralize}}/{id}`
+- **Update**: `PUT /api/v1/{{.Service.Name | kebabCase | pluralize}}/{id}`
+- **Delete**: `DELETE /api/v1/{{.Service.Name | kebabCase | pluralize}}/{id}`
+- **List**: `GET /api/v1/{{.Service.Name | kebabCase | pluralize}}`
+
+{{- if .Service.Features.GRPC}}
+
+### gRPC API
+
+The service exposes gRPC endpoints on port `{{.Service.Ports.GRPC}}`:
+
+- `Create{{.Service.Name | pascalCase}}(Create{{.Service.Name | pascalCase}}Request) returns ({{.Service.Name | pascalCase}}Response)`
+- `Get{{.Service.Name | pascalCase}}(Get{{.Service.Name | pascalCase}}Request) returns ({{.Service.Name | pascalCase}}Response)`
+- `Update{{.Service.Name | pascalCase}}(Update{{.Service.Name | pascalCase}}Request) returns ({{.Service.Name | pascalCase}}Response)`
+- `Delete{{.Service.Name | pascalCase}}(Delete{{.Service.Name | pascalCase}}Request) returns (Empty)`
+- `List{{.Service.Name | pascalCase | pluralize}}(List{{.Service.Name | pascalCase | pluralize}}Request) returns (List{{.Service.Name | pascalCase | pluralize}}Response)`
+{{- end}}
+
+### Example Requests
+
+**Create a {{.Service.Name}}:**
+```bash
+curl -X POST http://localhost:{{.Service.Ports.HTTP}}/api/v1/{{.Service.Name | kebabCase | pluralize}} \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Example {{.Service.Name | titleCase}}",
+    "description": "This is an example {{.Service.Name | camelCase}}"
+  }'
+```
+
+**Get a {{.Service.Name}}:**
+```bash
+curl http://localhost:{{.Service.Ports.HTTP}}/api/v1/{{.Service.Name | kebabCase | pluralize}}/{id}
+```
+
+**List {{.Service.Name | pluralize}}:**
+```bash
+curl "http://localhost:{{.Service.Ports.HTTP}}/api/v1/{{.Service.Name | kebabCase | pluralize}}?page=1&size=10"
+```
+
+## Configuration
+
+The service can be configured using a YAML file, environment variables, or command-line flags. Configuration precedence: CLI flags > Environment variables > Config file > Defaults.
+
+### Configuration File
+
+Create a `config.yaml` file based on the provided example:
+
+```yaml
+server:
+  http:
+    host: "0.0.0.0"
+    port: {{.Service.Ports.HTTP}}
+  grpc:
+    host: "0.0.0.0"
+    port: {{.Service.Ports.GRPC}}
+
+service:
+  name: "{{.Service.Name}}"
+  version: "{{.Service.Version}}"
+  description: "{{.Service.Description}}"
+
+{{- if .Service.Features.Database}}
+database:
+  type: "{{.Service.Database.Type}}"
+  host: "{{.Service.Database.Host}}"
+  port: {{.Service.Database.Port}}
+  database: "{{.Service.Database.Database}}"
+  username: "{{.Service.Database.Username}}"
+  password: "{{.Service.Database.Password}}"
+{{- end}}
+```
+
+### Environment Variables
+
+All configuration options can be set using environment variables with the prefix `{{.Service.Name | screamingSnakeCase}}_`:
+
+- `{{.Service.Name | screamingSnakeCase}}_SERVER_HTTP_PORT={{.Service.Ports.HTTP}}`
+- `{{.Service.Name | screamingSnakeCase}}_SERVER_GRPC_PORT={{.Service.Ports.GRPC}}`
+{{- if .Service.Features.Database}}
+- `{{.Service.Name | screamingSnakeCase}}_DATABASE_HOST={{.Service.Database.Host}}`
+- `{{.Service.Name | screamingSnakeCase}}_DATABASE_PORT={{.Service.Database.Port}}`
+{{- end}}
+
+## Development
+
+### Building
+
+```bash
+# Build the binary
+make build
+
+# Build for all platforms
+make build-all
+
+# Build release version
+make release
+```
+
+### Testing
+
+```bash
+# Run all tests
+make test
+
+# Run unit tests only
+make test-unit
+
+# Run integration tests
+make test-integration
+
+# Generate coverage report
+make coverage
+
+# Run benchmarks
+make bench
+```
+
+### Code Quality
+
+```bash
+# Format code
+make format
+
+# Run linters
+make lint
+
+# Run all quality checks
+make quality
+```
+
+{{- if .Service.Features.GRPC}}
+
+### Protocol Buffers
+
+```bash
+# Generate protobuf code
+make proto
+
+# This will generate:
+# - Go structs and gRPC service definitions
+# - OpenAPI/Swagger documentation
+# - gRPC-Gateway reverse proxy code
+```
+{{- end}}
+
+## Deployment
+
+### Production Deployment
+
+1. **Build the production image:**
+   ```bash
+   docker build -t {{.Service.Name | kebabCase}}:{{.Service.Version}} .
+   ```
+
+2. **Deploy using Docker Compose:**
+   ```bash
+   # Update docker-compose.yml for production settings
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+
+3. **Deploy to Kubernetes:**
+   ```bash
+   # Apply Kubernetes manifests (if available)
+   kubectl apply -f k8s/
+   ```
+
+### Health Monitoring
+
+The service provides comprehensive health checks:
+
+- **Liveness probe**: `GET /api/v1/health/live` - Always returns 200 if service is running
+- **Readiness probe**: `GET /api/v1/health/ready` - Returns 200 if service is ready to handle requests
+- **Health check**: `GET /api/v1/health` - Detailed health status including dependencies
+
+## Architecture
+
+{{.Service.Name | titleCase}} follows the Swit framework's architectural patterns:
+
+```
+cmd/                    # Application entry points
+├── serve/             # Server command
+└── version/           # Version command
+
+internal/              # Internal application code
+├── {{.Package.Name}}/            # Main package
+│   ├── adapter.go     # Framework adapter
+│   ├── server.go      # Server implementation
+│   ├── deps.go        # Dependency injection
+│   ├── config/        # Configuration management
+│   ├── handler/       # HTTP and gRPC handlers
+│   │   ├── http/      # HTTP handlers
+{{- if .Service.Features.GRPC}}
+│   │   └── grpc/      # gRPC handlers
+{{- end}}
+│   ├── service/       # Business logic
+{{- if .Service.Features.Database}}
+│   ├── repository/    # Data access layer
+{{- end}}
+{{- if .Service.Features.Database}}
+│   ├── model/         # Data models
+{{- end}}
+│   ├── interfaces/    # Interface definitions
+│   └── types/         # Type definitions
+{{- if .Service.Features.Database}}
+└── db/                # Database connectivity
+{{- end}}
+
+{{- if .Service.Features.GRPC}}
+api/                   # API definitions
+├── proto/             # Protocol buffer definitions
+└── gen/               # Generated code
+{{- end}}
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Add tests for your changes
+5. Ensure all tests pass (`make test`)
+6. Run quality checks (`make lint`)
+7. Commit your changes (`git commit -m 'Add amazing feature'`)
+8. Push to the branch (`git push origin feature/amazing-feature`)
+9. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For support and questions:
+
+- Create an issue in the repository
+- Contact: {{.Author}}
+
+## Acknowledgments
+
+- Built with the [Swit Framework](https://github.com/innovationmech/swit)
+- Powered by Go and the Go ecosystem

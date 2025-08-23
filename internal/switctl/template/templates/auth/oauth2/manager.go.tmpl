@@ -1,0 +1,439 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/github"
+	"golang.org/x/oauth2/microsoft"
+)
+
+var (
+	// OAuth2 errors
+	ErrInvalidProvider     = errors.New("invalid OAuth2 provider")
+	ErrInvalidState        = errors.New("invalid OAuth2 state")
+	ErrAuthorizationDenied = errors.New("authorization denied")
+	ErrTokenExchange       = errors.New("token exchange failed")
+	ErrUserInfoFetch       = errors.New("failed to fetch user info")
+)
+
+// OAuth2Provider represents supported OAuth2 providers.
+type OAuth2Provider string
+
+const (
+	ProviderGoogle    OAuth2Provider = "google"
+	ProviderGitHub    OAuth2Provider = "github"
+	ProviderMicrosoft OAuth2Provider = "microsoft"
+	{{if .Auth.OAuth2.CustomProviders}}
+	ProviderCustom    OAuth2Provider = "custom"
+	{{end}}
+)
+
+// OAuth2Config holds OAuth2 configuration for a provider.
+type OAuth2Config struct {
+	Provider     OAuth2Provider `yaml:"provider" json:"provider" mapstructure:"provider"`
+	ClientID     string         `yaml:"client_id" json:"client_id" mapstructure:"client_id"`
+	ClientSecret string         `yaml:"client_secret" json:"client_secret" mapstructure:"client_secret"`
+	RedirectURL  string         `yaml:"redirect_url" json:"redirect_url" mapstructure:"redirect_url"`
+	Scopes       []string       `yaml:"scopes" json:"scopes" mapstructure:"scopes"`
+	
+	// Custom provider configuration
+	AuthURL     string `yaml:"auth_url" json:"auth_url" mapstructure:"auth_url"`
+	TokenURL    string `yaml:"token_url" json:"token_url" mapstructure:"token_url"`
+	UserInfoURL string `yaml:"user_info_url" json:"user_info_url" mapstructure:"user_info_url"`
+	
+	// Additional configuration
+	SkipUserInfo bool `yaml:"skip_user_info" json:"skip_user_info" mapstructure:"skip_user_info"`
+}
+
+// OAuth2User represents user information from OAuth2 provider.
+type OAuth2User struct {
+	ID            string            `json:"id"`
+	Email         string            `json:"email"`
+	Name          string            `json:"name"`
+	Username      string            `json:"username"`
+	FirstName     string            `json:"first_name"`
+	LastName      string            `json:"last_name"`
+	AvatarURL     string            `json:"avatar_url"`
+	Provider      OAuth2Provider    `json:"provider"`
+	ProviderData  map[string]interface{} `json:"provider_data"`
+	EmailVerified bool              `json:"email_verified"`
+}
+
+// OAuth2Manager handles OAuth2 authentication flows.
+type OAuth2Manager struct {
+	configs map[OAuth2Provider]*oauth2.Config
+	states  StateStore
+}
+
+// StateStore interface for storing and validating OAuth2 states.
+type StateStore interface {
+	Store(ctx context.Context, state string, data interface{}, ttl time.Duration) error
+	Retrieve(ctx context.Context, state string) (interface{}, error)
+	Delete(ctx context.Context, state string) error
+}
+
+// NewOAuth2Manager creates a new OAuth2 manager.
+func NewOAuth2Manager(configs map[OAuth2Provider]*OAuth2Config, stateStore StateStore) (*OAuth2Manager, error) {
+	if len(configs) == 0 {
+		return nil, errors.New("at least one OAuth2 provider must be configured")
+	}
+
+	if stateStore == nil {
+		return nil, errors.New("state store is required")
+	}
+
+	oauth2Configs := make(map[OAuth2Provider]*oauth2.Config)
+
+	for provider, config := range configs {
+		oauth2Config, err := createOAuth2Config(provider, config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OAuth2 config for %s: %w", provider, err)
+		}
+		oauth2Configs[provider] = oauth2Config
+	}
+
+	return &OAuth2Manager{
+		configs: oauth2Configs,
+		states:  stateStore,
+	}, nil
+}
+
+// GetAuthURL generates an authorization URL for the specified provider.
+func (m *OAuth2Manager) GetAuthURL(ctx context.Context, provider OAuth2Provider, redirectTo string) (string, error) {
+	config, exists := m.configs[provider]
+	if !exists {
+		return "", fmt.Errorf("%w: %s", ErrInvalidProvider, provider)
+	}
+
+	// Generate secure state
+	state, err := generateState()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate state: %w", err)
+	}
+
+	// Store state with redirect information
+	stateData := map[string]interface{}{
+		"provider":    provider,
+		"redirect_to": redirectTo,
+		"created_at":  time.Now(),
+	}
+
+	err = m.states.Store(ctx, state, stateData, 10*time.Minute)
+	if err != nil {
+		return "", fmt.Errorf("failed to store state: %w", err)
+	}
+
+	// Generate authorization URL
+	authURL := config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	return authURL, nil
+}
+
+// HandleCallback handles the OAuth2 callback and exchanges code for tokens.
+func (m *OAuth2Manager) HandleCallback(ctx context.Context, provider OAuth2Provider, code, state string) (*OAuth2User, error) {
+	config, exists := m.configs[provider]
+	if !exists {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidProvider, provider)
+	}
+
+	// Validate state
+	stateData, err := m.states.Retrieve(ctx, state)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidState, err.Error())
+	}
+
+	// Clean up state
+	_ = m.states.Delete(ctx, state)
+
+	stateMap, ok := stateData.(map[string]interface{})
+	if !ok {
+		return nil, ErrInvalidState
+	}
+
+	storedProvider, ok := stateMap["provider"].(OAuth2Provider)
+	if !ok || storedProvider != provider {
+		return nil, ErrInvalidState
+	}
+
+	// Check for authorization denial
+	if code == "" {
+		return nil, ErrAuthorizationDenied
+	}
+
+	// Exchange code for token
+	token, err := config.Exchange(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrTokenExchange, err.Error())
+	}
+
+	// Fetch user information
+	user, err := m.fetchUserInfo(ctx, provider, token)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrUserInfoFetch, err.Error())
+	}
+
+	user.Provider = provider
+	return user, nil
+}
+
+// fetchUserInfo fetches user information from the OAuth2 provider.
+func (m *OAuth2Manager) fetchUserInfo(ctx context.Context, provider OAuth2Provider, token *oauth2.Token) (*OAuth2User, error) {
+	client := m.configs[provider].Client(ctx, token)
+
+	var userInfoURL string
+	switch provider {
+	case ProviderGoogle:
+		userInfoURL = "https://www.googleapis.com/oauth2/v2/userinfo"
+	case ProviderGitHub:
+		userInfoURL = "https://api.github.com/user"
+	case ProviderMicrosoft:
+		userInfoURL = "https://graph.microsoft.com/v1.0/me"
+	{{if .Auth.OAuth2.CustomProviders}}
+	case ProviderCustom:
+		// Custom provider user info URL should be configured
+		return nil, errors.New("custom provider user info URL not implemented")
+	{{end}}
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+
+	resp, err := client.Get(userInfoURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("user info request failed with status: %d", resp.StatusCode)
+	}
+
+	var rawUser map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&rawUser); err != nil {
+		return nil, fmt.Errorf("failed to decode user info: %w", err)
+	}
+
+	return m.parseUserInfo(provider, rawUser)
+}
+
+// parseUserInfo parses user information based on the provider.
+func (m *OAuth2Manager) parseUserInfo(provider OAuth2Provider, rawUser map[string]interface{}) (*OAuth2User, error) {
+	user := &OAuth2User{
+		Provider:     provider,
+		ProviderData: rawUser,
+	}
+
+	switch provider {
+	case ProviderGoogle:
+		return m.parseGoogleUser(user, rawUser)
+	case ProviderGitHub:
+		return m.parseGitHubUser(user, rawUser)
+	case ProviderMicrosoft:
+		return m.parseMicrosoftUser(user, rawUser)
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+}
+
+func (m *OAuth2Manager) parseGoogleUser(user *OAuth2User, rawUser map[string]interface{}) (*OAuth2User, error) {
+	if id, ok := rawUser["id"].(string); ok {
+		user.ID = id
+	}
+	if email, ok := rawUser["email"].(string); ok {
+		user.Email = email
+	}
+	if name, ok := rawUser["name"].(string); ok {
+		user.Name = name
+	}
+	if firstName, ok := rawUser["given_name"].(string); ok {
+		user.FirstName = firstName
+	}
+	if lastName, ok := rawUser["family_name"].(string); ok {
+		user.LastName = lastName
+	}
+	if picture, ok := rawUser["picture"].(string); ok {
+		user.AvatarURL = picture
+	}
+	if verified, ok := rawUser["verified_email"].(bool); ok {
+		user.EmailVerified = verified
+	}
+
+	return user, nil
+}
+
+func (m *OAuth2Manager) parseGitHubUser(user *OAuth2User, rawUser map[string]interface{}) (*OAuth2User, error) {
+	if id, ok := rawUser["id"].(float64); ok {
+		user.ID = fmt.Sprintf("%.0f", id)
+	}
+	if login, ok := rawUser["login"].(string); ok {
+		user.Username = login
+	}
+	if email, ok := rawUser["email"].(string); ok && email != "" {
+		user.Email = email
+		user.EmailVerified = true // GitHub returns verified emails
+	}
+	if name, ok := rawUser["name"].(string); ok {
+		user.Name = name
+	}
+	if avatarURL, ok := rawUser["avatar_url"].(string); ok {
+		user.AvatarURL = avatarURL
+	}
+
+	return user, nil
+}
+
+func (m *OAuth2Manager) parseMicrosoftUser(user *OAuth2User, rawUser map[string]interface{}) (*OAuth2User, error) {
+	if id, ok := rawUser["id"].(string); ok {
+		user.ID = id
+	}
+	if userPrincipalName, ok := rawUser["userPrincipalName"].(string); ok {
+		user.Email = userPrincipalName
+		user.Username = strings.Split(userPrincipalName, "@")[0]
+		user.EmailVerified = true // Microsoft returns verified emails
+	}
+	if displayName, ok := rawUser["displayName"].(string); ok {
+		user.Name = displayName
+	}
+	if givenName, ok := rawUser["givenName"].(string); ok {
+		user.FirstName = givenName
+	}
+	if surname, ok := rawUser["surname"].(string); ok {
+		user.LastName = surname
+	}
+
+	return user, nil
+}
+
+// Helper functions
+
+func createOAuth2Config(provider OAuth2Provider, config *OAuth2Config) (*oauth2.Config, error) {
+	oauth2Config := &oauth2.Config{
+		ClientID:     config.ClientID,
+		ClientSecret: config.ClientSecret,
+		RedirectURL:  config.RedirectURL,
+		Scopes:       config.Scopes,
+	}
+
+	switch provider {
+	case ProviderGoogle:
+		oauth2Config.Endpoint = google.Endpoint
+		if len(oauth2Config.Scopes) == 0 {
+			oauth2Config.Scopes = []string{"openid", "profile", "email"}
+		}
+	case ProviderGitHub:
+		oauth2Config.Endpoint = github.Endpoint
+		if len(oauth2Config.Scopes) == 0 {
+			oauth2Config.Scopes = []string{"user:email"}
+		}
+	case ProviderMicrosoft:
+		oauth2Config.Endpoint = microsoft.AzureADEndpoint("")
+		if len(oauth2Config.Scopes) == 0 {
+			oauth2Config.Scopes = []string{"openid", "profile", "email"}
+		}
+	{{if .Auth.OAuth2.CustomProviders}}
+	case ProviderCustom:
+		if config.AuthURL == "" || config.TokenURL == "" {
+			return nil, errors.New("custom provider requires auth_url and token_url")
+		}
+		oauth2Config.Endpoint = oauth2.Endpoint{
+			AuthURL:  config.AuthURL,
+			TokenURL: config.TokenURL,
+		}
+	{{end}}
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+
+	return oauth2Config, nil
+}
+
+func generateState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// InMemoryStateStore provides an in-memory implementation of StateStore.
+type InMemoryStateStore struct {
+	states map[string]stateEntry
+}
+
+type stateEntry struct {
+	data   interface{}
+	expiry time.Time
+}
+
+// NewInMemoryStateStore creates a new in-memory state store.
+func NewInMemoryStateStore() *InMemoryStateStore {
+	return &InMemoryStateStore{
+		states: make(map[string]stateEntry),
+	}
+}
+
+func (s *InMemoryStateStore) Store(ctx context.Context, state string, data interface{}, ttl time.Duration) error {
+	s.states[state] = stateEntry{
+		data:   data,
+		expiry: time.Now().Add(ttl),
+	}
+	return nil
+}
+
+func (s *InMemoryStateStore) Retrieve(ctx context.Context, state string) (interface{}, error) {
+	entry, exists := s.states[state]
+	if !exists {
+		return nil, errors.New("state not found")
+	}
+
+	if time.Now().After(entry.expiry) {
+		delete(s.states, state)
+		return nil, errors.New("state expired")
+	}
+
+	return entry.data, nil
+}
+
+func (s *InMemoryStateStore) Delete(ctx context.Context, state string) error {
+	delete(s.states, state)
+	return nil
+}
+
+// Cleanup removes expired states.
+func (s *InMemoryStateStore) Cleanup() {
+	now := time.Now()
+	for state, entry := range s.states {
+		if now.After(entry.expiry) {
+			delete(s.states, state)
+		}
+	}
+}

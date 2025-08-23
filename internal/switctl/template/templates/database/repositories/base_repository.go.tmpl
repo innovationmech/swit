@@ -1,0 +1,868 @@
+{{- if .Service.Features.Database -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package repository provides data access layer for {{.Service.Name}}.
+package repository
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"time"
+
+{{- if ne .Service.Database.Type "mongodb"}}
+	"gorm.io/gorm"
+{{- else}}
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+{{- end}}
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/db"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+)
+
+// Repository defines the interface for data access operations.
+type Repository[T any] interface {
+	// Create operations
+	Create(ctx context.Context, entity *T) error
+	CreateMany(ctx context.Context, entities []*T) error
+
+	// Read operations
+	FindByID(ctx context.Context, id interface{}) (*T, error)
+	FindAll(ctx context.Context, opts ...QueryOption) ([]*T, error)
+	FindOne(ctx context.Context, criteria interface{}, opts ...QueryOption) (*T, error)
+	FindMany(ctx context.Context, criteria interface{}, opts ...QueryOption) ([]*T, error)
+	Count(ctx context.Context, criteria interface{}) (int64, error)
+	Exists(ctx context.Context, criteria interface{}) (bool, error)
+
+	// Update operations
+	Update(ctx context.Context, entity *T) error
+	UpdateByID(ctx context.Context, id interface{}, updates interface{}) error
+	UpdateMany(ctx context.Context, criteria interface{}, updates interface{}) (int64, error)
+
+	// Delete operations
+	Delete(ctx context.Context, entity *T) error
+	DeleteByID(ctx context.Context, id interface{}) error
+	DeleteMany(ctx context.Context, criteria interface{}) (int64, error)
+	SoftDelete(ctx context.Context, entity *T) error
+	SoftDeleteByID(ctx context.Context, id interface{}) error
+
+	// Pagination
+	Paginate(ctx context.Context, criteria interface{}, page, pageSize int, opts ...QueryOption) (*PaginationResult[T], error)
+
+	// Transaction support
+	WithTx(ctx context.Context, fn func(Repository[T]) error) error
+}
+
+// QueryOption defines options for database queries.
+type QueryOption func(*QueryOptions)
+
+// QueryOptions contains query configuration.
+type QueryOptions struct {
+{{- if ne .Service.Database.Type "mongodb"}}
+	OrderBy    string
+	Select     []string
+	Preloads   []string
+	Joins      []string
+	GroupBy    string
+	Having     string
+{{- else}}
+	Sort       bson.D
+	Projection bson.D
+	Limit      int64
+	Skip       int64
+{{- end}}
+	IncludeDeleted bool
+}
+
+// WithOrderBy sets the order by clause.
+{{- if ne .Service.Database.Type "mongodb"}}
+func WithOrderBy(orderBy string) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.OrderBy = orderBy
+	}
+}
+
+// WithSelect sets the select fields.
+func WithSelect(fields ...string) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.Select = fields
+	}
+}
+
+// WithPreloads sets the preload associations.
+func WithPreloads(preloads ...string) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.Preloads = preloads
+	}
+}
+
+// WithJoins sets the join clauses.
+func WithJoins(joins ...string) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.Joins = joins
+	}
+}
+{{- else}}
+func WithSort(sort bson.D) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.Sort = sort
+	}
+}
+
+// WithProjection sets the projection fields.
+func WithProjection(projection bson.D) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.Projection = projection
+	}
+}
+
+// WithLimit sets the limit.
+func WithLimit(limit int64) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.Limit = limit
+	}
+}
+
+// WithSkip sets the skip.
+func WithSkip(skip int64) QueryOption {
+	return func(opts *QueryOptions) {
+		opts.Skip = skip
+	}
+}
+{{- end}}
+
+// WithIncludeDeleted includes soft-deleted records.
+func WithIncludeDeleted() QueryOption {
+	return func(opts *QueryOptions) {
+		opts.IncludeDeleted = true
+	}
+}
+
+// PaginationResult represents paginated query results.
+type PaginationResult[T any] struct {
+	Data       []*T  `json:"data"`
+	Total      int64 `json:"total"`
+	Page       int   `json:"page"`
+	PageSize   int   `json:"page_size"`
+	TotalPages int   `json:"total_pages"`
+	HasNext    bool  `json:"has_next"`
+	HasPrev    bool  `json:"has_prev"`
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// BaseRepository provides basic CRUD operations for GORM-based repositories.
+type BaseRepository[T any] struct {
+	db    *gorm.DB
+	model *T
+}
+
+// NewBaseRepository creates a new base repository.
+func NewBaseRepository[T any](database db.DatabaseManager) *BaseRepository[T] {
+	var model T
+	return &BaseRepository[T]{
+		db:    database.DB(),
+		model: &model,
+	}
+}
+
+// Create creates a new entity.
+func (r *BaseRepository[T]) Create(ctx context.Context, entity *T) error {
+	// Set timestamps
+	if timestamped, ok := any(entity).(model.ModelInterface); ok {
+		now := time.Now()
+		timestamped.SetCreatedAt(now)
+		timestamped.SetUpdatedAt(now)
+	}
+
+	if err := r.db.WithContext(ctx).Create(entity).Error; err != nil {
+		return fmt.Errorf("failed to create entity: %w", err)
+	}
+	return nil
+}
+
+// CreateMany creates multiple entities.
+func (r *BaseRepository[T]) CreateMany(ctx context.Context, entities []*T) error {
+	if len(entities) == 0 {
+		return nil
+	}
+
+	// Set timestamps
+	now := time.Now()
+	for _, entity := range entities {
+		if timestamped, ok := any(entity).(model.ModelInterface); ok {
+			timestamped.SetCreatedAt(now)
+			timestamped.SetUpdatedAt(now)
+		}
+	}
+
+	if err := r.db.WithContext(ctx).CreateInBatches(entities, 100).Error; err != nil {
+		return fmt.Errorf("failed to create entities: %w", err)
+	}
+	return nil
+}
+
+// FindByID finds an entity by ID.
+func (r *BaseRepository[T]) FindByID(ctx context.Context, id interface{}) (*T, error) {
+	var entity T
+	if err := r.db.WithContext(ctx).First(&entity, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find entity by ID: %w", err)
+	}
+	return &entity, nil
+}
+
+// FindAll finds all entities.
+func (r *BaseRepository[T]) FindAll(ctx context.Context, opts ...QueryOption) ([]*T, error) {
+	var entities []*T
+	query := r.buildQuery(ctx, opts...)
+	
+	if err := query.Find(&entities).Error; err != nil {
+		return nil, fmt.Errorf("failed to find entities: %w", err)
+	}
+	return entities, nil
+}
+
+// FindOne finds a single entity by criteria.
+func (r *BaseRepository[T]) FindOne(ctx context.Context, criteria interface{}, opts ...QueryOption) (*T, error) {
+	var entity T
+	query := r.buildQuery(ctx, opts...).Where(criteria)
+	
+	if err := query.First(&entity).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find entity: %w", err)
+	}
+	return &entity, nil
+}
+
+// FindMany finds multiple entities by criteria.
+func (r *BaseRepository[T]) FindMany(ctx context.Context, criteria interface{}, opts ...QueryOption) ([]*T, error) {
+	var entities []*T
+	query := r.buildQuery(ctx, opts...).Where(criteria)
+	
+	if err := query.Find(&entities).Error; err != nil {
+		return nil, fmt.Errorf("failed to find entities: %w", err)
+	}
+	return entities, nil
+}
+
+// Count counts entities by criteria.
+func (r *BaseRepository[T]) Count(ctx context.Context, criteria interface{}) (int64, error) {
+	var count int64
+	query := r.db.WithContext(ctx).Model(r.model)
+	
+	if criteria != nil {
+		query = query.Where(criteria)
+	}
+	
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("failed to count entities: %w", err)
+	}
+	return count, nil
+}
+
+// Exists checks if an entity exists by criteria.
+func (r *BaseRepository[T]) Exists(ctx context.Context, criteria interface{}) (bool, error) {
+	count, err := r.Count(ctx, criteria)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// Update updates an entity.
+func (r *BaseRepository[T]) Update(ctx context.Context, entity *T) error {
+	// Set update timestamp
+	if timestamped, ok := any(entity).(model.ModelInterface); ok {
+		timestamped.SetUpdatedAt(time.Now())
+	}
+
+	if err := r.db.WithContext(ctx).Save(entity).Error; err != nil {
+		return fmt.Errorf("failed to update entity: %w", err)
+	}
+	return nil
+}
+
+// UpdateByID updates an entity by ID.
+func (r *BaseRepository[T]) UpdateByID(ctx context.Context, id interface{}, updates interface{}) error {
+	// Add update timestamp
+	if updateMap, ok := updates.(map[string]interface{}); ok {
+		updateMap["updated_at"] = time.Now()
+	}
+
+	result := r.db.WithContext(ctx).Model(r.model).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update entity by ID: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no entity found with ID: %v", id)
+	}
+	return nil
+}
+
+// UpdateMany updates multiple entities by criteria.
+func (r *BaseRepository[T]) UpdateMany(ctx context.Context, criteria interface{}, updates interface{}) (int64, error) {
+	// Add update timestamp
+	if updateMap, ok := updates.(map[string]interface{}); ok {
+		updateMap["updated_at"] = time.Now()
+	}
+
+	result := r.db.WithContext(ctx).Model(r.model).Where(criteria).Updates(updates)
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to update entities: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
+// Delete deletes an entity.
+func (r *BaseRepository[T]) Delete(ctx context.Context, entity *T) error {
+	if err := r.db.WithContext(ctx).Delete(entity).Error; err != nil {
+		return fmt.Errorf("failed to delete entity: %w", err)
+	}
+	return nil
+}
+
+// DeleteByID deletes an entity by ID.
+func (r *BaseRepository[T]) DeleteByID(ctx context.Context, id interface{}) error {
+	result := r.db.WithContext(ctx).Delete(r.model, id)
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete entity by ID: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no entity found with ID: %v", id)
+	}
+	return nil
+}
+
+// DeleteMany deletes multiple entities by criteria.
+func (r *BaseRepository[T]) DeleteMany(ctx context.Context, criteria interface{}) (int64, error) {
+	result := r.db.WithContext(ctx).Where(criteria).Delete(r.model)
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to delete entities: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
+// SoftDelete soft deletes an entity.
+func (r *BaseRepository[T]) SoftDelete(ctx context.Context, entity *T) error {
+	if timestamped, ok := any(entity).(model.ModelInterface); ok {
+		now := time.Now()
+		timestamped.SetDeletedAt(&now)
+		return r.Update(ctx, entity)
+	}
+	return fmt.Errorf("entity does not support soft delete")
+}
+
+// SoftDeleteByID soft deletes an entity by ID.
+func (r *BaseRepository[T]) SoftDeleteByID(ctx context.Context, id interface{}) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"deleted_at": &now,
+	}
+	return r.UpdateByID(ctx, id, updates)
+}
+
+// Paginate returns paginated results.
+func (r *BaseRepository[T]) Paginate(ctx context.Context, criteria interface{}, page, pageSize int, opts ...QueryOption) (*PaginationResult[T], error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
+	// Count total records
+	total, err := r.Count(ctx, criteria)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count total records: %w", err)
+	}
+
+	// Calculate pagination info
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	offset := (page - 1) * pageSize
+
+	// Get data
+	var entities []*T
+	query := r.buildQuery(ctx, opts...).Offset(offset).Limit(pageSize)
+	if criteria != nil {
+		query = query.Where(criteria)
+	}
+
+	if err := query.Find(&entities).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch paginated data: %w", err)
+	}
+
+	return &PaginationResult[T]{
+		Data:       entities,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+		HasPrev:    page > 1,
+	}, nil
+}
+
+// WithTx executes a function within a transaction.
+func (r *BaseRepository[T]) WithTx(ctx context.Context, fn func(Repository[T]) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := &BaseRepository[T]{
+			db:    tx,
+			model: r.model,
+		}
+		return fn(txRepo)
+	})
+}
+
+// buildQuery builds a query with options.
+func (r *BaseRepository[T]) buildQuery(ctx context.Context, opts ...QueryOption) *gorm.DB {
+	options := &QueryOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	query := r.db.WithContext(ctx).Model(r.model)
+
+	if options.OrderBy != "" {
+		query = query.Order(options.OrderBy)
+	}
+
+	if len(options.Select) > 0 {
+		query = query.Select(options.Select)
+	}
+
+	for _, preload := range options.Preloads {
+		query = query.Preload(preload)
+	}
+
+	for _, join := range options.Joins {
+		query = query.Joins(join)
+	}
+
+	if options.GroupBy != "" {
+		query = query.Group(options.GroupBy)
+	}
+
+	if options.Having != "" {
+		query = query.Having(options.Having)
+	}
+
+	// Handle soft deletes
+	if !options.IncludeDeleted {
+		// Check if the model has deleted_at field
+		modelType := reflect.TypeOf(r.model).Elem()
+		for i := 0; i < modelType.NumField(); i++ {
+			field := modelType.Field(i)
+			if field.Name == "DeletedAt" {
+				query = query.Where("deleted_at IS NULL")
+				break
+			}
+		}
+	}
+
+	return query
+}
+{{- else}}
+// BaseRepository provides basic CRUD operations for MongoDB-based repositories.
+type BaseRepository[T any] struct {
+	db         *mongo.Database
+	collection *mongo.Collection
+}
+
+// NewBaseRepository creates a new base repository.
+func NewBaseRepository[T any](database db.DatabaseManager, collectionName string) *BaseRepository[T] {
+	mongoDB := database.Database()
+	return &BaseRepository[T]{
+		db:         mongoDB,
+		collection: mongoDB.Collection(collectionName),
+	}
+}
+
+// Create creates a new entity.
+func (r *BaseRepository[T]) Create(ctx context.Context, entity *T) error {
+	// Set timestamps
+	if timestamped, ok := any(entity).(model.ModelInterface); ok {
+		now := time.Now()
+		timestamped.SetCreatedAt(now)
+		timestamped.SetUpdatedAt(now)
+	}
+
+	result, err := r.collection.InsertOne(ctx, entity)
+	if err != nil {
+		return fmt.Errorf("failed to create entity: %w", err)
+	}
+
+	// Set the generated ID
+	if baseModel, ok := any(entity).(*model.BaseModel); ok {
+		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+			baseModel.ID = oid
+		}
+	}
+
+	return nil
+}
+
+// CreateMany creates multiple entities.
+func (r *BaseRepository[T]) CreateMany(ctx context.Context, entities []*T) error {
+	if len(entities) == 0 {
+		return nil
+	}
+
+	// Set timestamps
+	now := time.Now()
+	docs := make([]interface{}, len(entities))
+	for i, entity := range entities {
+		if timestamped, ok := any(entity).(model.ModelInterface); ok {
+			timestamped.SetCreatedAt(now)
+			timestamped.SetUpdatedAt(now)
+		}
+		docs[i] = entity
+	}
+
+	_, err := r.collection.InsertMany(ctx, docs)
+	if err != nil {
+		return fmt.Errorf("failed to create entities: %w", err)
+	}
+	return nil
+}
+
+// FindByID finds an entity by ID.
+func (r *BaseRepository[T]) FindByID(ctx context.Context, id interface{}) (*T, error) {
+	var entity T
+	filter := bson.M{"_id": id}
+	
+	err := r.collection.FindOne(ctx, filter).Decode(&entity)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find entity by ID: %w", err)
+	}
+	return &entity, nil
+}
+
+// FindAll finds all entities.
+func (r *BaseRepository[T]) FindAll(ctx context.Context, opts ...QueryOption) ([]*T, error) {
+	options := r.buildFindOptions(opts...)
+	filter := bson.D{}
+	
+	cursor, err := r.collection.Find(ctx, filter, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find entities: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var entities []*T
+	for cursor.Next(ctx) {
+		var entity T
+		if err := cursor.Decode(&entity); err != nil {
+			return nil, fmt.Errorf("failed to decode entity: %w", err)
+		}
+		entities = append(entities, &entity)
+	}
+
+	return entities, cursor.Err()
+}
+
+// FindOne finds a single entity by criteria.
+func (r *BaseRepository[T]) FindOne(ctx context.Context, criteria interface{}, opts ...QueryOption) (*T, error) {
+	var entity T
+	options := r.buildFindOneOptions(opts...)
+	
+	err := r.collection.FindOne(ctx, criteria, options).Decode(&entity)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to find entity: %w", err)
+	}
+	return &entity, nil
+}
+
+// FindMany finds multiple entities by criteria.
+func (r *BaseRepository[T]) FindMany(ctx context.Context, criteria interface{}, opts ...QueryOption) ([]*T, error) {
+	options := r.buildFindOptions(opts...)
+	
+	cursor, err := r.collection.Find(ctx, criteria, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find entities: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var entities []*T
+	for cursor.Next(ctx) {
+		var entity T
+		if err := cursor.Decode(&entity); err != nil {
+			return nil, fmt.Errorf("failed to decode entity: %w", err)
+		}
+		entities = append(entities, &entity)
+	}
+
+	return entities, cursor.Err()
+}
+
+// Count counts entities by criteria.
+func (r *BaseRepository[T]) Count(ctx context.Context, criteria interface{}) (int64, error) {
+	count, err := r.collection.CountDocuments(ctx, criteria)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count entities: %w", err)
+	}
+	return count, nil
+}
+
+// Exists checks if an entity exists by criteria.
+func (r *BaseRepository[T]) Exists(ctx context.Context, criteria interface{}) (bool, error) {
+	count, err := r.Count(ctx, criteria)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// Update updates an entity.
+func (r *BaseRepository[T]) Update(ctx context.Context, entity *T) error {
+	// Set update timestamp
+	if timestamped, ok := any(entity).(model.ModelInterface); ok {
+		timestamped.SetUpdatedAt(time.Now())
+	}
+
+	id := r.extractID(entity)
+	if id == nil {
+		return fmt.Errorf("entity ID is required for update")
+	}
+
+	filter := bson.M{"_id": id}
+	_, err := r.collection.ReplaceOne(ctx, filter, entity)
+	if err != nil {
+		return fmt.Errorf("failed to update entity: %w", err)
+	}
+	return nil
+}
+
+// UpdateByID updates an entity by ID.
+func (r *BaseRepository[T]) UpdateByID(ctx context.Context, id interface{}, updates interface{}) error {
+	filter := bson.M{"_id": id}
+	update := bson.M{"$set": updates}
+	
+	result, err := r.collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to update entity by ID: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return fmt.Errorf("no entity found with ID: %v", id)
+	}
+	return nil
+}
+
+// UpdateMany updates multiple entities by criteria.
+func (r *BaseRepository[T]) UpdateMany(ctx context.Context, criteria interface{}, updates interface{}) (int64, error) {
+	update := bson.M{"$set": updates}
+	
+	result, err := r.collection.UpdateMany(ctx, criteria, update)
+	if err != nil {
+		return 0, fmt.Errorf("failed to update entities: %w", err)
+	}
+	return result.ModifiedCount, nil
+}
+
+// Delete deletes an entity.
+func (r *BaseRepository[T]) Delete(ctx context.Context, entity *T) error {
+	id := r.extractID(entity)
+	if id == nil {
+		return fmt.Errorf("entity ID is required for delete")
+	}
+	return r.DeleteByID(ctx, id)
+}
+
+// DeleteByID deletes an entity by ID.
+func (r *BaseRepository[T]) DeleteByID(ctx context.Context, id interface{}) error {
+	filter := bson.M{"_id": id}
+	
+	result, err := r.collection.DeleteOne(ctx, filter)
+	if err != nil {
+		return fmt.Errorf("failed to delete entity by ID: %w", err)
+	}
+	if result.DeletedCount == 0 {
+		return fmt.Errorf("no entity found with ID: %v", id)
+	}
+	return nil
+}
+
+// DeleteMany deletes multiple entities by criteria.
+func (r *BaseRepository[T]) DeleteMany(ctx context.Context, criteria interface{}) (int64, error) {
+	result, err := r.collection.DeleteMany(ctx, criteria)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete entities: %w", err)
+	}
+	return result.DeletedCount, nil
+}
+
+// SoftDelete soft deletes an entity.
+func (r *BaseRepository[T]) SoftDelete(ctx context.Context, entity *T) error {
+	if timestamped, ok := any(entity).(model.ModelInterface); ok {
+		now := time.Now()
+		timestamped.SetDeletedAt(&now)
+		return r.Update(ctx, entity)
+	}
+	return fmt.Errorf("entity does not support soft delete")
+}
+
+// SoftDeleteByID soft deletes an entity by ID.
+func (r *BaseRepository[T]) SoftDeleteByID(ctx context.Context, id interface{}) error {
+	now := time.Now()
+	updates := bson.M{"deleted_at": &now}
+	return r.UpdateByID(ctx, id, updates)
+}
+
+// Paginate returns paginated results.
+func (r *BaseRepository[T]) Paginate(ctx context.Context, criteria interface{}, page, pageSize int, opts ...QueryOption) (*PaginationResult[T], error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
+	// Count total records
+	total, err := r.Count(ctx, criteria)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count total records: %w", err)
+	}
+
+	// Calculate pagination info
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	skip := int64((page - 1) * pageSize)
+
+	// Build options
+	options := r.buildFindOptions(opts...)
+	options.SetSkip(skip).SetLimit(int64(pageSize))
+
+	// Get data
+	cursor, err := r.collection.Find(ctx, criteria, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch paginated data: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var entities []*T
+	for cursor.Next(ctx) {
+		var entity T
+		if err := cursor.Decode(&entity); err != nil {
+			return nil, fmt.Errorf("failed to decode entity: %w", err)
+		}
+		entities = append(entities, &entity)
+	}
+
+	return &PaginationResult[T]{
+		Data:       entities,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+		HasPrev:    page > 1,
+	}, nil
+}
+
+// WithTx executes a function within a transaction.
+func (r *BaseRepository[T]) WithTx(ctx context.Context, fn func(Repository[T]) error) error {
+	// MongoDB transactions require a session
+	session, err := r.db.Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	return mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error {
+		return session.WithTransaction(sc, func(sc mongo.SessionContext) (interface{}, error) {
+			// Create a new repository instance for the transaction
+			txRepo := &BaseRepository[T]{
+				db:         r.db,
+				collection: r.collection,
+			}
+			return nil, fn(txRepo)
+		})
+	})
+}
+
+// buildFindOptions builds find options from query options.
+func (r *BaseRepository[T]) buildFindOptions(opts ...QueryOption) *options.FindOptions {
+	queryOpts := &QueryOptions{}
+	for _, opt := range opts {
+		opt(queryOpts)
+	}
+
+	findOpts := options.Find()
+
+	if queryOpts.Sort != nil {
+		findOpts.SetSort(queryOpts.Sort)
+	}
+
+	if queryOpts.Projection != nil {
+		findOpts.SetProjection(queryOpts.Projection)
+	}
+
+	if queryOpts.Limit > 0 {
+		findOpts.SetLimit(queryOpts.Limit)
+	}
+
+	if queryOpts.Skip > 0 {
+		findOpts.SetSkip(queryOpts.Skip)
+	}
+
+	return findOpts
+}
+
+// buildFindOneOptions builds find one options from query options.
+func (r *BaseRepository[T]) buildFindOneOptions(opts ...QueryOption) *options.FindOneOptions {
+	queryOpts := &QueryOptions{}
+	for _, opt := range opts {
+		opt(queryOpts)
+	}
+
+	findOneOpts := options.FindOne()
+
+	if queryOpts.Sort != nil {
+		findOneOpts.SetSort(queryOpts.Sort)
+	}
+
+	if queryOpts.Projection != nil {
+		findOneOpts.SetProjection(queryOpts.Projection)
+	}
+
+	return findOneOpts
+}
+
+// extractID extracts the ID from an entity.
+func (r *BaseRepository[T]) extractID(entity *T) interface{} {
+	if modelInterface, ok := any(entity).(model.ModelInterface); ok {
+		return modelInterface.GetID()
+	}
+	return nil
+}
+{{- end}}
+{{- end -}}

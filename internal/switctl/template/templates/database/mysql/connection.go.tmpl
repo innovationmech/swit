@@ -1,0 +1,237 @@
+{{- if and .Service.Features.Database (eq .Service.Database.Type "mysql") -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package db provides MySQL database connectivity for {{.Service.Name}}.
+package db
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"go.uber.org/zap"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+)
+
+// MySQLDatabase represents a MySQL database connection.
+type MySQLDatabase struct {
+	db     *gorm.DB
+	sqlDB  *sql.DB
+	config *MySQLConfig
+	logger *zap.Logger
+}
+
+// NewMySQLDatabase creates a new MySQL database connection.
+func NewMySQLDatabase(config *MySQLConfig, logger *zap.Logger) (*MySQLDatabase, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid MySQL configuration: %w", err)
+	}
+
+	// Configure GORM logger
+	var gormLogger logger.Interface
+	if config.EnableLogging {
+		gormLogger = logger.New(
+			NewGormLoggerWriter(logger),
+			logger.Config{
+				SlowThreshold: config.SlowQueryTime,
+				LogLevel:      logger.Info,
+				Colorful:      false,
+			},
+		)
+	} else {
+		gormLogger = logger.Default.LogMode(logger.Silent)
+	}
+
+	// Create GORM configuration
+	gormConfig := &gorm.Config{
+		Logger:                                   gormLogger,
+		DisableForeignKeyConstraintWhenMigrating: false,
+		SkipDefaultTransaction:                   false,
+		PrepareStmt:                              true,
+	}
+
+	// Open database connection
+	db, err := gorm.Open(mysql.Open(config.DSN()), gormConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MySQL database: %w", err)
+	}
+
+	// Get underlying sql.DB
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sql.DB from GORM: %w", err)
+	}
+
+	// Configure connection pool
+	sqlDB.SetMaxIdleConns(config.MaxIdleConns)
+	sqlDB.SetMaxOpenConns(config.MaxOpenConns)
+	sqlDB.SetConnMaxLifetime(config.ConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(config.ConnMaxIdleTime)
+
+	mysqlDB := &MySQLDatabase{
+		db:     db,
+		sqlDB:  sqlDB,
+		config: config,
+		logger: logger,
+	}
+
+	// Test connection
+	if err := mysqlDB.Ping(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to ping MySQL database: %w", err)
+	}
+
+	logger.Info("Successfully connected to MySQL database",
+		zap.String("host", config.Host),
+		zap.Int("port", config.Port),
+		zap.String("database", config.Database),
+	)
+
+	return mysqlDB, nil
+}
+
+// DB returns the underlying GORM database instance.
+func (d *MySQLDatabase) DB() *gorm.DB {
+	return d.db
+}
+
+// SqlDB returns the underlying sql.DB instance.
+func (d *MySQLDatabase) SqlDB() *sql.DB {
+	return d.sqlDB
+}
+
+// Ping checks the database connection.
+func (d *MySQLDatabase) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	return d.sqlDB.PingContext(ctx)
+}
+
+// HealthCheck performs a comprehensive database health check.
+func (d *MySQLDatabase) HealthCheck(ctx context.Context) error {
+	// Check connection
+	if err := d.Ping(ctx); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+
+	// Check if we can execute a simple query
+	var version string
+	if err := d.db.WithContext(ctx).Raw("SELECT VERSION()").Scan(&version).Error; err != nil {
+		return fmt.Errorf("failed to execute test query: %w", err)
+	}
+
+	d.logger.Debug("Database health check passed",
+		zap.String("mysql_version", version),
+	)
+
+	return nil
+}
+
+// Migrate runs database migrations for all models.
+func (d *MySQLDatabase) Migrate() error {
+	// Auto-migrate models
+	if err := d.db.AutoMigrate(
+		&model.{{.Service.Name | pascalCase}}{},
+		// Add other models here
+	); err != nil {
+		return fmt.Errorf("failed to auto-migrate models: %w", err)
+	}
+
+	d.logger.Info("Database migration completed successfully")
+	return nil
+}
+
+// Transaction executes a function within a database transaction.
+func (d *MySQLDatabase) Transaction(fn func(*gorm.DB) error) error {
+	return d.db.Transaction(fn)
+}
+
+// TransactionWithContext executes a function within a database transaction with context.
+func (d *MySQLDatabase) TransactionWithContext(ctx context.Context, fn func(*gorm.DB) error) error {
+	return d.db.WithContext(ctx).Transaction(fn)
+}
+
+// WithContext returns a new database instance with context.
+func (d *MySQLDatabase) WithContext(ctx context.Context) *gorm.DB {
+	return d.db.WithContext(ctx)
+}
+
+// Stats returns database connection statistics.
+func (d *MySQLDatabase) Stats() sql.DBStats {
+	return d.sqlDB.Stats()
+}
+
+// Close closes the database connection.
+func (d *MySQLDatabase) Close() error {
+	if d.sqlDB != nil {
+		if err := d.sqlDB.Close(); err != nil {
+			return fmt.Errorf("failed to close MySQL database connection: %w", err)
+		}
+		d.logger.Info("MySQL database connection closed successfully")
+	}
+	return nil
+}
+
+// BeginTx starts a transaction with the given options.
+func (d *MySQLDatabase) BeginTx(ctx context.Context, opts *sql.TxOptions) (*gorm.DB, error) {
+	tx := d.db.WithContext(ctx).Begin(opts)
+	if tx.Error != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
+	}
+	return tx, nil
+}
+
+// ExecuteInBatches executes a function in batches for large datasets.
+func (d *MySQLDatabase) ExecuteInBatches(ctx context.Context, batchSize int, fn func(*gorm.DB, int) error) error {
+	batch := 0
+	for {
+		tx := d.db.WithContext(ctx)
+		if err := fn(tx, batch); err != nil {
+			return fmt.Errorf("batch %d failed: %w", batch, err)
+		}
+		batch++
+		// Break condition should be implemented in the function
+		// This is just a skeleton
+		break
+	}
+	return nil
+}
+
+// GormLoggerWriter is a custom writer for GORM logger that uses zap.
+type GormLoggerWriter struct {
+	logger *zap.Logger
+}
+
+// NewGormLoggerWriter creates a new GORM logger writer.
+func NewGormLoggerWriter(logger *zap.Logger) *GormLoggerWriter {
+	return &GormLoggerWriter{logger: logger}
+}
+
+// Printf implements the writer interface for GORM logger.
+func (w *GormLoggerWriter) Printf(format string, args ...interface{}) {
+	w.logger.Debug(fmt.Sprintf(format, args...))
+}
+{{- end -}}

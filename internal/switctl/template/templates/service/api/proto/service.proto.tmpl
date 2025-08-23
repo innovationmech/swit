@@ -1,0 +1,145 @@
+{{- if .Service.Features.GRPC -}}
+syntax = "proto3";
+
+package {{.Service.Name | snakeCase}}.v1;
+
+option go_package = "{{.Service.ModulePath}}/api/gen/{{.Service.Name | kebabCase}}/v1;{{.Service.Name | snakeCase}}v1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/empty.proto";
+
+// {{.Service.Name | pascalCase}}Service provides {{.Service.Description | lower}}.
+service {{.Service.Name | pascalCase}}Service {
+  // Create{{.Service.Name | pascalCase}} creates a new {{.Service.Name | camelCase}}.
+  rpc Create{{.Service.Name | pascalCase}}(Create{{.Service.Name | pascalCase}}Request) returns ({{.Service.Name | pascalCase}}Response);
+  
+  // Get{{.Service.Name | pascalCase}} retrieves a {{.Service.Name | camelCase}} by ID.
+  rpc Get{{.Service.Name | pascalCase}}(Get{{.Service.Name | pascalCase}}Request) returns ({{.Service.Name | pascalCase}}Response);
+  
+  // Update{{.Service.Name | pascalCase}} updates an existing {{.Service.Name | camelCase}}.
+  rpc Update{{.Service.Name | pascalCase}}(Update{{.Service.Name | pascalCase}}Request) returns ({{.Service.Name | pascalCase}}Response);
+  
+  // Delete{{.Service.Name | pascalCase}} deletes a {{.Service.Name | camelCase}} by ID.
+  rpc Delete{{.Service.Name | pascalCase}}(Delete{{.Service.Name | pascalCase}}Request) returns (google.protobuf.Empty);
+  
+  // List{{.Service.Name | pascalCase | pluralize}} lists {{.Service.Name | camelCase | pluralize}} with pagination.
+  rpc List{{.Service.Name | pascalCase | pluralize}}(List{{.Service.Name | pascalCase | pluralize}}Request) returns (List{{.Service.Name | pascalCase | pluralize}}Response);
+}
+
+// {{.Service.Name | pascalCase}} represents the main {{.Service.Name | camelCase}} resource.
+message {{.Service.Name | pascalCase}} {
+  // Unique identifier
+  string id = 1;
+  
+  // Name of the {{.Service.Name | camelCase}}
+  string name = 2;
+  
+  // Description of the {{.Service.Name | camelCase}}
+  string description = 3;
+  
+  // Status of the {{.Service.Name | camelCase}}
+  Status status = 4;
+  
+  // Creation timestamp
+  google.protobuf.Timestamp created_at = 5;
+  
+  // Last update timestamp
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// Status represents the status of a {{.Service.Name | camelCase}}.
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_ACTIVE = 1;
+  STATUS_INACTIVE = 2;
+  STATUS_PENDING = 3;
+  STATUS_DELETED = 4;
+}
+
+// {{.Service.Name | pascalCase}}Response represents a {{.Service.Name | camelCase}} response.
+message {{.Service.Name | pascalCase}}Response {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string status = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// Create{{.Service.Name | pascalCase}}Request represents a create {{.Service.Name | camelCase}} request.
+message Create{{.Service.Name | pascalCase}}Request {
+  // Name of the {{.Service.Name | camelCase}} (required)
+  string name = 1;
+  
+  // Description of the {{.Service.Name | camelCase}} (optional)
+  string description = 2;
+}
+
+// Get{{.Service.Name | pascalCase}}Request represents a get {{.Service.Name | camelCase}} request.
+message Get{{.Service.Name | pascalCase}}Request {
+  // ID of the {{.Service.Name | camelCase}} to retrieve
+  string id = 1;
+}
+
+// Update{{.Service.Name | pascalCase}}Request represents an update {{.Service.Name | camelCase}} request.
+message Update{{.Service.Name | pascalCase}}Request {
+  // ID of the {{.Service.Name | camelCase}} to update
+  string id = 1;
+  
+  // Optional name update
+  google.protobuf.StringValue name = 2;
+  
+  // Optional description update
+  google.protobuf.StringValue description = 3;
+  
+  // Optional status update
+  Status status = 4;
+}
+
+// Delete{{.Service.Name | pascalCase}}Request represents a delete {{.Service.Name | camelCase}} request.
+message Delete{{.Service.Name | pascalCase}}Request {
+  // ID of the {{.Service.Name | camelCase}} to delete
+  string id = 1;
+}
+
+// List{{.Service.Name | pascalCase | pluralize}}Request represents a list {{.Service.Name | camelCase | pluralize}} request.
+message List{{.Service.Name | pascalCase | pluralize}}Request {
+  // Page number (default: 1)
+  int32 page = 1;
+  
+  // Page size (default: 10, max: 100)
+  int32 size = 2;
+  
+  // Search term (optional)
+  string search = 3;
+  
+  // Sort field (optional)
+  string sort = 4;
+  
+  // Sort order (optional)
+  string order = 5;
+  
+  // Status filter (optional)
+  Status status = 6;
+}
+
+// List{{.Service.Name | pascalCase | pluralize}}Response represents a list {{.Service.Name | camelCase | pluralize}} response.
+message List{{.Service.Name | pascalCase | pluralize}}Response {
+  // List of {{.Service.Name | camelCase | pluralize}}
+  repeated {{.Service.Name | pascalCase}}Response items = 1;
+  
+  // Pagination information
+  Pagination pagination = 2;
+}
+
+// Pagination represents pagination information.
+message Pagination {
+  int32 page = 1;
+  int32 size = 2;
+  int64 total = 3;
+  int32 pages = 4;
+  bool has_next = 5;
+  bool has_prev = 6;
+}
+{{- end -}}

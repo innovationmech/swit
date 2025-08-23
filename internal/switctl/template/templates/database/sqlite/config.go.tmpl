@@ -1,0 +1,274 @@
+{{- if and .Service.Features.Database (eq .Service.Database.Type "sqlite") -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package db provides SQLite database connectivity for {{.Service.Name}}.
+package db
+
+import (
+	"fmt"
+	"path/filepath"
+	"time"
+)
+
+// SQLiteConfig represents SQLite-specific configuration.
+type SQLiteConfig struct {
+	DatabasePath     string        `yaml:"database_path" json:"database_path" default:"{{.Service.Database.Database}}.db"`
+	BusyTimeout      time.Duration `yaml:"busy_timeout" json:"busy_timeout" default:"5s"`
+	WALMode          bool          `yaml:"wal_mode" json:"wal_mode" default:"true"`
+	SynchronousMode  string        `yaml:"synchronous_mode" json:"synchronous_mode" default:"NORMAL"`
+	JournalMode      string        `yaml:"journal_mode" json:"journal_mode" default:"WAL"`
+	ForeignKeys      bool          `yaml:"foreign_keys" json:"foreign_keys" default:"true"`
+	CacheSize        int           `yaml:"cache_size" json:"cache_size" default:"2000"`
+	PageSize         int           `yaml:"page_size" json:"page_size" default:"4096"`
+	MaxIdleConns     int           `yaml:"max_idle_conns" json:"max_idle_conns" default:"5"`
+	MaxOpenConns     int           `yaml:"max_open_conns" json:"max_open_conns" default:"10"`
+	ConnMaxLifetime  time.Duration `yaml:"conn_max_lifetime" json:"conn_max_lifetime" default:"1h"`
+	ConnMaxIdleTime  time.Duration `yaml:"conn_max_idle_time" json:"conn_max_idle_time" default:"10m"`
+	EnableLogging    bool          `yaml:"enable_logging" json:"enable_logging" default:"true"`
+	SlowQueryTime    time.Duration `yaml:"slow_query_time" json:"slow_query_time" default:"200ms"`
+	InMemory         bool          `yaml:"in_memory" json:"in_memory" default:"false"`
+	TempStore        string        `yaml:"temp_store" json:"temp_store" default:"MEMORY"`
+	LockingMode      string        `yaml:"locking_mode" json:"locking_mode" default:"NORMAL"`
+	AutoVacuum       string        `yaml:"auto_vacuum" json:"auto_vacuum" default:"INCREMENTAL"`
+}
+
+// DSN generates the SQLite Data Source Name.
+func (c *SQLiteConfig) DSN() string {
+	var dsn string
+
+	if c.InMemory {
+		dsn = ":memory:"
+	} else {
+		// Use absolute path for the database file
+		if !filepath.IsAbs(c.DatabasePath) {
+			dsn = filepath.Join(".", c.DatabasePath)
+		} else {
+			dsn = c.DatabasePath
+		}
+	}
+
+	// Add query parameters
+	params := make(map[string]string)
+
+	if c.BusyTimeout > 0 {
+		params["_busy_timeout"] = fmt.Sprintf("%d", int(c.BusyTimeout.Milliseconds()))
+	}
+
+	if c.ForeignKeys {
+		params["_foreign_keys"] = "on"
+	} else {
+		params["_foreign_keys"] = "off"
+	}
+
+	if c.JournalMode != "" {
+		params["_journal_mode"] = c.JournalMode
+	}
+
+	if c.SynchronousMode != "" {
+		params["_synchronous"] = c.SynchronousMode
+	}
+
+	if c.CacheSize > 0 {
+		params["_cache_size"] = fmt.Sprintf("%d", c.CacheSize)
+	}
+
+	if c.TempStore != "" {
+		params["_temp_store"] = c.TempStore
+	}
+
+	if c.LockingMode != "" {
+		params["_locking_mode"] = c.LockingMode
+	}
+
+	if c.AutoVacuum != "" {
+		params["_auto_vacuum"] = c.AutoVacuum
+	}
+
+	// Build parameter string
+	if len(params) > 0 {
+		dsn += "?"
+		first := true
+		for key, value := range params {
+			if !first {
+				dsn += "&"
+			}
+			dsn += fmt.Sprintf("%s=%s", key, value)
+			first = false
+		}
+	}
+
+	return dsn
+}
+
+// Validate validates the SQLite configuration.
+func (c *SQLiteConfig) Validate() error {
+	if !c.InMemory && c.DatabasePath == "" {
+		return fmt.Errorf("SQLite database path is required when not using in-memory mode")
+	}
+
+	validSyncModes := []string{"OFF", "NORMAL", "FULL", "EXTRA"}
+	valid := false
+	for _, mode := range validSyncModes {
+		if c.SynchronousMode == mode {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid synchronous mode: %s (valid: %v)", c.SynchronousMode, validSyncModes)
+	}
+
+	validJournalModes := []string{"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"}
+	valid = false
+	for _, mode := range validJournalModes {
+		if c.JournalMode == mode {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid journal mode: %s (valid: %v)", c.JournalMode, validJournalModes)
+	}
+
+	validTempStores := []string{"DEFAULT", "FILE", "MEMORY"}
+	valid = false
+	for _, store := range validTempStores {
+		if c.TempStore == store {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid temp store: %s (valid: %v)", c.TempStore, validTempStores)
+	}
+
+	validLockingModes := []string{"NORMAL", "EXCLUSIVE"}
+	valid = false
+	for _, mode := range validLockingModes {
+		if c.LockingMode == mode {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid locking mode: %s (valid: %v)", c.LockingMode, validLockingModes)
+	}
+
+	validAutoVacuums := []string{"NONE", "FULL", "INCREMENTAL"}
+	valid = false
+	for _, vacuum := range validAutoVacuums {
+		if c.AutoVacuum == vacuum {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid auto vacuum: %s (valid: %v)", c.AutoVacuum, validAutoVacuums)
+	}
+
+	if c.MaxIdleConns < 0 {
+		return fmt.Errorf("max idle connections cannot be negative")
+	}
+
+	if c.MaxOpenConns <= 0 {
+		return fmt.Errorf("max open connections must be positive")
+	}
+
+	if c.MaxIdleConns > c.MaxOpenConns {
+		return fmt.Errorf("max idle connections cannot exceed max open connections")
+	}
+
+	if c.CacheSize < 0 {
+		return fmt.Errorf("cache size cannot be negative")
+	}
+
+	if c.PageSize <= 0 || (c.PageSize&(c.PageSize-1)) != 0 {
+		return fmt.Errorf("page size must be a positive power of 2")
+	}
+
+	return nil
+}
+
+// LoadDefaults loads default values for SQLite configuration.
+func (c *SQLiteConfig) LoadDefaults() {
+	if c.DatabasePath == "" && !c.InMemory {
+		c.DatabasePath = "{{.Service.Database.Database}}.db"
+	}
+	if c.BusyTimeout == 0 {
+		c.BusyTimeout = 5 * time.Second
+	}
+	if c.SynchronousMode == "" {
+		c.SynchronousMode = "NORMAL"
+	}
+	if c.JournalMode == "" {
+		if c.WALMode {
+			c.JournalMode = "WAL"
+		} else {
+			c.JournalMode = "DELETE"
+		}
+	}
+	if c.CacheSize == 0 {
+		c.CacheSize = 2000
+	}
+	if c.PageSize == 0 {
+		c.PageSize = 4096
+	}
+	if c.MaxIdleConns == 0 {
+		c.MaxIdleConns = 5
+	}
+	if c.MaxOpenConns == 0 {
+		c.MaxOpenConns = 10
+	}
+	if c.ConnMaxLifetime == 0 {
+		c.ConnMaxLifetime = time.Hour
+	}
+	if c.ConnMaxIdleTime == 0 {
+		c.ConnMaxIdleTime = 10 * time.Minute
+	}
+	if c.SlowQueryTime == 0 {
+		c.SlowQueryTime = 200 * time.Millisecond
+	}
+	if c.TempStore == "" {
+		c.TempStore = "MEMORY"
+	}
+	if c.LockingMode == "" {
+		c.LockingMode = "NORMAL"
+	}
+	if c.AutoVacuum == "" {
+		c.AutoVacuum = "INCREMENTAL"
+	}
+}
+
+// IsTestDatabase returns true if this is configured as a test database.
+func (c *SQLiteConfig) IsTestDatabase() bool {
+	return c.InMemory || 
+		   filepath.Base(c.DatabasePath) == "test.db" ||
+		   filepath.Base(c.DatabasePath) == ":memory:"
+}
+
+// GetDataDirectory returns the directory where the database file is stored.
+func (c *SQLiteConfig) GetDataDirectory() string {
+	if c.InMemory {
+		return ""
+	}
+	return filepath.Dir(c.DatabasePath)
+}
+{{- end -}}

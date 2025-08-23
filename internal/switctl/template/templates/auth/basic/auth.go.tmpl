@@ -1,0 +1,511 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"crypto/subtle"
+	"encoding/base64"
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+var (
+	// Basic Auth errors
+	ErrMissingCredentials = errors.New("missing credentials")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrAccountLocked      = errors.New("account locked")
+	ErrPasswordExpired    = errors.New("password expired")
+)
+
+// BasicAuthConfig holds Basic authentication configuration.
+type BasicAuthConfig struct {
+	Realm               string        `yaml:"realm" json:"realm" mapstructure:"realm"`
+	MaxFailedAttempts   int           `yaml:"max_failed_attempts" json:"max_failed_attempts" mapstructure:"max_failed_attempts"`
+	LockoutDuration     time.Duration `yaml:"lockout_duration" json:"lockout_duration" mapstructure:"lockout_duration"`
+	PasswordMinLength   int           `yaml:"password_min_length" json:"password_min_length" mapstructure:"password_min_length"`
+	RequireStrongPassword bool        `yaml:"require_strong_password" json:"require_strong_password" mapstructure:"require_strong_password"`
+	BcryptCost          int           `yaml:"bcrypt_cost" json:"bcrypt_cost" mapstructure:"bcrypt_cost"`
+	EnableRateLimiting  bool          `yaml:"enable_rate_limiting" json:"enable_rate_limiting" mapstructure:"enable_rate_limiting"`
+	RateLimitAttempts   int           `yaml:"rate_limit_attempts" json:"rate_limit_attempts" mapstructure:"rate_limit_attempts"`
+	RateLimitWindow     time.Duration `yaml:"rate_limit_window" json:"rate_limit_window" mapstructure:"rate_limit_window"`
+}
+
+// BasicAuthUser represents a user for Basic authentication.
+type BasicAuthUser struct {
+	Username       string    `json:"username"`
+	PasswordHash   string    `json:"password_hash"`
+	Roles          []string  `json:"roles"`
+	Permissions    []string  `json:"permissions"`
+	IsActive       bool      `json:"is_active"`
+	IsLocked       bool      `json:"is_locked"`
+	FailedAttempts int       `json:"failed_attempts"`
+	LastLoginAt    time.Time `json:"last_login_at"`
+	LockedUntil    time.Time `json:"locked_until"`
+	PasswordExpiresAt time.Time `json:"password_expires_at"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// BasicAuthManager handles Basic authentication.
+type BasicAuthManager struct {
+	config    *BasicAuthConfig
+	userStore BasicAuthUserStore
+	limiter   RateLimiter
+}
+
+// BasicAuthUserStore interface for managing Basic auth users.
+type BasicAuthUserStore interface {
+	GetUser(ctx context.Context, username string) (*BasicAuthUser, error)
+	UpdateUser(ctx context.Context, user *BasicAuthUser) error
+	CreateUser(ctx context.Context, user *BasicAuthUser) error
+	DeleteUser(ctx context.Context, username string) error
+	ListUsers(ctx context.Context, limit, offset int) ([]*BasicAuthUser, error)
+}
+
+// RateLimiter interface for rate limiting authentication attempts.
+type RateLimiter interface {
+	IsAllowed(ctx context.Context, key string) (bool, error)
+	RecordAttempt(ctx context.Context, key string) error
+}
+
+// NewBasicAuthManager creates a new Basic authentication manager.
+func NewBasicAuthManager(config *BasicAuthConfig, userStore BasicAuthUserStore, limiter RateLimiter) (*BasicAuthManager, error) {
+	if config == nil {
+		return nil, errors.New("Basic auth config is required")
+	}
+
+	if userStore == nil {
+		return nil, errors.New("user store is required")
+	}
+
+	// Set defaults
+	if config.Realm == "" {
+		config.Realm = "{{.Service.Name}}"
+	}
+	if config.MaxFailedAttempts == 0 {
+		config.MaxFailedAttempts = 5
+	}
+	if config.LockoutDuration == 0 {
+		config.LockoutDuration = 15 * time.Minute
+	}
+	if config.PasswordMinLength == 0 {
+		config.PasswordMinLength = 8
+	}
+	if config.BcryptCost == 0 {
+		config.BcryptCost = bcrypt.DefaultCost
+	}
+	if config.RateLimitAttempts == 0 {
+		config.RateLimitAttempts = 10
+	}
+	if config.RateLimitWindow == 0 {
+		config.RateLimitWindow = time.Minute
+	}
+
+	return &BasicAuthManager{
+		config:    config,
+		userStore: userStore,
+		limiter:   limiter,
+	}, nil
+}
+
+// Authenticate authenticates a user with username and password.
+func (m *BasicAuthManager) Authenticate(ctx context.Context, username, password string) (*BasicAuthUser, error) {
+	// Rate limiting check
+	if m.config.EnableRateLimiting && m.limiter != nil {
+		rateLimitKey := "basic_auth:" + username
+		allowed, err := m.limiter.IsAllowed(ctx, rateLimitKey)
+		if err != nil {
+			return nil, fmt.Errorf("rate limit check failed: %w", err)
+		}
+		if !allowed {
+			return nil, errors.New("rate limit exceeded")
+		}
+	}
+
+	// Get user
+	user, err := m.userStore.GetUser(ctx, username)
+	if err != nil {
+		// Record failed attempt for rate limiting
+		if m.config.EnableRateLimiting && m.limiter != nil {
+			_ = m.limiter.RecordAttempt(ctx, "basic_auth:"+username)
+		}
+		return nil, ErrUserNotFound
+	}
+
+	// Check if user is active
+	if !user.IsActive {
+		return nil, ErrInvalidCredentials
+	}
+
+	// Check if account is locked
+	if user.IsLocked && time.Now().Before(user.LockedUntil) {
+		return nil, ErrAccountLocked
+	}
+
+	// Check if password is expired
+	if !user.PasswordExpiresAt.IsZero() && time.Now().After(user.PasswordExpiresAt) {
+		return nil, ErrPasswordExpired
+	}
+
+	// Verify password
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		// Increment failed attempts
+		user.FailedAttempts++
+		
+		// Lock account if too many failed attempts
+		if user.FailedAttempts >= m.config.MaxFailedAttempts {
+			user.IsLocked = true
+			user.LockedUntil = time.Now().Add(m.config.LockoutDuration)
+		}
+		
+		user.UpdatedAt = time.Now()
+		_ = m.userStore.UpdateUser(ctx, user)
+		
+		// Record failed attempt for rate limiting
+		if m.config.EnableRateLimiting && m.limiter != nil {
+			_ = m.limiter.RecordAttempt(ctx, "basic_auth:"+username)
+		}
+		
+		return nil, ErrInvalidCredentials
+	}
+
+	// Reset failed attempts and unlock account on successful login
+	user.FailedAttempts = 0
+	user.IsLocked = false
+	user.LockedUntil = time.Time{}
+	user.LastLoginAt = time.Now()
+	user.UpdatedAt = time.Now()
+	
+	_ = m.userStore.UpdateUser(ctx, user)
+
+	return user, nil
+}
+
+// CreateUser creates a new Basic auth user.
+func (m *BasicAuthManager) CreateUser(ctx context.Context, username, password string, roles, permissions []string) (*BasicAuthUser, error) {
+	// Validate password strength
+	if err := m.validatePassword(password); err != nil {
+		return nil, fmt.Errorf("password validation failed: %w", err)
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), m.config.BcryptCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	user := &BasicAuthUser{
+		Username:     username,
+		PasswordHash: string(hashedPassword),
+		Roles:        roles,
+		Permissions:  permissions,
+		IsActive:     true,
+		IsLocked:     false,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	err = m.userStore.CreateUser(ctx, user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	return user, nil
+}
+
+// UpdatePassword updates a user's password.
+func (m *BasicAuthManager) UpdatePassword(ctx context.Context, username, newPassword string) error {
+	// Validate password strength
+	if err := m.validatePassword(newPassword); err != nil {
+		return fmt.Errorf("password validation failed: %w", err)
+	}
+
+	user, err := m.userStore.GetUser(ctx, username)
+	if err != nil {
+		return ErrUserNotFound
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), m.config.BcryptCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	user.PasswordHash = string(hashedPassword)
+	user.UpdatedAt = time.Now()
+
+	return m.userStore.UpdateUser(ctx, user)
+}
+
+// HTTPMiddleware returns a Gin middleware for Basic authentication.
+func (m *BasicAuthManager) HTTPMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		username, password, hasAuth := c.Request.BasicAuth()
+		if !hasAuth {
+			m.requestAuth(c)
+			c.Abort()
+			return
+		}
+
+		user, err := m.Authenticate(c.Request.Context(), username, password)
+		if err != nil {
+			m.requestAuth(c)
+			c.Abort()
+			return
+		}
+
+		// Set user in context
+		c.Set(string(UserContextKey), &types.User{
+			ID:          user.Username,
+			Username:    user.Username,
+			Roles:       user.Roles,
+			Permissions: user.Permissions,
+		})
+
+		c.Next()
+	}
+}
+
+// GRPCUnaryInterceptor returns a gRPC unary interceptor for Basic authentication.
+func (m *BasicAuthManager) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Skip authentication for certain methods
+		if m.shouldSkipGRPCAuth(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
+		username, password, err := m.extractGRPCCredentials(ctx)
+		if err != nil {
+			return nil, status.Error(codes.Unauthenticated, "missing or invalid credentials")
+		}
+
+		user, err := m.Authenticate(ctx, username, password)
+		if err != nil {
+			return nil, status.Error(codes.Unauthenticated, "authentication failed")
+		}
+
+		// Add user to context
+		newCtx := context.WithValue(ctx, UserContextKey, &types.User{
+			ID:          user.Username,
+			Username:    user.Username,
+			Roles:       user.Roles,
+			Permissions: user.Permissions,
+		})
+
+		return handler(newCtx, req)
+	}
+}
+
+// Helper methods
+
+func (m *BasicAuthManager) validatePassword(password string) error {
+	if len(password) < m.config.PasswordMinLength {
+		return fmt.Errorf("password must be at least %d characters long", m.config.PasswordMinLength)
+	}
+
+	if m.config.RequireStrongPassword {
+		// Check for at least one uppercase, one lowercase, one digit, and one special character
+		hasUpper := false
+		hasLower := false
+		hasDigit := false
+		hasSpecial := false
+
+		for _, char := range password {
+			switch {
+			case char >= 'A' && char <= 'Z':
+				hasUpper = true
+			case char >= 'a' && char <= 'z':
+				hasLower = true
+			case char >= '0' && char <= '9':
+				hasDigit = true
+			case strings.ContainsRune("!@#$%^&*()_+-=[]{}|;:,.<>?", char):
+				hasSpecial = true
+			}
+		}
+
+		if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
+			return errors.New("password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
+		}
+	}
+
+	return nil
+}
+
+func (m *BasicAuthManager) requestAuth(c *gin.Context) {
+	c.Header("WWW-Authenticate", `Basic realm="`+m.config.Realm+`"`)
+	c.JSON(http.StatusUnauthorized, types.Response{
+		Success: false,
+		Message: "Authentication required",
+		Error: &types.ErrorInfo{
+			Code:    "AUTHENTICATION_REQUIRED",
+			Message: "Basic authentication credentials are required",
+		},
+	})
+}
+
+func (m *BasicAuthManager) shouldSkipGRPCAuth(fullMethod string) bool {
+	// Skip health check and reflection services
+	skipMethods := []string{
+		"/grpc.health.v1.Health/",
+		"/grpc.reflection.v1alpha.ServerReflection/",
+	}
+
+	for _, skipMethod := range skipMethods {
+		if strings.HasPrefix(fullMethod, skipMethod) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m *BasicAuthManager) extractGRPCCredentials(ctx context.Context) (string, string, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", "", errors.New("missing metadata")
+	}
+
+	// Try authorization header
+	authHeaders := md.Get("authorization")
+	if len(authHeaders) > 0 {
+		auth := authHeaders[0]
+		if strings.HasPrefix(strings.ToLower(auth), "basic ") {
+			encoded := auth[6:] // Remove "Basic " prefix
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				return "", "", errors.New("invalid base64 encoding")
+			}
+
+			parts := strings.SplitN(string(decoded), ":", 2)
+			if len(parts) != 2 {
+				return "", "", errors.New("invalid credential format")
+			}
+
+			return parts[0], parts[1], nil
+		}
+	}
+
+	// Try username/password metadata
+	usernames := md.Get("username")
+	passwords := md.Get("password")
+	if len(usernames) > 0 && len(passwords) > 0 {
+		return usernames[0], passwords[0], nil
+	}
+
+	return "", "", errors.New("no credentials found")
+}
+
+// InMemoryUserStore provides an in-memory implementation of BasicAuthUserStore.
+type InMemoryUserStore struct {
+	users map[string]*BasicAuthUser
+}
+
+// NewInMemoryUserStore creates a new in-memory user store.
+func NewInMemoryUserStore() *InMemoryUserStore {
+	return &InMemoryUserStore{
+		users: make(map[string]*BasicAuthUser),
+	}
+}
+
+func (s *InMemoryUserStore) GetUser(ctx context.Context, username string) (*BasicAuthUser, error) {
+	user, exists := s.users[username]
+	if !exists {
+		return nil, ErrUserNotFound
+	}
+	
+	// Return a copy to prevent external modifications
+	userCopy := *user
+	return &userCopy, nil
+}
+
+func (s *InMemoryUserStore) UpdateUser(ctx context.Context, user *BasicAuthUser) error {
+	if _, exists := s.users[user.Username]; !exists {
+		return ErrUserNotFound
+	}
+	
+	// Store a copy
+	userCopy := *user
+	s.users[user.Username] = &userCopy
+	return nil
+}
+
+func (s *InMemoryUserStore) CreateUser(ctx context.Context, user *BasicAuthUser) error {
+	if _, exists := s.users[user.Username]; exists {
+		return errors.New("user already exists")
+	}
+	
+	// Store a copy
+	userCopy := *user
+	s.users[user.Username] = &userCopy
+	return nil
+}
+
+func (s *InMemoryUserStore) DeleteUser(ctx context.Context, username string) error {
+	if _, exists := s.users[username]; !exists {
+		return ErrUserNotFound
+	}
+	
+	delete(s.users, username)
+	return nil
+}
+
+func (s *InMemoryUserStore) ListUsers(ctx context.Context, limit, offset int) ([]*BasicAuthUser, error) {
+	users := make([]*BasicAuthUser, 0, len(s.users))
+	i := 0
+	
+	for _, user := range s.users {
+		if i < offset {
+			i++
+			continue
+		}
+		
+		if limit > 0 && len(users) >= limit {
+			break
+		}
+		
+		// Return a copy
+		userCopy := *user
+		users = append(users, &userCopy)
+		i++
+	}
+	
+	return users, nil
+}
+
+// AddDefaultUser adds a default admin user to the store.
+func (s *InMemoryUserStore) AddDefaultUser(ctx context.Context, manager *BasicAuthManager, username, password string) error {
+	_, err := manager.CreateUser(ctx, username, password, []string{"admin"}, []string{"*"})
+	return err
+}

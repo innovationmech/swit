@@ -1,0 +1,71 @@
+# {{.Service.Name | titleCase}} Configuration File
+# This file contains the configuration for the {{.Service.Name}} service.
+
+# Server configuration
+server:
+  http:
+    host: "0.0.0.0"
+    port: {{.Service.Ports.HTTP}}
+  grpc:
+    host: "0.0.0.0"
+    port: {{.Service.Ports.GRPC}}
+
+# Service configuration
+service:
+  name: "{{.Service.Name}}"
+  version: "{{.Service.Version}}"
+  description: "{{.Service.Description}}"
+
+{{- if .Service.Features.Database}}
+
+# Database configuration
+database:
+  type: "{{.Service.Database.Type}}"
+  host: "{{.Service.Database.Host}}"
+  port: {{.Service.Database.Port}}
+  database: "{{.Service.Database.Database}}"
+  username: "{{.Service.Database.Username}}"
+  password: "{{.Service.Database.Password}}"
+  schema: "{{.Service.Database.Schema}}"
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+
+# Authentication configuration
+auth:
+  type: "{{.Service.Auth.Type}}"
+  secret_key: "your-secret-key-here"
+  expiration: "{{.Service.Auth.Expiration}}"
+  issuer: "{{.Service.Auth.Issuer}}"
+  audience: "{{.Service.Auth.Audience}}"
+  algorithm: "{{.Service.Auth.Algorithm}}"
+{{- end}}
+
+{{- if .Service.Features.Cache}}
+
+# Cache configuration
+cache:
+  type: "redis"
+  host: "localhost"
+  port: 6379
+  database: 0
+  password: ""
+{{- end}}
+
+{{- if .Service.Features.MessageQueue}}
+
+# Message queue configuration
+message_queue:
+  type: "rabbitmq"
+  host: "localhost"
+  port: 5672
+  username: "guest"
+  password: "guest"
+  vhost: "/"
+{{- end}}
+
+# Logging configuration (optional)
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"

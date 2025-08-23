@@ -1,0 +1,689 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// AuthorizationMiddleware provides authorization middleware for HTTP and gRPC.
+type AuthorizationMiddleware struct {
+	rbacManager *RBACManager
+	config      *AuthorizationConfig
+}
+
+// AuthorizationConfig holds authorization middleware configuration.
+type AuthorizationConfig struct {
+	// SkipPaths are paths that should skip authorization
+	SkipPaths []string `yaml:"skip_paths" json:"skip_paths" mapstructure:"skip_paths"`
+	
+	// ResourceExtractor extracts resource from request
+	ResourceExtractor ResourceExtractorFunc `yaml:"-" json:"-"`
+	
+	// ActionExtractor extracts action from request
+	ActionExtractor ActionExtractorFunc `yaml:"-" json:"-"`
+	
+	// DefaultResource for when extraction fails
+	DefaultResource string `yaml:"default_resource" json:"default_resource" mapstructure:"default_resource"`
+	
+	// DefaultAction for when extraction fails
+	DefaultAction string `yaml:"default_action" json:"default_action" mapstructure:"default_action"`
+	
+	// StrictMode fails on extraction errors
+	StrictMode bool `yaml:"strict_mode" json:"strict_mode" mapstructure:"strict_mode"`
+	
+	// EnableAudit enables audit logging
+	EnableAudit bool `yaml:"enable_audit" json:"enable_audit" mapstructure:"enable_audit"`
+}
+
+// ResourceExtractorFunc extracts resource from request context.
+type ResourceExtractorFunc func(c *gin.Context) string
+
+// ActionExtractorFunc extracts action from request context.
+type ActionExtractorFunc func(c *gin.Context) string
+
+// NewAuthorizationMiddleware creates a new authorization middleware.
+func NewAuthorizationMiddleware(rbacManager *RBACManager, config *AuthorizationConfig) *AuthorizationMiddleware {
+	if config == nil {
+		config = &AuthorizationConfig{
+			SkipPaths: []string{
+				"/health",
+				"/metrics",
+				"/auth/login",
+				"/auth/callback",
+			},
+			ResourceExtractor: DefaultResourceExtractor,
+			ActionExtractor:   DefaultActionExtractor,
+			DefaultResource:   "unknown",
+			DefaultAction:     "unknown",
+			StrictMode:        false,
+			EnableAudit:       true,
+		}
+	}
+
+	if config.ResourceExtractor == nil {
+		config.ResourceExtractor = DefaultResourceExtractor
+	}
+
+	if config.ActionExtractor == nil {
+		config.ActionExtractor = DefaultActionExtractor
+	}
+
+	return &AuthorizationMiddleware{
+		rbacManager: rbacManager,
+		config:      config,
+	}
+}
+
+// DefaultResourceExtractor extracts resource from URL path.
+func DefaultResourceExtractor(c *gin.Context) string {
+	path := c.Request.URL.Path
+	
+	// Remove leading slash and API version prefix
+	path = strings.TrimPrefix(path, "/")
+	path = strings.TrimPrefix(path, "api/")
+	path = strings.TrimPrefix(path, "v1/")
+	
+	// Split path and take the first segment as resource
+	parts := strings.Split(path, "/")
+	if len(parts) > 0 && parts[0] != "" {
+		return parts[0]
+	}
+	
+	return "unknown"
+}
+
+// DefaultActionExtractor extracts action from HTTP method.
+func DefaultActionExtractor(c *gin.Context) string {
+	method := strings.ToLower(c.Request.Method)
+	
+	switch method {
+	case "get":
+		// Distinguish between list and read based on presence of ID
+		path := c.Request.URL.Path
+		if strings.Contains(path, "/") && len(strings.Split(path, "/")) > 3 {
+			return "read"
+		}
+		return "list"
+	case "post":
+		return "create"
+	case "put", "patch":
+		return "update"
+	case "delete":
+		return "delete"
+	case "options":
+		return "options"
+	case "head":
+		return "read"
+	default:
+		return method
+	}
+}
+
+{{if .Auth.RBAC.Advanced}}
+// PathBasedResourceExtractor extracts resource based on path patterns.
+func PathBasedResourceExtractor(patterns map[string]string) ResourceExtractorFunc {
+	return func(c *gin.Context) string {
+		path := c.Request.URL.Path
+		
+		// Check each pattern
+		for pattern, resource := range patterns {
+			if matchesPattern(path, pattern) {
+				return resource
+			}
+		}
+		
+		return DefaultResourceExtractor(c)
+	}
+}
+
+// RESTResourceExtractor extracts resource from RESTful paths.
+func RESTResourceExtractor(c *gin.Context) string {
+	path := strings.TrimPrefix(c.Request.URL.Path, "/")
+	parts := strings.Split(path, "/")
+	
+	// Skip API version if present
+	if len(parts) > 0 && (parts[0] == "api" || strings.HasPrefix(parts[0], "v")) {
+		parts = parts[1:]
+	}
+	
+	// Extract resource from RESTful path
+	if len(parts) > 0 {
+		resource := parts[0]
+		
+		// Handle nested resources (e.g., /users/123/posts -> users.posts)
+		if len(parts) > 2 {
+			for i := 2; i < len(parts); i += 2 {
+				if i < len(parts) {
+					resource += "." + parts[i]
+				}
+			}
+		}
+		
+		return resource
+	}
+	
+	return "unknown"
+}
+{{end}}
+
+// HTTPMiddleware returns a Gin middleware for authorization.
+func (m *AuthorizationMiddleware) HTTPMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Check if path should skip authorization
+		if m.shouldSkipAuth(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+
+		// Get user from context (set by authentication middleware)
+		user, exists := GetUserFromContext(c)
+		if !exists {
+			m.respondUnauthorized(c, "user not authenticated")
+			c.Abort()
+			return
+		}
+
+		// Extract resource and action
+		resource := m.config.ResourceExtractor(c)
+		action := m.config.ActionExtractor(c)
+
+		// Use defaults if extraction failed
+		if resource == "" {
+			if m.config.StrictMode {
+				m.respondBadRequest(c, "failed to extract resource")
+				c.Abort()
+				return
+			}
+			resource = m.config.DefaultResource
+		}
+
+		if action == "" {
+			if m.config.StrictMode {
+				m.respondBadRequest(c, "failed to extract action")
+				c.Abort()
+				return
+			}
+			action = m.config.DefaultAction
+		}
+
+		// Check permission
+		var allowed bool
+		var err error
+
+		if m.config.EnableAudit {
+			allowed, err = m.rbacManager.CheckPermissionWithAudit(c.Request.Context(), user.ID, resource, action)
+		} else {
+			allowed, err = m.rbacManager.CheckPermission(c.Request.Context(), user.ID, resource, action)
+		}
+
+		if err != nil {
+			m.respondInternalError(c, "authorization check failed")
+			c.Abort()
+			return
+		}
+
+		if !allowed {
+			m.respondForbidden(c, "insufficient permissions")
+			c.Abort()
+			return
+		}
+
+		// Store authorization context
+		c.Set("authorized_resource", resource)
+		c.Set("authorized_action", action)
+
+		c.Next()
+	}
+}
+
+// RequirePermission returns middleware that requires a specific permission.
+func (m *AuthorizationMiddleware) RequirePermission(resource, action string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, exists := GetUserFromContext(c)
+		if !exists {
+			m.respondUnauthorized(c, "user not authenticated")
+			c.Abort()
+			return
+		}
+
+		var allowed bool
+		var err error
+
+		if m.config.EnableAudit {
+			allowed, err = m.rbacManager.CheckPermissionWithAudit(c.Request.Context(), user.ID, resource, action)
+		} else {
+			allowed, err = m.rbacManager.CheckPermission(c.Request.Context(), user.ID, resource, action)
+		}
+
+		if err != nil {
+			m.respondInternalError(c, "authorization check failed")
+			c.Abort()
+			return
+		}
+
+		if !allowed {
+			m.respondForbidden(c, "insufficient permissions")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequireRole returns middleware that requires a specific role.
+func (m *AuthorizationMiddleware) RequireRole(roleName string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, exists := GetUserFromContext(c)
+		if !exists {
+			m.respondUnauthorized(c, "user not authenticated")
+			c.Abort()
+			return
+		}
+
+		userRoles, err := m.rbacManager.GetUserRoles(c.Request.Context(), user.ID)
+		if err != nil {
+			m.respondInternalError(c, "failed to get user roles")
+			c.Abort()
+			return
+		}
+
+		hasRole := false
+		for _, role := range userRoles {
+			if role.Name == roleName {
+				hasRole = true
+				break
+			}
+		}
+
+		if !hasRole {
+			m.respondForbidden(c, "required role not found")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequireAnyRole returns middleware that requires any of the specified roles.
+func (m *AuthorizationMiddleware) RequireAnyRole(roleNames ...string) gin.HandlerFunc {
+	roleSet := make(map[string]bool)
+	for _, role := range roleNames {
+		roleSet[role] = true
+	}
+
+	return func(c *gin.Context) {
+		user, exists := GetUserFromContext(c)
+		if !exists {
+			m.respondUnauthorized(c, "user not authenticated")
+			c.Abort()
+			return
+		}
+
+		userRoles, err := m.rbacManager.GetUserRoles(c.Request.Context(), user.ID)
+		if err != nil {
+			m.respondInternalError(c, "failed to get user roles")
+			c.Abort()
+			return
+		}
+
+		hasRole := false
+		for _, role := range userRoles {
+			if roleSet[role.Name] {
+				hasRole = true
+				break
+			}
+		}
+
+		if !hasRole {
+			m.respondForbidden(c, "none of the required roles found")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// GRPCUnaryInterceptor returns a gRPC unary interceptor for authorization.
+func (m *AuthorizationMiddleware) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Skip authorization for certain methods
+		if m.shouldSkipGRPCAuth(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
+		// Get user from context
+		user, ok := GetUserFromGRPCContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "user not authenticated")
+		}
+
+		// Extract resource and action from gRPC method
+		resource, action := m.extractGRPCResourceAction(info.FullMethod)
+
+		// Check permission
+		var allowed bool
+		var err error
+
+		if m.config.EnableAudit {
+			allowed, err = m.rbacManager.CheckPermissionWithAudit(ctx, user.ID, resource, action)
+		} else {
+			allowed, err = m.rbacManager.CheckPermission(ctx, user.ID, resource, action)
+		}
+
+		if err != nil {
+			return nil, status.Error(codes.Internal, "authorization check failed")
+		}
+
+		if !allowed {
+			return nil, status.Error(codes.PermissionDenied, "insufficient permissions")
+		}
+
+		return handler(ctx, req)
+	}
+}
+
+// GRPCStreamInterceptor returns a gRPC stream interceptor for authorization.
+func (m *AuthorizationMiddleware) GRPCStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		// Skip authorization for certain methods
+		if m.shouldSkipGRPCAuth(info.FullMethod) {
+			return handler(srv, ss)
+		}
+
+		// Get user from context
+		user, ok := GetUserFromGRPCContext(ss.Context())
+		if !ok {
+			return status.Error(codes.Unauthenticated, "user not authenticated")
+		}
+
+		// Extract resource and action from gRPC method
+		resource, action := m.extractGRPCResourceAction(info.FullMethod)
+
+		// Check permission
+		var allowed bool
+		var err error
+
+		if m.config.EnableAudit {
+			allowed, err = m.rbacManager.CheckPermissionWithAudit(ss.Context(), user.ID, resource, action)
+		} else {
+			allowed, err = m.rbacManager.CheckPermission(ss.Context(), user.ID, resource, action)
+		}
+
+		if err != nil {
+			return status.Error(codes.Internal, "authorization check failed")
+		}
+
+		if !allowed {
+			return status.Error(codes.PermissionDenied, "insufficient permissions")
+		}
+
+		return handler(srv, ss)
+	}
+}
+
+// Helper methods
+
+func (m *AuthorizationMiddleware) shouldSkipAuth(path string) bool {
+	for _, skipPath := range m.config.SkipPaths {
+		if strings.HasPrefix(path, skipPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *AuthorizationMiddleware) shouldSkipGRPCAuth(fullMethod string) bool {
+	skipMethods := []string{
+		"/grpc.health.v1.Health/",
+		"/grpc.reflection.v1alpha.ServerReflection/",
+	}
+
+	for _, skipMethod := range skipMethods {
+		if strings.HasPrefix(fullMethod, skipMethod) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m *AuthorizationMiddleware) extractGRPCResourceAction(fullMethod string) (string, string) {
+	// Example: /myservice.v1.UserService/GetUser -> resource: user, action: read
+	parts := strings.Split(fullMethod, "/")
+	if len(parts) < 3 {
+		return m.config.DefaultResource, m.config.DefaultAction
+	}
+
+	servicePath := parts[1]  // myservice.v1.UserService
+	methodName := parts[2]   // GetUser
+
+	// Extract resource from service name
+	serviceParts := strings.Split(servicePath, ".")
+	var resource string
+	if len(serviceParts) > 0 {
+		serviceName := serviceParts[len(serviceParts)-1] // UserService
+		if strings.HasSuffix(serviceName, "Service") {
+			resource = strings.ToLower(serviceName[:len(serviceName)-7]) // user
+		} else {
+			resource = strings.ToLower(serviceName)
+		}
+	}
+
+	// Extract action from method name
+	var action string
+	methodLower := strings.ToLower(methodName)
+	switch {
+	case strings.HasPrefix(methodLower, "get"), strings.HasPrefix(methodLower, "find"), strings.HasPrefix(methodLower, "fetch"):
+		action = "read"
+	case strings.HasPrefix(methodLower, "list"), strings.HasPrefix(methodLower, "search"):
+		action = "list"
+	case strings.HasPrefix(methodLower, "create"), strings.HasPrefix(methodLower, "add"):
+		action = "create"
+	case strings.HasPrefix(methodLower, "update"), strings.HasPrefix(methodLower, "modify"), strings.HasPrefix(methodLower, "edit"):
+		action = "update"
+	case strings.HasPrefix(methodLower, "delete"), strings.HasPrefix(methodLower, "remove"):
+		action = "delete"
+	default:
+		action = strings.ToLower(methodName)
+	}
+
+	if resource == "" {
+		resource = m.config.DefaultResource
+	}
+	if action == "" {
+		action = m.config.DefaultAction
+	}
+
+	return resource, action
+}
+
+func (m *AuthorizationMiddleware) respondUnauthorized(c *gin.Context, message string) {
+	c.JSON(http.StatusUnauthorized, types.Response{
+		Success: false,
+		Message: "Unauthorized",
+		Error: &types.ErrorInfo{
+			Code:    "UNAUTHORIZED",
+			Message: message,
+		},
+	})
+}
+
+func (m *AuthorizationMiddleware) respondForbidden(c *gin.Context, message string) {
+	c.JSON(http.StatusForbidden, types.Response{
+		Success: false,
+		Message: "Forbidden",
+		Error: &types.ErrorInfo{
+			Code:    "FORBIDDEN",
+			Message: message,
+		},
+	})
+}
+
+func (m *AuthorizationMiddleware) respondBadRequest(c *gin.Context, message string) {
+	c.JSON(http.StatusBadRequest, types.Response{
+		Success: false,
+		Message: "Bad Request",
+		Error: &types.ErrorInfo{
+			Code:    "BAD_REQUEST",
+			Message: message,
+		},
+	})
+}
+
+func (m *AuthorizationMiddleware) respondInternalError(c *gin.Context, message string) {
+	c.JSON(http.StatusInternalServerError, types.Response{
+		Success: false,
+		Message: "Internal Server Error",
+		Error: &types.ErrorInfo{
+			Code:    "INTERNAL_ERROR",
+			Message: message,
+		},
+	})
+}
+
+{{if .Auth.RBAC.Advanced}}
+func matchesPattern(path, pattern string) bool {
+	// Simple pattern matching (supports * wildcards)
+	if pattern == "*" {
+		return true
+	}
+	
+	if !strings.Contains(pattern, "*") {
+		return path == pattern
+	}
+	
+	// Convert pattern to regex-like matching
+	parts := strings.Split(pattern, "*")
+	pathIndex := 0
+	
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		
+		index := strings.Index(path[pathIndex:], part)
+		if index == -1 {
+			return false
+		}
+		
+		if i == 0 && index != 0 {
+			return false // First part must match from beginning
+		}
+		
+		pathIndex += index + len(part)
+	}
+	
+	return true
+}
+{{end}}
+
+{{if .Auth.RBAC.Dynamic}}
+// DynamicAuthorizationMiddleware supports dynamic permission checking.
+type DynamicAuthorizationMiddleware struct {
+	*AuthorizationMiddleware
+	permissionChecker PermissionChecker
+}
+
+// PermissionChecker interface for dynamic permission checking.
+type PermissionChecker interface {
+	CheckPermission(ctx context.Context, user *types.User, resource, action string, context map[string]interface{}) (bool, error)
+}
+
+// NewDynamicAuthorizationMiddleware creates a dynamic authorization middleware.
+func NewDynamicAuthorizationMiddleware(rbacManager *RBACManager, config *AuthorizationConfig, checker PermissionChecker) *DynamicAuthorizationMiddleware {
+	return &DynamicAuthorizationMiddleware{
+		AuthorizationMiddleware: NewAuthorizationMiddleware(rbacManager, config),
+		permissionChecker:       checker,
+	}
+}
+
+// DynamicMiddleware returns middleware with dynamic permission checking.
+func (m *DynamicAuthorizationMiddleware) DynamicMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Check if path should skip authorization
+		if m.shouldSkipAuth(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+
+		// Get user from context
+		user, exists := GetUserFromContext(c)
+		if !exists {
+			m.respondUnauthorized(c, "user not authenticated")
+			c.Abort()
+			return
+		}
+
+		// Extract resource and action
+		resource := m.config.ResourceExtractor(c)
+		action := m.config.ActionExtractor(c)
+
+		// Build context for dynamic checking
+		context := map[string]interface{}{
+			"request_path":   c.Request.URL.Path,
+			"request_method": c.Request.Method,
+			"client_ip":      c.ClientIP(),
+			"user_agent":     c.GetHeader("User-Agent"),
+		}
+
+		// Add URL parameters
+		for key, value := range c.Params {
+			context["param_"+key] = value.Value
+		}
+
+		// Add query parameters
+		for key, values := range c.Request.URL.Query() {
+			if len(values) > 0 {
+				context["query_"+key] = values[0]
+			}
+		}
+
+		// Check permission dynamically
+		allowed, err := m.permissionChecker.CheckPermission(c.Request.Context(), user, resource, action, context)
+		if err != nil {
+			m.respondInternalError(c, "authorization check failed")
+			c.Abort()
+			return
+		}
+
+		if !allowed {
+			m.respondForbidden(c, "insufficient permissions")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+{{end}}

@@ -1,0 +1,835 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package middleware provides advanced rate limiting middleware for {{.Service.Name}}.
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	{{if .Service.Features.Cache}}
+	"github.com/go-redis/redis/v8"
+	{{end}}
+)
+
+{{if .Middleware.RateLimit.Advanced}}
+// AdvancedRateLimitConfig represents advanced rate limiting configuration.
+type AdvancedRateLimitConfig struct {
+	// Basic rate limiting
+	RequestsPerSecond int           `yaml:"requests_per_second" json:"requests_per_second" default:"100"`
+	RequestsPerMinute int           `yaml:"requests_per_minute" json:"requests_per_minute" default:"1000"`
+	RequestsPerHour   int           `yaml:"requests_per_hour" json:"requests_per_hour" default:"10000"`
+	BurstSize         int           `yaml:"burst_size" json:"burst_size" default:"10"`
+	
+	// Advanced features
+	EnableBurst       bool          `yaml:"enable_burst" json:"enable_burst" default:"true"`
+	EnableAdaptive    bool          `yaml:"enable_adaptive" json:"enable_adaptive" default:"false"`
+	EnableDistributed bool          `yaml:"enable_distributed" json:"enable_distributed" default:"false"`
+	
+	// Key generation
+	KeyPrefix         string        `yaml:"key_prefix" json:"key_prefix" default:"ratelimit"`
+	IdentifyBy        []string      `yaml:"identify_by" json:"identify_by" default:"[\"ip\"]"` // ip, user_id, api_key, path
+	
+	// Response configuration
+	IncludeHeaders    bool          `yaml:"include_headers" json:"include_headers" default:"true"`
+	CustomHeaders     map[string]string `yaml:"custom_headers" json:"custom_headers"`
+	ErrorMessage      string        `yaml:"error_message" json:"error_message" default:"Rate limit exceeded"`
+	RetryAfterHeader  bool          `yaml:"retry_after_header" json:"retry_after_header" default:"true"`
+	
+	// Skip conditions
+	SkipPaths         []string      `yaml:"skip_paths" json:"skip_paths"`
+	SkipUserAgents    []string      `yaml:"skip_user_agents" json:"skip_user_agents"`
+	SkipIPs           []string      `yaml:"skip_ips" json:"skip_ips"`
+	WhitelistIPs      []string      `yaml:"whitelist_ips" json:"whitelist_ips"`
+	
+	// Per-endpoint configuration
+	EndpointLimits    map[string]EndpointLimit `yaml:"endpoint_limits" json:"endpoint_limits"`
+	
+	// Storage configuration
+	{{if .Service.Features.Cache}}
+	RedisConfig       *RedisConfig  `yaml:"redis_config" json:"redis_config"`
+	{{end}}
+	
+	// Advanced options
+	SlidingWindow     bool          `yaml:"sliding_window" json:"sliding_window" default:"false"`
+	WindowSize        time.Duration `yaml:"window_size" json:"window_size" default:"1m"`
+	CleanupInterval   time.Duration `yaml:"cleanup_interval" json:"cleanup_interval" default:"5m"`
+}
+
+// EndpointLimit represents rate limits for a specific endpoint.
+type EndpointLimit struct {
+	RequestsPerSecond int    `yaml:"requests_per_second" json:"requests_per_second"`
+	RequestsPerMinute int    `yaml:"requests_per_minute" json:"requests_per_minute"`
+	RequestsPerHour   int    `yaml:"requests_per_hour" json:"requests_per_hour"`
+	BurstSize         int    `yaml:"burst_size" json:"burst_size"`
+	Methods           []string `yaml:"methods" json:"methods"`
+}
+
+{{if .Service.Features.Cache}}
+// RedisConfig represents Redis configuration for distributed rate limiting.
+type RedisConfig struct {
+	Addr     string `yaml:"addr" json:"addr" default:"localhost:6379"`
+	Password string `yaml:"password" json:"password"`
+	DB       int    `yaml:"db" json:"db" default:"0"`
+	PoolSize int    `yaml:"pool_size" json:"pool_size" default:"10"`
+}
+{{end}}
+{{end}}
+
+{{if .Middleware.RateLimit.Sliding}}
+// SlidingWindowRateLimiter implements sliding window rate limiting.
+type SlidingWindowRateLimiter struct {
+	config      *AdvancedRateLimitConfig
+	windows     map[string]*SlidingWindow
+	mutex       sync.RWMutex
+	stopChan    chan struct{}
+	wg          sync.WaitGroup
+	{{if .Service.Features.Cache}}
+	redisClient *redis.Client
+	{{end}}
+}
+
+// SlidingWindow represents a sliding time window for rate limiting.
+type SlidingWindow struct {
+	requests  []time.Time
+	mutex     sync.RWMutex
+	lastClean time.Time
+}
+
+// NewSlidingWindowRateLimiter creates a new sliding window rate limiter.
+func NewSlidingWindowRateLimiter(config *AdvancedRateLimitConfig) *SlidingWindowRateLimiter {
+	limiter := &SlidingWindowRateLimiter{
+		config:   config,
+		windows:  make(map[string]*SlidingWindow),
+		stopChan: make(chan struct{}),
+	}
+	
+	{{if .Service.Features.Cache}}
+	if config.EnableDistributed && config.RedisConfig != nil {
+		limiter.redisClient = redis.NewClient(&redis.Options{
+			Addr:     config.RedisConfig.Addr,
+			Password: config.RedisConfig.Password,
+			DB:       config.RedisConfig.DB,
+			PoolSize: config.RedisConfig.PoolSize,
+		})
+	}
+	{{end}}
+	
+	// Start cleanup goroutine
+	limiter.wg.Add(1)
+	go limiter.cleanupWorker()
+	
+	return limiter
+}
+
+// Allow checks if a request is allowed under the rate limit.
+func (l *SlidingWindowRateLimiter) Allow(ctx context.Context, key string) (bool, time.Duration, error) {
+	{{if .Service.Features.Cache}}
+	if l.redisClient != nil {
+		return l.allowDistributed(ctx, key)
+	}
+	{{end}}
+	
+	return l.allowLocal(key)
+}
+
+// allowLocal handles local sliding window rate limiting.
+func (l *SlidingWindowRateLimiter) allowLocal(key string) (bool, time.Duration, error) {
+	l.mutex.RLock()
+	window, exists := l.windows[key]
+	l.mutex.RUnlock()
+	
+	if !exists {
+		l.mutex.Lock()
+		window = &SlidingWindow{
+			requests:  make([]time.Time, 0),
+			lastClean: time.Now(),
+		}
+		l.windows[key] = window
+		l.mutex.Unlock()
+	}
+	
+	window.mutex.Lock()
+	defer window.mutex.Unlock()
+	
+	now := time.Now()
+	windowStart := now.Add(-l.config.WindowSize)
+	
+	// Clean old requests
+	validRequests := make([]time.Time, 0)
+	for _, reqTime := range window.requests {
+		if reqTime.After(windowStart) {
+			validRequests = append(validRequests, reqTime)
+		}
+	}
+	window.requests = validRequests
+	
+	// Check rate limit
+	if len(window.requests) >= l.config.RequestsPerSecond {
+		// Calculate retry after
+		oldestRequest := window.requests[0]
+		retryAfter := l.config.WindowSize - now.Sub(oldestRequest)
+		if retryAfter < 0 {
+			retryAfter = 0
+		}
+		return false, retryAfter, nil
+	}
+	
+	// Add current request
+	window.requests = append(window.requests, now)
+	return true, 0, nil
+}
+
+{{if .Service.Features.Cache}}
+// allowDistributed handles distributed sliding window rate limiting using Redis.
+func (l *SlidingWindowRateLimiter) allowDistributed(ctx context.Context, key string) (bool, time.Duration, error) {
+	redisKey := fmt.Sprintf("%s:%s", l.config.KeyPrefix, key)
+	now := time.Now()
+	windowStart := now.Add(-l.config.WindowSize)
+	
+	pipe := l.redisClient.TxPipeline()
+	
+	// Remove old entries
+	pipe.ZRemRangeByScore(ctx, redisKey, "0", fmt.Sprintf("%d", windowStart.UnixNano()))
+	
+	// Count current entries
+	countCmd := pipe.ZCard(ctx, redisKey)
+	
+	// Add current request
+	pipe.ZAdd(ctx, redisKey, &redis.Z{
+		Score:  float64(now.UnixNano()),
+		Member: now.UnixNano(),
+	})
+	
+	// Set expiration
+	pipe.Expire(ctx, redisKey, l.config.WindowSize+time.Minute)
+	
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return false, 0, fmt.Errorf("redis pipeline error: %w", err)
+	}
+	
+	count := countCmd.Val()
+	
+	if count >= int64(l.config.RequestsPerSecond) {
+		// Get oldest request for retry-after calculation
+		oldestCmd := l.redisClient.ZRange(ctx, redisKey, 0, 0)
+		if oldest, err := oldestCmd.Result(); err == nil && len(oldest) > 0 {
+			if oldestTime, err := strconv.ParseInt(oldest[0], 10, 64); err == nil {
+				oldestTimestamp := time.Unix(0, oldestTime)
+				retryAfter := l.config.WindowSize - now.Sub(oldestTimestamp)
+				if retryAfter < 0 {
+					retryAfter = 0
+				}
+				return false, retryAfter, nil
+			}
+		}
+		return false, l.config.WindowSize, nil
+	}
+	
+	return true, 0, nil
+}
+{{end}}
+
+// cleanupWorker periodically cleans up old windows.
+func (l *SlidingWindowRateLimiter) cleanupWorker() {
+	defer l.wg.Done()
+	ticker := time.NewTicker(l.config.CleanupInterval)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			l.cleanup()
+		case <-l.stopChan:
+			return
+		}
+	}
+}
+
+// cleanup removes old sliding windows.
+func (l *SlidingWindowRateLimiter) cleanup() {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	
+	now := time.Now()
+	for key, window := range l.windows {
+		window.mutex.RLock()
+		lastClean := window.lastClean
+		window.mutex.RUnlock()
+		
+		// Remove windows not used recently
+		if now.Sub(lastClean) > l.config.CleanupInterval*2 {
+			delete(l.windows, key)
+		}
+	}
+}
+
+// Shutdown gracefully shuts down the rate limiter.
+func (l *SlidingWindowRateLimiter) Shutdown(ctx context.Context) error {
+	close(l.stopChan)
+	
+	// Wait for cleanup worker to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		l.wg.Wait()
+		close(done)
+	}()
+	
+	select {
+	case <-done:
+		{{if .Service.Features.Cache}}
+		// Close Redis connection if exists
+		if l.redisClient != nil {
+			return l.redisClient.Close()
+		}
+		{{end}}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+{{end}}
+
+{{if .Middleware.RateLimit.Adaptive}}
+// AdaptiveRateLimiter implements adaptive rate limiting based on system load.
+type AdaptiveRateLimiter struct {
+	baseConfig      *AdvancedRateLimitConfig
+	currentLimits   map[string]int
+	systemMetrics   *SystemMetrics
+	adjustmentMutex sync.RWMutex
+	stopChan        chan struct{}
+	wg              sync.WaitGroup
+}
+
+// SystemMetrics represents system performance metrics.
+type SystemMetrics struct {
+	CPUUsage    float64
+	MemoryUsage float64
+	ErrorRate   float64
+	ResponseTime time.Duration
+	mutex       sync.RWMutex
+}
+
+// NewAdaptiveRateLimiter creates a new adaptive rate limiter.
+func NewAdaptiveRateLimiter(config *AdvancedRateLimitConfig) *AdaptiveRateLimiter {
+	limiter := &AdaptiveRateLimiter{
+		baseConfig:    config,
+		currentLimits: make(map[string]int),
+		systemMetrics: &SystemMetrics{},
+		stopChan:      make(chan struct{}),
+	}
+	
+	// Initialize current limits with base limits
+	limiter.currentLimits["requests_per_second"] = config.RequestsPerSecond
+	limiter.currentLimits["requests_per_minute"] = config.RequestsPerMinute
+	limiter.currentLimits["requests_per_hour"] = config.RequestsPerHour
+	
+	// Start metrics collection and adjustment
+	limiter.wg.Add(2)
+	go limiter.metricsWorker()
+	go limiter.adjustmentWorker()
+	
+	return limiter
+}
+
+// metricsWorker periodically collects system metrics.
+func (l *AdaptiveRateLimiter) metricsWorker() {
+	defer l.wg.Done()
+	ticker := time.NewTicker(30 * time.Second) // Collect metrics every 30 seconds
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			// In a real implementation, you would collect actual system metrics
+			// For now, we'll simulate some values
+			l.UpdateMetrics(0.5, 0.6, 0.01, 100*time.Millisecond)
+		case <-l.stopChan:
+			return
+		}
+	}
+}
+
+// adjustmentWorker periodically adjusts rate limits based on system metrics.
+func (l *AdaptiveRateLimiter) adjustmentWorker() {
+	defer l.wg.Done()
+	ticker := time.NewTicker(1 * time.Minute) // Adjust limits every minute
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			l.adjustLimits()
+		case <-l.stopChan:
+			return
+		}
+	}
+}
+
+// adjustLimits adjusts the rate limits based on current system metrics.
+func (l *AdaptiveRateLimiter) adjustLimits() {
+	l.systemMetrics.mutex.RLock()
+	cpu := l.systemMetrics.CPUUsage
+	memory := l.systemMetrics.MemoryUsage
+	errorRate := l.systemMetrics.ErrorRate
+	l.systemMetrics.mutex.RUnlock()
+	
+	l.adjustmentMutex.Lock()
+	defer l.adjustmentMutex.Unlock()
+	
+	// Adjust limits based on system load
+	adjustment := 1.0
+	if cpu > 0.8 || memory > 0.8 || errorRate > 0.05 {
+		// System under stress, reduce limits
+		adjustment = 0.7
+	} else if cpu < 0.3 && memory < 0.3 && errorRate < 0.01 {
+		// System healthy, can handle more load
+		adjustment = 1.3
+	}
+	
+	// Apply adjustments
+	l.currentLimits["requests_per_second"] = int(float64(l.baseConfig.RequestsPerSecond) * adjustment)
+	l.currentLimits["requests_per_minute"] = int(float64(l.baseConfig.RequestsPerMinute) * adjustment)
+	l.currentLimits["requests_per_hour"] = int(float64(l.baseConfig.RequestsPerHour) * adjustment)
+}
+
+// Shutdown gracefully shuts down the adaptive rate limiter.
+func (l *AdaptiveRateLimiter) Shutdown(ctx context.Context) error {
+	close(l.stopChan)
+	
+	// Wait for all workers to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		l.wg.Wait()
+		close(done)
+	}()
+	
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// UpdateMetrics updates system metrics.
+func (l *AdaptiveRateLimiter) UpdateMetrics(cpu, memory, errorRate float64, responseTime time.Duration) {
+	l.systemMetrics.mutex.Lock()
+	l.systemMetrics.CPUUsage = cpu
+	l.systemMetrics.MemoryUsage = memory
+	l.systemMetrics.ErrorRate = errorRate
+	l.systemMetrics.ResponseTime = responseTime
+	l.systemMetrics.mutex.Unlock()
+}
+
+// GetCurrentLimit returns the current adaptive limit.
+func (l *AdaptiveRateLimiter) GetCurrentLimit(limitType string) int {
+	l.adjustmentMutex.RLock()
+	defer l.adjustmentMutex.RUnlock()
+	
+	if limit, exists := l.currentLimits[limitType]; exists {
+		return limit
+	}
+	
+	return l.baseConfig.RequestsPerSecond // default
+}
+
+// metricsWorker collects system metrics.
+func (l *AdaptiveRateLimiter) metricsWorker() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			// Collect system metrics (simplified implementation)
+			// In a real implementation, you would integrate with system monitoring
+			l.collectMetrics()
+		}
+	}
+}
+
+// collectMetrics collects current system metrics.
+func (l *AdaptiveRateLimiter) collectMetrics() {
+	// This is a simplified implementation
+	// In practice, you would use proper system monitoring libraries
+	
+	// Placeholder values - replace with actual metric collection
+	cpu := 50.0    // Percentage
+	memory := 60.0 // Percentage
+	errorRate := 0.01 // 1%
+	responseTime := 100 * time.Millisecond
+	
+	l.UpdateMetrics(cpu, memory, errorRate, responseTime)
+}
+
+// adjustmentWorker adjusts rate limits based on system metrics.
+func (l *AdaptiveRateLimiter) adjustmentWorker() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			l.adjustLimits()
+		}
+	}
+}
+
+// adjustLimits adjusts rate limits based on current system performance.
+func (l *AdaptiveRateLimiter) adjustLimits() {
+	l.systemMetrics.mutex.RLock()
+	cpu := l.systemMetrics.CPUUsage
+	memory := l.systemMetrics.MemoryUsage
+	errorRate := l.systemMetrics.ErrorRate
+	responseTime := l.systemMetrics.ResponseTime
+	l.systemMetrics.mutex.RUnlock()
+	
+	l.adjustmentMutex.Lock()
+	defer l.adjustmentMutex.Unlock()
+	
+	// Calculate adjustment factor based on system health
+	adjustmentFactor := 1.0
+	
+	// Decrease limits if system is under stress
+	if cpu > 80 || memory > 80 || errorRate > 0.05 || responseTime > 500*time.Millisecond {
+		adjustmentFactor = 0.7 // Reduce by 30%
+	} else if cpu > 60 || memory > 60 || errorRate > 0.02 || responseTime > 200*time.Millisecond {
+		adjustmentFactor = 0.85 // Reduce by 15%
+	} else if cpu < 30 && memory < 30 && errorRate < 0.005 && responseTime < 50*time.Millisecond {
+		adjustmentFactor = 1.3 // Increase by 30%
+	} else if cpu < 50 && memory < 50 && errorRate < 0.01 && responseTime < 100*time.Millisecond {
+		adjustmentFactor = 1.1 // Increase by 10%
+	}
+	
+	// Apply adjustments
+	baseRPS := l.baseConfig.RequestsPerSecond
+	baseRPM := l.baseConfig.RequestsPerMinute
+	baseRPH := l.baseConfig.RequestsPerHour
+	
+	l.currentLimits["requests_per_second"] = int(float64(baseRPS) * adjustmentFactor)
+	l.currentLimits["requests_per_minute"] = int(float64(baseRPM) * adjustmentFactor)
+	l.currentLimits["requests_per_hour"] = int(float64(baseRPH) * adjustmentFactor)
+	
+	// Ensure minimum limits
+	if l.currentLimits["requests_per_second"] < 10 {
+		l.currentLimits["requests_per_second"] = 10
+	}
+	
+	log.Printf("Adaptive rate limits adjusted: RPS=%d, RPM=%d, RPH=%d (factor=%.2f)",
+		l.currentLimits["requests_per_second"],
+		l.currentLimits["requests_per_minute"],
+		l.currentLimits["requests_per_hour"],
+		adjustmentFactor)
+}
+{{end}}
+
+// AdvancedRateLimit creates an advanced rate limiting middleware.
+func AdvancedRateLimit(config *AdvancedRateLimitConfig) gin.HandlerFunc {
+	{{if .Middleware.RateLimit.Sliding}}
+	var slidingLimiter *SlidingWindowRateLimiter
+	if config.SlidingWindow {
+		slidingLimiter = NewSlidingWindowRateLimiter(config)
+	}
+	{{end}}
+	
+	{{if .Middleware.RateLimit.Adaptive}}
+	var adaptiveLimiter *AdaptiveRateLimiter
+	if config.EnableAdaptive {
+		adaptiveLimiter = NewAdaptiveRateLimiter(config)
+	}
+	{{end}}
+	
+	return func(c *gin.Context) {
+		// Check if path should be skipped
+		if shouldSkipPath(c.Request.URL.Path, config.SkipPaths) {
+			c.Next()
+			return
+		}
+		
+		// Check if user agent should be skipped
+		if shouldSkipUserAgent(c.Request.UserAgent(), config.SkipUserAgents) {
+			c.Next()
+			return
+		}
+		
+		// Check if IP should be skipped or whitelisted
+		clientIP := getClientIP(c)
+		if shouldSkipIP(clientIP, config.SkipIPs) || isWhitelistedIP(clientIP, config.WhitelistIPs) {
+			c.Next()
+			return
+		}
+		
+		// Generate rate limit key
+		key := generateRateLimitKey(c, config)
+		
+		// Get applicable limits for this endpoint
+		limits := getEndpointLimits(c, config)
+		
+		{{if .Middleware.RateLimit.Sliding}}
+		if config.SlidingWindow && slidingLimiter != nil {
+			allowed, retryAfter, err := slidingLimiter.Allow(c.Request.Context(), key)
+			if err != nil {
+				log.Printf("Rate limit error: %v", err)
+				// Continue processing on error
+			} else if !allowed {
+				handleRateLimitExceeded(c, config, retryAfter)
+				return
+			}
+		} else {
+		{{end}}
+			// Use token bucket or fixed window rate limiting
+			allowed, retryAfter := checkRateLimit(key, limits, config)
+			if !allowed {
+				handleRateLimitExceeded(c, config, retryAfter)
+				return
+			}
+		{{if .Middleware.RateLimit.Sliding}}
+		}
+		{{end}}
+		
+		// Add rate limit headers
+		if config.IncludeHeaders {
+			addRateLimitHeaders(c, limits, config)
+		}
+		
+		{{if .Middleware.RateLimit.Adaptive}}
+		// Update adaptive metrics if enabled
+		if config.EnableAdaptive && adaptiveLimiter != nil {
+			// Measure response time for adaptive adjustment
+			start := time.Now()
+			c.Next()
+			responseTime := time.Since(start)
+			
+			// Simple error detection based on status code
+			errorRate := 0.0
+			if c.Writer.Status() >= 400 {
+				errorRate = 1.0
+			}
+			
+			// Update metrics (in practice, you'd aggregate these)
+			go adaptiveLimiter.UpdateMetrics(0, 0, errorRate, responseTime)
+		} else {
+		{{end}}
+			c.Next()
+		{{if .Middleware.RateLimit.Adaptive}}
+		}
+		{{end}}
+	}
+}
+
+// generateRateLimitKey generates a unique key for rate limiting.
+func generateRateLimitKey(c *gin.Context, config *AdvancedRateLimitConfig) string {
+	var keyParts []string
+	
+	for _, identifier := range config.IdentifyBy {
+		switch identifier {
+		case "ip":
+			keyParts = append(keyParts, getClientIP(c))
+		case "user_id":
+			if userID := c.GetString("user_id"); userID != "" {
+				keyParts = append(keyParts, "user:"+userID)
+			}
+		case "api_key":
+			if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
+				keyParts = append(keyParts, "key:"+apiKey)
+			}
+		case "path":
+			keyParts = append(keyParts, c.Request.URL.Path)
+		}
+	}
+	
+	if len(keyParts) == 0 {
+		keyParts = append(keyParts, getClientIP(c))
+	}
+	
+	return config.KeyPrefix + ":" + strings.Join(keyParts, ":")
+}
+
+// getClientIP extracts the client IP address.
+func getClientIP(c *gin.Context) string {
+	// Check X-Forwarded-For header
+	forwarded := c.GetHeader("X-Forwarded-For")
+	if forwarded != "" {
+		// Take the first IP
+		ips := strings.Split(forwarded, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+	
+	// Check X-Real-IP header
+	realIP := c.GetHeader("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+	
+	// Fall back to remote address
+	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		return c.Request.RemoteAddr
+	}
+	
+	return host
+}
+
+// shouldSkipPath checks if a path should be skipped from rate limiting.
+func shouldSkipPath(path string, skipPaths []string) bool {
+	for _, skipPath := range skipPaths {
+		if strings.HasPrefix(path, skipPath) {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldSkipUserAgent checks if a user agent should be skipped.
+func shouldSkipUserAgent(userAgent string, skipUserAgents []string) bool {
+	for _, skipUA := range skipUserAgents {
+		if strings.Contains(userAgent, skipUA) {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldSkipIP checks if an IP should be skipped.
+func shouldSkipIP(ip string, skipIPs []string) bool {
+	for _, skipIP := range skipIPs {
+		if ip == skipIP {
+			return true
+		}
+	}
+	return false
+}
+
+// isWhitelistedIP checks if an IP is whitelisted.
+func isWhitelistedIP(ip string, whitelistIPs []string) bool {
+	for _, whitelistIP := range whitelistIPs {
+		if ip == whitelistIP {
+			return true
+		}
+	}
+	return false
+}
+
+// getEndpointLimits gets rate limits specific to the current endpoint.
+func getEndpointLimits(c *gin.Context, config *AdvancedRateLimitConfig) *EndpointLimit {
+	path := c.Request.URL.Path
+	method := c.Request.Method
+	
+	for pattern, limit := range config.EndpointLimits {
+		if strings.HasPrefix(path, pattern) {
+			// Check if method matches
+			if len(limit.Methods) == 0 || containsString(limit.Methods, method) {
+				return &limit
+			}
+		}
+	}
+	
+	// Return default limits
+	return &EndpointLimit{
+		RequestsPerSecond: config.RequestsPerSecond,
+		RequestsPerMinute: config.RequestsPerMinute,
+		RequestsPerHour:   config.RequestsPerHour,
+		BurstSize:         config.BurstSize,
+	}
+}
+
+// checkRateLimit checks if a request is within rate limits (simplified implementation).
+func checkRateLimit(key string, limits *EndpointLimit, config *AdvancedRateLimitConfig) (bool, time.Duration) {
+	// This is a simplified implementation
+	// In practice, you would use a proper rate limiting algorithm
+	// like token bucket or sliding window counter
+	
+	// For demo purposes, we'll allow all requests
+	return true, 0
+}
+
+// handleRateLimitExceeded handles rate limit exceeded cases.
+func handleRateLimitExceeded(c *gin.Context, config *AdvancedRateLimitConfig, retryAfter time.Duration) {
+	// Add retry-after header
+	if config.RetryAfterHeader {
+		c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+	}
+	
+	// Add custom headers
+	for key, value := range config.CustomHeaders {
+		c.Header(key, value)
+	}
+	
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"error":   "Rate limit exceeded",
+		"message": config.ErrorMessage,
+		"retry_after": retryAfter.Seconds(),
+	})
+	c.Abort()
+}
+
+// addRateLimitHeaders adds rate limit information headers.
+func addRateLimitHeaders(c *gin.Context, limits *EndpointLimit, config *AdvancedRateLimitConfig) {
+	c.Header("X-RateLimit-Limit", strconv.Itoa(limits.RequestsPerSecond))
+	c.Header("X-RateLimit-Window", config.WindowSize.String())
+	// In a real implementation, you would add remaining count and reset time
+	c.Header("X-RateLimit-Remaining", "100") // Placeholder
+	c.Header("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(config.WindowSize).Unix(), 10))
+}
+
+// containsString checks if a slice contains a string.
+func containsString(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// DefaultAdvancedRateLimitConfig returns a default configuration.
+func DefaultAdvancedRateLimitConfig() *AdvancedRateLimitConfig {
+	return &AdvancedRateLimitConfig{
+		RequestsPerSecond: 100,
+		RequestsPerMinute: 1000,
+		RequestsPerHour:   10000,
+		BurstSize:         10,
+		EnableBurst:       true,
+		EnableAdaptive:    false,
+		EnableDistributed: false,
+		KeyPrefix:         "ratelimit",
+		IdentifyBy:        []string{"ip"},
+		IncludeHeaders:    true,
+		ErrorMessage:      "Rate limit exceeded. Please try again later.",
+		RetryAfterHeader:  true,
+		SlidingWindow:     false,
+		WindowSize:        time.Minute,
+		CleanupInterval:   5 * time.Minute,
+		EndpointLimits:    make(map[string]EndpointLimit),
+	}
+}

@@ -1,0 +1,164 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package types defines common types and data structures for {{.Service.Name}}.
+package types
+
+import (
+	"time"
+)
+
+// Response represents a standard API response.
+type Response struct {
+	Success bool        `json:"success"`
+	Message string      `json:"message,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   *ErrorInfo  `json:"error,omitempty"`
+}
+
+// ErrorInfo represents error information.
+type ErrorInfo struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Details string `json:"details,omitempty"`
+}
+
+// HealthResponse represents health check response.
+type HealthResponse struct {
+	Status    string                 `json:"status"`
+	Service   string                 `json:"service"`
+	Version   string                 `json:"version"`
+	Timestamp time.Time              `json:"timestamp"`
+	Checks    map[string]HealthCheck `json:"checks,omitempty"`
+}
+
+// HealthCheck represents individual health check result.
+type HealthCheck struct {
+	Status  string    `json:"status"`
+	Message string    `json:"message,omitempty"`
+	Time    time.Time `json:"time"`
+}
+
+// Pagination represents pagination information.
+type Pagination struct {
+	Page     int   `json:"page"`
+	Size     int   `json:"size"`
+	Total    int64 `json:"total"`
+	Pages    int   `json:"pages"`
+	HasNext  bool  `json:"has_next"`
+	HasPrev  bool  `json:"has_prev"`
+}
+
+// ListFilter represents common list filtering options.
+type ListFilter struct {
+	Page     int               `json:"page,omitempty"`
+	Size     int               `json:"size,omitempty"`
+	Sort     string            `json:"sort,omitempty"`
+	Order    string            `json:"order,omitempty"`
+	Search   string            `json:"search,omitempty"`
+	Filters  map[string]string `json:"filters,omitempty"`
+}
+
+// SortOrder represents sort order options.
+type SortOrder string
+
+const (
+	SortOrderAsc  SortOrder = "asc"
+	SortOrderDesc SortOrder = "desc"
+)
+
+// Status represents resource status.
+type Status string
+
+const (
+	StatusActive   Status = "active"
+	StatusInactive Status = "inactive"
+	StatusPending  Status = "pending"
+	StatusDeleted  Status = "deleted"
+)
+
+{{- if .Service.Features.Authentication}}
+
+// TokenClaims represents JWT token claims.
+type TokenClaims struct {
+	UserID    string                 `json:"user_id"`
+	Username  string                 `json:"username,omitempty"`
+	Email     string                 `json:"email,omitempty"`
+	Roles     []string               `json:"roles,omitempty"`
+	ExpiresAt time.Time              `json:"expires_at"`
+	IssuedAt  time.Time              `json:"issued_at"`
+	Extra     map[string]interface{} `json:"extra,omitempty"`
+}
+
+// AuthRequest represents authentication request.
+type AuthRequest struct {
+	Username string `json:"username" validate:"required"`
+	Password string `json:"password" validate:"required"`
+}
+
+// AuthResponse represents authentication response.
+type AuthResponse struct {
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	TokenType    string    `json:"token_type"`
+}
+{{- end}}
+
+// Example business types - customize based on your domain
+// TODO: Replace these with your actual business types
+
+// {{.Service.Name | pascalCase}}Response represents a {{.Service.Name}} response.
+type {{.Service.Name | pascalCase}}Response struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	Status      Status                 `json:"status"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// Create{{.Service.Name | pascalCase}}Request represents a create {{.Service.Name}} request.
+type Create{{.Service.Name | pascalCase}}Request struct {
+	Name        string                 `json:"name" validate:"required,min=1,max=255"`
+	Description string                 `json:"description,omitempty" validate:"max=1000"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// Update{{.Service.Name | pascalCase}}Request represents an update {{.Service.Name}} request.
+type Update{{.Service.Name | pascalCase}}Request struct {
+	Name        *string                `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
+	Description *string                `json:"description,omitempty" validate:"omitempty,max=1000"`
+	Status      *Status                `json:"status,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// List{{.Service.Name | pascalCase | pluralize}}Request represents a list {{.Service.Name | pluralize}} request.
+type List{{.Service.Name | pascalCase | pluralize}}Request struct {
+	ListFilter
+	Status *Status `json:"status,omitempty"`
+}
+
+// List{{.Service.Name | pascalCase | pluralize}}Response represents a list {{.Service.Name | pluralize}} response.
+type List{{.Service.Name | pascalCase | pluralize}}Response struct {
+	Items      []*{{.Service.Name | pascalCase}}Response `json:"items"`
+	Pagination *Pagination                               `json:"pagination"`
+}

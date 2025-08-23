@@ -1,0 +1,157 @@
+{{- if .Service.Features.Repository -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package model defines data models for {{.Service.Name}}.
+package model
+
+import (
+	"time"
+
+{{- if .Service.Features.Database}}
+	"gorm.io/gorm"
+{{- end}}
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// {{.Service.Name | pascalCase}} represents the {{.Service.Name}} data model.
+type {{.Service.Name | pascalCase}} struct {
+{{- if .Service.Features.Database}}
+	ID          string                 `gorm:"primaryKey;type:varchar(255)" json:"id"`
+	Name        string                 `gorm:"not null;type:varchar(255)" json:"name"`
+	Description string                 `gorm:"type:text" json:"description"`
+	Status      types.Status           `gorm:"type:varchar(50);default:'active'" json:"status"`
+	CreatedAt   time.Time              `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt   time.Time              `gorm:"autoUpdateTime" json:"updated_at"`
+	DeletedAt   gorm.DeletedAt         `gorm:"index" json:"deleted_at"`
+	Metadata    map[string]interface{} `gorm:"serializer:json" json:"metadata"`
+{{- else}}
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Status      types.Status           `json:"status"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Metadata    map[string]interface{} `json:"metadata"`
+{{- end}}
+}
+
+{{- if .Service.Features.Database}}
+
+// TableName returns the table name for the {{.Service.Name | pascalCase}} model.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) TableName() string {
+	return "{{.Service.Name | snakeCase | pluralize}}"
+}
+
+// BeforeCreate is a GORM hook called before creating a record.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) BeforeCreate(tx *gorm.DB) error {
+	if {{.Service.Name | receiverName}}.ID == "" {
+		{{.Service.Name | receiverName}}.ID = generateID() // Implement ID generation
+	}
+
+	if {{.Service.Name | receiverName}}.Status == "" {
+		{{.Service.Name | receiverName}}.Status = types.StatusActive
+	}
+
+	return nil
+}
+
+// BeforeUpdate is a GORM hook called before updating a record.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) BeforeUpdate(tx *gorm.DB) error {
+	{{.Service.Name | receiverName}}.UpdatedAt = time.Now()
+	return nil
+}
+{{- end}}
+
+// Validate validates the {{.Service.Name}} model.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) Validate() error {
+	if {{.Service.Name | receiverName}}.Name == "" {
+		return ErrNameRequired
+	}
+
+	if len({{.Service.Name | receiverName}}.Name) > 255 {
+		return ErrNameTooLong
+	}
+
+	if {{.Service.Name | receiverName}}.Status != "" {
+		switch {{.Service.Name | receiverName}}.Status {
+		case types.StatusActive, types.StatusInactive, types.StatusPending, types.StatusDeleted:
+			// Valid status
+		default:
+			return ErrInvalidStatus
+		}
+	}
+
+	return nil
+}
+
+// IsActive checks if the {{.Service.Name}} is active.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) IsActive() bool {
+	return {{.Service.Name | receiverName}}.Status == types.StatusActive
+}
+
+// ToResponse converts the model to a response type.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) ToResponse() *types.{{.Service.Name | pascalCase}}Response {
+	return &types.{{.Service.Name | pascalCase}}Response{
+		ID:          {{.Service.Name | receiverName}}.ID,
+		Name:        {{.Service.Name | receiverName}}.Name,
+		Description: {{.Service.Name | receiverName}}.Description,
+		Status:      {{.Service.Name | receiverName}}.Status,
+		CreatedAt:   {{.Service.Name | receiverName}}.CreatedAt,
+		UpdatedAt:   {{.Service.Name | receiverName}}.UpdatedAt,
+		Metadata:    {{.Service.Name | receiverName}}.Metadata,
+	}
+}
+
+// FromCreateRequest creates a model from a create request.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) FromCreateRequest(req *types.Create{{.Service.Name | pascalCase}}Request) {
+	{{.Service.Name | receiverName}}.Name = req.Name
+	{{.Service.Name | receiverName}}.Description = req.Description
+	{{.Service.Name | receiverName}}.Status = types.StatusActive
+	{{.Service.Name | receiverName}}.Metadata = req.Metadata
+	{{.Service.Name | receiverName}}.CreatedAt = time.Now()
+	{{.Service.Name | receiverName}}.UpdatedAt = time.Now()
+}
+
+// UpdateFromRequest updates the model from an update request.
+func ({{.Service.Name | receiverName}} *{{.Service.Name | pascalCase}}) UpdateFromRequest(req *types.Update{{.Service.Name | pascalCase}}Request) {
+	if req.Name != nil {
+		{{.Service.Name | receiverName}}.Name = *req.Name
+	}
+	if req.Description != nil {
+		{{.Service.Name | receiverName}}.Description = *req.Description
+	}
+	if req.Status != nil {
+		{{.Service.Name | receiverName}}.Status = *req.Status
+	}
+	if req.Metadata != nil {
+		{{.Service.Name | receiverName}}.Metadata = req.Metadata
+	}
+	{{.Service.Name | receiverName}}.UpdatedAt = time.Now()
+}
+
+// TODO: Implement ID generation function
+func generateID() string {
+	// Implement your ID generation logic here
+	// Options: UUID, ULID, nanoid, etc.
+	return "generated-id"
+}
+{{- end -}}
