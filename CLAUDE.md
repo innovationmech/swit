@@ -34,6 +34,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make setup-quick` - Quick setup for essential components
 - `make ci` - Run full CI pipeline locally
 
+
+
+### CLI Tool (switctl)
+- `./switctl --help` - Show all available commands
+- `./switctl new service <name>` - Generate new service from template
+- `./switctl version` - Show version information
+
 ### Running Examples
 - Run simple HTTP service: `cd examples/simple-http-service && go run main.go`
 - Run gRPC service: `cd examples/grpc-service && go run main.go`
@@ -281,3 +288,9 @@ func (s *MyGRPCService) GetServiceName() string {
 **Documentation Generation** - Update OpenAPI docs with `make swagger`
 **Transport Testing** - Test both gRPC and HTTP endpoints for dual-protocol support
 **API Versioning** - Maintain proper versioning in proto packages for framework APIs
+
+
+## Workflow
+- Must create or update unit test when you’re done making a series of code changes
+- Make sure tests your are making or updates all pass
+- Prefer running single tests, and not the whole test suite, for performance

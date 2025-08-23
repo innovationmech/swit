@@ -1,0 +1,435 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package middleware
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+)
+
+// RequestIDConfig holds request ID middleware configuration.
+type RequestIDConfig struct {
+	// HeaderName is the name of the request ID header
+	HeaderName string `yaml:"header_name" json:"header_name" mapstructure:"header_name"`
+	
+	// Generator is the function to generate request IDs
+	Generator RequestIDGenerator `yaml:"-" json:"-"`
+	
+	// IncludeInResponse indicates whether to include the request ID in the response
+	IncludeInResponse bool `yaml:"include_in_response" json:"include_in_response" mapstructure:"include_in_response"`
+	
+	// ContextKey is the context key for storing the request ID
+	ContextKey string `yaml:"context_key" json:"context_key" mapstructure:"context_key"`
+	
+	// AllowOverride allows clients to provide their own request ID
+	AllowOverride bool `yaml:"allow_override" json:"allow_override" mapstructure:"allow_override"`
+	
+	// ValidateFormat validates the format of client-provided request IDs
+	ValidateFormat bool `yaml:"validate_format" json:"validate_format" mapstructure:"validate_format"`
+	
+	// MinLength is the minimum length for valid request IDs
+	MinLength int `yaml:"min_length" json:"min_length" mapstructure:"min_length"`
+	
+	// MaxLength is the maximum length for valid request IDs
+	MaxLength int `yaml:"max_length" json:"max_length" mapstructure:"max_length"`
+}
+
+// RequestIDGenerator generates request IDs.
+type RequestIDGenerator func() string
+
+// DefaultRequestIDConfig returns a default request ID configuration.
+func DefaultRequestIDConfig() *RequestIDConfig {
+	return &RequestIDConfig{
+		HeaderName:        "X-Request-ID",
+		Generator:         DefaultRequestIDGenerator,
+		IncludeInResponse: true,
+		ContextKey:        "request_id",
+		AllowOverride:     true,
+		ValidateFormat:    true,
+		MinLength:         8,
+		MaxLength:         64,
+	}
+}
+
+// DefaultRequestIDGenerator generates a random hex string.
+func DefaultRequestIDGenerator() string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(bytes)
+}
+
+{{if .Middleware.RequestID.UUID}}
+// UUIDRequestIDGenerator generates UUID v4 request IDs.
+func UUIDRequestIDGenerator() string {
+	uuid := make([]byte, 16)
+	if _, err := rand.Read(uuid); err != nil {
+		return DefaultRequestIDGenerator()
+	}
+	
+	// Set version (4) and variant bits
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
+	
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
+}
+{{end}}
+
+{{if .Middleware.RequestID.Hierarchical}}
+// HierarchicalRequestIDGenerator generates hierarchical request IDs for tracing.
+func HierarchicalRequestIDGenerator(prefix string) RequestIDGenerator {
+	return func() string {
+		timestamp := time.Now().Unix()
+		random := make([]byte, 8)
+		rand.Read(random)
+		return fmt.Sprintf("%s-%d-%x", prefix, timestamp, random)
+	}
+}
+{{end}}
+
+{{if .Middleware.RequestID.Sequential}}
+// SequentialRequestIDGenerator generates sequential request IDs.
+type SequentialRequestIDGenerator struct {
+	prefix  string
+	counter int64
+	mutex   sync.Mutex
+}
+
+// NewSequentialRequestIDGenerator creates a new sequential generator.
+func NewSequentialRequestIDGenerator(prefix string) *SequentialRequestIDGenerator {
+	return &SequentialRequestIDGenerator{
+		prefix: prefix,
+	}
+}
+
+func (g *SequentialRequestIDGenerator) Generate() string {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	
+	g.counter++
+	return fmt.Sprintf("%s-%d", g.prefix, g.counter)
+}
+{{end}}
+
+// RequestID returns a request ID middleware.
+func RequestID(config *RequestIDConfig) gin.HandlerFunc {
+	if config == nil {
+		config = DefaultRequestIDConfig()
+	}
+
+	if config.Generator == nil {
+		config.Generator = DefaultRequestIDGenerator
+	}
+
+	return func(c *gin.Context) {
+		var requestID string
+
+		// Try to get request ID from header if override is allowed
+		if config.AllowOverride {
+			requestID = c.GetHeader(config.HeaderName)
+			
+			// Validate client-provided request ID
+			if requestID != "" && config.ValidateFormat {
+				if !isValidRequestID(requestID, config) {
+					requestID = "" // Invalid, generate new one
+				}
+			}
+		}
+
+		// Generate new request ID if not provided or invalid
+		if requestID == "" {
+			requestID = config.Generator()
+		}
+
+		// Store in context
+		c.Set(config.ContextKey, requestID)
+
+		// Add to response header if configured
+		if config.IncludeInResponse {
+			c.Header(config.HeaderName, requestID)
+		}
+
+		c.Next()
+	}
+}
+
+// RequestIDFromContext extracts the request ID from Gin context.
+func RequestIDFromContext(c *gin.Context) string {
+	if requestID, exists := c.Get("request_id"); exists {
+		if id, ok := requestID.(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+// SetRequestIDInContext sets the request ID in context.
+func SetRequestIDInContext(c *gin.Context, requestID string) {
+	c.Set("request_id", requestID)
+}
+
+// GRPCRequestIDInterceptor returns a gRPC unary interceptor for request ID handling.
+func GRPCRequestIDInterceptor(config *RequestIDConfig) grpc.UnaryServerInterceptor {
+	if config == nil {
+		config = DefaultRequestIDConfig()
+	}
+
+	if config.Generator == nil {
+		config.Generator = DefaultRequestIDGenerator
+	}
+
+	headerKey := strings.ToLower(config.HeaderName)
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		var requestID string
+
+		// Try to get request ID from metadata
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if values := md.Get(headerKey); len(values) > 0 {
+				candidateID := values[0]
+				if config.AllowOverride && (!config.ValidateFormat || isValidRequestIDString(candidateID, config)) {
+					requestID = candidateID
+				}
+			}
+		}
+
+		// Generate new request ID if not provided or invalid
+		if requestID == "" {
+			requestID = config.Generator()
+		}
+
+		// Add request ID to context
+		newCtx := context.WithValue(ctx, config.ContextKey, requestID)
+
+		// Add request ID to outgoing metadata
+		if config.IncludeInResponse {
+			md := metadata.Pairs(headerKey, requestID)
+			grpc.SetHeader(newCtx, md)
+		}
+
+		return handler(newCtx, req)
+	}
+}
+
+// GRPCStreamRequestIDInterceptor returns a gRPC stream interceptor for request ID handling.
+func GRPCStreamRequestIDInterceptor(config *RequestIDConfig) grpc.StreamServerInterceptor {
+	if config == nil {
+		config = DefaultRequestIDConfig()
+	}
+
+	if config.Generator == nil {
+		config.Generator = DefaultRequestIDGenerator
+	}
+
+	headerKey := strings.ToLower(config.HeaderName)
+
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+		var requestID string
+
+		// Try to get request ID from metadata
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if values := md.Get(headerKey); len(values) > 0 {
+				candidateID := values[0]
+				if config.AllowOverride && (!config.ValidateFormat || isValidRequestIDString(candidateID, config)) {
+					requestID = candidateID
+				}
+			}
+		}
+
+		// Generate new request ID if not provided or invalid
+		if requestID == "" {
+			requestID = config.Generator()
+		}
+
+		// Add request ID to context
+		newCtx := context.WithValue(ctx, config.ContextKey, requestID)
+
+		// Add request ID to outgoing metadata
+		if config.IncludeInResponse {
+			md := metadata.Pairs(headerKey, requestID)
+			ss.SetHeader(md)
+		}
+
+		// Create wrapped stream with new context
+		wrappedStream := &requestIDStream{
+			ServerStream: ss,
+			ctx:          newCtx,
+		}
+
+		return handler(srv, wrappedStream)
+	}
+}
+
+// requestIDStream wraps grpc.ServerStream with request ID context.
+type requestIDStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *requestIDStream) Context() context.Context {
+	return s.ctx
+}
+
+// GetRequestIDFromGRPCContext extracts request ID from gRPC context.
+func GetRequestIDFromGRPCContext(ctx context.Context) string {
+	if requestID := ctx.Value("request_id"); requestID != nil {
+		if id, ok := requestID.(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+func isValidRequestID(requestID string, config *RequestIDConfig) bool {
+	return isValidRequestIDString(requestID, config)
+}
+
+func isValidRequestIDString(requestID string, config *RequestIDConfig) bool {
+	if len(requestID) < config.MinLength || len(requestID) > config.MaxLength {
+		return false
+	}
+
+	// Check for valid characters (alphanumeric, hyphens, underscores)
+	for _, char := range requestID {
+		if !((char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			char == '-' || char == '_') {
+			return false
+		}
+	}
+
+	return true
+}
+
+{{if .Middleware.RequestID.Tracing}}
+// TracingRequestID integrates request ID with distributed tracing.
+func TracingRequestID(config *RequestIDConfig, tracer Tracer) gin.HandlerFunc {
+	requestIDMiddleware := RequestID(config)
+	
+	return func(c *gin.Context) {
+		// Apply request ID middleware
+		requestIDMiddleware(c)
+		
+		// Get the request ID
+		requestID := RequestIDFromContext(c)
+		
+		// Start or continue trace with request ID
+		span := tracer.StartSpan(c.Request.Context(), "http_request")
+		span.SetTag("request_id", requestID)
+		
+		// Add trace context to gin context
+		c.Set("trace_span", span)
+		
+		// Continue with request
+		c.Next()
+		
+		// Finish span
+		if c.Writer.Status() >= 400 {
+			span.SetTag("error", true)
+		}
+		span.Finish()
+	}
+}
+
+// Tracer interface for distributed tracing integration.
+type Tracer interface {
+	StartSpan(ctx context.Context, operationName string) Span
+}
+
+// Span interface for tracing spans.
+type Span interface {
+	SetTag(key string, value interface{})
+	Finish()
+}
+{{end}}
+
+{{if .Middleware.RequestID.Correlation}}
+// CorrelationID extends request ID with correlation capabilities.
+type CorrelationIDConfig struct {
+	*RequestIDConfig
+	CorrelationHeader string `yaml:"correlation_header" json:"correlation_header" mapstructure:"correlation_header"`
+	ParentHeader      string `yaml:"parent_header" json:"parent_header" mapstructure:"parent_header"`
+}
+
+// DefaultCorrelationIDConfig returns a default correlation ID configuration.
+func DefaultCorrelationIDConfig() *CorrelationIDConfig {
+	return &CorrelationIDConfig{
+		RequestIDConfig:   DefaultRequestIDConfig(),
+		CorrelationHeader: "X-Correlation-ID",
+		ParentHeader:      "X-Parent-ID",
+	}
+}
+
+// CorrelationID returns a correlation ID middleware.
+func CorrelationID(config *CorrelationIDConfig) gin.HandlerFunc {
+	if config == nil {
+		config = DefaultCorrelationIDConfig()
+	}
+
+	return func(c *gin.Context) {
+		// Get or generate request ID
+		var requestID string
+		if config.AllowOverride {
+			requestID = c.GetHeader(config.HeaderName)
+		}
+		if requestID == "" {
+			requestID = config.Generator()
+		}
+
+		// Get correlation ID (might be same as request ID for root requests)
+		correlationID := c.GetHeader(config.CorrelationHeader)
+		if correlationID == "" {
+			correlationID = requestID
+		}
+
+		// Get parent ID
+		parentID := c.GetHeader(config.ParentHeader)
+
+		// Store in context
+		c.Set("request_id", requestID)
+		c.Set("correlation_id", correlationID)
+		c.Set("parent_id", parentID)
+
+		// Add to response headers
+		if config.IncludeInResponse {
+			c.Header(config.HeaderName, requestID)
+			c.Header(config.CorrelationHeader, correlationID)
+			if parentID != "" {
+				c.Header(config.ParentHeader, parentID)
+			}
+		}
+
+		c.Next()
+	}
+}
+{{end}}

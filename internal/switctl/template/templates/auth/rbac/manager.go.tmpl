@@ -1,0 +1,639 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+var (
+	// RBAC errors
+	ErrRoleNotFound       = errors.New("role not found")
+	ErrPermissionNotFound = errors.New("permission not found")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrRoleExists         = errors.New("role already exists")
+	ErrPermissionExists   = errors.New("permission already exists")
+	ErrCircularDependency = errors.New("circular dependency detected")
+	ErrInvalidResource    = errors.New("invalid resource")
+	ErrInvalidAction      = errors.New("invalid action")
+	ErrAccessDenied       = errors.New("access denied")
+)
+
+// RBACConfig holds RBAC configuration.
+type RBACConfig struct {
+	// DefaultRoles are assigned to new users
+	DefaultRoles []string `yaml:"default_roles" json:"default_roles" mapstructure:"default_roles"`
+	
+	// SuperAdminRole has all permissions
+	SuperAdminRole string `yaml:"super_admin_role" json:"super_admin_role" mapstructure:"super_admin_role"`
+	
+	// CacheEnabled enables permission caching
+	CacheEnabled bool `yaml:"cache_enabled" json:"cache_enabled" mapstructure:"cache_enabled"`
+	
+	// CacheTTL is the cache time-to-live
+	CacheTTL time.Duration `yaml:"cache_ttl" json:"cache_ttl" mapstructure:"cache_ttl"`
+	
+	// StrictMode enables strict permission checking
+	StrictMode bool `yaml:"strict_mode" json:"strict_mode" mapstructure:"strict_mode"`
+	
+	// HierarchicalRoles enables role hierarchy
+	HierarchicalRoles bool `yaml:"hierarchical_roles" json:"hierarchical_roles" mapstructure:"hierarchical_roles"`
+	
+	// ResourceSeparator for hierarchical resources
+	ResourceSeparator string `yaml:"resource_separator" json:"resource_separator" mapstructure:"resource_separator"`
+}
+
+// Role represents a role in the RBAC system.
+type Role struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Permissions []string  `json:"permissions"`
+	ParentRoles []string  `json:"parent_roles"`
+	ChildRoles  []string  `json:"child_roles"`
+	IsSystem    bool      `json:"is_system"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Permission represents a permission in the RBAC system.
+type Permission struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Resource    string    `json:"resource"`
+	Action      string    `json:"action"`
+	Description string    `json:"description"`
+	IsSystem    bool      `json:"is_system"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// UserRole represents a user's role assignment.
+type UserRole struct {
+	UserID    string    `json:"user_id"`
+	RoleID    string    `json:"role_id"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// RBACManager handles role-based access control.
+type RBACManager struct {
+	config          *RBACConfig
+	roleStore       RoleStore
+	permissionStore PermissionStore
+	userRoleStore   UserRoleStore
+	cache           PermissionCache
+}
+
+// RoleStore interface for managing roles.
+type RoleStore interface {
+	GetRole(ctx context.Context, roleID string) (*Role, error)
+	GetRoleByName(ctx context.Context, name string) (*Role, error)
+	CreateRole(ctx context.Context, role *Role) error
+	UpdateRole(ctx context.Context, role *Role) error
+	DeleteRole(ctx context.Context, roleID string) error
+	ListRoles(ctx context.Context, limit, offset int) ([]*Role, error)
+}
+
+// PermissionStore interface for managing permissions.
+type PermissionStore interface {
+	GetPermission(ctx context.Context, permissionID string) (*Permission, error)
+	GetPermissionByName(ctx context.Context, name string) (*Permission, error)
+	CreatePermission(ctx context.Context, permission *Permission) error
+	UpdatePermission(ctx context.Context, permission *Permission) error
+	DeletePermission(ctx context.Context, permissionID string) error
+	ListPermissions(ctx context.Context, limit, offset int) ([]*Permission, error)
+}
+
+// UserRoleStore interface for managing user role assignments.
+type UserRoleStore interface {
+	GetUserRoles(ctx context.Context, userID string) ([]*UserRole, error)
+	AssignRole(ctx context.Context, userRole *UserRole) error
+	RevokeRole(ctx context.Context, userID, roleID string) error
+	ListUserRoles(ctx context.Context, limit, offset int) ([]*UserRole, error)
+}
+
+// PermissionCache interface for caching permissions.
+type PermissionCache interface {
+	GetUserPermissions(ctx context.Context, userID string) ([]string, error)
+	SetUserPermissions(ctx context.Context, userID string, permissions []string, ttl time.Duration) error
+	InvalidateUser(ctx context.Context, userID string) error
+	Clear(ctx context.Context) error
+}
+
+// NewRBACManager creates a new RBAC manager.
+func NewRBACManager(config *RBACConfig, roleStore RoleStore, permissionStore PermissionStore, userRoleStore UserRoleStore, cache PermissionCache) (*RBACManager, error) {
+	if config == nil {
+		config = &RBACConfig{
+			DefaultRoles:      []string{"user"},
+			SuperAdminRole:    "super_admin",
+			CacheEnabled:      true,
+			CacheTTL:          15 * time.Minute,
+			StrictMode:        false,
+			HierarchicalRoles: true,
+			ResourceSeparator: ":",
+		}
+	}
+
+	if roleStore == nil {
+		return nil, errors.New("role store is required")
+	}
+
+	if permissionStore == nil {
+		return nil, errors.New("permission store is required")
+	}
+
+	if userRoleStore == nil {
+		return nil, errors.New("user role store is required")
+	}
+
+	return &RBACManager{
+		config:          config,
+		roleStore:       roleStore,
+		permissionStore: permissionStore,
+		userRoleStore:   userRoleStore,
+		cache:           cache,
+	}, nil
+}
+
+// CheckPermission checks if a user has a specific permission.
+func (m *RBACManager) CheckPermission(ctx context.Context, userID, resource, action string) (bool, error) {
+	// Check super admin role first
+	if m.config.SuperAdminRole != "" {
+		isSuperAdmin, err := m.hasRole(ctx, userID, m.config.SuperAdminRole)
+		if err != nil {
+			return false, err
+		}
+		if isSuperAdmin {
+			return true, nil
+		}
+	}
+
+	// Get user permissions
+	permissions, err := m.getUserPermissions(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	// Check for exact permission match
+	permissionName := fmt.Sprintf("%s:%s", resource, action)
+	for _, permission := range permissions {
+		if permission == permissionName {
+			return true, nil
+		}
+		
+		// Check for wildcard permissions
+		if m.matchesWildcard(permission, resource, action) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// CheckResource checks if a user has any permission on a resource.
+func (m *RBACManager) CheckResource(ctx context.Context, userID, resource string) (bool, error) {
+	permissions, err := m.getUserPermissions(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, permission := range permissions {
+		parts := strings.Split(permission, ":")
+		if len(parts) >= 2 && (parts[0] == resource || parts[0] == "*") {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// GetUserPermissions returns all permissions for a user.
+func (m *RBACManager) GetUserPermissions(ctx context.Context, userID string) ([]string, error) {
+	return m.getUserPermissions(ctx, userID)
+}
+
+// GetUserRoles returns all roles for a user.
+func (m *RBACManager) GetUserRoles(ctx context.Context, userID string) ([]*Role, error) {
+	userRoles, err := m.userRoleStore.GetUserRoles(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var roles []*Role
+	for _, userRole := range userRoles {
+		// Check if role assignment is still valid
+		if !userRole.ExpiresAt.IsZero() && time.Now().After(userRole.ExpiresAt) {
+			continue
+		}
+
+		role, err := m.roleStore.GetRole(ctx, userRole.RoleID)
+		if err != nil {
+			continue // Skip invalid roles
+		}
+		roles = append(roles, role)
+	}
+
+	return roles, nil
+}
+
+// AssignRole assigns a role to a user.
+func (m *RBACManager) AssignRole(ctx context.Context, userID, roleID string, expiresAt time.Time) error {
+	// Verify role exists
+	_, err := m.roleStore.GetRole(ctx, roleID)
+	if err != nil {
+		return ErrRoleNotFound
+	}
+
+	userRole := &UserRole{
+		UserID:    userID,
+		RoleID:    roleID,
+		CreatedAt: time.Now(),
+		ExpiresAt: expiresAt,
+	}
+
+	err = m.userRoleStore.AssignRole(ctx, userRole)
+	if err != nil {
+		return err
+	}
+
+	// Invalidate cache
+	if m.config.CacheEnabled && m.cache != nil {
+		_ = m.cache.InvalidateUser(ctx, userID)
+	}
+
+	return nil
+}
+
+// RevokeRole revokes a role from a user.
+func (m *RBACManager) RevokeRole(ctx context.Context, userID, roleID string) error {
+	err := m.userRoleStore.RevokeRole(ctx, userID, roleID)
+	if err != nil {
+		return err
+	}
+
+	// Invalidate cache
+	if m.config.CacheEnabled && m.cache != nil {
+		_ = m.cache.InvalidateUser(ctx, userID)
+	}
+
+	return nil
+}
+
+// CreateRole creates a new role.
+func (m *RBACManager) CreateRole(ctx context.Context, name, description string, permissions []string, parentRoles []string) (*Role, error) {
+	// Validate permissions exist
+	for _, permissionName := range permissions {
+		_, err := m.permissionStore.GetPermissionByName(ctx, permissionName)
+		if err != nil {
+			return nil, fmt.Errorf("permission %s not found", permissionName)
+		}
+	}
+
+	// Validate parent roles exist
+	for _, parentRole := range parentRoles {
+		_, err := m.roleStore.GetRoleByName(ctx, parentRole)
+		if err != nil {
+			return nil, fmt.Errorf("parent role %s not found", parentRole)
+		}
+	}
+
+	role := &Role{
+		ID:          generateID(),
+		Name:        name,
+		Description: description,
+		Permissions: permissions,
+		ParentRoles: parentRoles,
+		IsSystem:    false,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	err := m.roleStore.CreateRole(ctx, role)
+	if err != nil {
+		return nil, err
+	}
+
+	return role, nil
+}
+
+// CreatePermission creates a new permission.
+func (m *RBACManager) CreatePermission(ctx context.Context, name, resource, action, description string) (*Permission, error) {
+	permission := &Permission{
+		ID:          generateID(),
+		Name:        name,
+		Resource:    resource,
+		Action:      action,
+		Description: description,
+		IsSystem:    false,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	err := m.permissionStore.CreatePermission(ctx, permission)
+	if err != nil {
+		return nil, err
+	}
+
+	return permission, nil
+}
+
+{{if .Auth.RBAC.Policies}}
+// PolicyEngine interface for policy-based access control.
+type PolicyEngine interface {
+	Evaluate(ctx context.Context, subject, resource, action string, attributes map[string]interface{}) (bool, error)
+	AddPolicy(ctx context.Context, policy *Policy) error
+	RemovePolicy(ctx context.Context, policyID string) error
+}
+
+// Policy represents an access control policy.
+type Policy struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Subject     string                 `json:"subject"`
+	Resource    string                 `json:"resource"`
+	Action      string                 `json:"action"`
+	Effect      string                 `json:"effect"` // "allow" or "deny"
+	Conditions  map[string]interface{} `json:"conditions"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+}
+
+// CheckWithPolicy checks permission using policy engine.
+func (m *RBACManager) CheckWithPolicy(ctx context.Context, userID, resource, action string, attributes map[string]interface{}) (bool, error) {
+	// First check RBAC permissions
+	allowed, err := m.CheckPermission(ctx, userID, resource, action)
+	if err != nil {
+		return false, err
+	}
+
+	// If RBAC allows and we have a policy engine, check policies
+	if allowed && m.policyEngine != nil {
+		return m.policyEngine.Evaluate(ctx, userID, resource, action, attributes)
+	}
+
+	return allowed, nil
+}
+{{end}}
+
+// Helper methods
+
+func (m *RBACManager) getUserPermissions(ctx context.Context, userID string) ([]string, error) {
+	// Check cache first
+	if m.config.CacheEnabled && m.cache != nil {
+		if permissions, err := m.cache.GetUserPermissions(ctx, userID); err == nil {
+			return permissions, nil
+		}
+	}
+
+	// Get user roles
+	userRoles, err := m.userRoleStore.GetUserRoles(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect all permissions from roles
+	permissionSet := make(map[string]bool)
+	
+	for _, userRole := range userRoles {
+		// Check if role assignment is still valid
+		if !userRole.ExpiresAt.IsZero() && time.Now().After(userRole.ExpiresAt) {
+			continue
+		}
+
+		permissions, err := m.getRolePermissions(ctx, userRole.RoleID, make(map[string]bool))
+		if err != nil {
+			continue // Skip invalid roles
+		}
+		
+		for _, permission := range permissions {
+			permissionSet[permission] = true
+		}
+	}
+
+	// Convert to slice
+	var permissions []string
+	for permission := range permissionSet {
+		permissions = append(permissions, permission)
+	}
+
+	// Cache the result
+	if m.config.CacheEnabled && m.cache != nil {
+		_ = m.cache.SetUserPermissions(ctx, userID, permissions, m.config.CacheTTL)
+	}
+
+	return permissions, nil
+}
+
+func (m *RBACManager) getRolePermissions(ctx context.Context, roleID string, visited map[string]bool) ([]string, error) {
+	// Prevent circular dependencies
+	if visited[roleID] {
+		return nil, ErrCircularDependency
+	}
+	visited[roleID] = true
+
+	role, err := m.roleStore.GetRole(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+
+	var allPermissions []string
+	allPermissions = append(allPermissions, role.Permissions...)
+
+	// Get permissions from parent roles if hierarchical roles are enabled
+	if m.config.HierarchicalRoles {
+		for _, parentRoleID := range role.ParentRoles {
+			parentPermissions, err := m.getRolePermissions(ctx, parentRoleID, visited)
+			if err != nil {
+				continue // Skip invalid parent roles
+			}
+			allPermissions = append(allPermissions, parentPermissions...)
+		}
+	}
+
+	return allPermissions, nil
+}
+
+func (m *RBACManager) hasRole(ctx context.Context, userID, roleName string) (bool, error) {
+	userRoles, err := m.userRoleStore.GetUserRoles(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, userRole := range userRoles {
+		// Check if role assignment is still valid
+		if !userRole.ExpiresAt.IsZero() && time.Now().After(userRole.ExpiresAt) {
+			continue
+		}
+
+		role, err := m.roleStore.GetRole(ctx, userRole.RoleID)
+		if err != nil {
+			continue
+		}
+
+		if role.Name == roleName {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (m *RBACManager) matchesWildcard(permission, resource, action string) bool {
+	parts := strings.Split(permission, ":")
+	if len(parts) != 2 {
+		return false
+	}
+
+	permResource, permAction := parts[0], parts[1]
+
+	// Check for wildcards
+	if permResource == "*" || permAction == "*" {
+		return true
+	}
+
+	// Check for hierarchical resource matching
+	if m.config.ResourceSeparator != "" && strings.Contains(resource, m.config.ResourceSeparator) {
+		resourceParts := strings.Split(resource, m.config.ResourceSeparator)
+		permResourceParts := strings.Split(permResource, m.config.ResourceSeparator)
+
+		// Check if permission resource is a parent of the requested resource
+		if len(permResourceParts) <= len(resourceParts) {
+			match := true
+			for i, part := range permResourceParts {
+				if part != "*" && part != resourceParts[i] {
+					match = false
+					break
+				}
+			}
+			if match && (permAction == action || permAction == "*") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+{{if .Auth.RBAC.Attributes}}
+// AttributeBasedAccess adds attribute-based access control.
+type AttributeBasedAccess struct {
+	*RBACManager
+	attributeStore AttributeStore
+}
+
+// AttributeStore interface for managing attributes.
+type AttributeStore interface {
+	GetUserAttributes(ctx context.Context, userID string) (map[string]interface{}, error)
+	SetUserAttribute(ctx context.Context, userID, key string, value interface{}) error
+	GetResourceAttributes(ctx context.Context, resource string) (map[string]interface{}, error)
+	SetResourceAttribute(ctx context.Context, resource, key string, value interface{}) error
+}
+
+// CheckWithAttributes checks permission with attribute constraints.
+func (a *AttributeBasedAccess) CheckWithAttributes(ctx context.Context, userID, resource, action string, context map[string]interface{}) (bool, error) {
+	// First check standard RBAC
+	allowed, err := a.CheckPermission(ctx, userID, resource, action)
+	if err != nil || !allowed {
+		return allowed, err
+	}
+
+	// Get user attributes
+	userAttrs, err := a.attributeStore.GetUserAttributes(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	// Get resource attributes
+	resourceAttrs, err := a.attributeStore.GetResourceAttributes(ctx, resource)
+	if err != nil {
+		return false, err
+	}
+
+	// Evaluate attribute-based rules
+	return a.evaluateAttributeRules(userAttrs, resourceAttrs, context), nil
+}
+
+func (a *AttributeBasedAccess) evaluateAttributeRules(userAttrs, resourceAttrs, context map[string]interface{}) bool {
+	// Example attribute-based rules
+	// These would be configurable in a real implementation
+	
+	// Example: Check department access
+	if userDept, ok := userAttrs["department"]; ok {
+		if resourceDept, ok := resourceAttrs["department"]; ok {
+			if userDept != resourceDept {
+				return false
+			}
+		}
+	}
+
+	// Example: Check time-based access
+	if timeRestriction, ok := resourceAttrs["time_restriction"]; ok {
+		if restriction, ok := timeRestriction.(string); ok {
+			// Parse time restriction and check current time
+			_ = restriction // Placeholder
+		}
+	}
+
+	return true
+}
+{{end}}
+
+{{if .Auth.RBAC.Audit}}
+// AuditLogger interface for RBAC audit logging.
+type AuditLogger interface {
+	LogPermissionCheck(ctx context.Context, userID, resource, action string, allowed bool, reason string)
+	LogRoleAssignment(ctx context.Context, userID, roleID, assignedBy string)
+	LogRoleRevocation(ctx context.Context, userID, roleID, revokedBy string)
+}
+
+// SetAuditLogger sets the audit logger.
+func (m *RBACManager) SetAuditLogger(logger AuditLogger) {
+	m.auditLogger = logger
+}
+
+// CheckPermissionWithAudit checks permission and logs the result.
+func (m *RBACManager) CheckPermissionWithAudit(ctx context.Context, userID, resource, action string) (bool, error) {
+	allowed, err := m.CheckPermission(ctx, userID, resource, action)
+	
+	var reason string
+	if err != nil {
+		reason = err.Error()
+	} else if !allowed {
+		reason = "insufficient permissions"
+	} else {
+		reason = "access granted"
+	}
+	
+	if m.auditLogger != nil {
+		m.auditLogger.LogPermissionCheck(ctx, userID, resource, action, allowed, reason)
+	}
+	
+	return allowed, err
+}
+{{end}}

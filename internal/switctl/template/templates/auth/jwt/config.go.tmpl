@@ -1,0 +1,392 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// JWTAuthConfig holds JWT authentication configuration.
+type JWTAuthConfig struct {
+	// Key configuration
+	PrivateKeyPath  string        `yaml:"private_key_path" json:"private_key_path" mapstructure:"private_key_path"`
+	PublicKeyPath   string        `yaml:"public_key_path" json:"public_key_path" mapstructure:"public_key_path"`
+	PrivateKeyPEM   string        `yaml:"private_key_pem" json:"private_key_pem" mapstructure:"private_key_pem"`
+	PublicKeyPEM    string        `yaml:"public_key_pem" json:"public_key_pem" mapstructure:"public_key_pem"`
+	
+	// Token configuration
+	Issuer             string        `yaml:"issuer" json:"issuer" mapstructure:"issuer"`
+	AccessTokenTTL     time.Duration `yaml:"access_token_ttl" json:"access_token_ttl" mapstructure:"access_token_ttl"`
+	RefreshTokenTTL    time.Duration `yaml:"refresh_token_ttl" json:"refresh_token_ttl" mapstructure:"refresh_token_ttl"`
+	SigningMethod      string        `yaml:"signing_method" json:"signing_method" mapstructure:"signing_method"`
+	AllowedAudiences   []string      `yaml:"allowed_audiences" json:"allowed_audiences" mapstructure:"allowed_audiences"`
+	ClockSkew          time.Duration `yaml:"clock_skew" json:"clock_skew" mapstructure:"clock_skew"`
+	
+	// Security configuration
+	RequireAudience    bool   `yaml:"require_audience" json:"require_audience" mapstructure:"require_audience"`
+	RequireIssuer      bool   `yaml:"require_issuer" json:"require_issuer" mapstructure:"require_issuer"`
+	RequireSubject     bool   `yaml:"require_subject" json:"require_subject" mapstructure:"require_subject"`
+	
+	{{if .Auth.Features.TokenBlacklist}}
+	// Token blacklist configuration
+	EnableBlacklist    bool          `yaml:"enable_blacklist" json:"enable_blacklist" mapstructure:"enable_blacklist"`
+	BlacklistTTL       time.Duration `yaml:"blacklist_ttl" json:"blacklist_ttl" mapstructure:"blacklist_ttl"`
+	{{end}}
+	
+	{{if .Auth.Features.MultiTenant}}
+	// Multi-tenant configuration
+	MultiTenant        bool          `yaml:"multi_tenant" json:"multi_tenant" mapstructure:"multi_tenant"`
+	TenantHeader       string        `yaml:"tenant_header" json:"tenant_header" mapstructure:"tenant_header"`
+	{{end}}
+}
+
+// Validate validates the JWT authentication configuration.
+func (c *JWTAuthConfig) Validate() error {
+	if c.Issuer == "" {
+		return errors.New("JWT issuer is required")
+	}
+
+	if c.AccessTokenTTL <= 0 {
+		return errors.New("access token TTL must be positive")
+	}
+
+	if c.RefreshTokenTTL <= 0 {
+		return errors.New("refresh token TTL must be positive")
+	}
+
+	if c.RefreshTokenTTL <= c.AccessTokenTTL {
+		return errors.New("refresh token TTL must be greater than access token TTL")
+	}
+
+	// Validate that at least one key source is provided
+	hasKeyPath := c.PrivateKeyPath != "" && c.PublicKeyPath != ""
+	hasKeyPEM := c.PrivateKeyPEM != "" && c.PublicKeyPEM != ""
+	
+	if !hasKeyPath && !hasKeyPEM {
+		return errors.New("either key paths or PEM strings must be provided")
+	}
+
+	// Validate signing method
+	if c.SigningMethod == "" {
+		c.SigningMethod = "RS256"
+	}
+
+	validMethods := map[string]bool{
+		"RS256": true, "RS384": true, "RS512": true,
+		"ES256": true, "ES384": true, "ES512": true,
+		"PS256": true, "PS384": true, "PS512": true,
+	}
+
+	if !validMethods[c.SigningMethod] {
+		return fmt.Errorf("unsupported signing method: %s", c.SigningMethod)
+	}
+
+	return nil
+}
+
+// SetDefaults sets default values for the configuration.
+func (c *JWTAuthConfig) SetDefaults() {
+	if c.AccessTokenTTL == 0 {
+		c.AccessTokenTTL = 15 * time.Minute
+	}
+
+	if c.RefreshTokenTTL == 0 {
+		c.RefreshTokenTTL = 7 * 24 * time.Hour
+	}
+
+	if c.SigningMethod == "" {
+		c.SigningMethod = "RS256"
+	}
+
+	if c.ClockSkew == 0 {
+		c.ClockSkew = 30 * time.Second
+	}
+
+	{{if .Auth.Features.TokenBlacklist}}
+	if c.BlacklistTTL == 0 {
+		c.BlacklistTTL = c.RefreshTokenTTL
+	}
+	{{end}}
+
+	{{if .Auth.Features.MultiTenant}}
+	if c.TenantHeader == "" {
+		c.TenantHeader = "X-Tenant-ID"
+	}
+	{{end}}
+}
+
+// LoadKeys loads the RSA keys from the configuration.
+func (c *JWTAuthConfig) LoadKeys() (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	var privateKeyPEM, publicKeyPEM []byte
+	var err error
+
+	// Load from PEM strings first, then from files
+	if c.PrivateKeyPEM != "" && c.PublicKeyPEM != "" {
+		privateKeyPEM = []byte(c.PrivateKeyPEM)
+		publicKeyPEM = []byte(c.PublicKeyPEM)
+	} else if c.PrivateKeyPath != "" && c.PublicKeyPath != "" {
+		privateKeyPEM, err = os.ReadFile(c.PrivateKeyPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read private key file: %w", err)
+		}
+
+		publicKeyPEM, err = os.ReadFile(c.PublicKeyPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read public key file: %w", err)
+		}
+	} else {
+		return nil, nil, errors.New("no key source configured")
+	}
+
+	// Parse private key
+	privateBlock, _ := pem.Decode(privateKeyPEM)
+	if privateBlock == nil {
+		return nil, nil, errors.New("failed to decode private key PEM")
+	}
+
+	var privateKey *rsa.PrivateKey
+	switch privateBlock.Type {
+	case "RSA PRIVATE KEY":
+		privateKey, err = x509.ParsePKCS1PrivateKey(privateBlock.Bytes)
+	case "PRIVATE KEY":
+		key, err2 := x509.ParsePKCS8PrivateKey(privateBlock.Bytes)
+		if err2 != nil {
+			return nil, nil, fmt.Errorf("failed to parse PKCS8 private key: %w", err2)
+		}
+		var ok bool
+		privateKey, ok = key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, nil, errors.New("private key is not RSA")
+		}
+	default:
+		return nil, nil, fmt.Errorf("unsupported private key type: %s", privateBlock.Type)
+	}
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	// Parse public key
+	publicBlock, _ := pem.Decode(publicKeyPEM)
+	if publicBlock == nil {
+		return nil, nil, errors.New("failed to decode public key PEM")
+	}
+
+	var publicKey *rsa.PublicKey
+	switch publicBlock.Type {
+	case "RSA PUBLIC KEY":
+		publicKey, err = x509.ParsePKCS1PublicKey(publicBlock.Bytes)
+	case "PUBLIC KEY":
+		key, err2 := x509.ParsePKIXPublicKey(publicBlock.Bytes)
+		if err2 != nil {
+			return nil, nil, fmt.Errorf("failed to parse PKIX public key: %w", err2)
+		}
+		var ok bool
+		publicKey, ok = key.(*rsa.PublicKey)
+		if !ok {
+			return nil, nil, errors.New("public key is not RSA")
+		}
+	default:
+		return nil, nil, fmt.Errorf("unsupported public key type: %s", publicBlock.Type)
+	}
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	return privateKey, publicKey, nil
+}
+
+// CreateJWTConfig creates a JWTConfig from the authentication configuration.
+func (c *JWTAuthConfig) CreateJWTConfig() (*JWTConfig, error) {
+	if err := c.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid JWT config: %w", err)
+	}
+
+	privateKey, publicKey, err := c.LoadKeys()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load keys: %w", err)
+	}
+
+	// Parse signing method
+	var signingMethod jwt.SigningMethod
+	switch c.SigningMethod {
+	case "RS256":
+		signingMethod = jwt.SigningMethodRS256
+	case "RS384":
+		signingMethod = jwt.SigningMethodRS384
+	case "RS512":
+		signingMethod = jwt.SigningMethodRS512
+	case "ES256":
+		signingMethod = jwt.SigningMethodES256
+	case "ES384":
+		signingMethod = jwt.SigningMethodES384
+	case "ES512":
+		signingMethod = jwt.SigningMethodES512
+	case "PS256":
+		signingMethod = jwt.SigningMethodPS256
+	case "PS384":
+		signingMethod = jwt.SigningMethodPS384
+	case "PS512":
+		signingMethod = jwt.SigningMethodPS512
+	default:
+		return nil, fmt.Errorf("unsupported signing method: %s", c.SigningMethod)
+	}
+
+	return &JWTConfig{
+		PrivateKey:         privateKey,
+		PublicKey:          publicKey,
+		Issuer:             c.Issuer,
+		AccessTokenTTL:     c.AccessTokenTTL,
+		RefreshTokenTTL:    c.RefreshTokenTTL,
+		SigningMethod:      signingMethod,
+		AllowedAudiences:   c.AllowedAudiences,
+		ClockSkew:          c.ClockSkew,
+	}, nil
+}
+
+// GenerateKeyPair generates a new RSA key pair for JWT signing.
+func GenerateKeyPair(bits int) (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	if bits < 2048 {
+		return nil, nil, errors.New("key size must be at least 2048 bits")
+	}
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, bits)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate private key: %w", err)
+	}
+
+	return privateKey, &privateKey.PublicKey, nil
+}
+
+// EncodePrivateKeyToPEM encodes an RSA private key to PEM format.
+func EncodePrivateKeyToPEM(privateKey *rsa.PrivateKey) ([]byte, error) {
+	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal private key: %w", err)
+	}
+
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	})
+
+	return privateKeyPEM, nil
+}
+
+// EncodePublicKeyToPEM encodes an RSA public key to PEM format.
+func EncodePublicKeyToPEM(publicKey *rsa.PublicKey) ([]byte, error) {
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal public key: %w", err)
+	}
+
+	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+
+	return publicKeyPEM, nil
+}
+
+// WriteKeyPairToFiles writes an RSA key pair to files.
+func WriteKeyPairToFiles(privateKey *rsa.PrivateKey, publicKey *rsa.PublicKey, privateKeyPath, publicKeyPath string) error {
+	// Write private key
+	privateKeyPEM, err := EncodePrivateKeyToPEM(privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to encode private key: %w", err)
+	}
+
+	err = os.WriteFile(privateKeyPath, privateKeyPEM, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to write private key file: %w", err)
+	}
+
+	// Write public key
+	publicKeyPEM, err := EncodePublicKeyToPEM(publicKey)
+	if err != nil {
+		return fmt.Errorf("failed to encode public key: %w", err)
+	}
+
+	err = os.WriteFile(publicKeyPath, publicKeyPEM, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write public key file: %w", err)
+	}
+
+	return nil
+}
+
+{{if .Auth.Features.Development}}
+// DevelopmentConfig returns a JWT configuration suitable for development.
+func DevelopmentConfig() *JWTAuthConfig {
+	return &JWTAuthConfig{
+		Issuer:             "{{.Service.Name}}-dev",
+		AccessTokenTTL:     time.Hour,
+		RefreshTokenTTL:    24 * time.Hour,
+		SigningMethod:      "RS256",
+		AllowedAudiences:   []string{"{{.Service.Name}}-dev"},
+		ClockSkew:          time.Minute,
+		RequireAudience:    false,
+		RequireIssuer:      true,
+		RequireSubject:     false,
+		{{if .Auth.Features.TokenBlacklist}}
+		EnableBlacklist:    false,
+		{{end}}
+		{{if .Auth.Features.MultiTenant}}
+		MultiTenant:        false,
+		{{end}}
+	}
+}
+{{end}}
+
+{{if .Auth.Features.Production}}
+// ProductionConfig returns a JWT configuration suitable for production.
+func ProductionConfig() *JWTAuthConfig {
+	return &JWTAuthConfig{
+		Issuer:             "{{.Service.Name}}",
+		AccessTokenTTL:     15 * time.Minute,
+		RefreshTokenTTL:    7 * 24 * time.Hour,
+		SigningMethod:      "RS256",
+		AllowedAudiences:   []string{"{{.Service.Name}}"},
+		ClockSkew:          30 * time.Second,
+		RequireAudience:    true,
+		RequireIssuer:      true,
+		RequireSubject:     true,
+		{{if .Auth.Features.TokenBlacklist}}
+		EnableBlacklist:    true,
+		BlacklistTTL:       7 * 24 * time.Hour,
+		{{end}}
+		{{if .Auth.Features.MultiTenant}}
+		MultiTenant:        true,
+		TenantHeader:       "X-Tenant-ID",
+		{{end}}
+	}
+}
+{{end}}

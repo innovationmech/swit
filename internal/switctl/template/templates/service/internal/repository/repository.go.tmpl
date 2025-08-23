@@ -1,0 +1,312 @@
+{{- if .Service.Features.Repository -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package repository provides data access layer for {{.Service.Name}}.
+package repository
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+{{- if .Service.Features.Database}}
+	"gorm.io/gorm"
+{{- end}}
+
+{{- if .Service.Features.Database}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/db"
+{{- end}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// {{.Service.Name | pascalCase}}Repository implements the {{.Service.Name}} data access interface.
+type {{.Service.Name | pascalCase}}Repository struct {
+{{- if .Service.Features.Database}}
+	db *db.Database
+{{- else}}
+	// In-memory storage for non-database implementations
+	data map[string]*model.{{.Service.Name | pascalCase}}
+{{- end}}
+}
+
+// New{{.Service.Name | pascalCase}}Repository creates a new {{.Service.Name}} repository instance.
+func New{{.Service.Name | pascalCase}}Repository({{if .Service.Features.Database}}database *db.Database{{end}}) (*{{.Service.Name | pascalCase}}Repository, error) {
+	return &{{.Service.Name | pascalCase}}Repository{
+{{- if .Service.Features.Database}}
+		db: database,
+{{- else}}
+		data: make(map[string]*model.{{.Service.Name | pascalCase}}),
+{{- end}}
+	}, nil
+}
+
+// Create creates a new {{.Service.Name}}.
+func (r *{{.Service.Name | pascalCase}}Repository) Create(ctx context.Context, item *model.{{.Service.Name | pascalCase}}) error {
+	if item == nil {
+		return ErrNilItem
+	}
+
+	// Validate the item
+	if err := item.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+{{- if .Service.Features.Database}}
+	// Create in database
+	if err := r.db.WithContext(ctx).Create(item).Error; err != nil {
+		return fmt.Errorf("failed to create {{.Service.Name | camelCase}}: %w", err)
+	}
+{{- else}}
+	// Store in memory
+	if item.ID == "" {
+		item.ID = generateID() // Implement ID generation
+	}
+	r.data[item.ID] = item
+{{- end}}
+
+	return nil
+}
+
+// GetByID retrieves a {{.Service.Name}} by ID.
+func (r *{{.Service.Name | pascalCase}}Repository) GetByID(ctx context.Context, id string) (*model.{{.Service.Name | pascalCase}}, error) {
+	if id == "" {
+		return nil, ErrMissingID
+	}
+
+{{- if .Service.Features.Database}}
+	var item model.{{.Service.Name | pascalCase}}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&item).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get {{.Service.Name | camelCase}}: %w", err)
+	}
+
+	return &item, nil
+{{- else}}
+	item, exists := r.data[id]
+	if !exists {
+		return nil, ErrNotFound
+	}
+
+	return item, nil
+{{- end}}
+}
+
+// Update updates an existing {{.Service.Name}}.
+func (r *{{.Service.Name | pascalCase}}Repository) Update(ctx context.Context, item *model.{{.Service.Name | pascalCase}}) error {
+	if item == nil {
+		return ErrNilItem
+	}
+
+	if item.ID == "" {
+		return ErrMissingID
+	}
+
+	// Validate the item
+	if err := item.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+{{- if .Service.Features.Database}}
+	// Update in database
+	result := r.db.WithContext(ctx).Save(item)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update {{.Service.Name | camelCase}}: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+{{- else}}
+	// Check if exists
+	if _, exists := r.data[item.ID]; !exists {
+		return ErrNotFound
+	}
+
+	// Update in memory
+	r.data[item.ID] = item
+{{- end}}
+
+	return nil
+}
+
+// Delete deletes a {{.Service.Name}} by ID.
+func (r *{{.Service.Name | pascalCase}}Repository) Delete(ctx context.Context, id string) error {
+	if id == "" {
+		return ErrMissingID
+	}
+
+{{- if .Service.Features.Database}}
+	// Delete from database (soft delete)
+	result := r.db.WithContext(ctx).Delete(&model.{{.Service.Name | pascalCase}}{}, "id = ?", id)
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete {{.Service.Name | camelCase}}: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+{{- else}}
+	// Check if exists
+	if _, exists := r.data[id]; !exists {
+		return ErrNotFound
+	}
+
+	// Delete from memory
+	delete(r.data, id)
+{{- end}}
+
+	return nil
+}
+
+// List lists {{.Service.Name | pluralize}} with filtering and pagination.
+func (r *{{.Service.Name | pascalCase}}Repository) List(ctx context.Context, filter *types.ListFilter) ([]*model.{{.Service.Name | pascalCase}}, int64, error) {
+	if filter == nil {
+		filter = &types.ListFilter{}
+	}
+
+	// Set default pagination
+	if filter.Page <= 0 {
+		filter.Page = 1
+	}
+	if filter.Size <= 0 {
+		filter.Size = 10
+	}
+
+{{- if .Service.Features.Database}}
+	var items []*model.{{.Service.Name | pascalCase}}
+	var total int64
+
+	// Build base query
+	query := r.db.WithContext(ctx).Model(&model.{{.Service.Name | pascalCase}}{})
+
+	// Apply search filter
+	if filter.Search != "" {
+		searchTerm := "%" + strings.ToLower(filter.Search) + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(description) LIKE ?", searchTerm, searchTerm)
+	}
+
+	// Apply additional filters
+	if filter.Filters != nil {
+		for key, value := range filter.Filters {
+			if value != "" {
+				query = query.Where(fmt.Sprintf("%s = ?", key), value)
+			}
+		}
+	}
+
+	// Count total records
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count {{.Service.Name | pluralize}}: %w", err)
+	}
+
+	// Apply sorting
+	orderClause := "created_at DESC" // default sort
+	if filter.Sort != "" {
+		order := "ASC"
+		if filter.Order != "" && strings.ToUpper(filter.Order) == "DESC" {
+			order = "DESC"
+		}
+		orderClause = fmt.Sprintf("%s %s", filter.Sort, order)
+	}
+	query = query.Order(orderClause)
+
+	// Apply pagination
+	offset := (filter.Page - 1) * filter.Size
+	query = query.Offset(offset).Limit(filter.Size)
+
+	// Execute query
+	if err := query.Find(&items).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list {{.Service.Name | pluralize}}: %w", err)
+	}
+
+	return items, total, nil
+{{- else}}
+	// In-memory implementation
+	var items []*model.{{.Service.Name | pascalCase}}
+	
+	// Apply search and filters
+	for _, item := range r.data {
+		if filter.Search != "" {
+			searchTerm := strings.ToLower(filter.Search)
+			if !strings.Contains(strings.ToLower(item.Name), searchTerm) &&
+			   !strings.Contains(strings.ToLower(item.Description), searchTerm) {
+				continue
+			}
+		}
+		
+		// Apply additional filters
+		if filter.Filters != nil {
+			match := true
+			for key, value := range filter.Filters {
+				// Simple field matching - extend as needed
+				if key == "status" && string(item.Status) != value {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		
+		items = append(items, item)
+	}
+
+	total := int64(len(items))
+
+	// Apply pagination
+	start := (filter.Page - 1) * filter.Size
+	end := start + filter.Size
+	
+	if start >= len(items) {
+		return []*model.{{.Service.Name | pascalCase}}{}, total, nil
+	}
+	
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return items[start:end], total, nil
+{{- end}}
+}
+
+// HealthCheck performs a health check for the repository.
+func (r *{{.Service.Name | pascalCase}}Repository) HealthCheck(ctx context.Context) error {
+{{- if .Service.Features.Database}}
+	return r.db.HealthCheck(ctx)
+{{- else}}
+	// In-memory repository is always healthy
+	return nil
+{{- end}}
+}
+
+{{- if not .Service.Features.Database}}
+// generateID generates a unique ID for in-memory storage.
+func generateID() string {
+	// Implement your ID generation logic here
+	// For example, using UUID, timestamp-based ID, etc.
+	return fmt.Sprintf("id-%d", time.Now().UnixNano())
+}
+{{- end}}
+{{- end -}}

@@ -1,0 +1,504 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// ContextKey represents context keys for authentication.
+type ContextKey string
+
+const (
+	// UserContextKey is the context key for user information.
+	UserContextKey ContextKey = "user"
+	// ClaimsContextKey is the context key for JWT claims.
+	ClaimsContextKey ContextKey = "claims"
+	// SessionContextKey is the context key for session information.
+	SessionContextKey ContextKey = "session"
+)
+
+// AuthMiddleware provides authentication middleware for HTTP and gRPC.
+type AuthMiddleware struct {
+	jwtManager *JWTManager
+	config     *AuthMiddlewareConfig
+}
+
+// AuthMiddlewareConfig holds authentication middleware configuration.
+type AuthMiddlewareConfig struct {
+	// SkipPaths are HTTP paths that should skip authentication
+	SkipPaths []string
+	// RequiredRoles specifies roles required for access
+	RequiredRoles []string
+	// RequiredPermissions specifies permissions required for access
+	RequiredPermissions []string
+	// AllowGuest allows unauthenticated access
+	AllowGuest bool
+	// CustomTokenExtractor for custom token extraction logic
+	CustomTokenExtractor func(*gin.Context) string
+}
+
+// NewAuthMiddleware creates a new authentication middleware.
+func NewAuthMiddleware(jwtManager *JWTManager, config *AuthMiddlewareConfig) *AuthMiddleware {
+	if config == nil {
+		config = &AuthMiddlewareConfig{}
+	}
+
+	return &AuthMiddleware{
+		jwtManager: jwtManager,
+		config:     config,
+	}
+}
+
+// HTTPMiddleware returns a Gin middleware for JWT authentication.
+func (m *AuthMiddleware) HTTPMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Check if path should skip authentication
+		if m.shouldSkipAuth(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+
+		// Extract token
+		token := m.extractToken(c)
+		if token == "" {
+			if m.config.AllowGuest {
+				c.Next()
+				return
+			}
+			m.respondUnauthorized(c, "missing authentication token")
+			c.Abort()
+			return
+		}
+
+		// Validate token
+		claims, err := m.jwtManager.ValidateToken(c.Request.Context(), token)
+		if err != nil {
+			if m.config.AllowGuest {
+				c.Next()
+				return
+			}
+			m.respondUnauthorized(c, "invalid token")
+			c.Abort()
+			return
+		}
+
+		// Check if token is for access (not refresh)
+		if claims.TokenType != "access" {
+			m.respondUnauthorized(c, "invalid token type")
+			c.Abort()
+			return
+		}
+
+		// Check roles and permissions
+		if !m.hasRequiredAccess(claims) {
+			m.respondForbidden(c, "insufficient permissions")
+			c.Abort()
+			return
+		}
+
+		// Store user information in context
+		m.setUserContext(c, claims)
+		c.Next()
+	}
+}
+
+// OptionalHTTPMiddleware returns a Gin middleware that optionally authenticates requests.
+func (m *AuthMiddleware) OptionalHTTPMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := m.extractToken(c)
+		if token != "" {
+			if claims, err := m.jwtManager.ValidateToken(c.Request.Context(), token); err == nil {
+				if claims.TokenType == "access" {
+					m.setUserContext(c, claims)
+				}
+			}
+		}
+		c.Next()
+	}
+}
+
+// RequireRoles returns middleware that requires specific roles.
+func (m *AuthMiddleware) RequireRoles(roles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims := m.getClaimsFromContext(c)
+		if claims == nil {
+			m.respondUnauthorized(c, "authentication required")
+			c.Abort()
+			return
+		}
+
+		if !m.hasRoles(claims, roles) {
+			m.respondForbidden(c, "insufficient roles")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequirePermissions returns middleware that requires specific permissions.
+func (m *AuthMiddleware) RequirePermissions(permissions ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims := m.getClaimsFromContext(c)
+		if claims == nil {
+			m.respondUnauthorized(c, "authentication required")
+			c.Abort()
+			return
+		}
+
+		if !m.hasPermissions(claims, permissions) {
+			m.respondForbidden(c, "insufficient permissions")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// GRPCUnaryInterceptor returns a gRPC unary interceptor for JWT authentication.
+func (m *AuthMiddleware) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Skip authentication for certain methods
+		if m.shouldSkipGRPCAuth(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
+		// Extract token from metadata
+		token, err := m.extractGRPCToken(ctx)
+		if err != nil {
+			if m.config.AllowGuest {
+				return handler(ctx, req)
+			}
+			return nil, status.Error(codes.Unauthenticated, "missing authentication token")
+		}
+
+		// Validate token
+		claims, err := m.jwtManager.ValidateToken(ctx, token)
+		if err != nil {
+			if m.config.AllowGuest {
+				return handler(ctx, req)
+			}
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		}
+
+		// Check if token is for access (not refresh)
+		if claims.TokenType != "access" {
+			return nil, status.Error(codes.Unauthenticated, "invalid token type")
+		}
+
+		// Check roles and permissions
+		if !m.hasRequiredAccess(claims) {
+			return nil, status.Error(codes.PermissionDenied, "insufficient permissions")
+		}
+
+		// Add user information to context
+		newCtx := m.setGRPCUserContext(ctx, claims)
+		return handler(newCtx, req)
+	}
+}
+
+// GRPCStreamInterceptor returns a gRPC stream interceptor for JWT authentication.
+func (m *AuthMiddleware) GRPCStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		// Skip authentication for certain methods
+		if m.shouldSkipGRPCAuth(info.FullMethod) {
+			return handler(srv, ss)
+		}
+
+		// Extract token from metadata
+		token, err := m.extractGRPCToken(ss.Context())
+		if err != nil {
+			if m.config.AllowGuest {
+				return handler(srv, ss)
+			}
+			return status.Error(codes.Unauthenticated, "missing authentication token")
+		}
+
+		// Validate token
+		claims, err := m.jwtManager.ValidateToken(ss.Context(), token)
+		if err != nil {
+			if m.config.AllowGuest {
+				return handler(srv, ss)
+			}
+			return status.Error(codes.Unauthenticated, "invalid token")
+		}
+
+		// Check if token is for access (not refresh)
+		if claims.TokenType != "access" {
+			return status.Error(codes.Unauthenticated, "invalid token type")
+		}
+
+		// Check roles and permissions
+		if !m.hasRequiredAccess(claims) {
+			return status.Error(codes.PermissionDenied, "insufficient permissions")
+		}
+
+		// Create wrapped stream with user context
+		newCtx := m.setGRPCUserContext(ss.Context(), claims)
+		wrappedStream := &wrappedStream{ServerStream: ss, ctx: newCtx}
+		return handler(srv, wrappedStream)
+	}
+}
+
+// Helper methods
+
+func (m *AuthMiddleware) shouldSkipAuth(path string) bool {
+	for _, skipPath := range m.config.SkipPaths {
+		if strings.HasPrefix(path, skipPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *AuthMiddleware) shouldSkipGRPCAuth(fullMethod string) bool {
+	// Skip health check and reflection services
+	skipMethods := []string{
+		"/grpc.health.v1.Health/",
+		"/grpc.reflection.v1alpha.ServerReflection/",
+	}
+
+	for _, skipMethod := range skipMethods {
+		if strings.HasPrefix(fullMethod, skipMethod) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m *AuthMiddleware) extractToken(c *gin.Context) string {
+	// Use custom extractor if provided
+	if m.config.CustomTokenExtractor != nil {
+		return m.config.CustomTokenExtractor(c)
+	}
+
+	// Try Authorization header first
+	auth := c.GetHeader("Authorization")
+	if auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			return parts[1]
+		}
+	}
+
+	// Try query parameter
+	if token := c.Query("token"); token != "" {
+		return token
+	}
+
+	// Try cookie
+	if cookie, err := c.Cookie("access_token"); err == nil {
+		return cookie
+	}
+
+	return ""
+}
+
+func (m *AuthMiddleware) extractGRPCToken(ctx context.Context) (string, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", status.Error(codes.Unauthenticated, "missing metadata")
+	}
+
+	// Try authorization header
+	authHeaders := md.Get("authorization")
+	if len(authHeaders) > 0 {
+		auth := authHeaders[0]
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			return parts[1], nil
+		}
+	}
+
+	// Try token metadata
+	tokenHeaders := md.Get("token")
+	if len(tokenHeaders) > 0 {
+		return tokenHeaders[0], nil
+	}
+
+	return "", status.Error(codes.Unauthenticated, "missing token")
+}
+
+func (m *AuthMiddleware) hasRequiredAccess(claims *JWTClaims) bool {
+	// Check required roles
+	if len(m.config.RequiredRoles) > 0 && !m.hasRoles(claims, m.config.RequiredRoles) {
+		return false
+	}
+
+	// Check required permissions
+	if len(m.config.RequiredPermissions) > 0 && !m.hasPermissions(claims, m.config.RequiredPermissions) {
+		return false
+	}
+
+	return true
+}
+
+func (m *AuthMiddleware) hasRoles(claims *JWTClaims, requiredRoles []string) bool {
+	userRoles := make(map[string]bool)
+	for _, role := range claims.Roles {
+		userRoles[role] = true
+	}
+
+	for _, required := range requiredRoles {
+		if !userRoles[required] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (m *AuthMiddleware) hasPermissions(claims *JWTClaims, requiredPermissions []string) bool {
+	userPermissions := make(map[string]bool)
+	for _, permission := range claims.Permissions {
+		userPermissions[permission] = true
+	}
+
+	for _, required := range requiredPermissions {
+		if !userPermissions[required] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (m *AuthMiddleware) setUserContext(c *gin.Context, claims *JWTClaims) {
+	c.Set(string(ClaimsContextKey), claims)
+	c.Set(string(UserContextKey), &types.User{
+		ID:          claims.UserID,
+		Username:    claims.Username,
+		Email:       claims.Email,
+		Roles:       claims.Roles,
+		Permissions: claims.Permissions,
+	})
+	c.Set(string(SessionContextKey), claims.SessionID)
+}
+
+func (m *AuthMiddleware) setGRPCUserContext(ctx context.Context, claims *JWTClaims) context.Context {
+	ctx = context.WithValue(ctx, ClaimsContextKey, claims)
+	ctx = context.WithValue(ctx, UserContextKey, &types.User{
+		ID:          claims.UserID,
+		Username:    claims.Username,
+		Email:       claims.Email,
+		Roles:       claims.Roles,
+		Permissions: claims.Permissions,
+	})
+	ctx = context.WithValue(ctx, SessionContextKey, claims.SessionID)
+	return ctx
+}
+
+func (m *AuthMiddleware) getClaimsFromContext(c *gin.Context) *JWTClaims {
+	if claims, exists := c.Get(string(ClaimsContextKey)); exists {
+		if jwtClaims, ok := claims.(*JWTClaims); ok {
+			return jwtClaims
+		}
+	}
+	return nil
+}
+
+func (m *AuthMiddleware) respondUnauthorized(c *gin.Context, message string) {
+	c.JSON(http.StatusUnauthorized, types.Response{
+		Success: false,
+		Message: "Unauthorized",
+		Error: &types.ErrorInfo{
+			Code:    "UNAUTHORIZED",
+			Message: message,
+		},
+	})
+}
+
+func (m *AuthMiddleware) respondForbidden(c *gin.Context, message string) {
+	c.JSON(http.StatusForbidden, types.Response{
+		Success: false,
+		Message: "Forbidden",
+		Error: &types.ErrorInfo{
+			Code:    "FORBIDDEN",
+			Message: message,
+		},
+	})
+}
+
+// wrappedStream wraps grpc.ServerStream with a custom context.
+type wrappedStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (w *wrappedStream) Context() context.Context {
+	return w.ctx
+}
+
+// Helper functions for extracting user information from context
+
+// GetUserFromContext extracts user information from Gin context.
+func GetUserFromContext(c *gin.Context) (*types.User, bool) {
+	if user, exists := c.Get(string(UserContextKey)); exists {
+		if u, ok := user.(*types.User); ok {
+			return u, true
+		}
+	}
+	return nil, false
+}
+
+// GetClaimsFromContext extracts JWT claims from Gin context.
+func GetClaimsFromContext(c *gin.Context) (*JWTClaims, bool) {
+	if claims, exists := c.Get(string(ClaimsContextKey)); exists {
+		if cl, ok := claims.(*JWTClaims); ok {
+			return cl, true
+		}
+	}
+	return nil, false
+}
+
+// GetUserFromGRPCContext extracts user information from gRPC context.
+func GetUserFromGRPCContext(ctx context.Context) (*types.User, bool) {
+	if user := ctx.Value(UserContextKey); user != nil {
+		if u, ok := user.(*types.User); ok {
+			return u, true
+		}
+	}
+	return nil, false
+}
+
+// GetClaimsFromGRPCContext extracts JWT claims from gRPC context.
+func GetClaimsFromGRPCContext(ctx context.Context) (*JWTClaims, bool) {
+	if claims := ctx.Value(ClaimsContextKey); claims != nil {
+		if cl, ok := claims.(*JWTClaims); ok {
+			return cl, true
+		}
+	}
+	return nil, false
+}

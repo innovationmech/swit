@@ -1,0 +1,526 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package middleware
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// LoggingConfig holds logging middleware configuration.
+type LoggingConfig struct {
+	// Logger instance to use
+	Logger *zap.Logger `yaml:"-" json:"-"`
+	
+	// SkipPaths is a list of URL paths to skip logging
+	SkipPaths []string `yaml:"skip_paths" json:"skip_paths" mapstructure:"skip_paths"`
+	
+	// SkipPathsRegex is a list of regex patterns to skip logging
+	SkipPathsRegex []string `yaml:"skip_paths_regex" json:"skip_paths_regex" mapstructure:"skip_paths_regex"`
+	
+	// LogRequestBody indicates whether to log request body
+	LogRequestBody bool `yaml:"log_request_body" json:"log_request_body" mapstructure:"log_request_body"`
+	
+	// LogResponseBody indicates whether to log response body
+	LogResponseBody bool `yaml:"log_response_body" json:"log_response_body" mapstructure:"log_response_body"`
+	
+	// MaxBodySize is the maximum size of request/response body to log
+	MaxBodySize int `yaml:"max_body_size" json:"max_body_size" mapstructure:"max_body_size"`
+	
+	// LogHeaders indicates whether to log request headers
+	LogHeaders bool `yaml:"log_headers" json:"log_headers" mapstructure:"log_headers"`
+	
+	// SensitiveHeaders is a list of headers to redact in logs
+	SensitiveHeaders []string `yaml:"sensitive_headers" json:"sensitive_headers" mapstructure:"sensitive_headers"`
+	
+	// LogUserAgent indicates whether to log user agent
+	LogUserAgent bool `yaml:"log_user_agent" json:"log_user_agent" mapstructure:"log_user_agent"`
+	
+	// LogClientIP indicates whether to log client IP
+	LogClientIP bool `yaml:"log_client_ip" json:"log_client_ip" mapstructure:"log_client_ip"`
+	
+	// SlowRequestThreshold defines when to log slow requests
+	SlowRequestThreshold time.Duration `yaml:"slow_request_threshold" json:"slow_request_threshold" mapstructure:"slow_request_threshold"`
+	
+	// ErrorLevel is the log level for error responses
+	ErrorLevel zapcore.Level `yaml:"error_level" json:"error_level" mapstructure:"error_level"`
+	
+	// SuccessLevel is the log level for successful responses
+	SuccessLevel zapcore.Level `yaml:"success_level" json:"success_level" mapstructure:"success_level"`
+	
+	// IncludeRequestID indicates whether to include request ID
+	IncludeRequestID bool `yaml:"include_request_id" json:"include_request_id" mapstructure:"include_request_id"`
+}
+
+// DefaultLoggingConfig returns a default logging configuration.
+func DefaultLoggingConfig(logger *zap.Logger) *LoggingConfig {
+	return &LoggingConfig{
+		Logger: logger,
+		SkipPaths: []string{
+			"/health",
+			"/metrics",
+			"/favicon.ico",
+		},
+		LogRequestBody:       false,
+		LogResponseBody:      false,
+		MaxBodySize:          1024, // 1KB
+		LogHeaders:           false,
+		SensitiveHeaders: []string{
+			"authorization",
+			"cookie",
+			"x-api-key",
+			"x-auth-token",
+		},
+		LogUserAgent:         true,
+		LogClientIP:         true,
+		SlowRequestThreshold: 5 * time.Second,
+		ErrorLevel:          zapcore.ErrorLevel,
+		SuccessLevel:        zapcore.InfoLevel,
+		IncludeRequestID:    true,
+	}
+}
+
+{{if .Middleware.Logging.Structured}}
+// StructuredLoggingConfig returns a configuration for structured logging.
+func StructuredLoggingConfig(logger *zap.Logger) *LoggingConfig {
+	return &LoggingConfig{
+		Logger:               logger,
+		SkipPaths:           []string{"/health", "/metrics"},
+		LogRequestBody:      true,
+		LogResponseBody:     true,
+		MaxBodySize:         4096, // 4KB
+		LogHeaders:          true,
+		SensitiveHeaders: []string{
+			"authorization",
+			"cookie",
+			"x-api-key",
+			"x-auth-token",
+			"x-session-token",
+		},
+		LogUserAgent:         true,
+		LogClientIP:         true,
+		SlowRequestThreshold: 2 * time.Second,
+		ErrorLevel:          zapcore.ErrorLevel,
+		SuccessLevel:        zapcore.InfoLevel,
+		IncludeRequestID:    true,
+	}
+}
+{{end}}
+
+{{if .Middleware.Logging.Debug}}
+// DebugLoggingConfig returns a configuration for debug logging.
+func DebugLoggingConfig(logger *zap.Logger) *LoggingConfig {
+	return &LoggingConfig{
+		Logger:               logger,
+		SkipPaths:           []string{},
+		LogRequestBody:      true,
+		LogResponseBody:     true,
+		MaxBodySize:         8192, // 8KB
+		LogHeaders:          true,
+		SensitiveHeaders: []string{
+			"authorization",
+			"cookie",
+		},
+		LogUserAgent:         true,
+		LogClientIP:         true,
+		SlowRequestThreshold: 1 * time.Second,
+		ErrorLevel:          zapcore.ErrorLevel,
+		SuccessLevel:        zapcore.DebugLevel,
+		IncludeRequestID:    true,
+	}
+}
+{{end}}
+
+// RequestLogging returns a logging middleware.
+func RequestLogging(config *LoggingConfig) gin.HandlerFunc {
+	if config == nil {
+		panic("logging config is required")
+	}
+
+	if config.Logger == nil {
+		panic("logger is required")
+	}
+
+	// Precompile skip paths
+	skipPathMap := make(map[string]bool)
+	for _, path := range config.SkipPaths {
+		skipPathMap[path] = true
+	}
+
+	// Precompile sensitive headers map
+	sensitiveHeaderMap := make(map[string]bool)
+	for _, header := range config.SensitiveHeaders {
+		sensitiveHeaderMap[strings.ToLower(header)] = true
+	}
+
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		
+		// Skip logging for configured paths
+		if skipPathMap[path] {
+			c.Next()
+			return
+		}
+
+		// Capture request data
+		var requestBody []byte
+		if config.LogRequestBody && c.Request.Body != nil {
+			requestBody = readBody(c.Request.Body, config.MaxBodySize)
+			// Restore body for downstream handlers
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+		}
+
+		// Capture response data
+		var responseBody []byte
+		if config.LogResponseBody {
+			responseWriter := &responseBodyWriter{
+				ResponseWriter: c.Writer,
+				body:          &bytes.Buffer{},
+				maxSize:       config.MaxBodySize,
+			}
+			c.Writer = responseWriter
+			defer func() {
+				responseBody = responseWriter.body.Bytes()
+			}()
+		}
+
+		// Process request
+		c.Next()
+
+		// Calculate latency
+		latency := time.Since(start)
+
+		// Prepare log fields
+		fields := []zap.Field{
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.String("query", c.Request.URL.RawQuery),
+			zap.Int("status", c.Writer.Status()),
+			zap.Duration("latency", latency),
+			zap.Int("size", c.Writer.Size()),
+		}
+
+		// Add request ID if configured
+		if config.IncludeRequestID {
+			if requestID := c.GetHeader("X-Request-ID"); requestID != "" {
+				fields = append(fields, zap.String("request_id", requestID))
+			} else if requestID := c.GetString("request_id"); requestID != "" {
+				fields = append(fields, zap.String("request_id", requestID))
+			}
+		}
+
+		// Add client information
+		if config.LogClientIP {
+			fields = append(fields, zap.String("client_ip", c.ClientIP()))
+		}
+
+		if config.LogUserAgent {
+			fields = append(fields, zap.String("user_agent", c.GetHeader("User-Agent")))
+		}
+
+		// Add user information if available
+		if user, exists := c.Get(string(UserContextKey)); exists {
+			if u, ok := user.(*types.User); ok {
+				fields = append(fields, 
+					zap.String("user_id", u.ID),
+					zap.String("username", u.Username),
+				)
+			}
+		}
+
+		// Add headers if configured
+		if config.LogHeaders {
+			headers := make(map[string]string)
+			for name, values := range c.Request.Header {
+				key := strings.ToLower(name)
+				if sensitiveHeaderMap[key] {
+					headers[name] = "[REDACTED]"
+				} else {
+					headers[name] = strings.Join(values, ", ")
+				}
+			}
+			fields = append(fields, zap.Any("headers", headers))
+		}
+
+		// Add request body if configured
+		if config.LogRequestBody && len(requestBody) > 0 {
+			bodyStr := string(requestBody)
+			if len(bodyStr) > config.MaxBodySize {
+				bodyStr = bodyStr[:config.MaxBodySize] + "..."
+			}
+			fields = append(fields, zap.String("request_body", bodyStr))
+		}
+
+		// Add response body if configured
+		if config.LogResponseBody && len(responseBody) > 0 {
+			bodyStr := string(responseBody)
+			if len(bodyStr) > config.MaxBodySize {
+				bodyStr = bodyStr[:config.MaxBodySize] + "..."
+			}
+			fields = append(fields, zap.String("response_body", bodyStr))
+		}
+
+		// Add error information if available
+		if len(c.Errors) > 0 {
+			errorMessages := make([]string, len(c.Errors))
+			for i, err := range c.Errors {
+				errorMessages[i] = err.Error()
+			}
+			fields = append(fields, zap.Strings("errors", errorMessages))
+		}
+
+		// Determine log level and message
+		var level zapcore.Level
+		var message string
+
+		status := c.Writer.Status()
+		if status >= 500 {
+			level = config.ErrorLevel
+			message = "Server error"
+		} else if status >= 400 {
+			level = config.ErrorLevel
+			message = "Client error"
+		} else if latency > config.SlowRequestThreshold {
+			level = zapcore.WarnLevel
+			message = "Slow request"
+		} else {
+			level = config.SuccessLevel
+			message = "Request completed"
+		}
+
+		// Log the request
+		if ce := config.Logger.Check(level, message); ce != nil {
+			ce.Write(fields...)
+		}
+	}
+}
+
+{{if .Middleware.Logging.Conditional}}
+// ConditionalLogging returns a logging middleware that applies different configurations based on conditions.
+func ConditionalLogging(configs map[string]*LoggingConfig, defaultConfig *LoggingConfig) gin.HandlerFunc {
+	middlewares := make(map[string]gin.HandlerFunc)
+	for key, config := range configs {
+		middlewares[key] = RequestLogging(config)
+	}
+	defaultMiddleware := RequestLogging(defaultConfig)
+
+	return func(c *gin.Context) {
+		// Determine which configuration to use
+		configKey := determineLoggingConfig(c)
+		
+		if middleware, exists := middlewares[configKey]; exists {
+			middleware(c)
+		} else {
+			defaultMiddleware(c)
+		}
+	}
+}
+
+func determineLoggingConfig(c *gin.Context) string {
+	// Example: Use different logging for admin endpoints
+	if strings.HasPrefix(c.Request.URL.Path, "/admin") {
+		return "admin"
+	}
+	
+	// Example: Use different logging for API endpoints
+	if strings.HasPrefix(c.Request.URL.Path, "/api") {
+		return "api"
+	}
+	
+	// Example: Use debug logging for development
+	if c.GetHeader("X-Debug") != "" {
+		return "debug"
+	}
+	
+	return "default"
+}
+{{end}}
+
+{{if .Middleware.Logging.Sampling}}
+// SampledLogging returns a logging middleware that samples requests based on configuration.
+func SampledLogging(config *LoggingConfig, sampleRate float64) gin.HandlerFunc {
+	baseMiddleware := RequestLogging(config)
+	
+	return func(c *gin.Context) {
+		// Always log errors and slow requests
+		defer func() {
+			status := c.Writer.Status()
+			if status >= 400 {
+				baseMiddleware(c)
+				return
+			}
+		}()
+		
+		// Sample other requests
+		if rand.Float64() < sampleRate {
+			baseMiddleware(c)
+		} else {
+			c.Next()
+		}
+	}
+}
+{{end}}
+
+// responseBodyWriter wraps gin.ResponseWriter to capture response body.
+type responseBodyWriter struct {
+	gin.ResponseWriter
+	body    *bytes.Buffer
+	maxSize int
+}
+
+func (w *responseBodyWriter) Write(data []byte) (int, error) {
+	// Write to actual response
+	n, err := w.ResponseWriter.Write(data)
+	
+	// Capture body if within size limit
+	if w.body.Len() < w.maxSize {
+		remaining := w.maxSize - w.body.Len()
+		if len(data) <= remaining {
+			w.body.Write(data)
+		} else {
+			w.body.Write(data[:remaining])
+		}
+	}
+	
+	return n, err
+}
+
+func readBody(body io.ReadCloser, maxSize int) []byte {
+	if body == nil {
+		return nil
+	}
+
+	data, err := io.ReadAll(io.LimitReader(body, int64(maxSize)))
+	if err != nil {
+		return nil
+	}
+
+	return data
+}
+
+{{if .Middleware.Logging.Metrics}}
+// MetricsLogging returns a logging middleware that also collects metrics.
+func MetricsLogging(config *LoggingConfig, metricsCollector MetricsCollector) gin.HandlerFunc {
+	loggingMiddleware := RequestLogging(config)
+	
+	return func(c *gin.Context) {
+		start := time.Now()
+		
+		// Apply logging middleware
+		loggingMiddleware(c)
+		
+		// Collect metrics
+		duration := time.Since(start)
+		status := c.Writer.Status()
+		method := c.Request.Method
+		path := c.FullPath()
+		
+		metricsCollector.RecordRequest(method, path, status, duration)
+	}
+}
+
+// MetricsCollector interface for collecting request metrics.
+type MetricsCollector interface {
+	RecordRequest(method, path string, status int, duration time.Duration)
+}
+{{end}}
+
+{{if .Middleware.Logging.Audit}}
+// AuditLogging returns a logging middleware for audit logging.
+func AuditLogging(config *LoggingConfig, auditStore AuditStore) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		
+		// Capture request data for audit
+		var requestBody []byte
+		if c.Request.Body != nil {
+			requestBody = readBody(c.Request.Body, config.MaxBodySize)
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+		}
+		
+		c.Next()
+		
+		// Create audit record
+		auditRecord := &AuditRecord{
+			Timestamp:    start,
+			Method:       c.Request.Method,
+			Path:         c.Request.URL.Path,
+			Query:        c.Request.URL.RawQuery,
+			Status:       c.Writer.Status(),
+			Duration:     time.Since(start),
+			ClientIP:     c.ClientIP(),
+			UserAgent:    c.GetHeader("User-Agent"),
+			RequestBody:  string(requestBody),
+			UserID:       getUserID(c),
+			SessionID:    getSessionID(c),
+		}
+		
+		// Store audit record asynchronously
+		go auditStore.Store(context.Background(), auditRecord)
+	}
+}
+
+// AuditRecord represents an audit log record.
+type AuditRecord struct {
+	Timestamp   time.Time `json:"timestamp"`
+	Method      string    `json:"method"`
+	Path        string    `json:"path"`
+	Query       string    `json:"query"`
+	Status      int       `json:"status"`
+	Duration    time.Duration `json:"duration"`
+	ClientIP    string    `json:"client_ip"`
+	UserAgent   string    `json:"user_agent"`
+	RequestBody string    `json:"request_body"`
+	UserID      string    `json:"user_id"`
+	SessionID   string    `json:"session_id"`
+}
+
+// AuditStore interface for storing audit records.
+type AuditStore interface {
+	Store(ctx context.Context, record *AuditRecord) error
+}
+
+func getUserID(c *gin.Context) string {
+	if user, exists := c.Get(string(UserContextKey)); exists {
+		if u, ok := user.(*types.User); ok {
+			return u.ID
+		}
+	}
+	return ""
+}
+
+func getSessionID(c *gin.Context) string {
+	if sessionID := c.GetString("session_id"); sessionID != "" {
+		return sessionID
+	}
+	return ""
+}
+{{end}}

@@ -1,0 +1,268 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package service
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+{{- if .Service.Features.Repository}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/interfaces"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+{{- end}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+{{- if .Service.Features.Repository}}
+
+// Mock repository for testing
+type Mock{{.Service.Name | pascalCase}}Repository struct {
+	mock.Mock
+}
+
+func (m *Mock{{.Service.Name | pascalCase}}Repository) Create(ctx context.Context, item *model.{{.Service.Name | pascalCase}}) error {
+	args := m.Called(ctx, item)
+	return args.Error(0)
+}
+
+func (m *Mock{{.Service.Name | pascalCase}}Repository) GetByID(ctx context.Context, id string) (*model.{{.Service.Name | pascalCase}}, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(*model.{{.Service.Name | pascalCase}}), args.Error(1)
+}
+
+func (m *Mock{{.Service.Name | pascalCase}}Repository) Update(ctx context.Context, item *model.{{.Service.Name | pascalCase}}) error {
+	args := m.Called(ctx, item)
+	return args.Error(0)
+}
+
+func (m *Mock{{.Service.Name | pascalCase}}Repository) Delete(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *Mock{{.Service.Name | pascalCase}}Repository) List(ctx context.Context, filter *types.ListFilter) ([]*model.{{.Service.Name | pascalCase}}, int64, error) {
+	args := m.Called(ctx, filter)
+	return args.Get(0).([]*model.{{.Service.Name | pascalCase}}), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *Mock{{.Service.Name | pascalCase}}Repository) HealthCheck(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+{{- end}}
+
+func TestNew{{.Service.Name | pascalCase}}Service(t *testing.T) {
+	tests := []struct {
+		name    string
+		{{if .Service.Features.Repository}}repository interfaces.{{.Service.Name | pascalCase}}Repository{{end}}
+		wantErr bool
+	}{
+		{
+			name:    "successful creation",
+			{{if .Service.Features.Repository}}repository: &Mock{{.Service.Name | pascalCase}}Repository{},{{end}}
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, err := New{{.Service.Name | pascalCase}}Service({{if .Service.Features.Repository}}tt.repository{{end}})
+			
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, service)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, service)
+				assert.Equal(t, "{{.Service.Name}}", service.GetServiceName())
+			}
+		})
+	}
+}
+
+func TestService_HealthCheck(t *testing.T) {
+	tests := []struct {
+		name    string
+		setupMock func(*Mock{{.Service.Name | pascalCase}}Repository)
+		wantErr bool
+	}{
+{{- if .Service.Features.Repository}}
+		{
+			name: "healthy service",
+			setupMock: func(m *Mock{{.Service.Name | pascalCase}}Repository) {
+				m.On("HealthCheck", mock.Anything).Return(nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "unhealthy repository",
+			setupMock: func(m *Mock{{.Service.Name | pascalCase}}Repository) {
+				m.On("HealthCheck", mock.Anything).Return(assert.AnError)
+			},
+			wantErr: true,
+		},
+{{- else}}
+		{
+			name: "healthy service",
+			setupMock: func(m *Mock{{.Service.Name | pascalCase}}Repository) {
+				// No repository to mock
+			},
+			wantErr: false,
+		},
+{{- end}}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+{{- if .Service.Features.Repository}}
+			mockRepo := &Mock{{.Service.Name | pascalCase}}Repository{}
+			tt.setupMock(mockRepo)
+			
+			service, err := New{{.Service.Name | pascalCase}}Service(mockRepo)
+{{- else}}
+			service, err := New{{.Service.Name | pascalCase}}Service()
+{{- end}}
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			err = service.HealthCheck(ctx)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+{{- if .Service.Features.Repository}}
+			mockRepo.AssertExpectations(t)
+{{- end}}
+		})
+	}
+}
+
+// TODO: Add tests for your business methods
+// Example test structure:
+
+// func TestService_Create{{.Service.Name | pascalCase}}(t *testing.T) {
+//     tests := []struct {
+//         name      string
+//         request   *types.Create{{.Service.Name | pascalCase}}Request
+//         setupMock func(*Mock{{.Service.Name | pascalCase}}Repository)
+//         wantErr   bool
+//         errMsg    string
+//     }{
+//         {
+//             name: "successful creation",
+//             request: &types.Create{{.Service.Name | pascalCase}}Request{
+//                 Name:        "Test {{.Service.Name | titleCase}}",
+//                 Description: "Test description",
+//             },
+//             setupMock: func(m *Mock{{.Service.Name | pascalCase}}Repository) {
+//                 m.On("Create", mock.Anything, mock.AnythingOfType("*model.{{.Service.Name | pascalCase}}")).Return(nil)
+//             },
+//             wantErr: false,
+//         },
+//         {
+//             name:    "nil request",
+//             request: nil,
+//             setupMock: func(m *Mock{{.Service.Name | pascalCase}}Repository) {
+//                 // No mock setup needed
+//             },
+//             wantErr: true,
+//             errMsg:  "invalid request",
+//         },
+//         {
+//             name: "empty name",
+//             request: &types.Create{{.Service.Name | pascalCase}}Request{
+//                 Name:        "",
+//                 Description: "Test description",
+//             },
+//             setupMock: func(m *Mock{{.Service.Name | pascalCase}}Repository) {
+//                 // No mock setup needed
+//             },
+//             wantErr: true,
+//             errMsg:  "missing name",
+//         },
+//         {
+//             name: "repository error",
+//             request: &types.Create{{.Service.Name | pascalCase}}Request{
+//                 Name:        "Test {{.Service.Name | titleCase}}",
+//                 Description: "Test description",
+//             },
+//             setupMock: func(m *Mock{{.Service.Name | pascalCase}}Repository) {
+//                 m.On("Create", mock.Anything, mock.AnythingOfType("*model.{{.Service.Name | pascalCase}}")).Return(assert.AnError)
+//             },
+//             wantErr: true,
+//             errMsg:  "failed to create",
+//         },
+//     }
+//
+//     for _, tt := range tests {
+//         t.Run(tt.name, func(t *testing.T) {
+//             mockRepo := &Mock{{.Service.Name | pascalCase}}Repository{}
+//             tt.setupMock(mockRepo)
+//             
+//             service, err := New{{.Service.Name | pascalCase}}Service(mockRepo)
+//             require.NoError(t, err)
+//
+//             ctx := context.Background()
+//             response, err := service.Create{{.Service.Name | pascalCase}}(ctx, tt.request)
+//
+//             if tt.wantErr {
+//                 assert.Error(t, err)
+//                 assert.Nil(t, response)
+//                 if tt.errMsg != "" {
+//                     assert.Contains(t, err.Error(), tt.errMsg)
+//                 }
+//             } else {
+//                 assert.NoError(t, err)
+//                 assert.NotNil(t, response)
+//                 assert.Equal(t, tt.request.Name, response.Name)
+//                 assert.Equal(t, tt.request.Description, response.Description)
+//                 assert.Equal(t, types.StatusActive, response.Status)
+//             }
+//
+//             mockRepo.AssertExpectations(t)
+//         })
+//     }
+// }
+
+// Benchmark tests
+func BenchmarkService_HealthCheck(b *testing.B) {
+{{- if .Service.Features.Repository}}
+	mockRepo := &Mock{{.Service.Name | pascalCase}}Repository{}
+	mockRepo.On("HealthCheck", mock.Anything).Return(nil)
+	
+	service, _ := New{{.Service.Name | pascalCase}}Service(mockRepo)
+{{- else}}
+	service, _ := New{{.Service.Name | pascalCase}}Service()
+{{- end}}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = service.HealthCheck(ctx)
+	}
+}

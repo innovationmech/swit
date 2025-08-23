@@ -1,0 +1,68 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package service
+
+import (
+	"context"
+	"fmt"
+
+{{- if .Service.Features.Database}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/db"
+{{- end}}
+)
+
+// HealthService implements health checking for the service.
+type HealthService struct {
+{{- if .Service.Features.Database}}
+	db *db.Database
+{{- end}}
+}
+
+// NewHealthService creates a new health service instance.
+func NewHealthService({{if .Service.Features.Database}}database *db.Database{{end}}) (*HealthService, error) {
+	return &HealthService{
+{{- if .Service.Features.Database}}
+		db: database,
+{{- end}}
+	}, nil
+}
+
+// Check performs comprehensive health checks.
+func (h *HealthService) Check(ctx context.Context) error {
+{{- if .Service.Features.Database}}
+	// Check database connectivity
+	if h.db != nil {
+		if err := h.db.HealthCheck(ctx); err != nil {
+			return fmt.Errorf("database health check failed: %w", err)
+		}
+	}
+{{- end}}
+
+	// Add other health checks here
+	// Example: cache, external APIs, message queues, etc.
+
+	return nil
+}
+
+// GetServiceName returns the health service name.
+func (h *HealthService) GetServiceName() string {
+	return "health"
+}

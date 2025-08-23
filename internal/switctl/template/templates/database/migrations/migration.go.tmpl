@@ -1,0 +1,423 @@
+{{- if .Service.Features.Database -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package migrations provides database migration functionality for {{.Service.Name}}.
+package migrations
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"time"
+
+	"go.uber.org/zap"
+{{- if ne .Service.Database.Type "mongodb"}}
+	"gorm.io/gorm"
+{{- else}}
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+{{- end}}
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/db"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+)
+
+// Migration represents a database migration.
+type Migration struct {
+	ID          string
+	Description string
+	Up          MigrationFunc
+	Down        MigrationFunc
+	CreatedAt   time.Time
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// MigrationFunc represents a migration function for SQL databases.
+type MigrationFunc func(*gorm.DB) error
+{{- else}}
+// MigrationFunc represents a migration function for MongoDB.
+type MigrationFunc func(*mongo.Database) error
+{{- end}}
+
+// MigrationRecord represents a record of applied migrations.
+type MigrationRecord struct {
+{{- if ne .Service.Database.Type "mongodb"}}
+	ID        uint      `gorm:"primaryKey"`
+	MigrationID string  `gorm:"uniqueIndex;not null"`
+	AppliedAt time.Time `gorm:"not null"`
+	Batch     int       `gorm:"not null"`
+{{- else}}
+	ID          string    `bson:"_id"`
+	MigrationID string    `bson:"migration_id"`
+	AppliedAt   time.Time `bson:"applied_at"`
+	Batch       int       `bson:"batch"`
+{{- end}}
+}
+
+// Migrator handles database migrations.
+type Migrator struct {
+{{- if ne .Service.Database.Type "mongodb"}}
+	db         *gorm.DB
+{{- else}}
+	db         *mongo.Database
+{{- end}}
+	migrations []Migration
+	logger     *zap.Logger
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// NewMigrator creates a new migrator for SQL databases.
+func NewMigrator(database db.DatabaseManager, logger *zap.Logger) *Migrator {
+	return &Migrator{
+		db:         database.DB(),
+		migrations: GetMigrations(),
+		logger:     logger,
+	}
+}
+{{- else}}
+// NewMigrator creates a new migrator for MongoDB.
+func NewMigrator(database db.DatabaseManager, logger *zap.Logger) *Migrator {
+	return &Migrator{
+		db:         database.Database(),
+		migrations: GetMigrations(),
+		logger:     logger,
+	}
+}
+{{- end}}
+
+// Migrate runs all pending migrations.
+func (m *Migrator) Migrate(ctx context.Context) error {
+	// Ensure migration table/collection exists
+	if err := m.createMigrationTable(ctx); err != nil {
+		return fmt.Errorf("failed to create migration table: %w", err)
+	}
+
+	// Get applied migrations
+	applied, err := m.getAppliedMigrations(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get applied migrations: %w", err)
+	}
+
+	// Find pending migrations
+	pending := m.getPendingMigrations(applied)
+	if len(pending) == 0 {
+		m.logger.Info("No pending migrations")
+		return nil
+	}
+
+	m.logger.Info("Running migrations", zap.Int("count", len(pending)))
+
+	// Get next batch number
+	batch := m.getNextBatch(applied)
+
+	// Run pending migrations
+	for _, migration := range pending {
+		if err := m.runMigration(ctx, migration, batch); err != nil {
+			return fmt.Errorf("failed to run migration %s: %w", migration.ID, err)
+		}
+		m.logger.Info("Migration completed", zap.String("migration", migration.ID))
+	}
+
+	m.logger.Info("All migrations completed successfully")
+	return nil
+}
+
+// Rollback rolls back the last batch of migrations.
+func (m *Migrator) Rollback(ctx context.Context) error {
+	// Get applied migrations
+	applied, err := m.getAppliedMigrations(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get applied migrations: %w", err)
+	}
+
+	if len(applied) == 0 {
+		m.logger.Info("No migrations to rollback")
+		return nil
+	}
+
+	// Get the last batch
+	lastBatch := applied[len(applied)-1].Batch
+	var toRollback []MigrationRecord
+	for i := len(applied) - 1; i >= 0; i-- {
+		if applied[i].Batch == lastBatch {
+			toRollback = append(toRollback, applied[i])
+		} else {
+			break
+		}
+	}
+
+	m.logger.Info("Rolling back migrations", zap.Int("count", len(toRollback)))
+
+	// Rollback migrations in reverse order
+	for _, record := range toRollback {
+		migration := m.findMigration(record.MigrationID)
+		if migration == nil {
+			return fmt.Errorf("migration %s not found", record.MigrationID)
+		}
+
+		if err := m.rollbackMigration(ctx, *migration, record); err != nil {
+			return fmt.Errorf("failed to rollback migration %s: %w", migration.ID, err)
+		}
+		m.logger.Info("Migration rolled back", zap.String("migration", migration.ID))
+	}
+
+	m.logger.Info("Rollback completed successfully")
+	return nil
+}
+
+// Status returns the status of all migrations.
+func (m *Migrator) Status(ctx context.Context) ([]MigrationStatus, error) {
+	applied, err := m.getAppliedMigrations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get applied migrations: %w", err)
+	}
+
+	appliedMap := make(map[string]MigrationRecord)
+	for _, record := range applied {
+		appliedMap[record.MigrationID] = record
+	}
+
+	var status []MigrationStatus
+	for _, migration := range m.migrations {
+		if record, exists := appliedMap[migration.ID]; exists {
+			status = append(status, MigrationStatus{
+				Migration: migration,
+				Applied:   true,
+				AppliedAt: &record.AppliedAt,
+				Batch:     &record.Batch,
+			})
+		} else {
+			status = append(status, MigrationStatus{
+				Migration: migration,
+				Applied:   false,
+			})
+		}
+	}
+
+	return status, nil
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// createMigrationTable creates the migration table if it doesn't exist.
+func (m *Migrator) createMigrationTable(ctx context.Context) error {
+	return m.db.WithContext(ctx).AutoMigrate(&MigrationRecord{})
+}
+
+// getAppliedMigrations returns all applied migrations.
+func (m *Migrator) getAppliedMigrations(ctx context.Context) ([]MigrationRecord, error) {
+	var records []MigrationRecord
+	err := m.db.WithContext(ctx).Order("applied_at ASC").Find(&records).Error
+	return records, err
+}
+
+// runMigration runs a single migration.
+func (m *Migrator) runMigration(ctx context.Context, migration Migration, batch int) error {
+	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Run the migration
+		if err := migration.Up(tx); err != nil {
+			return err
+		}
+
+		// Record the migration
+		record := MigrationRecord{
+			MigrationID: migration.ID,
+			AppliedAt:   time.Now(),
+			Batch:       batch,
+		}
+		return tx.Create(&record).Error
+	})
+}
+
+// rollbackMigration rolls back a single migration.
+func (m *Migrator) rollbackMigration(ctx context.Context, migration Migration, record MigrationRecord) error {
+	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Run the rollback
+		if err := migration.Down(tx); err != nil {
+			return err
+		}
+
+		// Remove the migration record
+		return tx.Delete(&record).Error
+	})
+}
+{{- else}}
+// createMigrationTable creates the migration collection if it doesn't exist.
+func (m *Migrator) createMigrationTable(ctx context.Context) error {
+	// Create index on migration_id for uniqueness
+	indexModel := mongo.IndexModel{
+		Keys:    bson.D{ {{`{"migration_id", 1}`}} },
+		Options: options.Index().SetUnique(true),
+	}
+	_, err := m.db.Collection("migrations").Indexes().CreateOne(ctx, indexModel)
+	return err
+}
+
+// getAppliedMigrations returns all applied migrations.
+func (m *Migrator) getAppliedMigrations(ctx context.Context) ([]MigrationRecord, error) {
+	var records []MigrationRecord
+	cursor, err := m.db.Collection("migrations").Find(ctx, bson.D{}, options.Find().SetSort(bson.D{ {{`{"applied_at", 1}`}} }))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	for cursor.Next(ctx) {
+		var record MigrationRecord
+		if err := cursor.Decode(&record); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+
+	return records, cursor.Err()
+}
+
+// runMigration runs a single migration.
+func (m *Migrator) runMigration(ctx context.Context, migration Migration, batch int) error {
+	// Run the migration
+	if err := migration.Up(m.db); err != nil {
+		return err
+	}
+
+	// Record the migration
+	record := MigrationRecord{
+		ID:          migration.ID,
+		MigrationID: migration.ID,
+		AppliedAt:   time.Now(),
+		Batch:       batch,
+	}
+	_, err := m.db.Collection("migrations").InsertOne(ctx, record)
+	return err
+}
+
+// rollbackMigration rolls back a single migration.
+func (m *Migrator) rollbackMigration(ctx context.Context, migration Migration, record MigrationRecord) error {
+	// Run the rollback
+	if err := migration.Down(m.db); err != nil {
+		return err
+	}
+
+	// Remove the migration record
+	_, err := m.db.Collection("migrations").DeleteOne(ctx, bson.D{ {{`{"migration_id", record.MigrationID}`}} })
+	return err
+}
+{{- end}}
+
+// getPendingMigrations returns migrations that haven't been applied yet.
+func (m *Migrator) getPendingMigrations(applied []MigrationRecord) []Migration {
+	appliedMap := make(map[string]bool)
+	for _, record := range applied {
+		appliedMap[record.MigrationID] = true
+	}
+
+	var pending []Migration
+	for _, migration := range m.migrations {
+		if !appliedMap[migration.ID] {
+			pending = append(pending, migration)
+		}
+	}
+
+	// Sort by creation time
+	sort.Slice(pending, func(i, j int) bool {
+		return pending[i].CreatedAt.Before(pending[j].CreatedAt)
+	})
+
+	return pending
+}
+
+// getNextBatch returns the next batch number.
+func (m *Migrator) getNextBatch(applied []MigrationRecord) int {
+	if len(applied) == 0 {
+		return 1
+	}
+	return applied[len(applied)-1].Batch + 1
+}
+
+// findMigration finds a migration by ID.
+func (m *Migrator) findMigration(id string) *Migration {
+	for _, migration := range m.migrations {
+		if migration.ID == id {
+			return &migration
+		}
+	}
+	return nil
+}
+
+// MigrationStatus represents the status of a migration.
+type MigrationStatus struct {
+	Migration Migration
+	Applied   bool
+	AppliedAt *time.Time
+	Batch     *int
+}
+
+// GetMigrations returns all available migrations.
+func GetMigrations() []Migration {
+	return []Migration{
+		{
+			ID:          "001_create_{{.Service.Name | snakeCase}}_table",
+			Description: "Create {{.Service.Name | snakeCase}} table",
+			Up:          create{{.Service.Name | pascalCase}}Table,
+			Down:        drop{{.Service.Name | pascalCase}}Table,
+			CreatedAt:   time.Date({{year}}, time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.UTC),
+		},
+		// Add more migrations here
+	}
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// create{{.Service.Name | pascalCase}}Table creates the main table.
+func create{{.Service.Name | pascalCase}}Table(db *gorm.DB) error {
+	return db.AutoMigrate(&model.{{.Service.Name | pascalCase}}{})
+}
+
+// drop{{.Service.Name | pascalCase}}Table drops the main table.
+func drop{{.Service.Name | pascalCase}}Table(db *gorm.DB) error {
+	return db.Migrator().DropTable(&model.{{.Service.Name | pascalCase}}{})
+}
+{{- else}}
+// create{{.Service.Name | pascalCase}}Table creates the main collection and indexes.
+func create{{.Service.Name | pascalCase}}Table(db *mongo.Database) error {
+	collection := db.Collection("{{.Service.Name | snakeCase}}")
+	
+	// Create indexes
+	indexModels := []mongo.IndexModel{
+		{
+			Keys: bson.D{ {{`{"created_at", -1}`}} },
+			Options: options.Index().SetName("created_at_desc"),
+		},
+		{
+			Keys: bson.D{ {{`{"updated_at", -1}`}} },
+			Options: options.Index().SetName("updated_at_desc"),
+		},
+	}
+	
+	_, err := collection.Indexes().CreateMany(context.Background(), indexModels)
+	return err
+}
+
+// drop{{.Service.Name | pascalCase}}Table drops the main collection.
+func drop{{.Service.Name | pascalCase}}Table(db *mongo.Database) error {
+	return db.Collection("{{.Service.Name | snakeCase}}").Drop(context.Background())
+}
+{{- end}}
+{{- end -}}

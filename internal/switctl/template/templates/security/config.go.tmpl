@@ -1,0 +1,584 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package security
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/auth"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/middleware"
+)
+
+// SecurityConfig holds comprehensive security configuration.
+type SecurityConfig struct {
+	// Enable HTTPS
+	EnableHTTPS bool `yaml:"enable_https" json:"enable_https" mapstructure:"enable_https"`
+	
+	// Authentication configuration
+	Authentication *AuthenticationConfig `yaml:"authentication" json:"authentication" mapstructure:"authentication"`
+	
+	// Authorization configuration
+	Authorization *AuthorizationConfig `yaml:"authorization" json:"authorization" mapstructure:"authorization"`
+	
+	// Security headers configuration
+	Headers *SecurityHeadersConfig `yaml:"headers" json:"headers" mapstructure:"headers"`
+	
+	// TLS configuration
+	TLS *TLSConfig `yaml:"tls" json:"tls" mapstructure:"tls"`
+	
+	// Allowed hosts for the application
+	AllowedHosts []string `yaml:"allowed_hosts" json:"allowed_hosts" mapstructure:"allowed_hosts"`
+	
+	// Trusted proxy IP addresses
+	TrustedProxies []string `yaml:"trusted_proxies" json:"trusted_proxies" mapstructure:"trusted_proxies"`
+	
+	// Referrer policy configuration
+	ReferrerPolicy string `yaml:"referrer_policy" json:"referrer_policy" mapstructure:"referrer_policy"`
+	
+	// CORS configuration
+	CORS *middleware.CORSConfig `yaml:"cors" json:"cors" mapstructure:"cors"`
+	
+	// Rate limiting configuration
+	RateLimit *middleware.RateLimitConfig `yaml:"rate_limit" json:"rate_limit" mapstructure:"rate_limit"`
+	
+	// Request ID configuration
+	RequestID *middleware.RequestIDConfig `yaml:"request_id" json:"request_id" mapstructure:"request_id"`
+	
+	// Session configuration
+	Session *SessionConfig `yaml:"session" json:"session" mapstructure:"session"`
+	
+	// CSRF protection configuration
+	CSRF *CSRFConfig `yaml:"csrf" json:"csrf" mapstructure:"csrf"`
+	
+	// Content security configuration
+	ContentSecurity *ContentSecurityConfig `yaml:"content_security" json:"content_security" mapstructure:"content_security"`
+}
+
+// AuthenticationConfig holds authentication method configurations.
+type AuthenticationConfig struct {
+	// Enabled authentication methods
+	Methods []string `yaml:"methods" json:"methods" mapstructure:"methods"`
+	
+	// JWT configuration
+	JWT *auth.JWTAuthConfig `yaml:"jwt" json:"jwt" mapstructure:"jwt"`
+	
+	// OAuth2 configuration
+	OAuth2 map[auth.OAuth2Provider]*auth.OAuth2Config `yaml:"oauth2" json:"oauth2" mapstructure:"oauth2"`
+	
+	// Basic Auth configuration
+	BasicAuth *auth.BasicAuthConfig `yaml:"basic_auth" json:"basic_auth" mapstructure:"basic_auth"`
+	
+	// API Key configuration
+	APIKey *auth.APIKeyConfig `yaml:"api_key" json:"api_key" mapstructure:"api_key"`
+	
+	// Session-based authentication
+	Session *SessionAuthConfig `yaml:"session" json:"session" mapstructure:"session"`
+	
+	// Multi-factor authentication
+	MFA *MFAConfig `yaml:"mfa" json:"mfa" mapstructure:"mfa"`
+}
+
+// AuthorizationConfig extends the RBAC configuration.
+type AuthorizationConfig struct {
+	// RBAC configuration
+	RBAC *auth.RBACConfig `yaml:"rbac" json:"rbac" mapstructure:"rbac"`
+	
+	// Policy-based authorization
+	Policies *PolicyConfig `yaml:"policies" json:"policies" mapstructure:"policies"`
+	
+	// Attribute-based access control
+	ABAC *ABACConfig `yaml:"abac" json:"abac" mapstructure:"abac"`
+}
+
+// SessionConfig holds session management configuration.
+type SessionConfig struct {
+	// Session store type (memory, redis, database)
+	Store string `yaml:"store" json:"store" mapstructure:"store"`
+	
+	// Session cookie name
+	CookieName string `yaml:"cookie_name" json:"cookie_name" mapstructure:"cookie_name"`
+	
+	// Session timeout
+	Timeout time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
+	
+	// Idle timeout
+	IdleTimeout time.Duration `yaml:"idle_timeout" json:"idle_timeout" mapstructure:"idle_timeout"`
+	
+	// Cookie settings
+	CookieSecure   bool          `yaml:"cookie_secure" json:"cookie_secure" mapstructure:"cookie_secure"`
+	CookieHTTPOnly bool          `yaml:"cookie_http_only" json:"cookie_http_only" mapstructure:"cookie_http_only"`
+	CookieSameSite string        `yaml:"cookie_same_site" json:"cookie_same_site" mapstructure:"cookie_same_site"`
+	CookieDomain   string        `yaml:"cookie_domain" json:"cookie_domain" mapstructure:"cookie_domain"`
+	CookiePath     string        `yaml:"cookie_path" json:"cookie_path" mapstructure:"cookie_path"`
+	
+	// Session rotation
+	RotateOnLogin bool `yaml:"rotate_on_login" json:"rotate_on_login" mapstructure:"rotate_on_login"`
+	
+	// Redis configuration (if using Redis store)
+	Redis *RedisConfig `yaml:"redis" json:"redis" mapstructure:"redis"`
+}
+
+// SessionAuthConfig holds session-based authentication configuration.
+type SessionAuthConfig struct {
+	// Login URL
+	LoginURL string `yaml:"login_url" json:"login_url" mapstructure:"login_url"`
+	
+	// Logout URL
+	LogoutURL string `yaml:"logout_url" json:"logout_url" mapstructure:"logout_url"`
+	
+	// Remember me functionality
+	RememberMe *RememberMeConfig `yaml:"remember_me" json:"remember_me" mapstructure:"remember_me"`
+	
+	// Password requirements
+	Password *PasswordConfig `yaml:"password" json:"password" mapstructure:"password"`
+	
+	// Account lockout settings
+	Lockout *LockoutConfig `yaml:"lockout" json:"lockout" mapstructure:"lockout"`
+}
+
+// MFAConfig holds multi-factor authentication configuration.
+type MFAConfig struct {
+	// Enabled MFA methods
+	Methods []string `yaml:"methods" json:"methods" mapstructure:"methods"`
+	
+	// TOTP configuration
+	TOTP *TOTPConfig `yaml:"totp" json:"totp" mapstructure:"totp"`
+	
+	// SMS configuration
+	SMS *SMSConfig `yaml:"sms" json:"sms" mapstructure:"sms"`
+	
+	// Email configuration
+	Email *EmailMFAConfig `yaml:"email" json:"email" mapstructure:"email"`
+	
+	// Backup codes
+	BackupCodes *BackupCodesConfig `yaml:"backup_codes" json:"backup_codes" mapstructure:"backup_codes"`
+}
+
+// CSRFConfig holds CSRF protection configuration.
+type CSRFConfig struct {
+	// Enabled
+	Enabled bool `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
+	
+	// Token name
+	TokenName string `yaml:"token_name" json:"token_name" mapstructure:"token_name"`
+	
+	// Token length
+	TokenLength int `yaml:"token_length" json:"token_length" mapstructure:"token_length"`
+	
+	// Token timeout
+	TokenTimeout time.Duration `yaml:"token_timeout" json:"token_timeout" mapstructure:"token_timeout"`
+	
+	// Trusted origins
+	TrustedOrigins []string `yaml:"trusted_origins" json:"trusted_origins" mapstructure:"trusted_origins"`
+	
+	// Safe methods (methods that don't require CSRF protection)
+	SafeMethods []string `yaml:"safe_methods" json:"safe_methods" mapstructure:"safe_methods"`
+	
+	// Cookie settings
+	CookieName     string `yaml:"cookie_name" json:"cookie_name" mapstructure:"cookie_name"`
+	CookieSecure   bool   `yaml:"cookie_secure" json:"cookie_secure" mapstructure:"cookie_secure"`
+	CookieHTTPOnly bool   `yaml:"cookie_http_only" json:"cookie_http_only" mapstructure:"cookie_http_only"`
+	CookieSameSite string `yaml:"cookie_same_site" json:"cookie_same_site" mapstructure:"cookie_same_site"`
+}
+
+// ContentSecurityConfig holds content security configuration.
+type ContentSecurityConfig struct {
+	// File upload restrictions
+	FileUpload *FileUploadConfig `yaml:"file_upload" json:"file_upload" mapstructure:"file_upload"`
+	
+	// Input validation
+	InputValidation *InputValidationConfig `yaml:"input_validation" json:"input_validation" mapstructure:"input_validation"`
+	
+	// Output encoding
+	OutputEncoding *OutputEncodingConfig `yaml:"output_encoding" json:"output_encoding" mapstructure:"output_encoding"`
+	
+	// SQL injection prevention
+	SQLInjection *SQLInjectionConfig `yaml:"sql_injection" json:"sql_injection" mapstructure:"sql_injection"`
+}
+
+// PolicyConfig holds policy-based authorization configuration.
+type PolicyConfig struct {
+	// Policy engine type
+	Engine string `yaml:"engine" json:"engine" mapstructure:"engine"`
+	
+	// Policy files
+	Files []string `yaml:"files" json:"files" mapstructure:"files"`
+	
+	// Policy data sources
+	DataSources map[string]string `yaml:"data_sources" json:"data_sources" mapstructure:"data_sources"`
+	
+	// Cache configuration
+	Cache *PolicyCacheConfig `yaml:"cache" json:"cache" mapstructure:"cache"`
+}
+
+// ABACConfig holds attribute-based access control configuration.
+type ABACConfig struct {
+	// Enabled
+	Enabled bool `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
+	
+	// Attribute sources
+	AttributeSources map[string]string `yaml:"attribute_sources" json:"attribute_sources" mapstructure:"attribute_sources"`
+	
+	// Policy evaluation
+	PolicyEvaluation *PolicyEvaluationConfig `yaml:"policy_evaluation" json:"policy_evaluation" mapstructure:"policy_evaluation"`
+}
+
+// Supporting configuration structures
+
+type RedisConfig struct {
+	Address  string `yaml:"address" json:"address" mapstructure:"address"`
+	Password string `yaml:"password" json:"password" mapstructure:"password"`
+	DB       int    `yaml:"db" json:"db" mapstructure:"db"`
+}
+
+type RememberMeConfig struct {
+	Enabled    bool          `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
+	TokenName  string        `yaml:"token_name" json:"token_name" mapstructure:"token_name"`
+	Expiration time.Duration `yaml:"expiration" json:"expiration" mapstructure:"expiration"`
+}
+
+type PasswordConfig struct {
+	MinLength        int      `yaml:"min_length" json:"min_length" mapstructure:"min_length"`
+	RequireUppercase bool     `yaml:"require_uppercase" json:"require_uppercase" mapstructure:"require_uppercase"`
+	RequireLowercase bool     `yaml:"require_lowercase" json:"require_lowercase" mapstructure:"require_lowercase"`
+	RequireDigits    bool     `yaml:"require_digits" json:"require_digits" mapstructure:"require_digits"`
+	RequireSymbols   bool     `yaml:"require_symbols" json:"require_symbols" mapstructure:"require_symbols"`
+	ForbiddenWords   []string `yaml:"forbidden_words" json:"forbidden_words" mapstructure:"forbidden_words"`
+	MaxAge           time.Duration `yaml:"max_age" json:"max_age" mapstructure:"max_age"`
+}
+
+type LockoutConfig struct {
+	MaxAttempts     int           `yaml:"max_attempts" json:"max_attempts" mapstructure:"max_attempts"`
+	LockoutDuration time.Duration `yaml:"lockout_duration" json:"lockout_duration" mapstructure:"lockout_duration"`
+	ResetPeriod     time.Duration `yaml:"reset_period" json:"reset_period" mapstructure:"reset_period"`
+}
+
+type TOTPConfig struct {
+	Issuer      string        `yaml:"issuer" json:"issuer" mapstructure:"issuer"`
+	Period      time.Duration `yaml:"period" json:"period" mapstructure:"period"`
+	SecretSize  int           `yaml:"secret_size" json:"secret_size" mapstructure:"secret_size"`
+	WindowSize  int           `yaml:"window_size" json:"window_size" mapstructure:"window_size"`
+	Algorithm   string        `yaml:"algorithm" json:"algorithm" mapstructure:"algorithm"`
+}
+
+type SMSConfig struct {
+	Provider    string        `yaml:"provider" json:"provider" mapstructure:"provider"`
+	From        string        `yaml:"from" json:"from" mapstructure:"from"`
+	Template    string        `yaml:"template" json:"template" mapstructure:"template"`
+	CodeLength  int           `yaml:"code_length" json:"code_length" mapstructure:"code_length"`
+	CodeTimeout time.Duration `yaml:"code_timeout" json:"code_timeout" mapstructure:"code_timeout"`
+}
+
+type EmailMFAConfig struct {
+	From        string        `yaml:"from" json:"from" mapstructure:"from"`
+	Subject     string        `yaml:"subject" json:"subject" mapstructure:"subject"`
+	Template    string        `yaml:"template" json:"template" mapstructure:"template"`
+	CodeLength  int           `yaml:"code_length" json:"code_length" mapstructure:"code_length"`
+	CodeTimeout time.Duration `yaml:"code_timeout" json:"code_timeout" mapstructure:"code_timeout"`
+}
+
+type BackupCodesConfig struct {
+	Count       int  `yaml:"count" json:"count" mapstructure:"count"`
+	Length      int  `yaml:"length" json:"length" mapstructure:"length"`
+	SingleUse   bool `yaml:"single_use" json:"single_use" mapstructure:"single_use"`
+	Regenerate  bool `yaml:"regenerate" json:"regenerate" mapstructure:"regenerate"`
+}
+
+type FileUploadConfig struct {
+	MaxSize        int64    `yaml:"max_size" json:"max_size" mapstructure:"max_size"`
+	AllowedTypes   []string `yaml:"allowed_types" json:"allowed_types" mapstructure:"allowed_types"`
+	ForbiddenTypes []string `yaml:"forbidden_types" json:"forbidden_types" mapstructure:"forbidden_types"`
+	ScanForViruses bool     `yaml:"scan_for_viruses" json:"scan_for_viruses" mapstructure:"scan_for_viruses"`
+	StoragePath    string   `yaml:"storage_path" json:"storage_path" mapstructure:"storage_path"`
+}
+
+type InputValidationConfig struct {
+	MaxInputLength   int      `yaml:"max_input_length" json:"max_input_length" mapstructure:"max_input_length"`
+	AllowedCharsets  []string `yaml:"allowed_charsets" json:"allowed_charsets" mapstructure:"allowed_charsets"`
+	ForbiddenPatterns []string `yaml:"forbidden_patterns" json:"forbidden_patterns" mapstructure:"forbidden_patterns"`
+	SanitizeHTML     bool     `yaml:"sanitize_html" json:"sanitize_html" mapstructure:"sanitize_html"`
+}
+
+type OutputEncodingConfig struct {
+	HTMLEncoding bool `yaml:"html_encoding" json:"html_encoding" mapstructure:"html_encoding"`
+	JSONEncoding bool `yaml:"json_encoding" json:"json_encoding" mapstructure:"json_encoding"`
+	URLEncoding  bool `yaml:"url_encoding" json:"url_encoding" mapstructure:"url_encoding"`
+	XMLEncoding  bool `yaml:"xml_encoding" json:"xml_encoding" mapstructure:"xml_encoding"`
+}
+
+type SQLInjectionConfig struct {
+	UseParameterizedQueries bool     `yaml:"use_parameterized_queries" json:"use_parameterized_queries" mapstructure:"use_parameterized_queries"`
+	ForbiddenKeywords      []string `yaml:"forbidden_keywords" json:"forbidden_keywords" mapstructure:"forbidden_keywords"`
+	EscapeQuotes           bool     `yaml:"escape_quotes" json:"escape_quotes" mapstructure:"escape_quotes"`
+}
+
+type PolicyCacheConfig struct {
+	Enabled bool          `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
+	TTL     time.Duration `yaml:"ttl" json:"ttl" mapstructure:"ttl"`
+	MaxSize int           `yaml:"max_size" json:"max_size" mapstructure:"max_size"`
+}
+
+type PolicyEvaluationConfig struct {
+	Engine          string        `yaml:"engine" json:"engine" mapstructure:"engine"`
+	Timeout         time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
+	MaxComplexity   int           `yaml:"max_complexity" json:"max_complexity" mapstructure:"max_complexity"`
+	CacheResults    bool          `yaml:"cache_results" json:"cache_results" mapstructure:"cache_results"`
+}
+
+// DefaultSecurityConfig returns a secure default configuration.
+func DefaultSecurityConfig() *SecurityConfig {
+	return &SecurityConfig{
+		EnableHTTPS: true,
+		Authentication: &AuthenticationConfig{
+			Methods: []string{"jwt"},
+			JWT:     auth.ProductionConfig(),
+		},
+		Authorization: &AuthorizationConfig{
+			RBAC: &auth.RBACConfig{
+				DefaultRoles:      []string{"user"},
+				SuperAdminRole:    "admin",
+				CacheEnabled:      true,
+				CacheTTL:          15 * time.Minute,
+				StrictMode:        true,
+				HierarchicalRoles: true,
+				ResourceSeparator: ":",
+			},
+		},
+		Headers: DefaultSecurityHeadersConfig(),
+		TLS:     DefaultTLSConfig(),
+		CORS:    middleware.DefaultCORSConfig(),
+		RateLimit: &middleware.RateLimitConfig{
+			Rate:    100,
+			Period:  time.Minute,
+			Burst:   10,
+		},
+		RequestID: middleware.DefaultRequestIDConfig(),
+		Session: &SessionConfig{
+			Store:           "memory",
+			CookieName:      "session_id",
+			Timeout:         24 * time.Hour,
+			IdleTimeout:     2 * time.Hour,
+			CookieSecure:    true,
+			CookieHTTPOnly:  true,
+			CookieSameSite:  "strict",
+			RotateOnLogin:   true,
+		},
+		CSRF: &CSRFConfig{
+			Enabled:       true,
+			TokenName:     "csrf_token",
+			TokenLength:   32,
+			TokenTimeout:  time.Hour,
+			SafeMethods:   []string{"GET", "HEAD", "OPTIONS"},
+			CookieName:    "csrf_token",
+			CookieSecure:  true,
+			CookieHTTPOnly: true,
+			CookieSameSite: "strict",
+		},
+		ContentSecurity: &ContentSecurityConfig{
+			FileUpload: &FileUploadConfig{
+				MaxSize:      10 * 1024 * 1024, // 10MB
+				AllowedTypes: []string{"image/jpeg", "image/png", "image/gif", "text/plain"},
+				ScanForViruses: true,
+			},
+			InputValidation: &InputValidationConfig{
+				MaxInputLength:   10000,
+				SanitizeHTML:     true,
+				ForbiddenPatterns: []string{"<script", "javascript:", "vbscript:"},
+			},
+			OutputEncoding: &OutputEncodingConfig{
+				HTMLEncoding: true,
+				JSONEncoding: true,
+				URLEncoding:  true,
+				XMLEncoding:  true,
+			},
+			SQLInjection: &SQLInjectionConfig{
+				UseParameterizedQueries: true,
+				ForbiddenKeywords: []string{
+					"UNION", "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
+				},
+				EscapeQuotes: true,
+			},
+		},
+	}
+}
+
+{{if .Security.Config.Development}}
+// DevelopmentSecurityConfig returns a configuration suitable for development.
+func DevelopmentSecurityConfig() *SecurityConfig {
+	config := DefaultSecurityConfig()
+	
+	// Relax security for development
+	config.Authentication.JWT = auth.DevelopmentConfig()
+	config.Headers = DevelopmentSecurityHeadersConfig()
+	config.TLS.InsecureSkipVerify = true
+	config.CORS = middleware.DevelopmentCORSConfig()
+	config.Session.CookieSecure = false
+	config.CSRF.Enabled = false
+	
+	return config
+}
+{{end}}
+
+{{if .Security.Config.Production}}
+// ProductionSecurityConfig returns a strict configuration for production.
+func ProductionSecurityConfig() *SecurityConfig {
+	config := DefaultSecurityConfig()
+	
+	// Strengthen security for production
+	config.EnableHTTPS = true
+	config.Authentication.JWT = auth.ProductionConfig()
+	config.Headers = StrictSecurityHeadersConfig()
+	config.TLS = ModernTLSConfig()
+	config.Authorization.RBAC.StrictMode = true
+	config.RateLimit.Rate = 50 // Stricter rate limiting
+	
+	return config
+}
+{{end}}
+
+// Validate validates the security configuration.
+func (sc *SecurityConfig) Validate() error {
+	if sc.Authentication != nil {
+		if err := sc.validateAuthentication(); err != nil {
+			return err
+		}
+	}
+	
+	if sc.Authorization != nil {
+		if err := sc.validateAuthorization(); err != nil {
+			return err
+		}
+	}
+	
+	if sc.TLS != nil {
+		if err := sc.validateTLS(); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+func (c *SecurityConfig) validateAuthentication() error {
+	if len(c.Authentication.Methods) == 0 {
+		return errors.New("at least one authentication method must be enabled")
+	}
+	
+	for _, method := range c.Authentication.Methods {
+		switch method {
+		case "jwt":
+			if c.Authentication.JWT == nil {
+				return errors.New("JWT configuration is required when JWT method is enabled")
+			}
+		case "oauth2":
+			if len(c.Authentication.OAuth2) == 0 {
+				return errors.New("OAuth2 configuration is required when OAuth2 method is enabled")
+			}
+		case "basic":
+			if c.Authentication.BasicAuth == nil {
+				return errors.New("Basic Auth configuration is required when Basic method is enabled")
+			}
+		case "apikey":
+			if c.Authentication.APIKey == nil {
+				return errors.New("API Key configuration is required when API Key method is enabled")
+			}
+		case "session":
+			if c.Authentication.Session == nil {
+				return errors.New("Session configuration is required when Session method is enabled")
+			}
+		default:
+			return fmt.Errorf("unknown authentication method: %s", method)
+		}
+	}
+	
+	return nil
+}
+
+func (c *SecurityConfig) validateAuthorization() error {
+	if c.Authorization.RBAC != nil {
+		// RBAC validation would go here
+	}
+	
+	if c.Authorization.Policies != nil {
+		// Policy validation would go here
+	}
+	
+	return nil
+}
+
+func (c *SecurityConfig) validateTLS() error {
+	if c.TLS.CertFile == "" && c.TLS.PrivateKeyPEM == "" {
+		return errors.New("TLS certificate is required")
+	}
+	
+	if c.TLS.KeyFile == "" && c.TLS.PrivateKeyPEM == "" {
+		return errors.New("TLS private key is required")
+	}
+	
+	return nil
+}
+
+// SetDefaults sets default values for the security configuration.
+func (sc *SecurityConfig) SetDefaults() {
+	if sc.AllowedHosts == nil {
+		sc.AllowedHosts = []string{"localhost", "127.0.0.1"}
+	}
+	
+	if sc.TrustedProxies == nil {
+		sc.TrustedProxies = []string{"127.0.0.1", "::1"}
+	}
+	
+	if sc.ReferrerPolicy == "" {
+		sc.ReferrerPolicy = "strict-origin-when-cross-origin"
+	}
+	
+	if !sc.EnableHTTPS {
+		sc.EnableHTTPS = true
+	}
+}
+
+// IsProduction returns true if the security configuration is suitable for production.
+func (sc *SecurityConfig) IsProduction() bool {
+	return sc.EnableHTTPS && 
+		   sc.TLS != nil &&
+		   sc.Authorization != nil &&
+		   sc.Authorization.RBAC != nil &&
+		   sc.Authorization.RBAC.StrictMode
+}
+
+// SecurityHeaders represents security headers configuration (alias for compatibility).
+type SecurityHeaders struct {
+	ContentSecurityPolicy   string `yaml:"content_security_policy" json:"content_security_policy"`
+	StrictTransportSecurity string `yaml:"strict_transport_security" json:"strict_transport_security"`
+	XFrameOptions          string `yaml:"x_frame_options" json:"x_frame_options"`
+	XContentTypeOptions    string `yaml:"x_content_type_options" json:"x_content_type_options"`
+	ReferrerPolicy         string `yaml:"referrer_policy" json:"referrer_policy"`
+}
+
+// TLSConfig represents TLS configuration.
+type TLSConfig struct {
+	CertFile     string   `yaml:"cert_file" json:"cert_file"`
+	KeyFile      string   `yaml:"key_file" json:"key_file"`
+	MinVersion   string   `yaml:"min_version" json:"min_version"`
+	CipherSuites []string `yaml:"cipher_suites" json:"cipher_suites"`
+}

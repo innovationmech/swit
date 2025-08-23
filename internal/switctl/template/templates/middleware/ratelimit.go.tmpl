@@ -1,0 +1,516 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/time/rate"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// RateLimitConfig holds rate limiting configuration.
+type RateLimitConfig struct {
+	// Rate is the number of requests per period.
+	Rate int `yaml:"rate" json:"rate" mapstructure:"rate"`
+	
+	// Period is the time window for rate limiting.
+	Period time.Duration `yaml:"period" json:"period" mapstructure:"period"`
+	
+	// Burst is the maximum number of requests allowed in a burst.
+	Burst int `yaml:"burst" json:"burst" mapstructure:"burst"`
+	
+	// KeyGenerator defines how to generate rate limit keys.
+	KeyGenerator KeyGeneratorFunc `yaml:"-" json:"-"`
+	
+	// SkipSuccessfulRequests excludes successful requests from rate limiting.
+	SkipSuccessfulRequests bool `yaml:"skip_successful_requests" json:"skip_successful_requests" mapstructure:"skip_successful_requests"`
+	
+	// SkipFailedRequests excludes failed requests from rate limiting.
+	SkipFailedRequests bool `yaml:"skip_failed_requests" json:"skip_failed_requests" mapstructure:"skip_failed_requests"`
+	
+	// Headers to include in rate limit response.
+	IncludeHeaders bool `yaml:"include_headers" json:"include_headers" mapstructure:"include_headers"`
+	
+	// ErrorMessage custom error message when rate limit is exceeded.
+	ErrorMessage string `yaml:"error_message" json:"error_message" mapstructure:"error_message"`
+	
+	// Store for persisting rate limit data.
+	Store RateLimitStore `yaml:"-" json:"-"`
+}
+
+// KeyGeneratorFunc generates a rate limit key for a request.
+type KeyGeneratorFunc func(c *gin.Context) string
+
+// RateLimitStore interface for storing rate limit data.
+type RateLimitStore interface {
+	GetLimiter(ctx context.Context, key string) (*rate.Limiter, error)
+	SetLimiter(ctx context.Context, key string, limiter *rate.Limiter, ttl time.Duration) error
+	DeleteLimiter(ctx context.Context, key string) error
+	Cleanup(ctx context.Context) error
+}
+
+// RateLimitResult represents the result of a rate limit check.
+type RateLimitResult struct {
+	Allowed     bool          `json:"allowed"`
+	Remaining   int           `json:"remaining"`
+	ResetTime   time.Time     `json:"reset_time"`
+	RetryAfter  time.Duration `json:"retry_after"`
+}
+
+// DefaultKeyGenerator generates rate limit keys based on client IP.
+func DefaultKeyGenerator(c *gin.Context) string {
+	return "ip:" + c.ClientIP()
+}
+
+// UserKeyGenerator generates rate limit keys based on authenticated user.
+func UserKeyGenerator(c *gin.Context) string {
+	if user, exists := c.Get(string(UserContextKey)); exists {
+		if u, ok := user.(*types.User); ok {
+			return "user:" + u.ID
+		}
+	}
+	return DefaultKeyGenerator(c)
+}
+
+// APIKeyGenerator generates rate limit keys based on API key.
+func APIKeyGenerator(c *gin.Context) string {
+	if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
+		return "api:" + apiKey
+	}
+	return DefaultKeyGenerator(c)
+}
+
+{{if .Middleware.RateLimit.Advanced}}
+// EndpointKeyGenerator generates rate limit keys based on endpoint.
+func EndpointKeyGenerator(c *gin.Context) string {
+	return fmt.Sprintf("endpoint:%s:%s:%s", c.Request.Method, c.FullPath(), c.ClientIP())
+}
+
+// CompositeKeyGenerator combines multiple key generators.
+func CompositeKeyGenerator(generators ...KeyGeneratorFunc) KeyGeneratorFunc {
+	return func(c *gin.Context) string {
+		keys := make([]string, len(generators))
+		for i, gen := range generators {
+			keys[i] = gen(c)
+		}
+		return strings.Join(keys, ":")
+	}
+}
+{{end}}
+
+// RateLimit returns a rate limiting middleware.
+func RateLimit(config *RateLimitConfig) gin.HandlerFunc {
+	if config == nil {
+		config = &RateLimitConfig{
+			Rate:               100,
+			Period:             time.Minute,
+			Burst:              10,
+			KeyGenerator:       DefaultKeyGenerator,
+			IncludeHeaders:     true,
+			ErrorMessage:       "Rate limit exceeded",
+		}
+	}
+
+	if config.KeyGenerator == nil {
+		config.KeyGenerator = DefaultKeyGenerator
+	}
+
+	if config.Store == nil {
+		config.Store = NewInMemoryRateLimitStore()
+	}
+
+	if config.ErrorMessage == "" {
+		config.ErrorMessage = "Rate limit exceeded"
+	}
+
+	return func(c *gin.Context) {
+		key := config.KeyGenerator(c)
+		
+		// Get or create limiter for this key
+		limiter, err := config.Store.GetLimiter(c.Request.Context(), key)
+		if err != nil {
+			// On error, allow the request to proceed
+			c.Next()
+			return
+		}
+
+		if limiter == nil {
+			// Create new limiter
+			rateLimit := rate.Every(config.Period / time.Duration(config.Rate))
+			limiter = rate.NewLimiter(rateLimit, config.Burst)
+			
+			// Store the limiter with TTL
+			ttl := config.Period * 2 // Store for twice the period
+			_ = config.Store.SetLimiter(c.Request.Context(), key, limiter, ttl)
+		}
+
+		// Check if request is allowed
+		now := time.Now()
+		reservation := limiter.ReserveN(now, 1)
+		
+		if !reservation.OK() {
+			// Rate limit exceeded
+			handleRateLimitExceeded(c, config, limiter, now)
+			c.Abort()
+			return
+		}
+
+		delay := reservation.DelayFrom(now)
+		if delay > 0 {
+			// Would need to wait, rate limit exceeded
+			reservation.Cancel()
+			handleRateLimitExceeded(c, config, limiter, now)
+			c.Abort()
+			return
+		}
+
+		// Add rate limit headers
+		if config.IncludeHeaders {
+			addRateLimitHeaders(c, limiter, config)
+		}
+
+		// Process request
+		c.Next()
+
+		// Check if we should count this request based on response
+		if shouldSkipRequest(c, config) {
+			// Refund the token
+			reservation.Cancel()
+		}
+	}
+}
+
+{{if .Middleware.RateLimit.Sliding}}
+// SlidingWindowRateLimit implements a sliding window rate limiter.
+func SlidingWindowRateLimit(config *RateLimitConfig) gin.HandlerFunc {
+	store := NewSlidingWindowStore(config.Period)
+	
+	return func(c *gin.Context) {
+		key := config.KeyGenerator(c)
+		now := time.Now()
+		
+		// Count requests in the sliding window
+		count := store.CountRequests(key, now, config.Period)
+		
+		if count >= config.Rate {
+			handleRateLimitExceeded(c, config, nil, now)
+			c.Abort()
+			return
+		}
+		
+		// Record this request
+		store.RecordRequest(key, now)
+		
+		// Add headers
+		if config.IncludeHeaders {
+			remaining := config.Rate - count - 1
+			if remaining < 0 {
+				remaining = 0
+			}
+			c.Header("X-RateLimit-Limit", strconv.Itoa(config.Rate))
+			c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
+			c.Header("X-RateLimit-Reset", strconv.FormatInt(now.Add(config.Period).Unix(), 10))
+		}
+		
+		c.Next()
+	}
+}
+{{end}}
+
+{{if .Middleware.RateLimit.Distributed}}
+// DistributedRateLimit implements distributed rate limiting using Redis.
+func DistributedRateLimit(config *RateLimitConfig, redisClient RedisClient) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := config.KeyGenerator(c)
+		
+		result, err := checkDistributedRateLimit(c.Request.Context(), redisClient, key, config)
+		if err != nil {
+			// On error, allow the request to proceed
+			c.Next()
+			return
+		}
+		
+		if !result.Allowed {
+			handleDistributedRateLimitExceeded(c, config, result)
+			c.Abort()
+			return
+		}
+		
+		if config.IncludeHeaders {
+			addDistributedRateLimitHeaders(c, result, config)
+		}
+		
+		c.Next()
+	}
+}
+{{end}}
+
+func handleRateLimitExceeded(c *gin.Context, config *RateLimitConfig, limiter *rate.Limiter, now time.Time) {
+	retryAfter := time.Minute // Default retry after
+	
+	if limiter != nil {
+		// Calculate when the next request would be allowed
+		reservation := limiter.ReserveN(now, 1)
+		if reservation.OK() {
+			retryAfter = reservation.DelayFrom(now)
+			reservation.Cancel() // Don't actually consume the token
+		}
+	}
+
+	c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+	
+	if config.IncludeHeaders && limiter != nil {
+		addRateLimitHeaders(c, limiter, config)
+	}
+
+	c.JSON(http.StatusTooManyRequests, types.Response{
+		Success: false,
+		Message: config.ErrorMessage,
+		Error: &types.ErrorInfo{
+			Code:    "RATE_LIMIT_EXCEEDED",
+			Message: fmt.Sprintf("Rate limit exceeded. Try again in %v", retryAfter),
+		},
+	})
+}
+
+func addRateLimitHeaders(c *gin.Context, limiter *rate.Limiter, config *RateLimitConfig) {
+	burst := limiter.Burst()
+	tokens := int(limiter.TokensAt(time.Now()))
+	
+	if tokens > burst {
+		tokens = burst
+	}
+	
+	c.Header("X-RateLimit-Limit", strconv.Itoa(config.Rate))
+	c.Header("X-RateLimit-Remaining", strconv.Itoa(tokens))
+	c.Header("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(config.Period).Unix(), 10))
+}
+
+func shouldSkipRequest(c *gin.Context, config *RateLimitConfig) bool {
+	status := c.Writer.Status()
+	
+	if config.SkipSuccessfulRequests && status >= 200 && status < 400 {
+		return true
+	}
+	
+	if config.SkipFailedRequests && status >= 400 {
+		return true
+	}
+	
+	return false
+}
+
+// InMemoryRateLimitStore provides an in-memory implementation of RateLimitStore.
+type InMemoryRateLimitStore struct {
+	limiters map[string]*rateLimiterEntry
+	mutex    sync.RWMutex
+}
+
+type rateLimiterEntry struct {
+	limiter   *rate.Limiter
+	expiresAt time.Time
+}
+
+// NewInMemoryRateLimitStore creates a new in-memory rate limit store.
+func NewInMemoryRateLimitStore() *InMemoryRateLimitStore {
+	store := &InMemoryRateLimitStore{
+		limiters: make(map[string]*rateLimiterEntry),
+	}
+	
+	// Start cleanup goroutine
+	go store.cleanupExpired()
+	
+	return store
+}
+
+func (s *InMemoryRateLimitStore) GetLimiter(ctx context.Context, key string) (*rate.Limiter, error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	
+	entry, exists := s.limiters[key]
+	if !exists || time.Now().After(entry.expiresAt) {
+		return nil, nil
+	}
+	
+	return entry.limiter, nil
+}
+
+func (s *InMemoryRateLimitStore) SetLimiter(ctx context.Context, key string, limiter *rate.Limiter, ttl time.Duration) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	s.limiters[key] = &rateLimiterEntry{
+		limiter:   limiter,
+		expiresAt: time.Now().Add(ttl),
+	}
+	
+	return nil
+}
+
+func (s *InMemoryRateLimitStore) DeleteLimiter(ctx context.Context, key string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	delete(s.limiters, key)
+	return nil
+}
+
+func (s *InMemoryRateLimitStore) Cleanup(ctx context.Context) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	now := time.Now()
+	for key, entry := range s.limiters {
+		if now.After(entry.expiresAt) {
+			delete(s.limiters, key)
+		}
+	}
+	
+	return nil
+}
+
+func (s *InMemoryRateLimitStore) cleanupExpired() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		s.Cleanup(context.Background())
+	}
+}
+
+{{if .Middleware.RateLimit.Sliding}}
+// SlidingWindowStore implements a sliding window for rate limiting.
+type SlidingWindowStore struct {
+	requests map[string][]time.Time
+	mutex    sync.RWMutex
+	window   time.Duration
+}
+
+// NewSlidingWindowStore creates a new sliding window store.
+func NewSlidingWindowStore(window time.Duration) *SlidingWindowStore {
+	store := &SlidingWindowStore{
+		requests: make(map[string][]time.Time),
+		window:   window,
+	}
+	
+	// Start cleanup goroutine
+	go store.cleanupExpired()
+	
+	return store
+}
+
+func (s *SlidingWindowStore) RecordRequest(key string, timestamp time.Time) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	if s.requests[key] == nil {
+		s.requests[key] = make([]time.Time, 0)
+	}
+	
+	s.requests[key] = append(s.requests[key], timestamp)
+}
+
+func (s *SlidingWindowStore) CountRequests(key string, now time.Time, window time.Duration) int {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	
+	requests, exists := s.requests[key]
+	if !exists {
+		return 0
+	}
+	
+	cutoff := now.Add(-window)
+	count := 0
+	
+	for _, timestamp := range requests {
+		if timestamp.After(cutoff) {
+			count++
+		}
+	}
+	
+	return count
+}
+
+func (s *SlidingWindowStore) cleanupExpired() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	
+	for range ticker.C {
+		s.mutex.Lock()
+		now := time.Now()
+		cutoff := now.Add(-s.window * 2) // Keep extra history
+		
+		for key, requests := range s.requests {
+			validRequests := make([]time.Time, 0, len(requests))
+			for _, timestamp := range requests {
+				if timestamp.After(cutoff) {
+					validRequests = append(validRequests, timestamp)
+				}
+			}
+			
+			if len(validRequests) == 0 {
+				delete(s.requests, key)
+			} else {
+				s.requests[key] = validRequests
+			}
+		}
+		s.mutex.Unlock()
+	}
+}
+{{end}}
+
+{{if .Middleware.RateLimit.Adaptive}}
+// AdaptiveRateLimit implements adaptive rate limiting based on system load.
+func AdaptiveRateLimit(baseConfig *RateLimitConfig, loadMonitor LoadMonitor) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get current system load
+		load := loadMonitor.GetLoad()
+		
+		// Adjust rate limit based on load
+		adjustedConfig := *baseConfig
+		if load > 0.8 {
+			// High load: reduce rate limit by 50%
+			adjustedConfig.Rate = baseConfig.Rate / 2
+		} else if load > 0.6 {
+			// Medium load: reduce rate limit by 25%
+			adjustedConfig.Rate = (baseConfig.Rate * 3) / 4
+		}
+		// Low load: use base rate limit
+		
+		// Apply the adjusted rate limit
+		rateLimitMiddleware := RateLimit(&adjustedConfig)
+		rateLimitMiddleware(c)
+	}
+}
+
+// LoadMonitor interface for monitoring system load.
+type LoadMonitor interface {
+	GetLoad() float64
+}
+{{end}}

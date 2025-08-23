@@ -1,0 +1,334 @@
+{{- if and .Service.Features.Database (eq .Service.Database.Type "mongodb") -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package db provides MongoDB database connectivity for {{.Service.Name}}.
+package db
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.mongodb.org/mongo-driver/event"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readconcern"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
+	"go.uber.org/zap"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+)
+
+// MongoDB represents a MongoDB database connection.
+type MongoDB struct {
+	client   *mongo.Client
+	database *mongo.Database
+	config   *MongoDBConfig
+	logger   *zap.Logger
+}
+
+// NewMongoDB creates a new MongoDB database connection.
+func NewMongoDB(config *MongoDBConfig, logger *zap.Logger) (*MongoDB, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid MongoDB configuration: %w", err)
+	}
+
+	// Create client options
+	clientOpts := options.Client().ApplyURI(config.URI())
+
+	// Set connection pool options
+	clientOpts.SetMaxPoolSize(config.MaxPoolSize)
+	clientOpts.SetMinPoolSize(config.MinPoolSize)
+	clientOpts.SetMaxConnIdleTime(config.MaxConnIdleTime)
+
+	// Set timeouts
+	clientOpts.SetConnectTimeout(config.ConnectTimeout)
+	clientOpts.SetServerSelectionTimeout(config.ServerSelTimeout)
+	clientOpts.SetSocketTimeout(config.SocketTimeout)
+
+	// Set heartbeat options
+	clientOpts.SetHeartbeatInterval(config.HeartbeatInterval)
+	clientOpts.SetLocalThreshold(config.LocalThreshold)
+
+	// Set read preference
+	readPref, err := readpref.FromString(config.ReadPreference)
+	if err != nil {
+		return nil, fmt.Errorf("invalid read preference: %w", err)
+	}
+	clientOpts.SetReadPreference(readPref)
+
+	// Set read concern
+	var rc *readconcern.ReadConcern
+	switch config.ReadConcern {
+	case "local":
+		rc = readconcern.Local()
+	case "available":
+		rc = readconcern.Available()
+	case "majority":
+		rc = readconcern.Majority()
+	case "linearizable":
+		rc = readconcern.Linearizable()
+	case "snapshot":
+		rc = readconcern.Snapshot()
+	default:
+		rc = readconcern.Majority()
+	}
+	clientOpts.SetReadConcern(rc)
+
+	// Set write concern
+	wc := writeconcern.New(
+		writeconcern.W(config.WriteConcern.W),
+		writeconcern.J(config.WriteConcern.Journal),
+		writeconcern.WTimeout(config.WriteConcern.WTimeout),
+	)
+	clientOpts.SetWriteConcern(wc)
+
+	// Set retry options
+	clientOpts.SetRetryWrites(config.RetryWrites)
+	clientOpts.SetRetryReads(config.RetryReads)
+
+	// Set compression
+	if len(config.CompressorList) > 0 {
+		clientOpts.SetCompressors(config.CompressorList)
+		if config.ZlibLevel > 0 {
+			clientOpts.SetZlibLevel(config.ZlibLevel)
+		}
+	}
+
+	// Set logging monitor if enabled
+	if config.EnableLogging {
+		monitor := &LoggingMonitor{logger: logger}
+		clientOpts.SetMonitor(monitor)
+	}
+
+	// Connect to MongoDB
+	ctx, cancel := context.WithTimeout(context.Background(), config.ConnectTimeout)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, clientOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+
+	// Get database
+	database := client.Database(config.Database)
+
+	mongoDB := &MongoDB{
+		client:   client,
+		database: database,
+		config:   config,
+		logger:   logger,
+	}
+
+	// Test connection
+	if err := mongoDB.Ping(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
+	}
+
+	logger.Info("Successfully connected to MongoDB",
+		zap.String("host", config.Host),
+		zap.Int("port", config.Port),
+		zap.String("database", config.Database),
+	)
+
+	return mongoDB, nil
+}
+
+// Client returns the underlying MongoDB client.
+func (d *MongoDB) Client() *mongo.Client {
+	return d.client
+}
+
+// Database returns the database instance.
+func (d *MongoDB) Database() *mongo.Database {
+	return d.database
+}
+
+// Collection returns a collection from the database.
+func (d *MongoDB) Collection(name string) *mongo.Collection {
+	return d.database.Collection(name)
+}
+
+// Ping checks the database connection.
+func (d *MongoDB) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	return d.client.Ping(ctx, readpref.Primary())
+}
+
+// HealthCheck performs a comprehensive database health check.
+func (d *MongoDB) HealthCheck(ctx context.Context) error {
+	// Check connection
+	if err := d.Ping(ctx); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+
+	// Check database access
+	result := d.database.RunCommand(ctx, map[string]interface{}{"ping": 1})
+	if result.Err() != nil {
+		return fmt.Errorf("failed to run ping command: %w", result.Err())
+	}
+
+	// Get server status for additional info
+	var serverStatus map[string]interface{}
+	result = d.database.RunCommand(ctx, map[string]interface{}{"serverStatus": 1})
+	if result.Err() == nil {
+		if err := result.Decode(&serverStatus); err == nil {
+			if version, ok := serverStatus["version"].(string); ok {
+				d.logger.Debug("Database health check passed",
+					zap.String("mongodb_version", version),
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
+// CreateIndexes creates indexes for all models.
+func (d *MongoDB) CreateIndexes(ctx context.Context) error {
+	// Create indexes for your models here
+	// Example:
+	collection := d.Collection("{{.Service.Name | snakeCase}}")
+	
+	// Create a simple index example
+	indexModel := mongo.IndexModel{
+		Keys: map[string]interface{}{
+			"created_at": -1, // Descending order
+		},
+		Options: options.Index().SetName("created_at_desc"),
+	}
+
+	_, err := collection.Indexes().CreateOne(ctx, indexModel)
+	if err != nil {
+		return fmt.Errorf("failed to create index: %w", err)
+	}
+
+	d.logger.Info("Database indexes created successfully")
+	return nil
+}
+
+// Transaction executes a function within a database transaction.
+func (d *MongoDB) Transaction(ctx context.Context, fn func(mongo.SessionContext) error) error {
+	session, err := d.client.StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	return mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error {
+		return session.WithTransaction(sc, func(sc mongo.SessionContext) (interface{}, error) {
+			return nil, fn(sc)
+		})
+	})
+}
+
+// Close closes the database connection.
+func (d *MongoDB) Close() error {
+	if d.client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := d.client.Disconnect(ctx); err != nil {
+			return fmt.Errorf("failed to disconnect from MongoDB: %w", err)
+		}
+		d.logger.Info("MongoDB connection closed successfully")
+	}
+	return nil
+}
+
+// Stats returns database statistics.
+func (d *MongoDB) Stats(ctx context.Context) (map[string]interface{}, error) {
+	result := d.database.RunCommand(ctx, map[string]interface{}{"dbStats": 1})
+	if result.Err() != nil {
+		return nil, fmt.Errorf("failed to get database stats: %w", result.Err())
+	}
+
+	var stats map[string]interface{}
+	if err := result.Decode(&stats); err != nil {
+		return nil, fmt.Errorf("failed to decode stats: %w", err)
+	}
+
+	return stats, nil
+}
+
+// ListCollections returns a list of all collections in the database.
+func (d *MongoDB) ListCollections(ctx context.Context) ([]string, error) {
+	cursor, err := d.database.ListCollectionNames(ctx, map[string]interface{}{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list collections: %w", err)
+	}
+
+	return cursor, nil
+}
+
+// DropCollection drops a collection from the database.
+func (d *MongoDB) DropCollection(ctx context.Context, name string) error {
+	collection := d.database.Collection(name)
+	if err := collection.Drop(ctx); err != nil {
+		return fmt.Errorf("failed to drop collection '%s': %w", name, err)
+	}
+
+	d.logger.Info("Collection dropped", zap.String("collection", name))
+	return nil
+}
+
+// LoggingMonitor is a MongoDB monitor that logs events.
+type LoggingMonitor struct {
+	logger *zap.Logger
+}
+
+// Started logs when a command starts.
+func (m *LoggingMonitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
+	if m.logger != nil {
+		m.logger.Debug("MongoDB command started",
+			zap.String("command", evt.CommandName),
+			zap.String("database", evt.DatabaseName),
+			zap.Int64("request_id", evt.RequestID),
+		)
+	}
+}
+
+// Succeeded logs when a command succeeds.
+func (m *LoggingMonitor) Succeeded(ctx context.Context, evt *event.CommandSucceededEvent) {
+	if m.logger != nil {
+		m.logger.Debug("MongoDB command succeeded",
+			zap.String("command", evt.CommandName),
+			zap.Duration("duration", evt.Duration),
+			zap.Int64("request_id", evt.RequestID),
+		)
+	}
+}
+
+// Failed logs when a command fails.
+func (m *LoggingMonitor) Failed(ctx context.Context, evt *event.CommandFailedEvent) {
+	if m.logger != nil {
+		m.logger.Error("MongoDB command failed",
+			zap.String("command", evt.CommandName),
+			zap.Error(fmt.Errorf(evt.Failure)),
+			zap.Duration("duration", evt.Duration),
+			zap.Int64("request_id", evt.RequestID),
+		)
+	}
+}
+{{- end -}}

@@ -1,0 +1,69 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package version provides version information for {{.Service.Name}}.
+package version
+
+import (
+	"fmt"
+	"runtime"
+
+	"github.com/spf13/cobra"
+)
+
+var (
+	// Version information
+	Version   = "{{.Service.Version}}"
+	BuildDate = "unknown"
+	CommitSHA = "unknown"
+	GoVersion = runtime.Version()
+)
+
+// versionCmd represents the version command.
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print version information",
+	Long:  "Print detailed version information for {{.Service.Name}}.",
+	Run:   runVersion,
+}
+
+func init() {
+	versionCmd.Flags().BoolP("short", "s", false, "print version number only")
+}
+
+// GetVersionCommand returns the version command.
+func GetVersionCommand() *cobra.Command {
+	return versionCmd
+}
+
+func runVersion(cmd *cobra.Command, args []string) {
+	short, _ := cmd.Flags().GetBool("short")
+
+	if short {
+		fmt.Println(Version)
+		return
+	}
+
+	fmt.Printf("{{.Service.Name | titleCase}} %s\n", Version)
+	fmt.Printf("Build Date: %s\n", BuildDate)
+	fmt.Printf("Commit SHA: %s\n", CommitSHA)
+	fmt.Printf("Go Version: %s\n", GoVersion)
+	fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+}

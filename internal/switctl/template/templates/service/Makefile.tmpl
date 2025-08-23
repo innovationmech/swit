@@ -1,0 +1,193 @@
+# Makefile for {{.Service.Name | titleCase}}
+
+# Variables
+SERVICE_NAME={{.Service.Name | kebabCase}}
+BINARY_NAME={{.Service.Name | kebabCase}}
+VERSION={{.Service.Version}}
+GO_VERSION=1.19
+
+# Build information
+BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE) -X main.CommitSHA=$(GIT_COMMIT)"
+
+# Docker variables
+DOCKER_IMAGE={{.Service.Name | kebabCase}}
+DOCKER_TAG=latest
+
+# Directories
+BUILD_DIR=./bin
+COVERAGE_DIR=./coverage
+
+.PHONY: help build run test clean docker proto lint format
+
+# Default target
+all: format lint test build
+
+# Show help
+help:
+	@echo "Available targets:"
+	@echo "  build      - Build the application binary"
+	@echo "  run        - Run the application locally"
+	@echo "  test       - Run all tests"
+	@echo "  test-unit  - Run unit tests only"
+	@echo "  test-integration - Run integration tests only"
+	@echo "  coverage   - Generate test coverage report"
+	@echo "  clean      - Clean build artifacts"
+	@echo "  format     - Format Go code"
+	@echo "  lint       - Run linters"
+	@echo "  docker     - Build Docker image"
+	@echo "  docker-run - Run Docker container"
+{{- if .Service.Features.GRPC}}
+	@echo "  proto      - Generate protobuf code"
+{{- end}}
+	@echo "  deps       - Download dependencies"
+	@echo "  help       - Show this help message"
+
+# Build the application
+build:
+	@echo "Building $(SERVICE_NAME)..."
+	@mkdir -p $(BUILD_DIR)
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./main.go
+
+# Build for multiple platforms
+build-all:
+	@echo "Building for multiple platforms..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./main.go
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./main.go
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./main.go
+
+# Run the application locally
+run: build
+	@echo "Running $(SERVICE_NAME)..."
+	$(BUILD_DIR)/$(BINARY_NAME) serve
+
+# Run with configuration file
+run-config: build
+	@echo "Running $(SERVICE_NAME) with config..."
+	$(BUILD_DIR)/$(BINARY_NAME) serve --config ./config.yaml
+
+# Download dependencies
+deps:
+	@echo "Downloading dependencies..."
+	go mod download
+	go mod tidy
+
+# Run all tests
+test:
+	@echo "Running all tests..."
+	go test -v -race ./...
+
+# Run unit tests
+test-unit:
+	@echo "Running unit tests..."
+	go test -v -race -short ./...
+
+# Run integration tests
+test-integration:
+	@echo "Running integration tests..."
+	go test -v -race -run Integration ./...
+
+# Generate test coverage
+coverage:
+	@echo "Generating test coverage..."
+	@mkdir -p $(COVERAGE_DIR)
+	go test -v -race -coverprofile=$(COVERAGE_DIR)/coverage.out ./...
+	go tool cover -html=$(COVERAGE_DIR)/coverage.out -o $(COVERAGE_DIR)/coverage.html
+	@echo "Coverage report generated: $(COVERAGE_DIR)/coverage.html"
+
+# Run benchmarks
+bench:
+	@echo "Running benchmarks..."
+	go test -v -race -bench=. -benchmem ./...
+
+# Format Go code
+format:
+	@echo "Formatting Go code..."
+	go fmt ./...
+	goimports -w .
+
+# Run linters
+lint:
+	@echo "Running linters..."
+	golangci-lint run
+	go vet ./...
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning up..."
+	rm -rf $(BUILD_DIR)
+	rm -rf $(COVERAGE_DIR)
+	go clean -cache
+	go clean -testcache
+
+{{- if .Service.Features.GRPC}}
+
+# Generate protobuf code
+proto:
+	@echo "Generating protobuf code..."
+	buf generate
+	buf lint
+{{- end}}
+
+# Build Docker image
+docker:
+	@echo "Building Docker image..."
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+	docker tag $(DOCKER_IMAGE):$(DOCKER_TAG) $(DOCKER_IMAGE):$(VERSION)
+
+# Run Docker container
+docker-run:
+	@echo "Running Docker container..."
+	docker run --rm -p {{.Service.Ports.HTTP}}:{{.Service.Ports.HTTP}} -p {{.Service.Ports.GRPC}}:{{.Service.Ports.GRPC}} $(DOCKER_IMAGE):$(DOCKER_TAG)
+
+# Docker compose up
+docker-compose-up:
+	@echo "Starting services with docker-compose..."
+	docker-compose up -d
+
+# Docker compose down
+docker-compose-down:
+	@echo "Stopping services with docker-compose..."
+	docker-compose down
+
+{{- if .Service.Features.Database}}
+
+# Database migrations (if using migrations)
+migrate-up:
+	@echo "Running database migrations..."
+	# Add your migration tool command here
+	# Example: migrate -path ./migrations -database "$(DB_URL)" up
+
+migrate-down:
+	@echo "Rolling back database migrations..."
+	# Add your migration tool command here
+	# Example: migrate -path ./migrations -database "$(DB_URL)" down
+{{- end}}
+
+# Install development tools
+install-tools:
+	@echo "Installing development tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install golang.org/x/tools/cmd/goimports@latest
+{{- if .Service.Features.GRPC}}
+	go install github.com/bufbuild/buf/cmd/buf@latest
+{{- end}}
+
+# Development setup
+dev-setup: install-tools deps
+	@echo "Development environment setup complete!"
+
+# Quick development build and run
+dev: format lint test build run
+
+# Release build
+release: clean format lint test build-all
+	@echo "Release build complete!"
+
+# Show version
+version:
+	@echo "$(SERVICE_NAME) version $(VERSION)"
+	@echo "Git commit: $(GIT_COMMIT)"
+	@echo "Build date: $(BUILD_DATE)"

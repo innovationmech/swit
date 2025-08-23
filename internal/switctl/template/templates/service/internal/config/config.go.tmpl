@@ -1,0 +1,251 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package config provides configuration management for {{.Service.Name}}.
+package config
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/innovationmech/swit/pkg/server"
+)
+
+// Config represents the complete service configuration.
+type Config struct {
+	Server  ServerConfig  `yaml:"server" json:"server"`
+	Service ServiceConfig `yaml:"service" json:"service"`
+{{- if .Service.Features.Database}}
+	Database DatabaseConfig `yaml:"database" json:"database"`
+{{- end}}
+{{- if .Service.Features.Authentication}}
+	Auth AuthConfig `yaml:"auth" json:"auth"`
+{{- end}}
+{{- if .Service.Features.Cache}}
+	Cache CacheConfig `yaml:"cache" json:"cache"`
+{{- end}}
+{{- if .Service.Features.MessageQueue}}
+	MessageQueue MessageQueueConfig `yaml:"message_queue" json:"message_queue"`
+{{- end}}
+}
+
+// ServerConfig represents server configuration.
+type ServerConfig struct {
+	HTTP HTTPConfig `yaml:"http" json:"http"`
+	GRPC GRPCConfig `yaml:"grpc" json:"grpc"`
+}
+
+// HTTPConfig represents HTTP server configuration.
+type HTTPConfig struct {
+	Host string `yaml:"host" json:"host" default:"0.0.0.0"`
+	Port int    `yaml:"port" json:"port" default:"{{.Service.Ports.HTTP}}"`
+}
+
+// GRPCConfig represents gRPC server configuration.
+type GRPCConfig struct {
+	Host string `yaml:"host" json:"host" default:"0.0.0.0"`
+	Port int    `yaml:"port" json:"port" default:"{{.Service.Ports.GRPC}}"`
+}
+
+// ServiceConfig represents service-specific configuration.
+type ServiceConfig struct {
+	Name        string `yaml:"name" json:"name" default:"{{.Service.Name}}"`
+	Version     string `yaml:"version" json:"version" default:"{{.Service.Version}}"`
+	Description string `yaml:"description" json:"description" default:"{{.Service.Description}}"`
+}
+
+{{- if .Service.Features.Database}}
+
+// DatabaseConfig represents database configuration.
+type DatabaseConfig struct {
+	Type     string `yaml:"type" json:"type" default:"{{.Service.Database.Type}}"`
+	Host     string `yaml:"host" json:"host" default:"{{.Service.Database.Host}}"`
+	Port     int    `yaml:"port" json:"port" default:"{{.Service.Database.Port}}"`
+	Database string `yaml:"database" json:"database" default:"{{.Service.Database.Database}}"`
+	Username string `yaml:"username" json:"username" default:"{{.Service.Database.Username}}"`
+	Password string `yaml:"password" json:"password" default:"{{.Service.Database.Password}}"`
+	Schema   string `yaml:"schema" json:"schema"`
+}
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+
+// AuthConfig represents authentication configuration.
+type AuthConfig struct {
+	Type       string        `yaml:"type" json:"type" default:"{{.Service.Auth.Type}}"`
+	SecretKey  string        `yaml:"secret_key" json:"secret_key"`
+	Expiration time.Duration `yaml:"expiration" json:"expiration" default:"{{.Service.Auth.Expiration}}"`
+	Issuer     string        `yaml:"issuer" json:"issuer" default:"{{.Service.Auth.Issuer}}"`
+	Audience   string        `yaml:"audience" json:"audience" default:"{{.Service.Auth.Audience}}"`
+	Algorithm  string        `yaml:"algorithm" json:"algorithm" default:"{{.Service.Auth.Algorithm}}"`
+}
+{{- end}}
+
+{{- if .Service.Features.Cache}}
+
+// CacheConfig represents cache configuration.
+type CacheConfig struct {
+	Type     string `yaml:"type" json:"type" default:"redis"`
+	Host     string `yaml:"host" json:"host" default:"localhost"`
+	Port     int    `yaml:"port" json:"port" default:"6379"`
+	Database int    `yaml:"database" json:"database" default:"0"`
+	Password string `yaml:"password" json:"password"`
+}
+{{- end}}
+
+{{- if .Service.Features.MessageQueue}}
+
+// MessageQueueConfig represents message queue configuration.
+type MessageQueueConfig struct {
+	Type     string `yaml:"type" json:"type" default:"rabbitmq"`
+	Host     string `yaml:"host" json:"host" default:"localhost"`
+	Port     int    `yaml:"port" json:"port" default:"5672"`
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password"`
+	VHost    string `yaml:"vhost" json:"vhost" default:"/"`
+}
+{{- end}}
+
+// Validate validates the configuration.
+func (c *Config) Validate() error {
+	if c.Service.Name == "" {
+		return fmt.Errorf("service name is required")
+	}
+
+	if c.Server.HTTP.Port <= 0 || c.Server.HTTP.Port > 65535 {
+		return fmt.Errorf("invalid HTTP port: %d", c.Server.HTTP.Port)
+	}
+
+	if c.Server.GRPC.Port <= 0 || c.Server.GRPC.Port > 65535 {
+		return fmt.Errorf("invalid gRPC port: %d", c.Server.GRPC.Port)
+	}
+
+{{- if .Service.Features.Database}}
+	if err := c.validateDatabaseConfig(); err != nil {
+		return fmt.Errorf("invalid database configuration: %w", err)
+	}
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+	if err := c.validateAuthConfig(); err != nil {
+		return fmt.Errorf("invalid auth configuration: %w", err)
+	}
+{{- end}}
+
+	return nil
+}
+
+{{- if .Service.Features.Database}}
+
+// validateDatabaseConfig validates database configuration.
+func (c *Config) validateDatabaseConfig() error {
+	if c.Database.Type == "" {
+		return fmt.Errorf("database type is required")
+	}
+
+	if c.Database.Host == "" {
+		return fmt.Errorf("database host is required")
+	}
+
+	if c.Database.Port <= 0 || c.Database.Port > 65535 {
+		return fmt.Errorf("invalid database port: %d", c.Database.Port)
+	}
+
+	if c.Database.Database == "" {
+		return fmt.Errorf("database name is required")
+	}
+
+	return nil
+}
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+
+// validateAuthConfig validates authentication configuration.
+func (c *Config) validateAuthConfig() error {
+	if c.Auth.Type == "" {
+		return fmt.Errorf("auth type is required")
+	}
+
+	if c.Auth.SecretKey == "" {
+		return fmt.Errorf("auth secret key is required")
+	}
+
+	if c.Auth.Expiration <= 0 {
+		return fmt.Errorf("auth expiration must be positive")
+	}
+
+	return nil
+}
+{{- end}}
+
+// LoadDefaults loads default values into the configuration.
+func (c *Config) LoadDefaults() {
+	if c.Service.Name == "" {
+		c.Service.Name = "{{.Service.Name}}"
+	}
+	if c.Service.Version == "" {
+		c.Service.Version = "{{.Service.Version}}"
+	}
+	if c.Service.Description == "" {
+		c.Service.Description = "{{.Service.Description}}"
+	}
+
+	if c.Server.HTTP.Host == "" {
+		c.Server.HTTP.Host = "0.0.0.0"
+	}
+	if c.Server.HTTP.Port == 0 {
+		c.Server.HTTP.Port = {{.Service.Ports.HTTP}}
+	}
+
+	if c.Server.GRPC.Host == "" {
+		c.Server.GRPC.Host = "0.0.0.0"
+	}
+	if c.Server.GRPC.Port == 0 {
+		c.Server.GRPC.Port = {{.Service.Ports.GRPC}}
+	}
+
+{{- if .Service.Features.Database}}
+	if c.Database.Type == "" {
+		c.Database.Type = "{{.Service.Database.Type}}"
+	}
+	if c.Database.Host == "" {
+		c.Database.Host = "{{.Service.Database.Host}}"
+	}
+	if c.Database.Port == 0 {
+		c.Database.Port = {{.Service.Database.Port}}
+	}
+	if c.Database.Database == "" {
+		c.Database.Database = "{{.Service.Database.Database}}"
+	}
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+	if c.Auth.Type == "" {
+		c.Auth.Type = "{{.Service.Auth.Type}}"
+	}
+	if c.Auth.Expiration == 0 {
+		c.Auth.Expiration = 15 * time.Minute
+	}
+	if c.Auth.Algorithm == "" {
+		c.Auth.Algorithm = "HS256"
+	}
+{{- end}}
+}

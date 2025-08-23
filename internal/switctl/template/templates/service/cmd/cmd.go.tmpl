@@ -1,0 +1,97 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package cmd provides command-line interface for {{.Service.Name}}.
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+var cfgFile string
+
+// rootCmd represents the base command when called without any subcommands.
+var rootCmd = &cobra.Command{
+	Use:   "{{.Service.Name | kebabCase}}",
+	Short: "{{.Service.Description}}",
+	Long: `{{.Service.Name | titleCase}} - {{.Service.Description}}
+
+This is a microservice built with the Swit framework that provides {{.Service.Description | lower}}.`,
+	Version: "{{.Service.Version}}",
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	cobra.OnInitialize(initConfig)
+
+	// Add subcommands
+	addSubcommands()
+
+	// Global flags
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./{{.Service.Name | kebabCase}}.yaml)")
+	rootCmd.PersistentFlags().Bool("debug", false, "enable debug mode")
+	rootCmd.PersistentFlags().String("log-level", "info", "log level (debug, info, warn, error)")
+
+	// Bind flags to viper
+	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
+	viper.BindPFlag("log_level", rootCmd.PersistentFlags().Lookup("log-level"))
+}
+
+// addSubcommands adds all subcommands to the root command.
+func addSubcommands() {
+	// Import and add subcommands
+	// Note: In a real implementation, you would import the subcommand packages
+	// and add them here. For template purposes, we'll include placeholders.
+	
+	// Example:
+	// rootCmd.AddCommand(serve.GetServeCommand())
+	// rootCmd.AddCommand(version.GetVersionCommand())
+}
+
+// initConfig reads in config file and ENV variables if set.
+func initConfig() {
+	if cfgFile != "" {
+		// Use config file from the flag.
+		viper.SetConfigFile(cfgFile)
+	} else {
+		// Search config in current directory with name "{{.Service.Name | kebabCase}}" (without extension).
+		viper.AddConfigPath(".")
+		viper.SetConfigType("yaml")
+		viper.SetConfigName("{{.Service.Name | kebabCase}}")
+	}
+
+	// Environment variable prefix
+	viper.SetEnvPrefix("{{.Service.Name | screamingSnakeCase}}")
+	viper.AutomaticEnv() // read in environment variables that match
+
+	// If a config file is found, read it in.
+	if err := viper.ReadInConfig(); err == nil {
+		fmt.Fprintf(os.Stderr, "Using config file: %s\n", viper.ConfigFileUsed())
+	}
+}

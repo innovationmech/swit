@@ -1,0 +1,439 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package middleware
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// CORSConfig holds CORS configuration.
+type CORSConfig struct {
+	// AllowedOrigins is a list of allowed origins. Use "*" to allow any origin.
+	AllowedOrigins []string `yaml:"allowed_origins" json:"allowed_origins" mapstructure:"allowed_origins"`
+	
+	// AllowedMethods is a list of allowed HTTP methods.
+	AllowedMethods []string `yaml:"allowed_methods" json:"allowed_methods" mapstructure:"allowed_methods"`
+	
+	// AllowedHeaders is a list of allowed headers.
+	AllowedHeaders []string `yaml:"allowed_headers" json:"allowed_headers" mapstructure:"allowed_headers"`
+	
+	// ExposedHeaders is a list of headers that can be exposed to the browser.
+	ExposedHeaders []string `yaml:"exposed_headers" json:"exposed_headers" mapstructure:"exposed_headers"`
+	
+	// AllowCredentials indicates whether credentials are allowed.
+	AllowCredentials bool `yaml:"allow_credentials" json:"allow_credentials" mapstructure:"allow_credentials"`
+	
+	// MaxAge indicates how long the browser should cache preflight responses.
+	MaxAge time.Duration `yaml:"max_age" json:"max_age" mapstructure:"max_age"`
+	
+	// OptionsSuccessStatus is the status code for successful OPTIONS requests.
+	OptionsSuccessStatus int `yaml:"options_success_status" json:"options_success_status" mapstructure:"options_success_status"`
+	
+	// AllowWildcard enables wildcard origin support with credentials.
+	AllowWildcard bool `yaml:"allow_wildcard" json:"allow_wildcard" mapstructure:"allow_wildcard"`
+	
+	// AllowBrowserExtensions allows browser extension origins.
+	AllowBrowserExtensions bool `yaml:"allow_browser_extensions" json:"allow_browser_extensions" mapstructure:"allow_browser_extensions"`
+	
+	// AllowWebSockets allows WebSocket connections.
+	AllowWebSockets bool `yaml:"allow_websockets" json:"allow_websockets" mapstructure:"allow_websockets"`
+	
+	// AllowFiles allows file:// origins.
+	AllowFiles bool `yaml:"allow_files" json:"allow_files" mapstructure:"allow_files"`
+}
+
+// DefaultCORSConfig returns a default CORS configuration.
+func DefaultCORSConfig() *CORSConfig {
+	return &CORSConfig{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodDelete,
+			http.MethodHead,
+			http.MethodOptions,
+		},
+		AllowedHeaders: []string{
+			"Accept",
+			"Authorization",
+			"Content-Type",
+			"X-CSRF-Token",
+			"X-Requested-With",
+			"X-API-Key",
+		},
+		ExposedHeaders: []string{
+			"X-Total-Count",
+			"X-Page-Count",
+			"X-Per-Page",
+		},
+		AllowCredentials:     false,
+		MaxAge:               12 * time.Hour,
+		OptionsSuccessStatus: http.StatusNoContent,
+		AllowWildcard:        false,
+		AllowBrowserExtensions: false,
+		AllowWebSockets:      false,
+		AllowFiles:           false,
+	}
+}
+
+{{if .Middleware.CORS.Strict}}
+// StrictCORSConfig returns a strict CORS configuration for production.
+func StrictCORSConfig(allowedOrigins []string) *CORSConfig {
+	return &CORSConfig{
+		AllowedOrigins: allowedOrigins,
+		AllowedMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowedHeaders: []string{
+			"Accept",
+			"Authorization",
+			"Content-Type",
+			"X-Requested-With",
+		},
+		ExposedHeaders:       []string{},
+		AllowCredentials:     true,
+		MaxAge:               1 * time.Hour,
+		OptionsSuccessStatus: http.StatusNoContent,
+		AllowWildcard:        false,
+		AllowBrowserExtensions: false,
+		AllowWebSockets:      false,
+		AllowFiles:           false,
+	}
+}
+{{end}}
+
+{{if .Middleware.CORS.Development}}
+// DevelopmentCORSConfig returns a permissive CORS configuration for development.
+func DevelopmentCORSConfig() *CORSConfig {
+	return &CORSConfig{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodDelete,
+			http.MethodHead,
+			http.MethodOptions,
+		},
+		AllowedHeaders: []string{"*"},
+		ExposedHeaders: []string{
+			"X-Total-Count",
+			"X-Page-Count",
+			"X-Per-Page",
+			"X-Debug-Info",
+		},
+		AllowCredentials:     true,
+		MaxAge:               24 * time.Hour,
+		OptionsSuccessStatus: http.StatusOK,
+		AllowWildcard:        true,
+		AllowBrowserExtensions: true,
+		AllowWebSockets:      true,
+		AllowFiles:           true,
+	}
+}
+{{end}}
+
+// CORS returns a CORS middleware with the given configuration.
+func CORS(config *CORSConfig) gin.HandlerFunc {
+	if config == nil {
+		config = DefaultCORSConfig()
+	}
+
+	// Preprocess configuration for performance
+	allowedOriginMap := make(map[string]bool)
+	for _, origin := range config.AllowedOrigins {
+		allowedOriginMap[origin] = true
+	}
+
+	allowedMethodMap := make(map[string]bool)
+	for _, method := range config.AllowedMethods {
+		allowedMethodMap[strings.ToUpper(method)] = true
+	}
+
+	allowedHeaderMap := make(map[string]bool)
+	for _, header := range config.AllowedHeaders {
+		allowedHeaderMap[strings.ToLower(header)] = true
+	}
+
+	allowAllOrigins := allowedOriginMap["*"]
+	allowAllHeaders := allowedHeaderMap["*"]
+
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		method := c.Request.Method
+
+		// Handle preflight requests
+		if method == http.MethodOptions {
+			handlePreflightRequest(c, config, origin, allowedOriginMap, allowedMethodMap, allowedHeaderMap, allowAllOrigins, allowAllHeaders)
+			return
+		}
+
+		// Handle actual requests
+		handleActualRequest(c, config, origin, allowedOriginMap, allowAllOrigins)
+
+		c.Next()
+	}
+}
+
+func handlePreflightRequest(c *gin.Context, config *CORSConfig, origin string, allowedOriginMap, allowedMethodMap, allowedHeaderMap map[string]bool, allowAllOrigins, allowAllHeaders bool) {
+	// Check if origin is allowed
+	if !isOriginAllowed(origin, allowedOriginMap, allowAllOrigins, config) {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+
+	// Check requested method
+	requestedMethod := c.GetHeader("Access-Control-Request-Method")
+	if requestedMethod != "" && !allowedMethodMap[strings.ToUpper(requestedMethod)] {
+		c.AbortWithStatus(http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check requested headers
+	requestedHeaders := c.GetHeader("Access-Control-Request-Headers")
+	if requestedHeaders != "" && !allowAllHeaders {
+		headers := strings.Split(requestedHeaders, ",")
+		for _, header := range headers {
+			header = strings.TrimSpace(strings.ToLower(header))
+			if !allowedHeaderMap[header] {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+		}
+	}
+
+	// Set CORS headers for preflight
+	setCORSHeaders(c, config, origin, allowAllOrigins)
+
+	// Set preflight-specific headers
+	if len(config.AllowedMethods) > 0 {
+		c.Header("Access-Control-Allow-Methods", strings.Join(config.AllowedMethods, ", "))
+	}
+
+	if allowAllHeaders {
+		c.Header("Access-Control-Allow-Headers", requestedHeaders)
+	} else if len(config.AllowedHeaders) > 0 {
+		c.Header("Access-Control-Allow-Headers", strings.Join(config.AllowedHeaders, ", "))
+	}
+
+	if config.MaxAge > 0 {
+		c.Header("Access-Control-Max-Age", strconv.Itoa(int(config.MaxAge.Seconds())))
+	}
+
+	c.AbortWithStatus(config.OptionsSuccessStatus)
+}
+
+func handleActualRequest(c *gin.Context, config *CORSConfig, origin string, allowedOriginMap map[string]bool, allowAllOrigins bool) {
+	// Check if origin is allowed
+	if !isOriginAllowed(origin, allowedOriginMap, allowAllOrigins, config) {
+		return
+	}
+
+	// Set CORS headers for actual request
+	setCORSHeaders(c, config, origin, allowAllOrigins)
+
+	// Set exposed headers
+	if len(config.ExposedHeaders) > 0 {
+		c.Header("Access-Control-Expose-Headers", strings.Join(config.ExposedHeaders, ", "))
+	}
+}
+
+func setCORSHeaders(c *gin.Context, config *CORSConfig, origin string, allowAllOrigins bool) {
+	// Set origin header
+	if allowAllOrigins && !config.AllowCredentials {
+		c.Header("Access-Control-Allow-Origin", "*")
+	} else if origin != "" {
+		c.Header("Access-Control-Allow-Origin", origin)
+	}
+
+	// Set credentials header
+	if config.AllowCredentials {
+		c.Header("Access-Control-Allow-Credentials", "true")
+	}
+
+	// Set vary header to indicate that response varies based on origin
+	if !allowAllOrigins || config.AllowCredentials {
+		c.Header("Vary", "Origin")
+	}
+}
+
+func isOriginAllowed(origin string, allowedOriginMap map[string]bool, allowAllOrigins bool, config *CORSConfig) bool {
+	if origin == "" {
+		return true // Same-origin requests
+	}
+
+	if allowAllOrigins {
+		return isSpecialOriginAllowed(origin, config)
+	}
+
+	if allowedOriginMap[origin] {
+		return true
+	}
+
+	// Check for wildcard patterns
+	for allowedOrigin := range allowedOriginMap {
+		if config.AllowWildcard && matchesWildcard(origin, allowedOrigin) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isSpecialOriginAllowed(origin string, config *CORSConfig) bool {
+	// Check browser extensions
+	if !config.AllowBrowserExtensions {
+		if strings.HasPrefix(origin, "chrome-extension://") ||
+			strings.HasPrefix(origin, "moz-extension://") ||
+			strings.HasPrefix(origin, "safari-extension://") ||
+			strings.HasPrefix(origin, "ms-browser-extension://") {
+			return false
+		}
+	}
+
+	// Check WebSocket
+	if !config.AllowWebSockets {
+		if strings.HasPrefix(origin, "ws://") || strings.HasPrefix(origin, "wss://") {
+			return false
+		}
+	}
+
+	// Check file protocol
+	if !config.AllowFiles {
+		if strings.HasPrefix(origin, "file://") {
+			return false
+		}
+	}
+
+	return true
+}
+
+func matchesWildcard(origin, pattern string) bool {
+	if !strings.Contains(pattern, "*") {
+		return origin == pattern
+	}
+
+	// Simple wildcard matching (*.example.com)
+	if strings.HasPrefix(pattern, "*.") {
+		domain := pattern[2:]
+		return strings.HasSuffix(origin, "."+domain) || origin == domain
+	}
+
+	// Subdomain matching (https://*.example.com)
+	if strings.Contains(pattern, "*") {
+		parts := strings.Split(pattern, "*")
+		if len(parts) == 2 {
+			return strings.HasPrefix(origin, parts[0]) && strings.HasSuffix(origin, parts[1])
+		}
+	}
+
+	return false
+}
+
+{{if .Middleware.CORS.Conditional}}
+// ConditionalCORS returns a CORS middleware that applies different configurations based on the request.
+func ConditionalCORS(configs map[string]*CORSConfig, defaultConfig *CORSConfig) gin.HandlerFunc {
+	if defaultConfig == nil {
+		defaultConfig = DefaultCORSConfig()
+	}
+
+	middlewares := make(map[string]gin.HandlerFunc)
+	for key, config := range configs {
+		middlewares[key] = CORS(config)
+	}
+	defaultMiddleware := CORS(defaultConfig)
+
+	return func(c *gin.Context) {
+		// Determine which configuration to use based on request characteristics
+		configKey := determineConfigKey(c)
+		
+		if middleware, exists := middlewares[configKey]; exists {
+			middleware(c)
+		} else {
+			defaultMiddleware(c)
+		}
+	}
+}
+
+func determineConfigKey(c *gin.Context) string {
+	// Example: Use different CORS config based on subdomain
+	host := c.GetHeader("Host")
+	if strings.HasPrefix(host, "api.") {
+		return "api"
+	}
+	if strings.HasPrefix(host, "admin.") {
+		return "admin"
+	}
+	
+	// Example: Use different config based on user agent
+	userAgent := c.GetHeader("User-Agent")
+	if strings.Contains(userAgent, "Mobile") {
+		return "mobile"
+	}
+	
+	return "default"
+}
+{{end}}
+
+{{if .Middleware.CORS.Logging}}
+// CORSWithLogging returns a CORS middleware with request logging.
+func CORSWithLogging(config *CORSConfig, logger Logger) gin.HandlerFunc {
+	corsMiddleware := CORS(config)
+	
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		method := c.Request.Method
+		
+		if method == http.MethodOptions {
+			logger.Info("CORS preflight request",
+				"origin", origin,
+				"method", c.GetHeader("Access-Control-Request-Method"),
+				"headers", c.GetHeader("Access-Control-Request-Headers"),
+			)
+		} else if origin != "" {
+			logger.Info("CORS actual request",
+				"origin", origin,
+				"method", method,
+				"path", c.Request.URL.Path,
+			)
+		}
+		
+		corsMiddleware(c)
+	}
+}
+
+// Logger interface for CORS logging.
+type Logger interface {
+	Info(msg string, keysAndValues ...interface{})
+}
+{{end}}

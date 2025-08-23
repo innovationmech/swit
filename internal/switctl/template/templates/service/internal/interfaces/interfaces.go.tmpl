@@ -1,0 +1,117 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package interfaces defines the core interfaces for {{.Service.Name}}.
+package interfaces
+
+import (
+	"context"
+
+{{- if .Service.Features.Repository}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/model"
+{{- end}}
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// {{.Service.Name | pascalCase}}Service defines the core business logic interface.
+type {{.Service.Name | pascalCase}}Service interface {
+	// Health check
+	HealthCheck(ctx context.Context) error
+	GetServiceName() string
+
+	// Core business methods
+	// TODO: Add your business methods here
+	// Example:
+	// Create{{.Service.Name | pascalCase}}(ctx context.Context, req *types.Create{{.Service.Name | pascalCase}}Request) (*types.{{.Service.Name | pascalCase}}Response, error)
+	// Get{{.Service.Name | pascalCase}}(ctx context.Context, id string) (*types.{{.Service.Name | pascalCase}}Response, error)
+	// Update{{.Service.Name | pascalCase}}(ctx context.Context, id string, req *types.Update{{.Service.Name | pascalCase}}Request) (*types.{{.Service.Name | pascalCase}}Response, error)
+	// Delete{{.Service.Name | pascalCase}}(ctx context.Context, id string) error
+	// List{{.Service.Name | pascalCase | pluralize}}(ctx context.Context, req *types.List{{.Service.Name | pascalCase | pluralize}}Request) (*types.List{{.Service.Name | pascalCase | pluralize}}Response, error)
+}
+
+// HealthService defines the health check interface.
+type HealthService interface {
+	Check(ctx context.Context) error
+	GetServiceName() string
+}
+
+// HTTPHandler defines the HTTP handler interface.
+type HTTPHandler interface {
+	RegisterRoutes(router interface{}) error
+	GetServiceName() string
+}
+
+{{- if .Service.Features.GRPC}}
+
+// GRPCHandler defines the gRPC handler interface.
+type GRPCHandler interface {
+	RegisterGRPC(server interface{}) error
+	GetServiceName() string
+}
+{{- end}}
+
+{{- if .Service.Features.Repository}}
+
+// {{.Service.Name | pascalCase}}Repository defines the data access interface.
+type {{.Service.Name | pascalCase}}Repository interface {
+	// CRUD operations
+	Create(ctx context.Context, item *model.{{.Service.Name | pascalCase}}) error
+	GetByID(ctx context.Context, id string) (*model.{{.Service.Name | pascalCase}}, error)
+	Update(ctx context.Context, item *model.{{.Service.Name | pascalCase}}) error
+	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, filter *types.ListFilter) ([]*model.{{.Service.Name | pascalCase}}, int64, error)
+
+	// Health check
+	HealthCheck(ctx context.Context) error
+}
+{{- end}}
+
+{{- if .Service.Features.Cache}}
+
+// CacheService defines the cache interface.
+type CacheService interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+	Set(ctx context.Context, key string, value []byte, ttl int64) error
+	Delete(ctx context.Context, key string) error
+	Exists(ctx context.Context, key string) (bool, error)
+	HealthCheck(ctx context.Context) error
+}
+{{- end}}
+
+{{- if .Service.Features.MessageQueue}}
+
+// MessageQueueService defines the message queue interface.
+type MessageQueueService interface {
+	Publish(ctx context.Context, topic string, message []byte) error
+	Subscribe(ctx context.Context, topic string, handler func([]byte) error) error
+	HealthCheck(ctx context.Context) error
+}
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+
+// AuthService defines the authentication interface.
+type AuthService interface {
+	GenerateToken(ctx context.Context, userID string, claims map[string]interface{}) (string, error)
+	ValidateToken(ctx context.Context, token string) (*types.TokenClaims, error)
+	RefreshToken(ctx context.Context, token string) (string, error)
+	RevokeToken(ctx context.Context, token string) error
+}
+{{- end}}

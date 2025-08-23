@@ -1,0 +1,381 @@
+{{- if .Service.Features.Database -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package model provides data models for {{.Service.Name}}.
+package model
+
+import (
+{{- if ne .Service.Database.Type "mongodb"}}
+	"database/sql/driver"
+	"encoding/json"
+{{- end}}
+	"fmt"
+	"time"
+{{- if eq .Service.Database.Type "mongodb"}}
+	"go.mongodb.org/mongo-driver/bson/primitive"
+{{- end}}
+)
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// BaseModel provides common fields for all models.
+type BaseModel struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+}
+
+// TimestampModel provides only timestamp fields (for models with custom ID).
+type TimestampModel struct {
+	CreatedAt time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+}
+
+// UUIDModel provides UUID-based primary key.
+type UUIDModel struct {
+	ID        string    `gorm:"type:char(36);primaryKey" json:"id"`
+	CreatedAt time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"not null" json:"updated_at"`
+	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+}
+{{- else}}
+// BaseModel provides common fields for all MongoDB models.
+type BaseModel struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	CreatedAt time.Time         `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time         `bson:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time        `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+}
+
+// TimestampModel provides only timestamp fields (for models with custom ID).
+type TimestampModel struct {
+	CreatedAt time.Time  `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `bson:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+}
+
+// StringIDModel provides string-based primary key.
+type StringIDModel struct {
+	ID        string     `bson:"_id" json:"id"`
+	CreatedAt time.Time  `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `bson:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+}
+{{- end}}
+
+// ModelInterface defines common methods for all models.
+type ModelInterface interface {
+	GetID() interface{}
+	GetCreatedAt() time.Time
+	GetUpdatedAt() time.Time
+	GetDeletedAt() *time.Time
+	SetCreatedAt(time.Time)
+	SetUpdatedAt(time.Time)
+	SetDeletedAt(*time.Time)
+	IsDeleted() bool
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// GetID returns the model ID.
+func (m *BaseModel) GetID() interface{} {
+	return m.ID
+}
+
+// GetCreatedAt returns the creation time.
+func (m *BaseModel) GetCreatedAt() time.Time {
+	return m.CreatedAt
+}
+
+// GetUpdatedAt returns the last update time.
+func (m *BaseModel) GetUpdatedAt() time.Time {
+	return m.UpdatedAt
+}
+
+// GetDeletedAt returns the deletion time.
+func (m *BaseModel) GetDeletedAt() *time.Time {
+	return m.DeletedAt
+}
+
+// SetCreatedAt sets the creation time.
+func (m *BaseModel) SetCreatedAt(t time.Time) {
+	m.CreatedAt = t
+}
+
+// SetUpdatedAt sets the update time.
+func (m *BaseModel) SetUpdatedAt(t time.Time) {
+	m.UpdatedAt = t
+}
+
+// SetDeletedAt sets the deletion time.
+func (m *BaseModel) SetDeletedAt(t *time.Time) {
+	m.DeletedAt = t
+}
+
+// IsDeleted returns true if the model is soft deleted.
+func (m *BaseModel) IsDeleted() bool {
+	return m.DeletedAt != nil
+}
+
+// UUID model methods
+func (m *UUIDModel) GetID() interface{} {
+	return m.ID
+}
+
+func (m *UUIDModel) GetCreatedAt() time.Time {
+	return m.CreatedAt
+}
+
+func (m *UUIDModel) GetUpdatedAt() time.Time {
+	return m.UpdatedAt
+}
+
+func (m *UUIDModel) GetDeletedAt() *time.Time {
+	return m.DeletedAt
+}
+
+func (m *UUIDModel) SetCreatedAt(t time.Time) {
+	m.CreatedAt = t
+}
+
+func (m *UUIDModel) SetUpdatedAt(t time.Time) {
+	m.UpdatedAt = t
+}
+
+func (m *UUIDModel) SetDeletedAt(t *time.Time) {
+	m.DeletedAt = t
+}
+
+func (m *UUIDModel) IsDeleted() bool {
+	return m.DeletedAt != nil
+}
+{{- else}}
+// GetID returns the model ID.
+func (m *BaseModel) GetID() interface{} {
+	return m.ID
+}
+
+// GetCreatedAt returns the creation time.
+func (m *BaseModel) GetCreatedAt() time.Time {
+	return m.CreatedAt
+}
+
+// GetUpdatedAt returns the last update time.
+func (m *BaseModel) GetUpdatedAt() time.Time {
+	return m.UpdatedAt
+}
+
+// GetDeletedAt returns the deletion time.
+func (m *BaseModel) GetDeletedAt() *time.Time {
+	return m.DeletedAt
+}
+
+// SetCreatedAt sets the creation time.
+func (m *BaseModel) SetCreatedAt(t time.Time) {
+	m.CreatedAt = t
+}
+
+// SetUpdatedAt sets the update time.
+func (m *BaseModel) SetUpdatedAt(t time.Time) {
+	m.UpdatedAt = t
+}
+
+// SetDeletedAt sets the deletion time.
+func (m *BaseModel) SetDeletedAt(t *time.Time) {
+	m.DeletedAt = t
+}
+
+// IsDeleted returns true if the model is soft deleted.
+func (m *BaseModel) IsDeleted() bool {
+	return m.DeletedAt != nil
+}
+
+// StringIDModel methods
+func (m *StringIDModel) GetID() interface{} {
+	return m.ID
+}
+
+func (m *StringIDModel) GetCreatedAt() time.Time {
+	return m.CreatedAt
+}
+
+func (m *StringIDModel) GetUpdatedAt() time.Time {
+	return m.UpdatedAt
+}
+
+func (m *StringIDModel) GetDeletedAt() *time.Time {
+	return m.DeletedAt
+}
+
+func (m *StringIDModel) SetCreatedAt(t time.Time) {
+	m.CreatedAt = t
+}
+
+func (m *StringIDModel) SetUpdatedAt(t time.Time) {
+	m.UpdatedAt = t
+}
+
+func (m *StringIDModel) SetDeletedAt(t *time.Time) {
+	m.DeletedAt = t
+}
+
+func (m *StringIDModel) IsDeleted() bool {
+	return m.DeletedAt != nil
+}
+{{- end}}
+
+// ValidationError represents a model validation error.
+type ValidationError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+	Value   interface{} `json:"value,omitempty"`
+}
+
+// Error implements the error interface.
+func (e ValidationError) Error() string {
+	return e.Message
+}
+
+// ValidationErrors represents multiple validation errors.
+type ValidationErrors []ValidationError
+
+// Error implements the error interface.
+func (e ValidationErrors) Error() string {
+	if len(e) == 0 {
+		return "validation failed"
+	}
+	if len(e) == 1 {
+		return e[0].Error()
+	}
+	return fmt.Sprintf("validation failed with %d errors", len(e))
+}
+
+// Add adds a validation error.
+func (e *ValidationErrors) Add(field, message string, value interface{}) {
+	*e = append(*e, ValidationError{
+		Field:   field,
+		Message: message,
+		Value:   value,
+	})
+}
+
+// HasErrors returns true if there are validation errors.
+func (e ValidationErrors) HasErrors() bool {
+	return len(e) > 0
+}
+
+// Validator defines the interface for model validation.
+type Validator interface {
+	Validate() error
+}
+
+// BeforeSaveHook defines the interface for before save hooks.
+type BeforeSaveHook interface {
+	BeforeSave() error
+}
+
+// AfterSaveHook defines the interface for after save hooks.
+type AfterSaveHook interface {
+	AfterSave() error
+}
+
+// BeforeCreateHook defines the interface for before create hooks.
+type BeforeCreateHook interface {
+	BeforeCreate() error
+}
+
+// AfterCreateHook defines the interface for after create hooks.
+type AfterCreateHook interface {
+	AfterCreate() error
+}
+
+// BeforeUpdateHook defines the interface for before update hooks.
+type BeforeUpdateHook interface {
+	BeforeUpdate() error
+}
+
+// AfterUpdateHook defines the interface for after update hooks.
+type AfterUpdateHook interface {
+	AfterUpdate() error
+}
+
+// BeforeDeleteHook defines the interface for before delete hooks.
+type BeforeDeleteHook interface {
+	BeforeDelete() error
+}
+
+// AfterDeleteHook defines the interface for after delete hooks.
+type AfterDeleteHook interface {
+	AfterDelete() error
+}
+
+{{- if ne .Service.Database.Type "mongodb"}}
+// SQLNullString represents a nullable string for SQL databases.
+type SQLNullString struct {
+	String string
+	Valid  bool
+}
+
+// Scan implements the Scanner interface.
+func (ns *SQLNullString) Scan(value interface{}) error {
+	if value == nil {
+		ns.String, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	switch v := value.(type) {
+	case string:
+		ns.String = v
+	case []byte:
+		ns.String = string(v)
+	default:
+		return fmt.Errorf("cannot scan %T into SQLNullString", value)
+	}
+	return nil
+}
+
+// Value implements the driver Valuer interface.
+func (ns SQLNullString) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return ns.String, nil
+}
+
+// MarshalJSON implements json.Marshaler.
+func (ns SQLNullString) MarshalJSON() ([]byte, error) {
+	if !ns.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(ns.String)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (ns *SQLNullString) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		ns.Valid = false
+		return nil
+	}
+	ns.Valid = true
+	return json.Unmarshal(data, &ns.String)
+}
+{{- end}}
+{{- end -}}

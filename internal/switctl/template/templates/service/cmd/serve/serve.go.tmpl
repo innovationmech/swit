@@ -1,0 +1,154 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package serve provides the serve command for {{.Service.Name}}.
+package serve
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}"
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/config"
+)
+
+// serveCmd represents the serve command.
+var serveCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "Start the {{.Service.Name}} server",
+	Long: `Start the {{.Service.Name}} server with HTTP and gRPC endpoints.
+
+This command starts the microservice with both HTTP and gRPC transports enabled.
+The server will listen on the configured ports and handle incoming requests.`,
+	RunE: runServe,
+}
+
+func init() {
+	// Server flags
+	serveCmd.Flags().String("http-host", "0.0.0.0", "HTTP server host")
+	serveCmd.Flags().Int("http-port", {{.Service.Ports.HTTP}}, "HTTP server port")
+	serveCmd.Flags().String("grpc-host", "0.0.0.0", "gRPC server host")
+	serveCmd.Flags().Int("grpc-port", {{.Service.Ports.GRPC}}, "gRPC server port")
+
+{{- if .Service.Features.Database}}
+	// Database flags
+	serveCmd.Flags().String("db-host", "{{.Service.Database.Host}}", "Database host")
+	serveCmd.Flags().Int("db-port", {{.Service.Database.Port}}, "Database port")
+	serveCmd.Flags().String("db-name", "{{.Service.Database.Database}}", "Database name")
+	serveCmd.Flags().String("db-user", "{{.Service.Database.Username}}", "Database username")
+	serveCmd.Flags().String("db-password", "{{.Service.Database.Password}}", "Database password")
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+	// Authentication flags
+	serveCmd.Flags().String("auth-secret", "", "Authentication secret key")
+	serveCmd.Flags().Duration("auth-expiration", 0, "Authentication token expiration")
+{{- end}}
+
+	// Bind flags to viper
+	viper.BindPFlag("server.http.host", serveCmd.Flags().Lookup("http-host"))
+	viper.BindPFlag("server.http.port", serveCmd.Flags().Lookup("http-port"))
+	viper.BindPFlag("server.grpc.host", serveCmd.Flags().Lookup("grpc-host"))
+	viper.BindPFlag("server.grpc.port", serveCmd.Flags().Lookup("grpc-port"))
+
+{{- if .Service.Features.Database}}
+	viper.BindPFlag("database.host", serveCmd.Flags().Lookup("db-host"))
+	viper.BindPFlag("database.port", serveCmd.Flags().Lookup("db-port"))
+	viper.BindPFlag("database.database", serveCmd.Flags().Lookup("db-name"))
+	viper.BindPFlag("database.username", serveCmd.Flags().Lookup("db-user"))
+	viper.BindPFlag("database.password", serveCmd.Flags().Lookup("db-password"))
+{{- end}}
+
+{{- if .Service.Features.Authentication}}
+	viper.BindPFlag("auth.secret_key", serveCmd.Flags().Lookup("auth-secret"))
+	viper.BindPFlag("auth.expiration", serveCmd.Flags().Lookup("auth-expiration"))
+{{- end}}
+}
+
+// GetServeCommand returns the serve command.
+func GetServeCommand() *cobra.Command {
+	return serveCmd
+}
+
+func runServe(cmd *cobra.Command, args []string) error {
+	// Load configuration
+	cfg, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// Create server instance
+	server, err := {{.Package.Name}}.New{{.Service.Name | pascalCase}}Server(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create server: %w", err)
+	}
+
+	// Setup graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle shutdown signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal %v, initiating graceful shutdown...", sig)
+		cancel()
+	}()
+
+	// Start server
+	log.Printf("Starting {{.Service.Name}} server...")
+	log.Printf("HTTP server listening on %s:%d", cfg.Server.HTTP.Host, cfg.Server.HTTP.Port)
+	log.Printf("gRPC server listening on %s:%d", cfg.Server.GRPC.Host, cfg.Server.GRPC.Port)
+
+	if err := server.Start(ctx); err != nil {
+		return fmt.Errorf("server error: %w", err)
+	}
+
+	log.Printf("{{.Service.Name}} server stopped gracefully")
+	return nil
+}
+
+func loadConfig() (*config.Config, error) {
+	var cfg config.Config
+
+	// Unmarshal viper config into struct
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// Load defaults
+	cfg.LoadDefaults()
+
+	return &cfg, nil
+}

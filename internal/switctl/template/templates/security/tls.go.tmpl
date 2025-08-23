@@ -1,0 +1,427 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package security provides TLS configuration and middleware for {{.Service.Name}}.
+package security
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// TLSConfig holds TLS configuration.
+type TLSConfig struct {
+	// Enable HTTPS
+	EnableHTTPS bool `yaml:"enable_https" json:"enable_https" mapstructure:"enable_https"`
+	
+	// Certificate file path
+	CertFile string `yaml:"cert_file" json:"cert_file" mapstructure:"cert_file"`
+	
+	// Private key file path
+	KeyFile string `yaml:"key_file" json:"key_file" mapstructure:"key_file"`
+	
+	// CA certificate file path for client authentication
+	CAFile string `yaml:"ca_file" json:"ca_file" mapstructure:"ca_file"`
+	
+	// Minimum TLS version
+	MinVersion string `yaml:"min_version" json:"min_version" mapstructure:"min_version"`
+	
+	// Maximum TLS version
+	MaxVersion string `yaml:"max_version" json:"max_version" mapstructure:"max_version"`
+	
+	// Cipher suites
+	CipherSuites []string `yaml:"cipher_suites" json:"cipher_suites" mapstructure:"cipher_suites"`
+	
+	// Elliptic curves
+	CurvePreferences []string `yaml:"curve_preferences" json:"curve_preferences" mapstructure:"curve_preferences"`
+	
+	// Client authentication mode
+	ClientAuth string `yaml:"client_auth" json:"client_auth" mapstructure:"client_auth"`
+	
+	// Prefer server cipher suites
+	PreferServerCipherSuites bool `yaml:"prefer_server_cipher_suites" json:"prefer_server_cipher_suites" mapstructure:"prefer_server_cipher_suites"`
+	
+	// Enable session tickets
+	SessionTicketsDisabled bool `yaml:"session_tickets_disabled" json:"session_tickets_disabled" mapstructure:"session_tickets_disabled"`
+	
+	// Enable renegotiation
+	Renegotiation string `yaml:"renegotiation" json:"renegotiation" mapstructure:"renegotiation"`
+	
+	// ALPN protocols
+	NextProtos []string `yaml:"next_protos" json:"next_protos" mapstructure:"next_protos"`
+	
+	// Server name for SNI
+	ServerName string `yaml:"server_name" json:"server_name" mapstructure:"server_name"`
+	
+	// Skip certificate verification (for development only)
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify" json:"insecure_skip_verify" mapstructure:"insecure_skip_verify"`
+}
+
+// DefaultTLSConfig returns a secure default TLS configuration.
+func DefaultTLSConfig() *TLSConfig {
+	return &TLSConfig{
+		EnableHTTPS:             true,
+		MinVersion:              "1.2",
+		MaxVersion:              "1.3",
+		PreferServerCipherSuites: true,
+		SessionTicketsDisabled:   false,
+		Renegotiation:           "never",
+		NextProtos:              []string{"h2", "http/1.1"},
+		ClientAuth:              "none",
+		CipherSuites: []string{
+			"TLS_AES_256_GCM_SHA384",
+			"TLS_CHACHA20_POLY1305_SHA256",
+			"TLS_AES_128_GCM_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305",
+			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
+			"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		},
+		CurvePreferences: []string{
+			"X25519",
+			"P-256",
+			"P-384",
+			"P-521",
+		},
+	}
+}
+
+{{if .Security.TLS.Modern}}
+// ModernTLSConfig returns a modern TLS configuration (TLS 1.3 only).
+func ModernTLSConfig() *TLSConfig {
+	return &TLSConfig{
+		EnableHTTPS:             true,
+		MinVersion:              "1.3",
+		MaxVersion:              "1.3",
+		PreferServerCipherSuites: true,
+		SessionTicketsDisabled:   false,
+		Renegotiation:           "never",
+		NextProtos:              []string{"h2", "http/1.1"},
+		ClientAuth:              "none",
+		CipherSuites: []string{
+			"TLS_AES_256_GCM_SHA384",
+			"TLS_CHACHA20_POLY1305_SHA256",
+			"TLS_AES_128_GCM_SHA256",
+		},
+		CurvePreferences: []string{
+			"X25519",
+			"P-256",
+		},
+	}
+}
+{{end}}
+
+{{if .Security.TLS.Intermediate}}
+// IntermediateTLSConfig returns an intermediate TLS configuration.
+func IntermediateTLSConfig() *TLSConfig {
+	return &TLSConfig{
+		MinVersion:              "1.2",
+		MaxVersion:              "1.3",
+		PreferServerCipherSuites: true,
+		SessionTicketsDisabled:   false,
+		Renegotiation:           "never",
+		NextProtos:              []string{"h2", "http/1.1"},
+		ClientAuth:              "none",
+		CipherSuites: []string{
+			"TLS_AES_256_GCM_SHA384",
+			"TLS_CHACHA20_POLY1305_SHA256",
+			"TLS_AES_128_GCM_SHA256",
+			"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+			"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
+			"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305",
+			"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
+			"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+			"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+			"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+		},
+		CurvePreferences: []string{
+			"X25519",
+			"P-256",
+			"P-384",
+		},
+	}
+}
+{{end}}
+
+{{if .Security.TLS.MutualAuth}}
+// MutualAuthTLSConfig returns a TLS configuration with mutual authentication.
+func MutualAuthTLSConfig(caFile string) *TLSConfig {
+	config := DefaultTLSConfig()
+	config.CAFile = caFile
+	config.ClientAuth = "require"
+	return config
+}
+{{end}}
+
+// CreateTLSConfig creates a *tls.Config from TLSConfig.
+func (c *TLSConfig) CreateTLSConfig() (*tls.Config, error) {
+	config := &tls.Config{}
+
+	// Set TLS version
+	if c.MinVersion != "" {
+		minVersion, err := parseTLSVersion(c.MinVersion)
+		if err != nil {
+			return nil, fmt.Errorf("invalid min TLS version: %w", err)
+		}
+		config.MinVersion = minVersion
+	}
+
+	if c.MaxVersion != "" {
+		maxVersion, err := parseTLSVersion(c.MaxVersion)
+		if err != nil {
+			return nil, fmt.Errorf("invalid max TLS version: %w", err)
+		}
+		config.MaxVersion = maxVersion
+	}
+
+	// Set cipher suites
+	if len(c.CipherSuites) > 0 {
+		cipherSuites, err := parseCipherSuites(c.CipherSuites)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cipher suites: %w", err)
+		}
+		config.CipherSuites = cipherSuites
+	}
+
+	// Set curve preferences
+	if len(c.CurvePreferences) > 0 {
+		curvePreferences, err := parseCurvePreferences(c.CurvePreferences)
+		if err != nil {
+			return nil, fmt.Errorf("invalid curve preferences: %w", err)
+		}
+		config.CurvePreferences = curvePreferences
+	}
+
+	// Set client authentication
+	if c.ClientAuth != "" {
+		clientAuth, err := parseClientAuth(c.ClientAuth)
+		if err != nil {
+			return nil, fmt.Errorf("invalid client auth: %w", err)
+		}
+		config.ClientAuth = clientAuth
+	}
+
+	// Load CA certificates for client authentication
+	if c.CAFile != "" {
+		caCert, err := ioutil.ReadFile(c.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA file: %w", err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, errors.New("failed to parse CA certificate")
+		}
+		config.ClientCAs = caCertPool
+	}
+
+	// Set renegotiation
+	if c.Renegotiation != "" {
+		renegotiation, err := parseRenegotiation(c.Renegotiation)
+		if err != nil {
+			return nil, fmt.Errorf("invalid renegotiation: %w", err)
+		}
+		config.Renegotiation = renegotiation
+	}
+
+	// Set other options
+	config.PreferServerCipherSuites = c.PreferServerCipherSuites
+	config.SessionTicketsDisabled = c.SessionTicketsDisabled
+	config.NextProtos = c.NextProtos
+	config.ServerName = c.ServerName
+	config.InsecureSkipVerify = c.InsecureSkipVerify
+
+	return config, nil
+}
+
+// LoadCertificate loads the certificate and key from files.
+func (c *TLSConfig) LoadCertificate() (tls.Certificate, error) {
+	if c.CertFile == "" || c.KeyFile == "" {
+		return tls.Certificate{}, errors.New("certificate and key files are required")
+	}
+
+	return tls.LoadX509KeyPair(c.CertFile, c.KeyFile)
+}
+
+// TLSRedirect returns a middleware that redirects HTTP to HTTPS.
+func TLSRedirect(httpsPort int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.TLS == nil && c.GetHeader("X-Forwarded-Proto") != "https" {
+			host := c.Request.Host
+			if httpsPort != 443 {
+				host = fmt.Sprintf("%s:%d", c.Request.Host, httpsPort)
+			}
+			
+			url := fmt.Sprintf("https://%s%s", host, c.Request.RequestURI)
+			c.Redirect(http.StatusMovedPermanently, url)
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+{{if .Security.TLS.HSTS}}
+// RequireHTTPS returns a middleware that enforces HTTPS.
+func RequireHTTPS() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.TLS == nil && c.GetHeader("X-Forwarded-Proto") != "https" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "HTTPS required",
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+{{end}}
+
+// Helper functions
+
+func parseTLSVersion(version string) (uint16, error) {
+	switch version {
+	case "1.0":
+		return tls.VersionTLS10, nil
+	case "1.1":
+		return tls.VersionTLS11, nil
+	case "1.2":
+		return tls.VersionTLS12, nil
+	case "1.3":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("unsupported TLS version: %s", version)
+	}
+}
+
+func parseCipherSuites(suites []string) ([]uint16, error) {
+	var result []uint16
+	
+	cipherSuiteMap := map[string]uint16{
+		// TLS 1.3 cipher suites
+		"TLS_AES_128_GCM_SHA256":       tls.TLS_AES_128_GCM_SHA256,
+		"TLS_AES_256_GCM_SHA384":       tls.TLS_AES_256_GCM_SHA384,
+		"TLS_CHACHA20_POLY1305_SHA256": tls.TLS_CHACHA20_POLY1305_SHA256,
+		
+		// TLS 1.2 ECDHE cipher suites
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256": tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384": tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":   tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":   tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305":  tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305":    tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+		"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256": tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+		"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384": tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+		"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256":   tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+		"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384":   tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
+		"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA":    tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+		"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA":    tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+		"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA":      tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+		"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA":      tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+	}
+	
+	for _, suite := range suites {
+		if cipherSuite, exists := cipherSuiteMap[suite]; exists {
+			result = append(result, cipherSuite)
+		} else {
+			return nil, fmt.Errorf("unsupported cipher suite: %s", suite)
+		}
+	}
+	
+	return result, nil
+}
+
+func parseCurvePreferences(curves []string) ([]tls.CurveID, error) {
+	var result []tls.CurveID
+	
+	curveMap := map[string]tls.CurveID{
+		"P-256":   tls.CurveP256,
+		"P-384":   tls.CurveP384,
+		"P-521":   tls.CurveP521,
+		"X25519":  tls.X25519,
+	}
+	
+	for _, curve := range curves {
+		if curveID, exists := curveMap[curve]; exists {
+			result = append(result, curveID)
+		} else {
+			return nil, fmt.Errorf("unsupported curve: %s", curve)
+		}
+	}
+	
+	return result, nil
+}
+
+func parseClientAuth(auth string) (tls.ClientAuthType, error) {
+	switch auth {
+	case "none", "":
+		return tls.NoClientCert, nil
+	case "request":
+		return tls.RequestClientCert, nil
+	case "require":
+		return tls.RequireAnyClientCert, nil
+	case "verify":
+		return tls.VerifyClientCertIfGiven, nil
+	case "require_and_verify":
+		return tls.RequireAndVerifyClientCert, nil
+	default:
+		return 0, fmt.Errorf("unsupported client auth: %s", auth)
+	}
+}
+
+func parseRenegotiation(renegotiation string) (tls.RenegotiationSupport, error) {
+	switch renegotiation {
+	case "never", "":
+		return tls.RenegotiateNever, nil
+	case "once":
+		return tls.RenegotiateOnceAsClient, nil
+	case "freely":
+		return tls.RenegotiateFreelyAsClient, nil
+	default:
+		return 0, fmt.Errorf("unsupported renegotiation: %s", renegotiation)
+	}
+}
+
+{{if .Security.TLS.OCSP}}
+// OCSPConfig holds OCSP stapling configuration.
+type OCSPConfig struct {
+	Enabled      bool   `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
+	ResponderURL string `yaml:"responder_url" json:"responder_url" mapstructure:"responder_url"`
+	CacheTime    time.Duration `yaml:"cache_time" json:"cache_time" mapstructure:"cache_time"`
+}
+
+// EnableOCSPStapling enables OCSP stapling for the TLS configuration.
+func (c *TLSConfig) EnableOCSPStapling(ocspConfig *OCSPConfig) error {
+	// OCSP stapling implementation would go here
+	// This is a placeholder for the actual implementation
+	return nil
+}
+{{end}}

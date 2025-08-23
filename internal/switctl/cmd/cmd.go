@@ -22,38 +22,62 @@
 package cmd
 
 import (
-	"github.com/innovationmech/swit/internal/switctl/cmd/health"
-	"github.com/innovationmech/swit/internal/switctl/cmd/stop"
+	"github.com/innovationmech/swit/internal/switctl/cmd/check"
+	"github.com/innovationmech/swit/internal/switctl/cmd/config"
+	"github.com/innovationmech/swit/internal/switctl/cmd/deps"
+	"github.com/innovationmech/swit/internal/switctl/cmd/dev"
+	"github.com/innovationmech/swit/internal/switctl/cmd/generate"
+	initcmd "github.com/innovationmech/swit/internal/switctl/cmd/init"
+	"github.com/innovationmech/swit/internal/switctl/cmd/new"
 	"github.com/innovationmech/swit/internal/switctl/cmd/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
-	// serverAddress is the address of the SWIT server.
-	serverAddress string
-	// serverPort is the port of the SWIT server.
-	serverPort string
+	// verbose enables verbose output
+	verbose bool
+	// noColor disables colored output
+	noColor bool
+	// configFile is the path to the config file
+	configFile string
 )
 
 // NewRootSwitCtlCommand creates a new root command for SWITCTL.
 func NewRootSwitCtlCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:     "switctl",
-		Short:   "SWIT Control Application",
-		Long:    `SWITCTL is a command-line tool for controlling the SWIT server.`,
-		Version: "0.0.2",
+		Use:   "switctl",
+		Short: "Swit Framework Scaffolding Tool",
+		Long: `switctl is the official scaffolding tool for the Swit microservice framework.
+It provides project generation, code quality checks, and development assistance features.
+
+Use switctl to:
+- Generate new services and components
+- Run code quality checks and tests  
+- Manage project dependencies and configuration
+- Create API endpoints and data models`,
+		Version: "0.1.0",
 	}
 
-	rootCmd.PersistentFlags().StringVarP(&serverAddress, "address", "a", "localhost", "SWIT server address")
-	rootCmd.PersistentFlags().StringVarP(&serverPort, "port", "p", "8080", "SWIT server port")
+	// Add global flags
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Config file path")
 
-	rootCmd.AddCommand(stop.NewStopCmd())
+	// Add subcommands
 	rootCmd.AddCommand(version.NewSwitctlVersionCmd())
-	rootCmd.AddCommand(health.NewHealthCmd())
+	rootCmd.AddCommand(new.NewNewCommand())
+	rootCmd.AddCommand(check.NewCheckCommand())
+	rootCmd.AddCommand(generate.NewGenerateCommand())
+	rootCmd.AddCommand(initcmd.NewInitCommand())
+	rootCmd.AddCommand(dev.NewDevCommand())
+	rootCmd.AddCommand(deps.NewDepsCommand())
+	rootCmd.AddCommand(config.NewConfigCommand())
 
-	viper.BindPFlag("address", rootCmd.PersistentFlags().Lookup("address"))
-	viper.BindPFlag("port", rootCmd.PersistentFlags().Lookup("port"))
+	// Bind flags to viper
+	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("no-color", rootCmd.PersistentFlags().Lookup("no-color"))
+	viper.BindPFlag("config", rootCmd.PersistentFlags().Lookup("config"))
 
 	return rootCmd
 }

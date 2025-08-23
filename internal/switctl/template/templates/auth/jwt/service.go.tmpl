@@ -1,0 +1,579 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"time"
+
+	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+)
+
+var (
+	ErrUserNotFound          = errors.New("user not found")
+	ErrInvalidCredentials    = errors.New("invalid credentials")
+	ErrUserAlreadyExists     = errors.New("user already exists")
+	ErrSessionNotFound       = errors.New("session not found")
+	ErrInvalidSession        = errors.New("invalid session")
+	ErrInvalidToken          = errors.New("invalid or expired token")
+	ErrUnauthorized          = errors.New("unauthorized")
+	ErrInsufficientPermissions = errors.New("insufficient permissions")
+	{{if .Auth.Features.MultiTenant}}
+	ErrTenantNotFound        = errors.New("tenant not found")
+	ErrInvalidTenant         = errors.New("invalid tenant")
+	{{end}}
+)
+
+// authService implements the AuthService interface.
+type authService struct {
+	repo       AuthRepository
+	jwtManager *JWTManager
+	config     *JWTAuthConfig
+	logger     *zap.Logger
+}
+
+// NewAuthService creates a new authentication service.
+func NewAuthService(repo AuthRepository, jwtManager *JWTManager, config *JWTAuthConfig, logger *zap.Logger) AuthService {
+	return &authService{
+		repo:       repo,
+		jwtManager: jwtManager,
+		config:     config,
+		logger:     logger,
+	}
+}
+
+// Register registers a new user.
+func (s *authService) Register(ctx context.Context, req *RegisterRequest) (*User, error) {
+	// Check if user already exists
+	existingUser, err := s.repo.GetUserByUsername(ctx, req.Username)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to check existing user: %w", err)
+	}
+	if existingUser != nil {
+		return nil, ErrUserAlreadyExists
+	}
+
+	existingUser, err = s.repo.GetUserByEmail(ctx, req.Email)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to check existing email: %w", err)
+	}
+	if existingUser != nil {
+		return nil, ErrUserAlreadyExists
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	// Generate user ID
+	userID, err := generateID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate user ID: %w", err)
+	}
+
+	user := &User{
+		ID:        userID,
+		Username:  req.Username,
+		Email:     req.Email,
+		Password:  string(hashedPassword),
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
+		IsActive:  true,
+		IsVerified: false, // Typically requires email verification
+		{{if .Auth.Features.MultiTenant}}
+		TenantID:  req.TenantID,
+		{{end}}
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	if err := s.repo.CreateUser(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Remove password from response
+	user.Password = ""
+	return user, nil
+}
+
+// Login authenticates a user and returns tokens.
+func (s *authService) Login(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
+	// Get user by username
+	user, err := s.repo.GetUserByUsername(ctx, req.Username)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Check if user is active
+	if !user.IsActive {
+		return nil, ErrUnauthorized
+	}
+
+	{{if .Auth.Features.MultiTenant}}
+	// Validate tenant
+	if user.TenantID != req.TenantID {
+		return nil, ErrInvalidTenant
+	}
+	{{end}}
+
+	// Verify password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		return nil, ErrInvalidCredentials
+	}
+
+	// Get user roles and permissions
+	var roles []string
+	var permissions []string
+	
+	{{if .Auth.Features.RBAC}}
+	userRoles, err := s.repo.GetUserRoles(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user roles: %w", err)
+	}
+	
+	for _, role := range userRoles {
+		roles = append(roles, role.Name)
+	}
+	
+	userPermissions, err := s.repo.GetUserPermissions(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user permissions: %w", err)
+	}
+	
+	for _, perm := range userPermissions {
+		permissions = append(permissions, fmt.Sprintf("%s:%s", perm.Resource, perm.Action))
+	}
+	{{end}}
+
+	// Generate tokens
+	audience := "{{.Service.Name}}"
+	{{if .Auth.Features.MultiTenant}}
+	audience = fmt.Sprintf("%s:%s", audience, req.TenantID)
+	{{end}}
+	
+	tokenPair, err := s.jwtManager.GenerateTokenPair(ctx, user.ID, user.Username, user.Email, roles, permissions, audience)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate tokens: %w", err)
+	}
+
+	// Create session
+	sessionID, err := generateID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate session ID: %w", err)
+	}
+
+	session := &Session{
+		ID:           sessionID,
+		UserID:       user.ID,
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
+		ExpiresAt:    time.Now().Add(s.config.RefreshTokenTTL),
+		LastUsedAt:   time.Now(),
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if err := s.repo.CreateSession(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	// Update user's last login
+	now := time.Now()
+	user.LastLoginAt = &now
+	user.UpdatedAt = now
+	if err := s.repo.UpdateUser(ctx, user); err != nil {
+		// Log error but don't fail the login
+		s.logger.Warn("failed to update user last login", 
+			zap.String("user_id", user.ID),
+			zap.Error(err))
+	}
+
+	// Remove password from response
+	user.Password = ""
+
+	return &LoginResponse{
+		User:               *user,
+		TokenPair:          *tokenPair,
+		ExpiresIn:          tokenPair.ExpiresIn,
+		RefreshExpiresIn:   tokenPair.RefreshExpiresIn,
+	}, nil
+}
+
+// Logout logs out a user session.
+func (s *authService) Logout(ctx context.Context, userID, sessionID string) error {
+	session, err := s.repo.GetSession(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrSessionNotFound
+		}
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	if session.UserID != userID {
+		return ErrUnauthorized
+	}
+
+	{{if .Auth.Features.TokenBlacklist}}
+	// Add tokens to blacklist
+	if session.AccessToken != "" {
+		claims, _ := s.jwtManager.GetTokenClaims(session.AccessToken)
+		if claims != nil {
+			blacklistedToken := &BlacklistedToken{
+				TokenID:   claims.ID,
+				UserID:    userID,
+				ExpiresAt: claims.ExpiresAt.Time,
+				RevokedAt: time.Now(),
+				Reason:    "logout",
+			}
+			if err := s.repo.AddBlacklistedToken(ctx, blacklistedToken); err != nil {
+				// Log error but don't fail logout
+				s.logger.Warn("failed to blacklist access token", 
+					zap.String("token_type", "access"),
+					zap.Error(err))
+			}
+		}
+	}
+
+	if session.RefreshToken != "" {
+		claims, _ := s.jwtManager.GetTokenClaims(session.RefreshToken)
+		if claims != nil {
+			blacklistedToken := &BlacklistedToken{
+				TokenID:   claims.ID,
+				UserID:    userID,
+				ExpiresAt: claims.ExpiresAt.Time,
+				RevokedAt: time.Now(),
+				Reason:    "logout",
+			}
+			if err := s.repo.AddBlacklistedToken(ctx, blacklistedToken); err != nil {
+				// Log error but don't fail logout
+				s.logger.Warn("failed to blacklist refresh token", 
+					zap.String("token_type", "refresh"),
+					zap.Error(err))
+			}
+		}
+	}
+	{{end}}
+
+	return s.repo.DeleteSession(ctx, sessionID)
+}
+
+// RefreshToken generates new tokens using a refresh token.
+func (s *authService) RefreshToken(ctx context.Context, req *RefreshTokenRequest) (*TokenPair, error) {
+	// Validate refresh token
+	claims, err := s.jwtManager.ValidateToken(ctx, req.RefreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+
+	if claims.TokenType != "refresh" {
+		return nil, errors.New("token is not a refresh token")
+	}
+
+	{{if .Auth.Features.TokenBlacklist}}
+	// Check if token is blacklisted
+	isBlacklisted, err := s.repo.IsTokenBlacklisted(ctx, claims.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check token blacklist: %w", err)
+	}
+	if isBlacklisted {
+		return nil, ErrInvalidToken
+	}
+	{{end}}
+
+	// Get user to ensure they still exist and are active
+	user, err := s.repo.GetUserByID(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if !user.IsActive {
+		return nil, ErrUnauthorized
+	}
+
+	// Get current user roles and permissions
+	var roles []string
+	var permissions []string
+	
+	{{if .Auth.Features.RBAC}}
+	userRoles, err := s.repo.GetUserRoles(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user roles: %w", err)
+	}
+	
+	for _, role := range userRoles {
+		roles = append(roles, role.Name)
+	}
+	
+	userPermissions, err := s.repo.GetUserPermissions(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user permissions: %w", err)
+	}
+	
+	for _, perm := range userPermissions {
+		permissions = append(permissions, fmt.Sprintf("%s:%s", perm.Resource, perm.Action))
+	}
+	{{end}}
+
+	// Generate new token pair
+	audience := claims.Audience[0] // Use the same audience
+	tokenPair, err := s.jwtManager.GenerateTokenPair(ctx, user.ID, user.Username, user.Email, roles, permissions, audience)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate tokens: %w", err)
+	}
+
+	return tokenPair, nil
+}
+
+// GetUser retrieves a user by ID.
+func (s *authService) GetUser(ctx context.Context, userID string) (*User, error) {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Remove password from response
+	user.Password = ""
+	return user, nil
+}
+
+// UpdateUser updates user information.
+func (s *authService) UpdateUser(ctx context.Context, userID string, updates map[string]interface{}) (*User, error) {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Apply updates
+	if firstName, ok := updates["first_name"]; ok {
+		user.FirstName = firstName.(string)
+	}
+	if lastName, ok := updates["last_name"]; ok {
+		user.LastName = lastName.(string)
+	}
+	if email, ok := updates["email"]; ok {
+		user.Email = email.(string)
+	}
+
+	user.UpdatedAt = time.Now()
+
+	if err := s.repo.UpdateUser(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	// Remove password from response
+	user.Password = ""
+	return user, nil
+}
+
+// ChangePassword changes a user's password.
+func (s *authService) ChangePassword(ctx context.Context, userID string, req *ChangePasswordRequest) error {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Verify current password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	user.Password = string(hashedPassword)
+	user.UpdatedAt = time.Now()
+
+	if err := s.repo.UpdateUser(ctx, user); err != nil {
+		return fmt.Errorf("failed to update user password: %w", err)
+	}
+
+	// Revoke all user sessions to force re-login
+	if err := s.repo.DeleteUserSessions(ctx, userID); err != nil {
+		// Log error but don't fail the operation
+		s.logger.Warn("failed to revoke user sessions", 
+			zap.String("user_id", userID),
+			zap.Error(err))
+	}
+
+	return nil
+}
+
+// ResetPassword initiates password reset (placeholder implementation).
+func (s *authService) ResetPassword(ctx context.Context, req *ResetPasswordRequest) error {
+	// TODO: Implement password reset logic
+	// This typically involves:
+	// 1. Generate a secure reset token
+	// 2. Store the token with expiration
+	// 3. Send email with reset link
+	// 4. Provide endpoint to complete reset with token
+	return fmt.Errorf("password reset not implemented")
+}
+
+// GetUserSessions retrieves all sessions for a user.
+func (s *authService) GetUserSessions(ctx context.Context, userID string) ([]Session, error) {
+	return s.repo.GetUserSessions(ctx, userID)
+}
+
+// RevokeSession revokes a specific session.
+func (s *authService) RevokeSession(ctx context.Context, sessionID string) error {
+	return s.repo.DeleteSession(ctx, sessionID)
+}
+
+// RevokeAllSessions revokes all sessions for a user.
+func (s *authService) RevokeAllSessions(ctx context.Context, userID string) error {
+	return s.repo.DeleteUserSessions(ctx, userID)
+}
+
+// ValidateToken validates a JWT token.
+func (s *authService) ValidateToken(ctx context.Context, tokenString string) (*JWTClaims, error) {
+	claims, err := s.jwtManager.ValidateToken(ctx, tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	{{if .Auth.Features.TokenBlacklist}}
+	// Check if token is blacklisted
+	isBlacklisted, err := s.repo.IsTokenBlacklisted(ctx, claims.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check token blacklist: %w", err)
+	}
+	if isBlacklisted {
+		return nil, ErrInvalidToken
+	}
+	{{end}}
+
+	return claims, nil
+}
+
+// RevokeToken revokes a specific token.
+func (s *authService) RevokeToken(ctx context.Context, tokenID string) error {
+	{{if .Auth.Features.TokenBlacklist}}
+	// Add to blacklist (requires token details)
+	// This is a simplified implementation
+	blacklistedToken := &BlacklistedToken{
+		TokenID:   tokenID,
+		ExpiresAt: time.Now().Add(s.config.RefreshTokenTTL), // Conservative expiration
+		RevokedAt: time.Now(),
+		Reason:    "manual_revocation",
+	}
+	return s.repo.AddBlacklistedToken(ctx, blacklistedToken)
+	{{else}}
+	// Without blacklist support, token revocation is not possible
+	return fmt.Errorf("token revocation not supported without blacklist feature")
+	{{end}}
+}
+
+{{if .Auth.Features.RBAC}}
+// AssignRole assigns a role to a user.
+func (s *authService) AssignRole(ctx context.Context, userID, roleID string) error {
+	return s.repo.AssignUserRole(ctx, userID, roleID)
+}
+
+// RemoveRole removes a role from a user.
+func (s *authService) RemoveRole(ctx context.Context, userID, roleID string) error {
+	return s.repo.RemoveUserRole(ctx, userID, roleID)
+}
+
+// GetUserRoles retrieves all roles for a user.
+func (s *authService) GetUserRoles(ctx context.Context, userID string) ([]Role, error) {
+	return s.repo.GetUserRoles(ctx, userID)
+}
+
+// GetUserPermissions retrieves all permissions for a user.
+func (s *authService) GetUserPermissions(ctx context.Context, userID string) ([]Permission, error) {
+	return s.repo.GetUserPermissions(ctx, userID)
+}
+
+// HasPermission checks if a user has a specific permission.
+func (s *authService) HasPermission(ctx context.Context, userID, resource, action string) (bool, error) {
+	permissions, err := s.repo.GetUserPermissions(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get user permissions: %w", err)
+	}
+
+	for _, perm := range permissions {
+		if perm.Resource == resource && perm.Action == action {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+{{end}}
+
+{{if .Auth.Features.MultiTenant}}
+// GetTenant retrieves tenant information.
+func (s *authService) GetTenant(ctx context.Context, tenantID string) (*Tenant, error) {
+	tenant, err := s.repo.GetTenant(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrTenantNotFound
+		}
+		return nil, fmt.Errorf("failed to get tenant: %w", err)
+	}
+	return tenant, nil
+}
+
+// ValidateUserTenant validates if a user belongs to a tenant.
+func (s *authService) ValidateUserTenant(ctx context.Context, userID, tenantID string) (bool, error) {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return user.TenantID == tenantID, nil
+}
+{{end}}
+
+// generateID generates a random ID.
+func generateID() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}

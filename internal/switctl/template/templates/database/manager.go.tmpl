@@ -1,0 +1,443 @@
+{{- if .Service.Features.Database -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package db provides database connectivity management for {{.Service.Name}}.
+package db
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"go.uber.org/zap"
+{{- if eq .Service.Database.Type "mysql"}}
+	"gorm.io/gorm"
+{{- else if eq .Service.Database.Type "postgres"}}
+	"gorm.io/gorm"
+{{- else if eq .Service.Database.Type "sqlite"}}
+	"gorm.io/gorm"
+{{- else if eq .Service.Database.Type "mongodb"}}
+	"go.mongodb.org/mongo-driver/mongo"
+{{- end}}
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/config"
+)
+
+// DatabaseManager provides a unified interface for database operations.
+type DatabaseManager interface {
+	// Connection management
+	Connect(ctx context.Context) error
+	Close() error
+	Ping(ctx context.Context) error
+	HealthCheck(ctx context.Context) error
+
+{{- if ne .Service.Database.Type "mongodb"}}
+	// GORM-based operations (for SQL databases)
+	DB() *gorm.DB
+	SqlDB() *sql.DB
+	WithContext(ctx context.Context) *gorm.DB
+	Transaction(fn func(*gorm.DB) error) error
+	TransactionWithContext(ctx context.Context, fn func(*gorm.DB) error) error
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*gorm.DB, error)
+	Stats() sql.DBStats
+{{- else}}
+	// MongoDB-specific operations
+	Client() *mongo.Client
+	Database() *mongo.Database
+	Collection(name string) *mongo.Collection
+	Transaction(ctx context.Context, fn func(mongo.SessionContext) error) error
+	Stats(ctx context.Context) (map[string]interface{}, error)
+{{- end}}
+
+	// Migration and maintenance
+	Migrate() error
+	
+	// Configuration
+	GetType() string
+	GetConfig() interface{}
+}
+
+// DatabaseConfig represents the unified database configuration interface.
+type DatabaseConfig interface {
+	Validate() error
+	LoadDefaults()
+	GetType() string
+}
+
+{{- if eq .Service.Database.Type "mysql"}}
+// MySQLManager implements DatabaseManager for MySQL.
+type MySQLManager struct {
+	*MySQLDatabase
+	config *MySQLConfig
+}
+{{- else if eq .Service.Database.Type "postgres"}}
+// PostgreSQLManager implements DatabaseManager for PostgreSQL.
+type PostgreSQLManager struct {
+	*PostgreSQLDatabase
+	config *PostgreSQLConfig
+}
+{{- else if eq .Service.Database.Type "sqlite"}}
+// SQLiteManager implements DatabaseManager for SQLite.
+type SQLiteManager struct {
+	*SQLiteDatabase
+	config *SQLiteConfig
+}
+{{- else if eq .Service.Database.Type "mongodb"}}
+// MongoDBManager implements DatabaseManager for MongoDB.
+type MongoDBManager struct {
+	*MongoDB
+	config *MongoDBConfig
+}
+{{- end}}
+
+// NewDatabaseManager creates a new database manager based on configuration.
+func NewDatabaseManager(cfg *config.DatabaseConfig, logger *zap.Logger) (DatabaseManager, error) {
+	switch cfg.Type {
+{{- if eq .Service.Database.Type "mysql"}}
+	case "mysql":
+		mysqlConfig := &MySQLConfig{}
+		mysqlConfig.LoadDefaults()
+		// Map from generic config to MySQL-specific config
+		mysqlConfig.Host = cfg.Host
+		mysqlConfig.Port = cfg.Port
+		mysqlConfig.Database = cfg.Database
+		mysqlConfig.Username = cfg.Username
+		mysqlConfig.Password = cfg.Password
+
+		db, err := NewMySQLDatabase(mysqlConfig, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create MySQL database: %w", err)
+		}
+
+		return &MySQLManager{
+			MySQLDatabase: db,
+			config:        mysqlConfig,
+		}, nil
+{{- else if eq .Service.Database.Type "postgres"}}
+	case "postgres", "postgresql":
+		postgresConfig := &PostgreSQLConfig{}
+		postgresConfig.LoadDefaults()
+		// Map from generic config to PostgreSQL-specific config
+		postgresConfig.Host = cfg.Host
+		postgresConfig.Port = cfg.Port
+		postgresConfig.Database = cfg.Database
+		postgresConfig.Username = cfg.Username
+		postgresConfig.Password = cfg.Password
+		postgresConfig.Schema = cfg.Schema
+
+		db, err := NewPostgreSQLDatabase(postgresConfig, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create PostgreSQL database: %w", err)
+		}
+
+		return &PostgreSQLManager{
+			PostgreSQLDatabase: db,
+			config:             postgresConfig,
+		}, nil
+{{- else if eq .Service.Database.Type "sqlite"}}
+	case "sqlite", "sqlite3":
+		sqliteConfig := &SQLiteConfig{}
+		sqliteConfig.LoadDefaults()
+		// Map from generic config to SQLite-specific config
+		sqliteConfig.DatabasePath = cfg.Database
+
+		db, err := NewSQLiteDatabase(sqliteConfig, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SQLite database: %w", err)
+		}
+
+		return &SQLiteManager{
+			SQLiteDatabase: db,
+			config:         sqliteConfig,
+		}, nil
+{{- else if eq .Service.Database.Type "mongodb"}}
+	case "mongodb", "mongo":
+		mongoConfig := &MongoDBConfig{}
+		mongoConfig.LoadDefaults()
+		// Map from generic config to MongoDB-specific config
+		mongoConfig.Host = cfg.Host
+		mongoConfig.Port = cfg.Port
+		mongoConfig.Database = cfg.Database
+		mongoConfig.Username = cfg.Username
+		mongoConfig.Password = cfg.Password
+
+		db, err := NewMongoDB(mongoConfig, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create MongoDB database: %w", err)
+		}
+
+		return &MongoDBManager{
+			MongoDB: db,
+			config:  mongoConfig,
+		}, nil
+{{- end}}
+	default:
+		return nil, fmt.Errorf("unsupported database type: %s", cfg.Type)
+	}
+}
+
+{{- if eq .Service.Database.Type "mysql"}}
+// Connect establishes the database connection.
+func (m *MySQLManager) Connect(ctx context.Context) error {
+	return m.Ping(ctx)
+}
+
+// GetType returns the database type.
+func (m *MySQLManager) GetType() string {
+	return "mysql"
+}
+
+// GetConfig returns the database configuration.
+func (m *MySQLManager) GetConfig() interface{} {
+	return m.config
+}
+{{- else if eq .Service.Database.Type "postgres"}}
+// Connect establishes the database connection.
+func (m *PostgreSQLManager) Connect(ctx context.Context) error {
+	return m.Ping(ctx)
+}
+
+// GetType returns the database type.
+func (m *PostgreSQLManager) GetType() string {
+	return "postgres"
+}
+
+// GetConfig returns the database configuration.
+func (m *PostgreSQLManager) GetConfig() interface{} {
+	return m.config
+}
+{{- else if eq .Service.Database.Type "sqlite"}}
+// Connect establishes the database connection.
+func (m *SQLiteManager) Connect(ctx context.Context) error {
+	return m.Ping(ctx)
+}
+
+// GetType returns the database type.
+func (m *SQLiteManager) GetType() string {
+	return "sqlite"
+}
+
+// GetConfig returns the database configuration.
+func (m *SQLiteManager) GetConfig() interface{} {
+	return m.config
+}
+{{- else if eq .Service.Database.Type "mongodb"}}
+// Connect establishes the database connection.
+func (m *MongoDBManager) Connect(ctx context.Context) error {
+	return m.Ping(ctx)
+}
+
+// GetType returns the database type.
+func (m *MongoDBManager) GetType() string {
+	return "mongodb"
+}
+
+// GetConfig returns the database configuration.
+func (m *MongoDBManager) GetConfig() interface{} {
+	return m.config
+}
+{{- end}}
+
+// DatabaseFactory provides factory methods for creating database managers.
+type DatabaseFactory struct {
+	logger *zap.Logger
+}
+
+// NewDatabaseFactory creates a new database factory.
+func NewDatabaseFactory(logger *zap.Logger) *DatabaseFactory {
+	return &DatabaseFactory{
+		logger: logger,
+	}
+}
+
+// CreateDatabase creates a database manager based on the configuration type.
+func (f *DatabaseFactory) CreateDatabase(cfg *config.DatabaseConfig) (DatabaseManager, error) {
+	return NewDatabaseManager(cfg, f.logger)
+}
+
+// CreateTestDatabase creates a database manager optimized for testing.
+func (f *DatabaseFactory) CreateTestDatabase() (DatabaseManager, error) {
+{{- if eq .Service.Database.Type "sqlite"}}
+	// For SQLite, use in-memory database for testing
+	config := &SQLiteConfig{
+		InMemory:        true,
+		ForeignKeys:     true,
+		EnableLogging:   false,
+		MaxOpenConns:    1,
+		MaxIdleConns:    1,
+		ConnMaxLifetime: time.Hour,
+	}
+
+	db, err := NewSQLiteDatabase(config, f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create test SQLite database: %w", err)
+	}
+
+	return &SQLiteManager{
+		SQLiteDatabase: db,
+		config:         config,
+	}, nil
+{{- else if eq .Service.Database.Type "mysql"}}
+	// For MySQL, use test database configuration
+	config := &MySQLConfig{
+		Host:            "localhost",
+		Port:            3306,
+		Database:        "{{.Service.Name}}_test",
+		Username:        "test",
+		Password:        "test",
+		EnableLogging:   false,
+		MaxOpenConns:    10,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: time.Hour,
+	}
+
+	db, err := NewMySQLDatabase(config, f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create test MySQL database: %w", err)
+	}
+
+	return &MySQLManager{
+		MySQLDatabase: db,
+		config:        config,
+	}, nil
+{{- else if eq .Service.Database.Type "postgres"}}
+	// For PostgreSQL, use test database configuration
+	config := &PostgreSQLConfig{
+		Host:            "localhost",
+		Port:            5432,
+		Database:        "{{.Service.Name}}_test",
+		Username:        "test",
+		Password:        "test",
+		Schema:          "public",
+		EnableLogging:   false,
+		MaxOpenConns:    10,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: time.Hour,
+	}
+
+	db, err := NewPostgreSQLDatabase(config, f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create test PostgreSQL database: %w", err)
+	}
+
+	return &PostgreSQLManager{
+		PostgreSQLDatabase: db,
+		config:             config,
+	}, nil
+{{- else if eq .Service.Database.Type "mongodb"}}
+	// For MongoDB, use test database configuration
+	config := &MongoDBConfig{
+		Host:          "localhost",
+		Port:          27017,
+		Database:      "{{.Service.Name}}_test",
+		EnableLogging: false,
+		MaxPoolSize:   10,
+		MinPoolSize:   1,
+	}
+
+	db, err := NewMongoDB(config, f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create test MongoDB database: %w", err)
+	}
+
+	return &MongoDBManager{
+		MongoDB: db,
+		config:  config,
+	}, nil
+{{- end}}
+}
+
+// ConnectionPool manages multiple database connections for advanced use cases.
+type ConnectionPool struct {
+	primary   DatabaseManager
+	replicas  []DatabaseManager
+	logger    *zap.Logger
+	failover  bool
+}
+
+// NewConnectionPool creates a new database connection pool.
+func NewConnectionPool(primary DatabaseManager, replicas []DatabaseManager, logger *zap.Logger) *ConnectionPool {
+	return &ConnectionPool{
+		primary:  primary,
+		replicas: replicas,
+		logger:   logger,
+		failover: len(replicas) > 0,
+	}
+}
+
+// Primary returns the primary database connection.
+func (cp *ConnectionPool) Primary() DatabaseManager {
+	return cp.primary
+}
+
+// Replica returns a replica database connection for read operations.
+func (cp *ConnectionPool) Replica() DatabaseManager {
+	if len(cp.replicas) == 0 {
+		return cp.primary
+	}
+	// Simple round-robin selection
+	// In production, you might want to implement load balancing
+	return cp.replicas[0]
+}
+
+// HealthCheck checks the health of all connections in the pool.
+func (cp *ConnectionPool) HealthCheck(ctx context.Context) error {
+	// Check primary
+	if err := cp.primary.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("primary database health check failed: %w", err)
+	}
+
+	// Check replicas
+	for i, replica := range cp.replicas {
+		if err := replica.HealthCheck(ctx); err != nil {
+			cp.logger.Warn("Replica database health check failed",
+				zap.Int("replica_index", i),
+				zap.Error(err),
+			)
+			// Don't return error for replica failures if we have others
+		}
+	}
+
+	return nil
+}
+
+// Close closes all connections in the pool.
+func (cp *ConnectionPool) Close() error {
+	var errors []error
+
+	if err := cp.primary.Close(); err != nil {
+		errors = append(errors, fmt.Errorf("failed to close primary database: %w", err))
+	}
+
+	for i, replica := range cp.replicas {
+		if err := replica.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close replica %d: %w", i, err))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("errors closing connection pool: %v", errors)
+	}
+
+	return nil
+}
+{{- end -}}

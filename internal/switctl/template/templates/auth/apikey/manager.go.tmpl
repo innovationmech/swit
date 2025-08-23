@@ -1,0 +1,652 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+var (
+	// API Key errors
+	ErrMissingAPIKey     = errors.New("missing API key")
+	ErrInvalidAPIKey     = errors.New("invalid API key")
+	ErrAPIKeyExpired     = errors.New("API key expired")
+	ErrAPIKeyRevoked     = errors.New("API key revoked")
+	ErrAPIKeyNotFound    = errors.New("API key not found")
+	ErrAPIKeyExists      = errors.New("API key already exists")
+	ErrInsufficientScope = errors.New("insufficient scope")
+)
+
+// APIKeyConfig holds API key authentication configuration.
+type APIKeyConfig struct {
+	HeaderName        string        `yaml:"header_name" json:"header_name" mapstructure:"header_name"`
+	QueryParamName    string        `yaml:"query_param_name" json:"query_param_name" mapstructure:"query_param_name"`
+	KeyLength         int           `yaml:"key_length" json:"key_length" mapstructure:"key_length"`
+	DefaultTTL        time.Duration `yaml:"default_ttl" json:"default_ttl" mapstructure:"default_ttl"`
+	MaxTTL            time.Duration `yaml:"max_ttl" json:"max_ttl" mapstructure:"max_ttl"`
+	EnableRateLimiting bool         `yaml:"enable_rate_limiting" json:"enable_rate_limiting" mapstructure:"enable_rate_limiting"`
+	RateLimitRequests int           `yaml:"rate_limit_requests" json:"rate_limit_requests" mapstructure:"rate_limit_requests"`
+	RateLimitWindow   time.Duration `yaml:"rate_limit_window" json:"rate_limit_window" mapstructure:"rate_limit_window"`
+	RequireScope      bool          `yaml:"require_scope" json:"require_scope" mapstructure:"require_scope"`
+	LogUsage          bool          `yaml:"log_usage" json:"log_usage" mapstructure:"log_usage"`
+}
+
+// APIKey represents an API key.
+type APIKey struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	KeyHash     string            `json:"key_hash"`
+	UserID      string            `json:"user_id"`
+	Scopes      []string          `json:"scopes"`
+	Roles       []string          `json:"roles"`
+	Permissions []string          `json:"permissions"`
+	IsActive    bool              `json:"is_active"`
+	ExpiresAt   time.Time         `json:"expires_at"`
+	LastUsedAt  time.Time         `json:"last_used_at"`
+	UsageCount  int64             `json:"usage_count"`
+	Metadata    map[string]string `json:"metadata"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+}
+
+// APIKeyUsage represents API key usage statistics.
+type APIKeyUsage struct {
+	KeyID     string    `json:"key_id"`
+	Endpoint  string    `json:"endpoint"`
+	Method    string    `json:"method"`
+	UserAgent string    `json:"user_agent"`
+	IPAddress string    `json:"ip_address"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// APIKeyManager handles API key authentication and management.
+type APIKeyManager struct {
+	config    *APIKeyConfig
+	keyStore  APIKeyStore
+	usageStore APIKeyUsageStore
+	limiter   RateLimiter
+}
+
+// APIKeyStore interface for managing API keys.
+type APIKeyStore interface {
+	GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKey, error)
+	GetAPIKey(ctx context.Context, keyID string) (*APIKey, error)
+	GetAPIKeysByUser(ctx context.Context, userID string) ([]*APIKey, error)
+	CreateAPIKey(ctx context.Context, key *APIKey) error
+	UpdateAPIKey(ctx context.Context, key *APIKey) error
+	DeleteAPIKey(ctx context.Context, keyID string) error
+	ListAPIKeys(ctx context.Context, limit, offset int) ([]*APIKey, error)
+}
+
+// APIKeyUsageStore interface for tracking API key usage.
+type APIKeyUsageStore interface {
+	RecordUsage(ctx context.Context, usage *APIKeyUsage) error
+	GetUsageStats(ctx context.Context, keyID string, since time.Time) (*UsageStats, error)
+}
+
+// UsageStats represents API key usage statistics.
+type UsageStats struct {
+	TotalRequests  int64            `json:"total_requests"`
+	UniqueEndpoints int             `json:"unique_endpoints"`
+	MethodBreakdown map[string]int64 `json:"method_breakdown"`
+	HourlyStats    []HourlyStat     `json:"hourly_stats"`
+}
+
+// HourlyStat represents hourly usage statistics.
+type HourlyStat struct {
+	Hour     time.Time `json:"hour"`
+	Requests int64     `json:"requests"`
+}
+
+// NewAPIKeyManager creates a new API key manager.
+func NewAPIKeyManager(config *APIKeyConfig, keyStore APIKeyStore, usageStore APIKeyUsageStore, limiter RateLimiter) (*APIKeyManager, error) {
+	if config == nil {
+		return nil, errors.New("API key config is required")
+	}
+
+	if keyStore == nil {
+		return nil, errors.New("key store is required")
+	}
+
+	// Set defaults
+	if config.HeaderName == "" {
+		config.HeaderName = "X-API-Key"
+	}
+	if config.QueryParamName == "" {
+		config.QueryParamName = "api_key"
+	}
+	if config.KeyLength == 0 {
+		config.KeyLength = 32
+	}
+	if config.DefaultTTL == 0 {
+		config.DefaultTTL = 365 * 24 * time.Hour // 1 year
+	}
+	if config.MaxTTL == 0 {
+		config.MaxTTL = 5 * 365 * 24 * time.Hour // 5 years
+	}
+	if config.RateLimitRequests == 0 {
+		config.RateLimitRequests = 1000
+	}
+	if config.RateLimitWindow == 0 {
+		config.RateLimitWindow = time.Hour
+	}
+
+	return &APIKeyManager{
+		config:     config,
+		keyStore:   keyStore,
+		usageStore: usageStore,
+		limiter:    limiter,
+	}, nil
+}
+
+// CreateAPIKey creates a new API key.
+func (m *APIKeyManager) CreateAPIKey(ctx context.Context, name, userID string, scopes, roles, permissions []string, ttl time.Duration, metadata map[string]string) (*APIKey, string, error) {
+	// Validate TTL
+	if ttl > m.config.MaxTTL {
+		ttl = m.config.MaxTTL
+	}
+	if ttl <= 0 {
+		ttl = m.config.DefaultTTL
+	}
+
+	// Generate API key
+	rawKey, err := m.generateAPIKey()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Hash the key for storage
+	keyHash := m.hashAPIKey(rawKey)
+
+	// Create API key record
+	apiKey := &APIKey{
+		ID:          generateID(),
+		Name:        name,
+		KeyHash:     keyHash,
+		UserID:      userID,
+		Scopes:      scopes,
+		Roles:       roles,
+		Permissions: permissions,
+		IsActive:    true,
+		ExpiresAt:   time.Now().Add(ttl),
+		Metadata:    metadata,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	err = m.keyStore.CreateAPIKey(ctx, apiKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to store API key: %w", err)
+	}
+
+	return apiKey, rawKey, nil
+}
+
+// ValidateAPIKey validates an API key and returns associated information.
+func (m *APIKeyManager) ValidateAPIKey(ctx context.Context, rawKey string) (*APIKey, error) {
+	if rawKey == "" {
+		return nil, ErrMissingAPIKey
+	}
+
+	// Hash the provided key
+	keyHash := m.hashAPIKey(rawKey)
+
+	// Get API key from store
+	apiKey, err := m.keyStore.GetAPIKeyByHash(ctx, keyHash)
+	if err != nil {
+		return nil, ErrInvalidAPIKey
+	}
+
+	// Check if key is active
+	if !apiKey.IsActive {
+		return nil, ErrAPIKeyRevoked
+	}
+
+	// Check if key is expired
+	if !apiKey.ExpiresAt.IsZero() && time.Now().After(apiKey.ExpiresAt) {
+		return nil, ErrAPIKeyExpired
+	}
+
+	// Check rate limiting
+	if m.config.EnableRateLimiting && m.limiter != nil {
+		rateLimitKey := "api_key:" + apiKey.ID
+		allowed, err := m.limiter.IsAllowed(ctx, rateLimitKey)
+		if err != nil {
+			return nil, fmt.Errorf("rate limit check failed: %w", err)
+		}
+		if !allowed {
+			return nil, errors.New("rate limit exceeded")
+		}
+	}
+
+	// Update usage statistics
+	apiKey.LastUsedAt = time.Now()
+	apiKey.UsageCount++
+	apiKey.UpdatedAt = time.Now()
+	
+	// Update in background to avoid blocking
+	go func() {
+		_ = m.keyStore.UpdateAPIKey(context.Background(), apiKey)
+	}()
+
+	return apiKey, nil
+}
+
+// RevokeAPIKey revokes an API key.
+func (m *APIKeyManager) RevokeAPIKey(ctx context.Context, keyID string) error {
+	apiKey, err := m.keyStore.GetAPIKey(ctx, keyID)
+	if err != nil {
+		return ErrAPIKeyNotFound
+	}
+
+	apiKey.IsActive = false
+	apiKey.UpdatedAt = time.Now()
+
+	return m.keyStore.UpdateAPIKey(ctx, apiKey)
+}
+
+// RefreshAPIKey creates a new API key with the same properties.
+func (m *APIKeyManager) RefreshAPIKey(ctx context.Context, keyID string, newTTL time.Duration) (*APIKey, string, error) {
+	oldKey, err := m.keyStore.GetAPIKey(ctx, keyID)
+	if err != nil {
+		return nil, "", ErrAPIKeyNotFound
+	}
+
+	// Create new key with same properties
+	newKey, rawKey, err := m.CreateAPIKey(
+		ctx,
+		oldKey.Name,
+		oldKey.UserID,
+		oldKey.Scopes,
+		oldKey.Roles,
+		oldKey.Permissions,
+		newTTL,
+		oldKey.Metadata,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Revoke old key
+	_ = m.RevokeAPIKey(ctx, keyID)
+
+	return newKey, rawKey, nil
+}
+
+// HTTPMiddleware returns a Gin middleware for API key authentication.
+func (m *APIKeyManager) HTTPMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Extract API key
+		apiKey := m.extractAPIKey(c)
+		if apiKey == "" {
+			m.respondUnauthorized(c, "missing API key")
+			c.Abort()
+			return
+		}
+
+		// Validate API key
+		key, err := m.ValidateAPIKey(c.Request.Context(), apiKey)
+		if err != nil {
+			m.respondUnauthorized(c, err.Error())
+			c.Abort()
+			return
+		}
+
+		// Record usage if enabled
+		if m.config.LogUsage && m.usageStore != nil {
+			go m.recordUsage(c, key)
+		}
+
+		// Set user context
+		c.Set(string(UserContextKey), &types.User{
+			ID:          key.UserID,
+			Username:    key.UserID,
+			Roles:       key.Roles,
+			Permissions: key.Permissions,
+		})
+		c.Set("api_key", key)
+
+		c.Next()
+	}
+}
+
+// RequireScope returns middleware that requires specific scopes.
+func (m *APIKeyManager) RequireScope(requiredScopes ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !m.config.RequireScope {
+			c.Next()
+			return
+		}
+
+		keyInterface, exists := c.Get("api_key")
+		if !exists {
+			m.respondForbidden(c, "API key not found in context")
+			c.Abort()
+			return
+		}
+
+		key, ok := keyInterface.(*APIKey)
+		if !ok {
+			m.respondForbidden(c, "invalid API key context")
+			c.Abort()
+			return
+		}
+
+		if !m.hasScopes(key, requiredScopes) {
+			m.respondForbidden(c, "insufficient scope")
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// GRPCUnaryInterceptor returns a gRPC unary interceptor for API key authentication.
+func (m *APIKeyManager) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Skip authentication for certain methods
+		if m.shouldSkipGRPCAuth(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
+		// Extract API key
+		apiKey, err := m.extractGRPCAPIKey(ctx)
+		if err != nil {
+			return nil, status.Error(codes.Unauthenticated, "missing or invalid API key")
+		}
+
+		// Validate API key
+		key, err := m.ValidateAPIKey(ctx, apiKey)
+		if err != nil {
+			return nil, status.Error(codes.Unauthenticated, err.Error())
+		}
+
+		// Add user to context
+		newCtx := context.WithValue(ctx, UserContextKey, &types.User{
+			ID:          key.UserID,
+			Username:    key.UserID,
+			Roles:       key.Roles,
+			Permissions: key.Permissions,
+		})
+		newCtx = context.WithValue(newCtx, "api_key", key)
+
+		return handler(newCtx, req)
+	}
+}
+
+// Helper methods
+
+func (m *APIKeyManager) generateAPIKey() (string, error) {
+	bytes := make([]byte, m.config.KeyLength)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func (m *APIKeyManager) hashAPIKey(key string) string {
+	hash := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(hash[:])
+}
+
+func (m *APIKeyManager) extractAPIKey(c *gin.Context) string {
+	// Try header first
+	if key := c.GetHeader(m.config.HeaderName); key != "" {
+		return key
+	}
+
+	// Try query parameter
+	if key := c.Query(m.config.QueryParamName); key != "" {
+		return key
+	}
+
+	// Try Authorization header with Bearer token
+	if auth := c.GetHeader("Authorization"); auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			return parts[1]
+		}
+	}
+
+	return ""
+}
+
+func (m *APIKeyManager) extractGRPCAPIKey(ctx context.Context) (string, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", errors.New("missing metadata")
+	}
+
+	// Try custom header
+	if keys := md.Get(strings.ToLower(m.config.HeaderName)); len(keys) > 0 {
+		return keys[0], nil
+	}
+
+	// Try authorization header
+	if auths := md.Get("authorization"); len(auths) > 0 {
+		auth := auths[0]
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			return parts[1], nil
+		}
+	}
+
+	return "", errors.New("API key not found")
+}
+
+func (m *APIKeyManager) hasScopes(key *APIKey, requiredScopes []string) bool {
+	keyScopes := make(map[string]bool)
+	for _, scope := range key.Scopes {
+		keyScopes[scope] = true
+	}
+
+	// Check for wildcard scope
+	if keyScopes["*"] {
+		return true
+	}
+
+	// Check each required scope
+	for _, required := range requiredScopes {
+		if !keyScopes[required] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (m *APIKeyManager) shouldSkipGRPCAuth(fullMethod string) bool {
+	skipMethods := []string{
+		"/grpc.health.v1.Health/",
+		"/grpc.reflection.v1alpha.ServerReflection/",
+	}
+
+	for _, skipMethod := range skipMethods {
+		if strings.HasPrefix(fullMethod, skipMethod) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m *APIKeyManager) recordUsage(c *gin.Context, key *APIKey) {
+	if m.usageStore == nil {
+		return
+	}
+
+	usage := &APIKeyUsage{
+		KeyID:     key.ID,
+		Endpoint:  c.Request.URL.Path,
+		Method:    c.Request.Method,
+		UserAgent: c.GetHeader("User-Agent"),
+		IPAddress: c.ClientIP(),
+		Timestamp: time.Now(),
+	}
+
+	_ = m.usageStore.RecordUsage(context.Background(), usage)
+}
+
+func (m *APIKeyManager) respondUnauthorized(c *gin.Context, message string) {
+	c.JSON(http.StatusUnauthorized, types.Response{
+		Success: false,
+		Message: "Unauthorized",
+		Error: &types.ErrorInfo{
+			Code:    "UNAUTHORIZED",
+			Message: message,
+		},
+	})
+}
+
+func (m *APIKeyManager) respondForbidden(c *gin.Context, message string) {
+	c.JSON(http.StatusForbidden, types.Response{
+		Success: false,
+		Message: "Forbidden",
+		Error: &types.ErrorInfo{
+			Code:    "FORBIDDEN",
+			Message: message,
+		},
+	})
+}
+
+func generateID() string {
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
+// InMemoryAPIKeyStore provides an in-memory implementation of APIKeyStore.
+type InMemoryAPIKeyStore struct {
+	keys      map[string]*APIKey
+	keysByHash map[string]*APIKey
+}
+
+// NewInMemoryAPIKeyStore creates a new in-memory API key store.
+func NewInMemoryAPIKeyStore() *InMemoryAPIKeyStore {
+	return &InMemoryAPIKeyStore{
+		keys:       make(map[string]*APIKey),
+		keysByHash: make(map[string]*APIKey),
+	}
+}
+
+func (s *InMemoryAPIKeyStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKey, error) {
+	key, exists := s.keysByHash[keyHash]
+	if !exists {
+		return nil, ErrAPIKeyNotFound
+	}
+	
+	keyCopy := *key
+	return &keyCopy, nil
+}
+
+func (s *InMemoryAPIKeyStore) GetAPIKey(ctx context.Context, keyID string) (*APIKey, error) {
+	key, exists := s.keys[keyID]
+	if !exists {
+		return nil, ErrAPIKeyNotFound
+	}
+	
+	keyCopy := *key
+	return &keyCopy, nil
+}
+
+func (s *InMemoryAPIKeyStore) GetAPIKeysByUser(ctx context.Context, userID string) ([]*APIKey, error) {
+	var userKeys []*APIKey
+	for _, key := range s.keys {
+		if key.UserID == userID {
+			keyCopy := *key
+			userKeys = append(userKeys, &keyCopy)
+		}
+	}
+	return userKeys, nil
+}
+
+func (s *InMemoryAPIKeyStore) CreateAPIKey(ctx context.Context, key *APIKey) error {
+	if _, exists := s.keys[key.ID]; exists {
+		return ErrAPIKeyExists
+	}
+	
+	keyCopy := *key
+	s.keys[key.ID] = &keyCopy
+	s.keysByHash[key.KeyHash] = &keyCopy
+	return nil
+}
+
+func (s *InMemoryAPIKeyStore) UpdateAPIKey(ctx context.Context, key *APIKey) error {
+	if _, exists := s.keys[key.ID]; !exists {
+		return ErrAPIKeyNotFound
+	}
+	
+	keyCopy := *key
+	s.keys[key.ID] = &keyCopy
+	s.keysByHash[key.KeyHash] = &keyCopy
+	return nil
+}
+
+func (s *InMemoryAPIKeyStore) DeleteAPIKey(ctx context.Context, keyID string) error {
+	key, exists := s.keys[keyID]
+	if !exists {
+		return ErrAPIKeyNotFound
+	}
+	
+	delete(s.keys, keyID)
+	delete(s.keysByHash, key.KeyHash)
+	return nil
+}
+
+func (s *InMemoryAPIKeyStore) ListAPIKeys(ctx context.Context, limit, offset int) ([]*APIKey, error) {
+	keys := make([]*APIKey, 0, len(s.keys))
+	i := 0
+	
+	for _, key := range s.keys {
+		if i < offset {
+			i++
+			continue
+		}
+		
+		if limit > 0 && len(keys) >= limit {
+			break
+		}
+		
+		keyCopy := *key
+		keys = append(keys, &keyCopy)
+		i++
+	}
+	
+	return keys, nil
+}

@@ -1,0 +1,209 @@
+{{- if and .Service.Features.Database (eq .Service.Database.Type "postgresql") -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package db provides PostgreSQL database connectivity for {{.Service.Name}}.
+package db
+
+import (
+	"fmt"
+	"time"
+)
+
+// PostgreSQLConfig represents PostgreSQL-specific configuration.
+type PostgreSQLConfig struct {
+	Host                string        `yaml:"host" json:"host" default:"{{.Service.Database.Host}}"`
+	Port                int           `yaml:"port" json:"port" default:"{{.Service.Database.Port}}"`
+	Database            string        `yaml:"database" json:"database" default:"{{.Service.Database.Database}}"`
+	Username            string        `yaml:"username" json:"username" default:"{{.Service.Database.Username}}"`
+	Password            string        `yaml:"password" json:"password" default:"{{.Service.Database.Password}}"`
+	Schema              string        `yaml:"schema" json:"schema" default:"public"`
+	SSLMode             string        `yaml:"ssl_mode" json:"ssl_mode" default:"disable"`
+	SSLCert             string        `yaml:"ssl_cert" json:"ssl_cert"`
+	SSLKey              string        `yaml:"ssl_key" json:"ssl_key"`
+	SSLRootCert         string        `yaml:"ssl_root_cert" json:"ssl_root_cert"`
+	TimeZone            string        `yaml:"timezone" json:"timezone" default:"UTC"`
+	ConnectTimeout      time.Duration `yaml:"connect_timeout" json:"connect_timeout" default:"10s"`
+	StatementTimeout    time.Duration `yaml:"statement_timeout" json:"statement_timeout" default:"30s"`
+	IdleInTransaction   time.Duration `yaml:"idle_in_transaction" json:"idle_in_transaction" default:"5m"`
+	MaxIdleConns        int           `yaml:"max_idle_conns" json:"max_idle_conns" default:"10"`
+	MaxOpenConns        int           `yaml:"max_open_conns" json:"max_open_conns" default:"100"`
+	ConnMaxLifetime     time.Duration `yaml:"conn_max_lifetime" json:"conn_max_lifetime" default:"1h"`
+	ConnMaxIdleTime     time.Duration `yaml:"conn_max_idle_time" json:"conn_max_idle_time" default:"10m"`
+	ApplicationName     string        `yaml:"application_name" json:"application_name" default:"{{.Service.Name}}"`
+	EnableLogging       bool          `yaml:"enable_logging" json:"enable_logging" default:"true"`
+	SlowQueryTime       time.Duration `yaml:"slow_query_time" json:"slow_query_time" default:"200ms"`
+	LogStatements       bool          `yaml:"log_statements" json:"log_statements" default:"false"`
+	PreferSimpleProtocol bool         `yaml:"prefer_simple_protocol" json:"prefer_simple_protocol" default:"false"`
+}
+
+// DSN generates the PostgreSQL Data Source Name.
+func (c *PostgreSQLConfig) DSN() string {
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d",
+		c.Host,
+		c.Username,
+		c.Password,
+		c.Database,
+		c.Port,
+	)
+
+	// Add optional parameters
+	if c.Schema != "" && c.Schema != "public" {
+		dsn += fmt.Sprintf(" search_path=%s", c.Schema)
+	}
+
+	dsn += fmt.Sprintf(" sslmode=%s", c.SSLMode)
+
+	if c.SSLCert != "" {
+		dsn += fmt.Sprintf(" sslcert=%s", c.SSLCert)
+	}
+
+	if c.SSLKey != "" {
+		dsn += fmt.Sprintf(" sslkey=%s", c.SSLKey)
+	}
+
+	if c.SSLRootCert != "" {
+		dsn += fmt.Sprintf(" sslrootcert=%s", c.SSLRootCert)
+	}
+
+	if c.TimeZone != "" {
+		dsn += fmt.Sprintf(" TimeZone=%s", c.TimeZone)
+	}
+
+	if c.ConnectTimeout > 0 {
+		dsn += fmt.Sprintf(" connect_timeout=%d", int(c.ConnectTimeout.Seconds()))
+	}
+
+	if c.StatementTimeout > 0 {
+		dsn += fmt.Sprintf(" statement_timeout=%dms", c.StatementTimeout.Milliseconds())
+	}
+
+	if c.IdleInTransaction > 0 {
+		dsn += fmt.Sprintf(" idle_in_transaction_session_timeout=%dms", c.IdleInTransaction.Milliseconds())
+	}
+
+	if c.ApplicationName != "" {
+		dsn += fmt.Sprintf(" application_name=%s", c.ApplicationName)
+	}
+
+	if c.PreferSimpleProtocol {
+		dsn += " prefer_simple_protocol=true"
+	}
+
+	return dsn
+}
+
+// Validate validates the PostgreSQL configuration.
+func (c *PostgreSQLConfig) Validate() error {
+	if c.Host == "" {
+		return fmt.Errorf("PostgreSQL host is required")
+	}
+
+	if c.Port <= 0 || c.Port > 65535 {
+		return fmt.Errorf("invalid PostgreSQL port: %d", c.Port)
+	}
+
+	if c.Database == "" {
+		return fmt.Errorf("PostgreSQL database name is required")
+	}
+
+	if c.Username == "" {
+		return fmt.Errorf("PostgreSQL username is required")
+	}
+
+	validSSLModes := []string{"disable", "require", "verify-ca", "verify-full"}
+	valid := false
+	for _, mode := range validSSLModes {
+		if c.SSLMode == mode {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid SSL mode: %s (valid: %v)", c.SSLMode, validSSLModes)
+	}
+
+	if c.MaxIdleConns < 0 {
+		return fmt.Errorf("max idle connections cannot be negative")
+	}
+
+	if c.MaxOpenConns <= 0 {
+		return fmt.Errorf("max open connections must be positive")
+	}
+
+	if c.MaxIdleConns > c.MaxOpenConns {
+		return fmt.Errorf("max idle connections cannot exceed max open connections")
+	}
+
+	return nil
+}
+
+// LoadDefaults loads default values for PostgreSQL configuration.
+func (c *PostgreSQLConfig) LoadDefaults() {
+	if c.Host == "" {
+		c.Host = "{{.Service.Database.Host}}"
+	}
+	if c.Port == 0 {
+		c.Port = {{.Service.Database.Port}}
+	}
+	if c.Database == "" {
+		c.Database = "{{.Service.Database.Database}}"
+	}
+	if c.Username == "" {
+		c.Username = "{{.Service.Database.Username}}"
+	}
+	if c.Schema == "" {
+		c.Schema = "public"
+	}
+	if c.SSLMode == "" {
+		c.SSLMode = "disable"
+	}
+	if c.TimeZone == "" {
+		c.TimeZone = "UTC"
+	}
+	if c.ConnectTimeout == 0 {
+		c.ConnectTimeout = 10 * time.Second
+	}
+	if c.StatementTimeout == 0 {
+		c.StatementTimeout = 30 * time.Second
+	}
+	if c.IdleInTransaction == 0 {
+		c.IdleInTransaction = 5 * time.Minute
+	}
+	if c.MaxIdleConns == 0 {
+		c.MaxIdleConns = 10
+	}
+	if c.MaxOpenConns == 0 {
+		c.MaxOpenConns = 100
+	}
+	if c.ConnMaxLifetime == 0 {
+		c.ConnMaxLifetime = time.Hour
+	}
+	if c.ConnMaxIdleTime == 0 {
+		c.ConnMaxIdleTime = 10 * time.Minute
+	}
+	if c.ApplicationName == "" {
+		c.ApplicationName = "{{.Service.Name}}"
+	}
+	if c.SlowQueryTime == 0 {
+		c.SlowQueryTime = 200 * time.Millisecond
+	}
+}
+{{- end -}}

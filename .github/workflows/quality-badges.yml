@@ -220,85 +220,36 @@ jobs:
         fi
         echo "🚨 Vulnerability check completed"
 
-    - name: Test coverage check
-      id: coverage
-      run: |
-        # 获取所有包，排除自动生成的代码
-        PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
-        
-        if [ -z "$PACKAGES" ]; then
-          echo "No packages to test"
-          echo "status=needs_improvement" >> $GITHUB_OUTPUT
-          echo "color=red" >> $GITHUB_OUTPUT
-          echo "coverage=0" >> $GITHUB_OUTPUT
-          echo "📊 Test coverage: 0% (no packages to test)"
-          exit 0
-        fi
-        
-        echo "Testing packages:"
-        echo "$PACKAGES"
-        
-        # 运行测试并检查覆盖率（排除自动生成的代码）
-        go test -coverprofile=coverage.out $PACKAGES > test.txt 2>&1
-        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}' || echo "0")
-        
-        # 确保 COVERAGE 不为空，默认设置为 0
-        if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
-          COVERAGE="0"
-        fi
-        
-        # 转换为整数进行比较（去掉小数点）
-        COVERAGE_INT=$(echo "$COVERAGE" | cut -d. -f1)
-        
-        # 确保 COVERAGE_INT 是有效数字，默认设置为 0
-        if [ -z "$COVERAGE_INT" ] || [ "$COVERAGE_INT" = "" ]; then
-          COVERAGE_INT="0"
-        fi
-        
-        if [ "$COVERAGE_INT" -ge 80 ]; then
-          echo "status=excellent" >> $GITHUB_OUTPUT
-          echo "color=brightgreen" >> $GITHUB_OUTPUT
-        elif [ "$COVERAGE_INT" -ge 60 ]; then
-          echo "status=good" >> $GITHUB_OUTPUT
-          echo "color=yellow" >> $GITHUB_OUTPUT
-        else
-          echo "status=needs_improvement" >> $GITHUB_OUTPUT
-          echo "color=red" >> $GITHUB_OUTPUT
-        fi
-        echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
-        echo "📊 Test coverage: ${COVERAGE}%"
+  # 移除覆盖率测试，避免与 CI/coverage 工作流重复执行
+  # 如需展示覆盖率徽章，请仅在 coverage.yml 中生成并上传产物
 
     - name: Calculate overall quality score
       id: quality
       run: |
         SCORE=0
-        TOTAL=5
+        TOTAL=4
         
-        # 格式检查 (20%)
+        # 格式检查 (25%)
         if [ "${{ steps.format.outputs.status }}" = "passing" ]; then
           SCORE=$((SCORE + 1))
         fi
         
-        # 静态分析 (20%)
+        # 静态分析 (25%)
         if [ "${{ steps.static.outputs.status }}" = "passing" ]; then
           SCORE=$((SCORE + 1))
         fi
         
-        # 安全扫描 (20%)
+        # 安全扫描 (25%)
         if [ "${{ steps.security.outputs.status }}" = "passing" ]; then
           SCORE=$((SCORE + 1))
         fi
         
-        # 漏洞检查 (20%)
+        # 漏洞检查 (25%)
         if [ "${{ steps.vuln.outputs.status }}" = "passing" ]; then
           SCORE=$((SCORE + 1))
         fi
         
-        # 测试覆盖率 (20%)
-        if [ "${{ steps.coverage.outputs.status }}" != "needs_improvement" ]; then
-          SCORE=$((SCORE + 1))
-        fi
-        
+        # 覆盖率评分已取消，交由 coverage 工作流负责
         PERCENTAGE=$((SCORE * 100 / TOTAL))
         
         if [ $PERCENTAGE -ge 80 ]; then
@@ -322,7 +273,7 @@ jobs:
 
     - name: Generate quality report
       run: |
-        cat > QUALITY_REPORT.md << EOF
+        cat > QUALITY_REPORT.md << 'EOF'
         # 📊 Code Quality Report
         
         Generated on: $(date)
@@ -337,18 +288,17 @@ jobs:
         | 🔍 Static Analysis | ${{ steps.static.outputs.status }} | ${{ steps.static.outputs.message }} |
         | 🔐 Security Scan | ${{ steps.security.outputs.status }} | ${{ steps.security.outputs.message }} |
         | 🚨 Vulnerability Check | ${{ steps.vuln.outputs.status }} | ${{ steps.vuln.outputs.message }} |
-        | 📊 Test Coverage | ${{ steps.coverage.outputs.status }} | ${{ steps.coverage.outputs.coverage }}% |
+        | 📊 Test Coverage | n/a | handled in coverage workflow |
         
         ### 🏷️ Quality Badges
         
         Copy these badges to your README.md:
         
-        \`\`\`markdown
+        ```markdown
         ![Code Quality](https://img.shields.io/badge/quality-${{ steps.quality.outputs.grade }}-${{ steps.quality.outputs.color }})
         ![Code Formatting](https://img.shields.io/badge/formatting-${{ steps.format.outputs.status }}-$([ "${{ steps.format.outputs.status }}" = "passing" ] && echo "brightgreen" || echo "red"))
         ![Security](https://img.shields.io/badge/security-${{ steps.security.outputs.status }}-$([ "${{ steps.security.outputs.status }}" = "passing" ] && echo "brightgreen" || echo "red"))
-        ![Coverage](https://img.shields.io/badge/coverage-${{ steps.coverage.outputs.coverage }}%25-${{ steps.coverage.outputs.color }})
-        \`\`\`
+        ```
         EOF
         
         echo "📋 Generated quality report"
@@ -362,8 +312,6 @@ jobs:
           staticcheck.txt
           gosec.txt
           vuln.txt
-          test.txt
-          coverage.out
         retention-days: 30
 
     - name: Comment on PR
@@ -382,7 +330,7 @@ jobs:
           - 🔍 **Static Analysis**: ${{ steps.static.outputs.status }} (${{ steps.static.outputs.message }})  
           - 🔐 **Security Scan**: ${{ steps.security.outputs.status }} (${{ steps.security.outputs.message }})
           - 🚨 **Vulnerability Check**: ${{ steps.vuln.outputs.status }} (${{ steps.vuln.outputs.message }})
-          - 📊 **Test Coverage**: ${{ steps.coverage.outputs.status }} (${{ steps.coverage.outputs.coverage }}%)
+          - 📊 **Test Coverage**: N/A (handled in coverage workflow)
           
           ${grade === 'A' ? '🎉 Excellent code quality!' : grade === 'B' ? '👍 Good code quality!' : '⚠️ Code quality could be improved.'}
           

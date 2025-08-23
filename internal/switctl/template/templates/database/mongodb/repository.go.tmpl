@@ -1,0 +1,591 @@
+{{- if and .Service.Features.Database (eq .Service.Database.Type "mongodb") -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package repository provides MongoDB repository implementations for {{.Service.Name}}.
+package repository
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+var (
+	// Repository errors
+	ErrDocumentNotFound   = errors.New("document not found")
+	ErrDocumentExists     = errors.New("document already exists")
+	ErrInvalidObjectID    = errors.New("invalid object ID")
+	ErrInvalidFilter      = errors.New("invalid filter")
+	ErrUpdateFailed       = errors.New("update operation failed")
+	ErrDeleteFailed       = errors.New("delete operation failed")
+)
+
+// BaseRepository provides common MongoDB operations.
+type BaseRepository struct {
+	db         *mongo.Database
+	collection *mongo.Collection
+}
+
+// NewBaseRepository creates a new base repository.
+func NewBaseRepository(db *mongo.Database, collectionName string) *BaseRepository {
+	return &BaseRepository{
+		db:         db,
+		collection: db.Collection(collectionName),
+	}
+}
+
+// Insert inserts a single document.
+func (r *BaseRepository) Insert(ctx context.Context, document interface{}) (*mongo.InsertOneResult, error) {
+	result, err := r.collection.InsertOne(ctx, document)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert document: %w", err)
+	}
+	return result, nil
+}
+
+// InsertMany inserts multiple documents.
+func (r *BaseRepository) InsertMany(ctx context.Context, documents []interface{}) (*mongo.InsertManyResult, error) {
+	result, err := r.collection.InsertMany(ctx, documents)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert documents: %w", err)
+	}
+	return result, nil
+}
+
+// FindOne finds a single document by filter.
+func (r *BaseRepository) FindOne(ctx context.Context, filter bson.M, result interface{}) error {
+	err := r.collection.FindOne(ctx, filter).Decode(result)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrDocumentNotFound
+		}
+		return fmt.Errorf("failed to find document: %w", err)
+	}
+	return nil
+}
+
+// FindByID finds a document by its ObjectID.
+func (r *BaseRepository) FindByID(ctx context.Context, id string, result interface{}) error {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return ErrInvalidObjectID
+	}
+
+	filter := bson.M{"_id": objectID}
+	return r.FindOne(ctx, filter, result)
+}
+
+// Find finds multiple documents with optional pagination.
+func (r *BaseRepository) Find(ctx context.Context, filter bson.M, results interface{}, opts ...*options.FindOptions) error {
+	cursor, err := r.collection.Find(ctx, filter, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to find documents: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	if err := cursor.All(ctx, results); err != nil {
+		return fmt.Errorf("failed to decode documents: %w", err)
+	}
+
+	return nil
+}
+
+// Count counts documents matching the filter.
+func (r *BaseRepository) Count(ctx context.Context, filter bson.M) (int64, error) {
+	count, err := r.collection.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count documents: %w", err)
+	}
+	return count, nil
+}
+
+// UpdateOne updates a single document.
+func (r *BaseRepository) UpdateOne(ctx context.Context, filter bson.M, update bson.M) (*mongo.UpdateResult, error) {
+	// Add updated timestamp
+	if update["$set"] == nil {
+		update["$set"] = bson.M{}
+	}
+	update["$set"].(bson.M)["updated_at"] = time.Now()
+
+	result, err := r.collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update document: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return nil, ErrDocumentNotFound
+	}
+
+	return result, nil
+}
+
+// UpdateByID updates a document by its ObjectID.
+func (r *BaseRepository) UpdateByID(ctx context.Context, id string, update bson.M) (*mongo.UpdateResult, error) {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, ErrInvalidObjectID
+	}
+
+	filter := bson.M{"_id": objectID}
+	return r.UpdateOne(ctx, filter, update)
+}
+
+// UpdateMany updates multiple documents.
+func (r *BaseRepository) UpdateMany(ctx context.Context, filter bson.M, update bson.M) (*mongo.UpdateResult, error) {
+	// Add updated timestamp
+	if update["$set"] == nil {
+		update["$set"] = bson.M{}
+	}
+	update["$set"].(bson.M)["updated_at"] = time.Now()
+
+	result, err := r.collection.UpdateMany(ctx, filter, update)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update documents: %w", err)
+	}
+
+	return result, nil
+}
+
+// ReplaceOne replaces a single document.
+func (r *BaseRepository) ReplaceOne(ctx context.Context, filter bson.M, replacement interface{}) (*mongo.UpdateResult, error) {
+	result, err := r.collection.ReplaceOne(ctx, filter, replacement)
+	if err != nil {
+		return nil, fmt.Errorf("failed to replace document: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return nil, ErrDocumentNotFound
+	}
+
+	return result, nil
+}
+
+// DeleteOne deletes a single document.
+func (r *BaseRepository) DeleteOne(ctx context.Context, filter bson.M) (*mongo.DeleteResult, error) {
+	result, err := r.collection.DeleteOne(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete document: %w", err)
+	}
+
+	if result.DeletedCount == 0 {
+		return nil, ErrDocumentNotFound
+	}
+
+	return result, nil
+}
+
+// DeleteByID deletes a document by its ObjectID.
+func (r *BaseRepository) DeleteByID(ctx context.Context, id string) (*mongo.DeleteResult, error) {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, ErrInvalidObjectID
+	}
+
+	filter := bson.M{"_id": objectID}
+	return r.DeleteOne(ctx, filter)
+}
+
+// DeleteMany deletes multiple documents.
+func (r *BaseRepository) DeleteMany(ctx context.Context, filter bson.M) (*mongo.DeleteResult, error) {
+	result, err := r.collection.DeleteMany(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete documents: %w", err)
+	}
+
+	return result, nil
+}
+
+// SoftDelete marks a document as deleted instead of removing it.
+func (r *BaseRepository) SoftDelete(ctx context.Context, filter bson.M) (*mongo.UpdateResult, error) {
+	update := bson.M{
+		"$set": bson.M{
+			"deleted":    true,
+			"deleted_at": time.Now(),
+			"updated_at": time.Now(),
+		},
+	}
+
+	return r.UpdateOne(ctx, filter, update)
+}
+
+// SoftDeleteByID soft deletes a document by its ObjectID.
+func (r *BaseRepository) SoftDeleteByID(ctx context.Context, id string) (*mongo.UpdateResult, error) {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, ErrInvalidObjectID
+	}
+
+	filter := bson.M{"_id": objectID}
+	return r.SoftDelete(ctx, filter)
+}
+
+// Restore restores a soft-deleted document.
+func (r *BaseRepository) Restore(ctx context.Context, filter bson.M) (*mongo.UpdateResult, error) {
+	update := bson.M{
+		"$unset": bson.M{
+			"deleted":    "",
+			"deleted_at": "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	return r.UpdateOne(ctx, filter, update)
+}
+
+// RestoreByID restores a soft-deleted document by its ObjectID.
+func (r *BaseRepository) RestoreByID(ctx context.Context, id string) (*mongo.UpdateResult, error) {
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, ErrInvalidObjectID
+	}
+
+	filter := bson.M{"_id": objectID}
+	return r.Restore(ctx, filter)
+}
+
+// Aggregate executes an aggregation pipeline.
+func (r *BaseRepository) Aggregate(ctx context.Context, pipeline mongo.Pipeline, results interface{}) error {
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return fmt.Errorf("failed to execute aggregation: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	if err := cursor.All(ctx, results); err != nil {
+		return fmt.Errorf("failed to decode aggregation results: %w", err)
+	}
+
+	return nil
+}
+
+// CreateIndex creates an index on the collection.
+func (r *BaseRepository) CreateIndex(ctx context.Context, keys bson.D, opts ...*options.IndexOptions) (string, error) {
+	indexModel := mongo.IndexModel{
+		Keys: keys,
+	}
+
+	if len(opts) > 0 {
+		indexModel.Options = opts[0]
+	}
+
+	result, err := r.collection.Indexes().CreateOne(ctx, indexModel)
+	if err != nil {
+		return "", fmt.Errorf("failed to create index: %w", err)
+	}
+
+	return result, nil
+}
+
+// CreateIndexes creates multiple indexes on the collection.
+func (r *BaseRepository) CreateIndexes(ctx context.Context, models []mongo.IndexModel) ([]string, error) {
+	results, err := r.collection.Indexes().CreateMany(ctx, models)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create indexes: %w", err)
+	}
+
+	return results, nil
+}
+
+// DropIndex drops an index by name.
+func (r *BaseRepository) DropIndex(ctx context.Context, name string) error {
+	_, err := r.collection.Indexes().DropOne(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to drop index %s: %w", name, err)
+	}
+
+	return nil
+}
+
+// ListIndexes lists all indexes on the collection.
+func (r *BaseRepository) ListIndexes(ctx context.Context) ([]bson.M, error) {
+	cursor, err := r.collection.Indexes().List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list indexes: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var indexes []bson.M
+	if err := cursor.All(ctx, &indexes); err != nil {
+		return nil, fmt.Errorf("failed to decode indexes: %w", err)
+	}
+
+	return indexes, nil
+}
+
+// Transaction executes a function within a MongoDB transaction.
+func (r *BaseRepository) Transaction(ctx context.Context, fn func(sessCtx mongo.SessionContext) error) error {
+	session, err := r.db.Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, fn)
+	if err != nil {
+		return fmt.Errorf("transaction failed: %w", err)
+	}
+
+	return nil
+}
+
+// BulkWrite executes multiple write operations.
+func (r *BaseRepository) BulkWrite(ctx context.Context, operations []mongo.WriteModel, opts ...*options.BulkWriteOptions) (*mongo.BulkWriteResult, error) {
+	result, err := r.collection.BulkWrite(ctx, operations, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute bulk write: %w", err)
+	}
+
+	return result, nil
+}
+
+// Distinct returns distinct values for a field.
+func (r *BaseRepository) Distinct(ctx context.Context, fieldName string, filter bson.M) ([]interface{}, error) {
+	values, err := r.collection.Distinct(ctx, fieldName, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distinct values: %w", err)
+	}
+
+	return values, nil
+}
+
+// Watch creates a change stream for the collection.
+func (r *BaseRepository) Watch(ctx context.Context, pipeline mongo.Pipeline, opts ...*options.ChangeStreamOptions) (*mongo.ChangeStream, error) {
+	stream, err := r.collection.Watch(ctx, pipeline, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create change stream: %w", err)
+	}
+
+	return stream, nil
+}
+
+// GetCollection returns the underlying MongoDB collection.
+func (r *BaseRepository) GetCollection() *mongo.Collection {
+	return r.collection
+}
+
+// GetDatabase returns the underlying MongoDB database.
+func (r *BaseRepository) GetDatabase() *mongo.Database {
+	return r.db
+}
+
+// Pagination helpers
+
+// PaginationOptions represents pagination parameters.
+type PaginationOptions struct {
+	Page     int64 `json:"page" validate:"min=1"`
+	PageSize int64 `json:"page_size" validate:"min=1,max=100"`
+	SortBy   string `json:"sort_by"`
+	SortDir  string `json:"sort_dir" validate:"oneof=asc desc"`
+}
+
+// PaginationResult represents paginated results.
+type PaginationResult struct {
+	Data       interface{} `json:"data"`
+	TotalCount int64       `json:"total_count"`
+	Page       int64       `json:"page"`
+	PageSize   int64       `json:"page_size"`
+	TotalPages int64       `json:"total_pages"`
+	HasNext    bool        `json:"has_next"`
+	HasPrev    bool        `json:"has_prev"`
+}
+
+// FindWithPagination finds documents with pagination.
+func (r *BaseRepository) FindWithPagination(ctx context.Context, filter bson.M, results interface{}, paginationOpts PaginationOptions) (*PaginationResult, error) {
+	// Set defaults
+	if paginationOpts.Page <= 0 {
+		paginationOpts.Page = 1
+	}
+	if paginationOpts.PageSize <= 0 {
+		paginationOpts.PageSize = 20
+	}
+	if paginationOpts.PageSize > 100 {
+		paginationOpts.PageSize = 100
+	}
+	if paginationOpts.SortDir == "" {
+		paginationOpts.SortDir = "asc"
+	}
+
+	// Calculate skip
+	skip := (paginationOpts.Page - 1) * paginationOpts.PageSize
+
+	// Build sort options
+	var sort bson.D
+	if paginationOpts.SortBy != "" {
+		sortDir := 1
+		if paginationOpts.SortDir == "desc" {
+			sortDir = -1
+		}
+		sort = bson.D{{Key: paginationOpts.SortBy, Value: sortDir}}
+	}
+
+	// Find options
+	findOpts := options.Find().
+		SetSkip(skip).
+		SetLimit(paginationOpts.PageSize)
+	
+	if sort != nil {
+		findOpts.SetSort(sort)
+	}
+
+	// Get total count
+	totalCount, err := r.Count(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total count: %w", err)
+	}
+
+	// Find documents
+	if err := r.Find(ctx, filter, results, findOpts); err != nil {
+		return nil, err
+	}
+
+	// Calculate pagination info
+	totalPages := (totalCount + paginationOpts.PageSize - 1) / paginationOpts.PageSize
+	hasNext := paginationOpts.Page < totalPages
+	hasPrev := paginationOpts.Page > 1
+
+	return &PaginationResult{
+		Data:       results,
+		TotalCount: totalCount,
+		Page:       paginationOpts.Page,
+		PageSize:   paginationOpts.PageSize,
+		TotalPages: totalPages,
+		HasNext:    hasNext,
+		HasPrev:    hasPrev,
+	}, nil
+}
+
+// HealthCheck performs a basic health check on the database.
+func (r *BaseRepository) HealthCheck(ctx context.Context) error {
+	// Ping the database
+	if err := r.db.Client().Ping(ctx, nil); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+
+	return nil
+}
+
+// BuildFilter helps build complex MongoDB filters.
+type FilterBuilder struct {
+	filter bson.M
+}
+
+// NewFilterBuilder creates a new filter builder.
+func NewFilterBuilder() *FilterBuilder {
+	return &FilterBuilder{
+		filter: bson.M{},
+	}
+}
+
+// Equal adds an equality condition.
+func (fb *FilterBuilder) Equal(field string, value interface{}) *FilterBuilder {
+	fb.filter[field] = value
+	return fb
+}
+
+// NotEqual adds a not equal condition.
+func (fb *FilterBuilder) NotEqual(field string, value interface{}) *FilterBuilder {
+	fb.filter[field] = bson.M{"$ne": value}
+	return fb
+}
+
+// In adds an "in" condition.
+func (fb *FilterBuilder) In(field string, values []interface{}) *FilterBuilder {
+	fb.filter[field] = bson.M{"$in": values}
+	return fb
+}
+
+// NotIn adds a "not in" condition.
+func (fb *FilterBuilder) NotIn(field string, values []interface{}) *FilterBuilder {
+	fb.filter[field] = bson.M{"$nin": values}
+	return fb
+}
+
+// GreaterThan adds a greater than condition.
+func (fb *FilterBuilder) GreaterThan(field string, value interface{}) *FilterBuilder {
+	fb.filter[field] = bson.M{"$gt": value}
+	return fb
+}
+
+// GreaterThanOrEqual adds a greater than or equal condition.
+func (fb *FilterBuilder) GreaterThanOrEqual(field string, value interface{}) *FilterBuilder {
+	fb.filter[field] = bson.M{"$gte": value}
+	return fb
+}
+
+// LessThan adds a less than condition.
+func (fb *FilterBuilder) LessThan(field string, value interface{}) *FilterBuilder {
+	fb.filter[field] = bson.M{"$lt": value}
+	return fb
+}
+
+// LessThanOrEqual adds a less than or equal condition.
+func (fb *FilterBuilder) LessThanOrEqual(field string, value interface{}) *FilterBuilder {
+	fb.filter[field] = bson.M{"$lte": value}
+	return fb
+}
+
+// Exists adds an exists condition.
+func (fb *FilterBuilder) Exists(field string, exists bool) *FilterBuilder {
+	fb.filter[field] = bson.M{"$exists": exists}
+	return fb
+}
+
+// Regex adds a regex condition.
+func (fb *FilterBuilder) Regex(field string, pattern string, options string) *FilterBuilder {
+	fb.filter[field] = bson.M{"$regex": pattern, "$options": options}
+	return fb
+}
+
+// And adds an AND condition.
+func (fb *FilterBuilder) And(conditions ...bson.M) *FilterBuilder {
+	if len(conditions) > 0 {
+		fb.filter["$and"] = conditions
+	}
+	return fb
+}
+
+// Or adds an OR condition.
+func (fb *FilterBuilder) Or(conditions ...bson.M) *FilterBuilder {
+	if len(conditions) > 0 {
+		fb.filter["$or"] = conditions
+	}
+	return fb
+}
+
+// Not adds a NOT condition.
+func (fb *FilterBuilder) Not(condition bson.M) *FilterBuilder {
+	fb.filter["$not"] = condition
+	return fb
+}
+
+// Build returns the built filter.
+func (fb *FilterBuilder) Build() bson.M {
+	return fb.filter
+}
+{{- end -}}

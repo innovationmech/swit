@@ -1,0 +1,75 @@
+# Multi-stage Dockerfile for {{.Service.Name | titleCase}}
+
+# Build stage
+FROM golang:{{.Service.GoVersion | default "1.19"}}-alpine AS builder
+
+# Set build arguments
+ARG VERSION={{.Service.Version}}
+ARG BUILD_DATE
+ARG GIT_COMMIT
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-X main.Version=${VERSION} -X main.BuildDate=${BUILD_DATE} -X main.CommitSHA=${GIT_COMMIT} -w -s" \
+    -a -installsuffix cgo \
+    -o /app/bin/{{.Service.Name | kebabCase}} \
+    ./main.go
+
+# Runtime stage
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates tzdata
+
+# Create non-root user
+RUN addgroup -g 1000 appgroup && \
+    adduser -D -s /bin/sh -u 1000 -G appgroup appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /app/bin/{{.Service.Name | kebabCase}} /app/{{.Service.Name | kebabCase}}
+
+# Copy configuration file (optional)
+COPY --from=builder /app/config.yaml /app/config.yaml
+
+# Change ownership to non-root user
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose ports
+EXPOSE {{.Service.Ports.HTTP}} {{.Service.Ports.GRPC}}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:{{.Service.Ports.HTTP}}/api/v1/health || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["/app/{{.Service.Name | kebabCase}}"]
+
+# Default command
+CMD ["serve", "--config", "/app/config.yaml"]
+
+# Metadata
+LABEL name="{{.Service.Name}}" \
+      version="{{.Service.Version}}" \
+      description="{{.Service.Description}}" \
+      maintainer="{{.Author}}"

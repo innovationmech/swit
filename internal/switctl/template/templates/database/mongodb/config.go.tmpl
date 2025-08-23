@@ -1,0 +1,299 @@
+{{- if and .Service.Features.Database (eq .Service.Database.Type "mongodb") -}}
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+// Package db provides MongoDB database connectivity for {{.Service.Name}}.
+package db
+
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// MongoDBConfig represents MongoDB-specific configuration.
+type MongoDBConfig struct {
+	Host             string        `yaml:"host" json:"host" default:"{{.Service.Database.Host}}"`
+	Port             int           `yaml:"port" json:"port" default:"{{.Service.Database.Port}}"`
+	Database         string        `yaml:"database" json:"database" default:"{{.Service.Database.Database}}"`
+	Username         string        `yaml:"username" json:"username" default:"{{.Service.Database.Username}}"`
+	Password         string        `yaml:"password" json:"password" default:"{{.Service.Database.Password}}"`
+	AuthDatabase     string        `yaml:"auth_database" json:"auth_database" default:"admin"`
+	ReplicaSet       string        `yaml:"replica_set" json:"replica_set"`
+	ConnectTimeout   time.Duration `yaml:"connect_timeout" json:"connect_timeout" default:"10s"`
+	ServerSelTimeout time.Duration `yaml:"server_selection_timeout" json:"server_selection_timeout" default:"30s"`
+	SocketTimeout    time.Duration `yaml:"socket_timeout" json:"socket_timeout" default:"30s"`
+	MaxPoolSize      uint64        `yaml:"max_pool_size" json:"max_pool_size" default:"100"`
+	MinPoolSize      uint64        `yaml:"min_pool_size" json:"min_pool_size" default:"10"`
+	MaxConnIdleTime  time.Duration `yaml:"max_conn_idle_time" json:"max_conn_idle_time" default:"10m"`
+	HeartbeatInterval time.Duration `yaml:"heartbeat_interval" json:"heartbeat_interval" default:"10s"`
+	LocalThreshold   time.Duration `yaml:"local_threshold" json:"local_threshold" default:"15ms"`
+	SSL              SSLConfig     `yaml:"ssl" json:"ssl"`
+	RetryWrites      bool          `yaml:"retry_writes" json:"retry_writes" default:"true"`
+	RetryReads       bool          `yaml:"retry_reads" json:"retry_reads" default:"true"`
+	ReadPreference   string        `yaml:"read_preference" json:"read_preference" default:"primary"`
+	ReadConcern      string        `yaml:"read_concern" json:"read_concern" default:"majority"`
+	WriteConcern     WriteConcern  `yaml:"write_concern" json:"write_concern"`
+	CompressorList   []string      `yaml:"compressor_list" json:"compressor_list"`
+	ZlibLevel        int           `yaml:"zlib_level" json:"zlib_level" default:"6"`
+	EnableLogging    bool          `yaml:"enable_logging" json:"enable_logging" default:"true"`
+}
+
+// SSLConfig represents MongoDB SSL configuration.
+type SSLConfig struct {
+	Enabled                bool   `yaml:"enabled" json:"enabled" default:"false"`
+	CertFile               string `yaml:"cert_file" json:"cert_file"`
+	KeyFile                string `yaml:"key_file" json:"key_file"`
+	CAFile                 string `yaml:"ca_file" json:"ca_file"`
+	InsecureSkipVerify     bool   `yaml:"insecure_skip_verify" json:"insecure_skip_verify" default:"false"`
+	AllowInvalidCerts      bool   `yaml:"allow_invalid_certs" json:"allow_invalid_certs" default:"false"`
+	AllowInvalidHostnames  bool   `yaml:"allow_invalid_hostnames" json:"allow_invalid_hostnames" default:"false"`
+}
+
+// WriteConcern represents MongoDB write concern configuration.
+type WriteConcern struct {
+	W        interface{} `yaml:"w" json:"w" default:"majority"`
+	Journal  bool        `yaml:"journal" json:"journal" default:"true"`
+	WTimeout time.Duration `yaml:"w_timeout" json:"w_timeout" default:"10s"`
+}
+
+// URI generates the MongoDB connection URI.
+func (c *MongoDBConfig) URI() string {
+	var uri strings.Builder
+
+	// Start with mongodb://
+	uri.WriteString("mongodb://")
+
+	// Add authentication if provided
+	if c.Username != "" {
+		uri.WriteString(url.QueryEscape(c.Username))
+		if c.Password != "" {
+			uri.WriteString(":")
+			uri.WriteString(url.QueryEscape(c.Password))
+		}
+		uri.WriteString("@")
+	}
+
+	// Add host and port
+	uri.WriteString(c.Host)
+	if c.Port != 0 {
+		uri.WriteString(":")
+		uri.WriteString(strconv.Itoa(c.Port))
+	}
+
+	// Add database
+	if c.Database != "" {
+		uri.WriteString("/")
+		uri.WriteString(c.Database)
+	}
+
+	// Add query parameters
+	params := url.Values{}
+
+	if c.AuthDatabase != "" && c.Username != "" {
+		params.Set("authSource", c.AuthDatabase)
+	}
+
+	if c.ReplicaSet != "" {
+		params.Set("replicaSet", c.ReplicaSet)
+	}
+
+	if c.ConnectTimeout > 0 {
+		params.Set("connectTimeoutMS", strconv.FormatInt(c.ConnectTimeout.Milliseconds(), 10))
+	}
+
+	if c.ServerSelTimeout > 0 {
+		params.Set("serverSelectionTimeoutMS", strconv.FormatInt(c.ServerSelTimeout.Milliseconds(), 10))
+	}
+
+	if c.SocketTimeout > 0 {
+		params.Set("socketTimeoutMS", strconv.FormatInt(c.SocketTimeout.Milliseconds(), 10))
+	}
+
+	if c.MaxPoolSize > 0 {
+		params.Set("maxPoolSize", strconv.FormatUint(c.MaxPoolSize, 10))
+	}
+
+	if c.MinPoolSize > 0 {
+		params.Set("minPoolSize", strconv.FormatUint(c.MinPoolSize, 10))
+	}
+
+	if c.MaxConnIdleTime > 0 {
+		params.Set("maxIdleTimeMS", strconv.FormatInt(c.MaxConnIdleTime.Milliseconds(), 10))
+	}
+
+	if c.HeartbeatInterval > 0 {
+		params.Set("heartbeatFrequencyMS", strconv.FormatInt(c.HeartbeatInterval.Milliseconds(), 10))
+	}
+
+	if c.LocalThreshold > 0 {
+		params.Set("localThresholdMS", strconv.FormatInt(c.LocalThreshold.Milliseconds(), 10))
+	}
+
+	if c.SSL.Enabled {
+		params.Set("ssl", "true")
+		if c.SSL.InsecureSkipVerify {
+			params.Set("sslInsecure", "true")
+		}
+		if c.SSL.AllowInvalidCerts {
+			params.Set("sslAllowInvalidCertificates", "true")
+		}
+		if c.SSL.AllowInvalidHostnames {
+			params.Set("sslAllowInvalidHostnames", "true")
+		}
+	}
+
+	params.Set("retryWrites", strconv.FormatBool(c.RetryWrites))
+	params.Set("retryReads", strconv.FormatBool(c.RetryReads))
+
+	if c.ReadPreference != "" {
+		params.Set("readPreference", c.ReadPreference)
+	}
+
+	if c.ReadConcern != "" {
+		params.Set("readConcernLevel", c.ReadConcern)
+	}
+
+	if len(c.CompressorList) > 0 {
+		params.Set("compressors", strings.Join(c.CompressorList, ","))
+	}
+
+	if c.ZlibLevel > 0 {
+		params.Set("zlibCompressionLevel", strconv.Itoa(c.ZlibLevel))
+	}
+
+	// Add query string if there are parameters
+	if len(params) > 0 {
+		uri.WriteString("?")
+		uri.WriteString(params.Encode())
+	}
+
+	return uri.String()
+}
+
+// Validate validates the MongoDB configuration.
+func (c *MongoDBConfig) Validate() error {
+	if c.Host == "" {
+		return fmt.Errorf("MongoDB host is required")
+	}
+
+	if c.Port <= 0 || c.Port > 65535 {
+		return fmt.Errorf("invalid MongoDB port: %d", c.Port)
+	}
+
+	if c.Database == "" {
+		return fmt.Errorf("MongoDB database name is required")
+	}
+
+	if c.MaxPoolSize == 0 {
+		return fmt.Errorf("max pool size must be greater than 0")
+	}
+
+	if c.MinPoolSize > c.MaxPoolSize {
+		return fmt.Errorf("min pool size cannot exceed max pool size")
+	}
+
+	validReadPreferences := []string{"primary", "primaryPreferred", "secondary", "secondaryPreferred", "nearest"}
+	valid := false
+	for _, pref := range validReadPreferences {
+		if c.ReadPreference == pref {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid read preference: %s (valid: %v)", c.ReadPreference, validReadPreferences)
+	}
+
+	validReadConcerns := []string{"local", "available", "majority", "linearizable", "snapshot"}
+	valid = false
+	for _, concern := range validReadConcerns {
+		if c.ReadConcern == concern {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid read concern: %s (valid: %v)", c.ReadConcern, validReadConcerns)
+	}
+
+	return nil
+}
+
+// LoadDefaults loads default values for MongoDB configuration.
+func (c *MongoDBConfig) LoadDefaults() {
+	if c.Host == "" {
+		c.Host = "{{.Service.Database.Host}}"
+	}
+	if c.Port == 0 {
+		c.Port = {{.Service.Database.Port}}
+	}
+	if c.Database == "" {
+		c.Database = "{{.Service.Database.Database}}"
+	}
+	if c.Username == "" {
+		c.Username = "{{.Service.Database.Username}}"
+	}
+	if c.AuthDatabase == "" && c.Username != "" {
+		c.AuthDatabase = "admin"
+	}
+	if c.ConnectTimeout == 0 {
+		c.ConnectTimeout = 10 * time.Second
+	}
+	if c.ServerSelTimeout == 0 {
+		c.ServerSelTimeout = 30 * time.Second
+	}
+	if c.SocketTimeout == 0 {
+		c.SocketTimeout = 30 * time.Second
+	}
+	if c.MaxPoolSize == 0 {
+		c.MaxPoolSize = 100
+	}
+	if c.MinPoolSize == 0 {
+		c.MinPoolSize = 10
+	}
+	if c.MaxConnIdleTime == 0 {
+		c.MaxConnIdleTime = 10 * time.Minute
+	}
+	if c.HeartbeatInterval == 0 {
+		c.HeartbeatInterval = 10 * time.Second
+	}
+	if c.LocalThreshold == 0 {
+		c.LocalThreshold = 15 * time.Millisecond
+	}
+	if c.ReadPreference == "" {
+		c.ReadPreference = "primary"
+	}
+	if c.ReadConcern == "" {
+		c.ReadConcern = "majority"
+	}
+	if c.WriteConcern.W == nil {
+		c.WriteConcern.W = "majority"
+	}
+	if c.WriteConcern.WTimeout == 0 {
+		c.WriteConcern.WTimeout = 10 * time.Second
+	}
+	if c.ZlibLevel == 0 {
+		c.ZlibLevel = 6
+	}
+}
+{{- end -}}

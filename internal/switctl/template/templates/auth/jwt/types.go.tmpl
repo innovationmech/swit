@@ -1,0 +1,299 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"time"
+)
+
+// User represents a user in the authentication system.
+type User struct {
+	ID          string    `json:"id" gorm:"primaryKey"`
+	Username    string    `json:"username" gorm:"uniqueIndex;not null"`
+	Email       string    `json:"email" gorm:"uniqueIndex;not null"`
+	Password    string    `json:"-" gorm:"not null"` // Hidden from JSON
+	FirstName   string    `json:"first_name"`
+	LastName    string    `json:"last_name"`
+	IsActive    bool      `json:"is_active" gorm:"default:true"`
+	IsVerified  bool      `json:"is_verified" gorm:"default:false"`
+	LastLoginAt *time.Time `json:"last_login_at"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	{{if .Auth.Features.MultiTenant}}
+	TenantID    string    `json:"tenant_id" gorm:"not null;index"`
+	{{end}}
+	
+	// Relationships
+	Roles       []Role       `json:"roles" gorm:"many2many:user_roles;"`
+	Sessions    []Session    `json:"sessions,omitempty" gorm:"foreignKey:UserID"`
+	{{if .Auth.Features.OAuth2}}
+	OAuthTokens []OAuthToken `json:"oauth_tokens,omitempty" gorm:"foreignKey:UserID"`
+	{{end}}
+}
+
+// Role represents a role in the RBAC system.
+type Role struct {
+	ID          string      `json:"id" gorm:"primaryKey"`
+	Name        string      `json:"name" gorm:"uniqueIndex;not null"`
+	Description string      `json:"description"`
+	IsActive    bool        `json:"is_active" gorm:"default:true"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	
+	// Relationships
+	Permissions []Permission `json:"permissions" gorm:"many2many:role_permissions;"`
+	Users       []User       `json:"users,omitempty" gorm:"many2many:user_roles;"`
+}
+
+// Permission represents a permission in the RBAC system.
+type Permission struct {
+	ID          string    `json:"id" gorm:"primaryKey"`
+	Name        string    `json:"name" gorm:"uniqueIndex;not null"`
+	Resource    string    `json:"resource" gorm:"not null;index"`
+	Action      string    `json:"action" gorm:"not null;index"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	
+	// Relationships
+	Roles []Role `json:"roles,omitempty" gorm:"many2many:role_permissions;"`
+}
+
+// Session represents a user session.
+type Session struct {
+	ID          string     `json:"id" gorm:"primaryKey"`
+	UserID      string     `json:"user_id" gorm:"not null;index"`
+	AccessToken string     `json:"-" gorm:"type:text"` // Hidden from JSON
+	RefreshToken string    `json:"-" gorm:"type:text"` // Hidden from JSON
+	UserAgent   string     `json:"user_agent"`
+	IPAddress   string     `json:"ip_address"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	LastUsedAt  time.Time  `json:"last_used_at"`
+	IsActive    bool       `json:"is_active" gorm:"default:true"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	
+	// Relationship
+	User User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+}
+
+{{if .Auth.Features.OAuth2}}
+// OAuthToken represents an OAuth token.
+type OAuthToken struct {
+	ID           string    `json:"id" gorm:"primaryKey"`
+	UserID       string    `json:"user_id" gorm:"not null;index"`
+	Provider     string    `json:"provider" gorm:"not null"`
+	AccessToken  string    `json:"-" gorm:"type:text"` // Hidden from JSON
+	RefreshToken string    `json:"-" gorm:"type:text"` // Hidden from JSON
+	TokenType    string    `json:"token_type"`
+	Scope        string    `json:"scope"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	
+	// Relationship
+	User User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+}
+{{end}}
+
+{{if .Auth.Features.TokenBlacklist}}
+// BlacklistedToken represents a blacklisted JWT token.
+type BlacklistedToken struct {
+	ID        string    `json:"id" gorm:"primaryKey"`
+	TokenID   string    `json:"token_id" gorm:"uniqueIndex;not null"`
+	UserID    string    `json:"user_id" gorm:"index"`
+	ExpiresAt time.Time `json:"expires_at" gorm:"index"`
+	RevokedAt time.Time `json:"revoked_at"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
+{{end}}
+
+{{if .Auth.Features.MultiTenant}}
+// Tenant represents a tenant in multi-tenant setup.
+type Tenant struct {
+	ID        string    `json:"id" gorm:"primaryKey"`
+	Name      string    `json:"name" gorm:"not null"`
+	Domain    string    `json:"domain" gorm:"uniqueIndex"`
+	IsActive  bool      `json:"is_active" gorm:"default:true"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	
+	// Relationships
+	Users []User `json:"users,omitempty" gorm:"foreignKey:TenantID"`
+}
+{{end}}
+
+// LoginRequest represents a login request.
+type LoginRequest struct {
+	Username string `json:"username" binding:"required" validate:"required,min=3,max=50"`
+	Password string `json:"password" binding:"required" validate:"required,min=6"`
+	{{if .Auth.Features.MultiTenant}}
+	TenantID string `json:"tenant_id" binding:"required" validate:"required"`
+	{{end}}
+}
+
+// LoginResponse represents a login response.
+type LoginResponse struct {
+	User         User       `json:"user"`
+	TokenPair    TokenPair  `json:"tokens"`
+	ExpiresIn    int64      `json:"expires_in"`
+	RefreshExpiresIn int64  `json:"refresh_expires_in"`
+}
+
+// RefreshTokenRequest represents a refresh token request.
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required" validate:"required"`
+}
+
+// RegisterRequest represents a registration request.
+type RegisterRequest struct {
+	Username  string `json:"username" binding:"required" validate:"required,min=3,max=50"`
+	Email     string `json:"email" binding:"required" validate:"required,email"`
+	Password  string `json:"password" binding:"required" validate:"required,min=6"`
+	FirstName string `json:"first_name" validate:"max=50"`
+	LastName  string `json:"last_name" validate:"max=50"`
+	{{if .Auth.Features.MultiTenant}}
+	TenantID  string `json:"tenant_id" binding:"required" validate:"required"`
+	{{end}}
+}
+
+// ChangePasswordRequest represents a change password request.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required" validate:"required"`
+	NewPassword     string `json:"new_password" binding:"required" validate:"required,min=6"`
+}
+
+// ResetPasswordRequest represents a password reset request.
+type ResetPasswordRequest struct {
+	Email string `json:"email" binding:"required" validate:"required,email"`
+}
+
+// AuthService defines the authentication service interface.
+type AuthService interface {
+	// User management
+	Register(ctx context.Context, req *RegisterRequest) (*User, error)
+	Login(ctx context.Context, req *LoginRequest) (*LoginResponse, error)
+	Logout(ctx context.Context, userID, sessionID string) error
+	RefreshToken(ctx context.Context, req *RefreshTokenRequest) (*TokenPair, error)
+	
+	// User operations
+	GetUser(ctx context.Context, userID string) (*User, error)
+	UpdateUser(ctx context.Context, userID string, updates map[string]interface{}) (*User, error)
+	ChangePassword(ctx context.Context, userID string, req *ChangePasswordRequest) error
+	ResetPassword(ctx context.Context, req *ResetPasswordRequest) error
+	
+	// Session management
+	GetUserSessions(ctx context.Context, userID string) ([]Session, error)
+	RevokeSession(ctx context.Context, sessionID string) error
+	RevokeAllSessions(ctx context.Context, userID string) error
+	
+	// Token operations
+	ValidateToken(ctx context.Context, tokenString string) (*JWTClaims, error)
+	RevokeToken(ctx context.Context, tokenID string) error
+	
+	{{if .Auth.Features.RBAC}}
+	// RBAC operations
+	AssignRole(ctx context.Context, userID, roleID string) error
+	RemoveRole(ctx context.Context, userID, roleID string) error
+	GetUserRoles(ctx context.Context, userID string) ([]Role, error)
+	GetUserPermissions(ctx context.Context, userID string) ([]Permission, error)
+	HasPermission(ctx context.Context, userID, resource, action string) (bool, error)
+	{{end}}
+	
+	{{if .Auth.Features.MultiTenant}}
+	// Multi-tenant operations
+	GetTenant(ctx context.Context, tenantID string) (*Tenant, error)
+	ValidateUserTenant(ctx context.Context, userID, tenantID string) (bool, error)
+	{{end}}
+}
+
+// AuthRepository defines the authentication repository interface.
+type AuthRepository interface {
+	// User operations
+	CreateUser(ctx context.Context, user *User) error
+	GetUserByID(ctx context.Context, id string) (*User, error)
+	GetUserByUsername(ctx context.Context, username string) (*User, error)
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	UpdateUser(ctx context.Context, user *User) error
+	DeleteUser(ctx context.Context, id string) error
+	
+	// Session operations
+	CreateSession(ctx context.Context, session *Session) error
+	GetSession(ctx context.Context, id string) (*Session, error)
+	UpdateSession(ctx context.Context, session *Session) error
+	DeleteSession(ctx context.Context, id string) error
+	GetUserSessions(ctx context.Context, userID string) ([]Session, error)
+	DeleteUserSessions(ctx context.Context, userID string) error
+	
+	{{if .Auth.Features.RBAC}}
+	// Role operations
+	CreateRole(ctx context.Context, role *Role) error
+	GetRole(ctx context.Context, id string) (*Role, error)
+	GetRoleByName(ctx context.Context, name string) (*Role, error)
+	UpdateRole(ctx context.Context, role *Role) error
+	DeleteRole(ctx context.Context, id string) error
+	ListRoles(ctx context.Context) ([]Role, error)
+	
+	// Permission operations
+	CreatePermission(ctx context.Context, permission *Permission) error
+	GetPermission(ctx context.Context, id string) (*Permission, error)
+	GetPermissionByName(ctx context.Context, name string) (*Permission, error)
+	ListPermissions(ctx context.Context) ([]Permission, error)
+	
+	// User-Role operations
+	AssignUserRole(ctx context.Context, userID, roleID string) error
+	RemoveUserRole(ctx context.Context, userID, roleID string) error
+	GetUserRoles(ctx context.Context, userID string) ([]Role, error)
+	GetUserPermissions(ctx context.Context, userID string) ([]Permission, error)
+	{{end}}
+	
+	{{if .Auth.Features.TokenBlacklist}}
+	// Token blacklist operations
+	AddBlacklistedToken(ctx context.Context, token *BlacklistedToken) error
+	IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error)
+	CleanupExpiredTokens(ctx context.Context) error
+	{{end}}
+	
+	{{if .Auth.Features.MultiTenant}}
+	// Tenant operations
+	CreateTenant(ctx context.Context, tenant *Tenant) error
+	GetTenant(ctx context.Context, id string) (*Tenant, error)
+	GetTenantByDomain(ctx context.Context, domain string) (*Tenant, error)
+	UpdateTenant(ctx context.Context, tenant *Tenant) error
+	ListTenants(ctx context.Context) ([]Tenant, error)
+	{{end}}
+}
+
+// AuthMiddleware defines authentication middleware interface.
+type AuthMiddleware interface {
+	// Middleware functions
+	RequireAuth() interface{} // Returns gin.HandlerFunc or similar
+	OptionalAuth() interface{}
+	{{if .Auth.Features.RBAC}}
+	RequirePermission(resource, action string) interface{}
+	RequireRole(roles ...string) interface{}
+	{{end}}
+	{{if .Auth.Features.MultiTenant}}
+	RequireTenant() interface{}
+	{{end}}
+}

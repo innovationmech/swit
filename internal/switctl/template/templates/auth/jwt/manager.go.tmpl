@@ -1,0 +1,336 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"context"
+	"crypto/rsa"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var (
+	// JWT errors
+	ErrInvalidToken     = errors.New("invalid token")
+	ErrExpiredToken     = errors.New("token has expired")
+	ErrInvalidSignature = errors.New("invalid token signature")
+	ErrMissingClaims    = errors.New("missing required claims")
+	ErrInvalidIssuer    = errors.New("invalid token issuer")
+	ErrInvalidAudience  = errors.New("invalid token audience")
+)
+
+// JWTClaims represents the JWT claims structure.
+type JWTClaims struct {
+	UserID       string   `json:"user_id"`
+	Username     string   `json:"username"`
+	Email        string   `json:"email"`
+	Roles        []string `json:"roles"`
+	Permissions  []string `json:"permissions"`
+	TokenType    string   `json:"token_type"` // "access" or "refresh"
+	SessionID    string   `json:"session_id"`
+	jwt.RegisteredClaims
+}
+
+// JWTConfig holds JWT configuration.
+type JWTConfig struct {
+	PrivateKey         *rsa.PrivateKey
+	PublicKey          *rsa.PublicKey
+	Issuer             string
+	AccessTokenTTL     time.Duration
+	RefreshTokenTTL    time.Duration
+	SigningMethod      jwt.SigningMethod
+	AllowedAudiences   []string
+	ClockSkew          time.Duration
+}
+
+// JWTManager handles JWT token operations.
+type JWTManager struct {
+	config *JWTConfig
+}
+
+// NewJWTManager creates a new JWT manager instance.
+func NewJWTManager(config *JWTConfig) (*JWTManager, error) {
+	if config == nil {
+		return nil, errors.New("JWT config is required")
+	}
+
+	if config.PrivateKey == nil {
+		return nil, errors.New("private key is required")
+	}
+
+	if config.PublicKey == nil {
+		return nil, errors.New("public key is required")
+	}
+
+	if config.Issuer == "" {
+		return nil, errors.New("issuer is required")
+	}
+
+	if config.SigningMethod == nil {
+		config.SigningMethod = jwt.SigningMethodRS256
+	}
+
+	if config.AccessTokenTTL == 0 {
+		config.AccessTokenTTL = 15 * time.Minute
+	}
+
+	if config.RefreshTokenTTL == 0 {
+		config.RefreshTokenTTL = 7 * 24 * time.Hour
+	}
+
+	if config.ClockSkew == 0 {
+		config.ClockSkew = 30 * time.Second
+	}
+
+	return &JWTManager{
+		config: config,
+	}, nil
+}
+
+// TokenPair represents an access and refresh token pair.
+type TokenPair struct {
+	AccessToken       string    `json:"access_token"`
+	RefreshToken      string    `json:"refresh_token"`
+	TokenType         string    `json:"token_type"`
+	ExpiresIn         int64     `json:"expires_in"`
+	RefreshExpiresIn  int64     `json:"refresh_expires_in"`
+	IssuedAt          time.Time `json:"issued_at"`
+}
+
+// GenerateTokenPair creates both access and refresh tokens.
+func (m *JWTManager) GenerateTokenPair(ctx context.Context, userID, username, email string, roles, permissions []string, audience string) (*TokenPair, error) {
+	sessionID := fmt.Sprintf("%s_%d", userID, time.Now().Unix())
+	now := time.Now()
+
+	// Generate access token
+	accessClaims := &JWTClaims{
+		UserID:      userID,
+		Username:    username,
+		Email:       email,
+		Roles:       roles,
+		Permissions: permissions,
+		TokenType:   "access",
+		SessionID:   sessionID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.config.Issuer,
+			Subject:   userID,
+			Audience:  []string{audience},
+			ExpiresAt: jwt.NewNumericDate(now.Add(m.config.AccessTokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ID:        sessionID + "_access",
+		},
+	}
+
+	accessToken := jwt.NewWithClaims(m.config.SigningMethod, accessClaims)
+	accessTokenString, err := accessToken.SignedString(m.config.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign access token: %w", err)
+	}
+
+	// Generate refresh token
+	refreshClaims := &JWTClaims{
+		UserID:    userID,
+		Username:  username,
+		Email:     email,
+		TokenType: "refresh",
+		SessionID: sessionID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.config.Issuer,
+			Subject:   userID,
+			Audience:  []string{audience},
+			ExpiresAt: jwt.NewNumericDate(now.Add(m.config.RefreshTokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ID:        sessionID + "_refresh",
+		},
+	}
+
+	refreshToken := jwt.NewWithClaims(m.config.SigningMethod, refreshClaims)
+	refreshTokenString, err := refreshToken.SignedString(m.config.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign refresh token: %w", err)
+	}
+
+	return &TokenPair{
+		AccessToken:      accessTokenString,
+		RefreshToken:     refreshTokenString,
+		TokenType:        "Bearer",
+		ExpiresIn:        int64(m.config.AccessTokenTTL.Seconds()),
+		RefreshExpiresIn: int64(m.config.RefreshTokenTTL.Seconds()),
+		IssuedAt:         now,
+	}, nil
+}
+
+// ValidateToken validates and parses a JWT token.
+func (m *JWTManager) ValidateToken(ctx context.Context, tokenString string) (*JWTClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+		// Validate signing method
+		if token.Method != m.config.SigningMethod {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return m.config.PublicKey, nil
+	})
+
+	if err != nil {
+		var ve *jwt.ValidationError
+		if errors.As(err, &ve) {
+			if ve.Errors&jwt.ValidationErrorExpired != 0 {
+				return nil, ErrExpiredToken
+			}
+			if ve.Errors&jwt.ValidationErrorSignatureInvalid != 0 {
+				return nil, ErrInvalidSignature
+			}
+		}
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	if !token.Valid {
+		return nil, ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*JWTClaims)
+	if !ok {
+		return nil, ErrMissingClaims
+	}
+
+	// Validate issuer
+	if claims.Issuer != m.config.Issuer {
+		return nil, ErrInvalidIssuer
+	}
+
+	// Validate audience if configured
+	if len(m.config.AllowedAudiences) > 0 {
+		valid := false
+		for _, aud := range claims.Audience {
+			for _, allowedAud := range m.config.AllowedAudiences {
+				if aud == allowedAud {
+					valid = true
+					break
+				}
+			}
+			if valid {
+				break
+			}
+		}
+		if !valid {
+			return nil, ErrInvalidAudience
+		}
+	}
+
+	// Apply clock skew tolerance
+	now := time.Now()
+	if claims.ExpiresAt != nil {
+		exp := claims.ExpiresAt.Time.Add(m.config.ClockSkew)
+		if now.After(exp) {
+			return nil, ErrExpiredToken
+		}
+	}
+
+	if claims.NotBefore != nil {
+		nbf := claims.NotBefore.Time.Add(-m.config.ClockSkew)
+		if now.Before(nbf) {
+			return nil, ErrInvalidToken
+		}
+	}
+
+	return claims, nil
+}
+
+// RefreshToken generates a new access token using a valid refresh token.
+func (m *JWTManager) RefreshToken(ctx context.Context, refreshTokenString, audience string) (*TokenPair, error) {
+	// Validate refresh token
+	claims, err := m.ValidateToken(ctx, refreshTokenString)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+
+	// Ensure it's a refresh token
+	if claims.TokenType != "refresh" {
+		return nil, errors.New("token is not a refresh token")
+	}
+
+	// Generate new token pair
+	return m.GenerateTokenPair(ctx, claims.UserID, claims.Username, claims.Email, claims.Roles, claims.Permissions, audience)
+}
+
+// RevokeToken marks a token as revoked (implementation depends on storage backend).
+func (m *JWTManager) RevokeToken(ctx context.Context, tokenID string) error {
+	// TODO: Implement token revocation logic
+	// This typically involves storing revoked token IDs in a blacklist
+	// (Redis, database, etc.) and checking against it during validation
+	return nil
+}
+
+// IsTokenRevoked checks if a token has been revoked.
+func (m *JWTManager) IsTokenRevoked(ctx context.Context, tokenID string) (bool, error) {
+	// TODO: Implement token revocation check
+	// Check against your blacklist storage
+	return false, nil
+}
+
+// GetTokenClaims extracts claims from a token without validation (for debugging).
+func (m *JWTManager) GetTokenClaims(tokenString string) (*JWTClaims, error) {
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &JWTClaims{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*JWTClaims)
+	if !ok {
+		return nil, ErrMissingClaims
+	}
+
+	return claims, nil
+}
+
+{{if .Auth.Features.TokenBlacklist}}
+// TokenBlacklist interface for managing revoked tokens.
+type TokenBlacklist interface {
+	Add(ctx context.Context, tokenID string, expiry time.Time) error
+	Contains(ctx context.Context, tokenID string) (bool, error)
+	Remove(ctx context.Context, tokenID string) error
+	Cleanup(ctx context.Context) error
+}
+
+// SetTokenBlacklist sets the token blacklist implementation.
+func (m *JWTManager) SetTokenBlacklist(blacklist TokenBlacklist) {
+	// TODO: Implement blacklist integration
+}
+{{end}}
+
+{{if .Auth.Features.MultiTenant}}
+// ValidateTokenForTenant validates a token for a specific tenant.
+func (m *JWTManager) ValidateTokenForTenant(ctx context.Context, tokenString, tenantID string) (*JWTClaims, error) {
+	claims, err := m.ValidateToken(ctx, tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if token is valid for this tenant
+	// TODO: Implement tenant-specific validation logic
+	
+	return claims, nil
+}
+{{end}}

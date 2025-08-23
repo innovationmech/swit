@@ -1,0 +1,435 @@
+// Copyright © {{year}} {{.Author}}
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+package auth
+
+import (
+	"net/http"
+	"net/url"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"{{.Service.ModulePath}}/internal/{{.Package.Name}}/types"
+)
+
+// OAuth2Handlers provides HTTP handlers for OAuth2 authentication.
+type OAuth2Handlers struct {
+	oauth2Manager *OAuth2Manager
+	jwtManager    *JWTManager
+	userService   UserService // Interface for user management
+	config        *OAuth2HandlersConfig
+}
+
+// OAuth2HandlersConfig holds configuration for OAuth2 handlers.
+type OAuth2HandlersConfig struct {
+	DefaultSuccessRedirect string
+	DefaultErrorRedirect   string
+	CookieDomain          string
+	CookieSecure          bool
+	CookieHTTPOnly        bool
+	CookieSameSite        http.SameSite
+	SessionCookieName     string
+	AccessTokenCookieName string
+	RefreshTokenCookieName string
+}
+
+// UserService interface for managing users.
+type UserService interface {
+	FindOrCreateUserByOAuth2(ctx context.Context, oauth2User *OAuth2User) (*types.User, error)
+	GetUserRolesAndPermissions(ctx context.Context, userID string) ([]string, []string, error)
+}
+
+// NewOAuth2Handlers creates new OAuth2 handlers.
+func NewOAuth2Handlers(oauth2Manager *OAuth2Manager, jwtManager *JWTManager, userService UserService, config *OAuth2HandlersConfig) *OAuth2Handlers {
+	if config == nil {
+		config = &OAuth2HandlersConfig{
+			DefaultSuccessRedirect: "/",
+			DefaultErrorRedirect:   "/auth/error",
+			CookieHTTPOnly:        true,
+			CookieSecure:          true,
+			CookieSameSite:        http.SameSiteStrictMode,
+			SessionCookieName:     "session",
+			AccessTokenCookieName: "access_token",
+			RefreshTokenCookieName: "refresh_token",
+		}
+	}
+
+	return &OAuth2Handlers{
+		oauth2Manager: oauth2Manager,
+		jwtManager:    jwtManager,
+		userService:   userService,
+		config:        config,
+	}
+}
+
+// RegisterRoutes registers OAuth2 routes with the router.
+func (h *OAuth2Handlers) RegisterRoutes(router *gin.Engine) {
+	authGroup := router.Group("/auth")
+	{
+		// OAuth2 initiation endpoints
+		authGroup.GET("/login/:provider", h.handleLogin)
+		authGroup.GET("/logout", h.handleLogout)
+		
+		// OAuth2 callback endpoints
+		authGroup.GET("/callback/:provider", h.handleCallback)
+		
+		// Token management
+		authGroup.POST("/refresh", h.handleRefreshToken)
+		authGroup.POST("/revoke", h.handleRevokeToken)
+		
+		// User info endpoint (requires authentication)
+		authGroup.GET("/me", h.handleUserInfo)
+	}
+}
+
+// handleLogin initiates OAuth2 login flow.
+func (h *OAuth2Handlers) handleLogin(c *gin.Context) {
+	provider := OAuth2Provider(c.Param("provider"))
+	redirectTo := c.Query("redirect_to")
+
+	if redirectTo == "" {
+		redirectTo = h.config.DefaultSuccessRedirect
+	}
+
+	// Validate redirect URL for security
+	if !h.isValidRedirectURL(redirectTo) {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Invalid redirect URL",
+			Error: &types.ErrorInfo{
+				Code:    "INVALID_REDIRECT",
+				Message: "The provided redirect URL is not allowed",
+			},
+		})
+		return
+	}
+
+	authURL, err := h.oauth2Manager.GetAuthURL(c.Request.Context(), provider, redirectTo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Failed to generate authorization URL",
+			Error: &types.ErrorInfo{
+				Code:    "AUTH_URL_GENERATION_FAILED",
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	// Return JSON response for API clients
+	if c.GetHeader("Accept") == "application/json" {
+		c.JSON(http.StatusOK, types.Response{
+			Success: true,
+			Message: "Authorization URL generated",
+			Data: gin.H{
+				"auth_url": authURL,
+				"provider": provider,
+			},
+		})
+		return
+	}
+
+	// Redirect for web clients
+	c.Redirect(http.StatusFound, authURL)
+}
+
+// handleCallback handles OAuth2 callback.
+func (h *OAuth2Handlers) handleCallback(c *gin.Context) {
+	provider := OAuth2Provider(c.Param("provider"))
+	code := c.Query("code")
+	state := c.Query("state")
+	errorParam := c.Query("error")
+
+	// Handle OAuth2 errors
+	if errorParam != "" {
+		errorDescription := c.Query("error_description")
+		h.redirectWithError(c, "OAuth2 error: "+errorParam, errorDescription)
+		return
+	}
+
+	// Handle OAuth2 callback
+	oauth2User, err := h.oauth2Manager.HandleCallback(c.Request.Context(), provider, code, state)
+	if err != nil {
+		h.redirectWithError(c, "Authentication failed", err.Error())
+		return
+	}
+
+	// Find or create user
+	user, err := h.userService.FindOrCreateUserByOAuth2(c.Request.Context(), oauth2User)
+	if err != nil {
+		h.redirectWithError(c, "User creation failed", err.Error())
+		return
+	}
+
+	// Get user roles and permissions
+	roles, permissions, err := h.userService.GetUserRolesAndPermissions(c.Request.Context(), user.ID)
+	if err != nil {
+		// Log error but continue with empty roles/permissions
+		roles = []string{}
+		permissions = []string{}
+	}
+
+	// Generate JWT tokens
+	tokenPair, err := h.jwtManager.GenerateTokenPair(
+		c.Request.Context(),
+		user.ID,
+		user.Username,
+		user.Email,
+		roles,
+		permissions,
+		"{{.Service.Name}}",
+	)
+	if err != nil {
+		h.redirectWithError(c, "Token generation failed", err.Error())
+		return
+	}
+
+	// Set cookies
+	h.setAuthCookies(c, tokenPair)
+
+	// Redirect to success URL
+	redirectTo := h.config.DefaultSuccessRedirect
+	c.Redirect(http.StatusFound, redirectTo)
+}
+
+// handleLogout handles user logout.
+func (h *OAuth2Handlers) handleLogout(c *gin.Context) {
+	// Clear auth cookies
+	h.clearAuthCookies(c)
+
+	// TODO: Add token to blacklist if using token blacklisting
+
+	// Return JSON response for API clients
+	if c.GetHeader("Accept") == "application/json" {
+		c.JSON(http.StatusOK, types.Response{
+			Success: true,
+			Message: "Logged out successfully",
+		})
+		return
+	}
+
+	// Redirect for web clients
+	redirectTo := c.Query("redirect_to")
+	if redirectTo == "" || !h.isValidRedirectURL(redirectTo) {
+		redirectTo = "/"
+	}
+	c.Redirect(http.StatusFound, redirectTo)
+}
+
+// handleRefreshToken handles token refresh.
+func (h *OAuth2Handlers) handleRefreshToken(c *gin.Context) {
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+
+	// Try to get refresh token from request body or cookie
+	if err := c.ShouldBindJSON(&req); err != nil || req.RefreshToken == "" {
+		if cookie, err := c.Cookie(h.config.RefreshTokenCookieName); err == nil {
+			req.RefreshToken = cookie
+		}
+	}
+
+	if req.RefreshToken == "" {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: "Refresh token is required",
+			Error: &types.ErrorInfo{
+				Code:    "MISSING_REFRESH_TOKEN",
+				Message: "No refresh token provided",
+			},
+		})
+		return
+	}
+
+	// Refresh tokens
+	tokenPair, err := h.jwtManager.RefreshToken(c.Request.Context(), req.RefreshToken, "{{.Service.Name}}")
+	if err != nil {
+		h.clearAuthCookies(c)
+		c.JSON(http.StatusUnauthorized, types.Response{
+			Success: false,
+			Message: "Token refresh failed",
+			Error: &types.ErrorInfo{
+				Code:    "TOKEN_REFRESH_FAILED",
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	// Set new cookies
+	h.setAuthCookies(c, tokenPair)
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "Tokens refreshed successfully",
+		Data:    tokenPair,
+	})
+}
+
+// handleRevokeToken handles token revocation.
+func (h *OAuth2Handlers) handleRevokeToken(c *gin.Context) {
+	// Get token from context (set by auth middleware)
+	claims, exists := GetClaimsFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, types.Response{
+			Success: false,
+			Message: "No active session",
+			Error: &types.ErrorInfo{
+				Code:    "NO_ACTIVE_SESSION",
+				Message: "User is not authenticated",
+			},
+		})
+		return
+	}
+
+	// Revoke token
+	if err := h.jwtManager.RevokeToken(c.Request.Context(), claims.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, types.Response{
+			Success: false,
+			Message: "Token revocation failed",
+			Error: &types.ErrorInfo{
+				Code:    "TOKEN_REVOCATION_FAILED",
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	// Clear cookies
+	h.clearAuthCookies(c)
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "Token revoked successfully",
+	})
+}
+
+// handleUserInfo returns authenticated user information.
+func (h *OAuth2Handlers) handleUserInfo(c *gin.Context) {
+	user, exists := GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, types.Response{
+			Success: false,
+			Message: "User not authenticated",
+			Error: &types.ErrorInfo{
+				Code:    "NOT_AUTHENTICATED",
+				Message: "No authenticated user found",
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, types.Response{
+		Success: true,
+		Message: "User information retrieved",
+		Data:    user,
+	})
+}
+
+// Helper methods
+
+func (h *OAuth2Handlers) setAuthCookies(c *gin.Context, tokenPair *TokenPair) {
+	// Set access token cookie
+	c.SetCookie(
+		h.config.AccessTokenCookieName,
+		tokenPair.AccessToken,
+		int(tokenPair.ExpiresIn),
+		"/",
+		h.config.CookieDomain,
+		h.config.CookieSecure,
+		h.config.CookieHTTPOnly,
+	)
+
+	// Set refresh token cookie
+	c.SetCookie(
+		h.config.RefreshTokenCookieName,
+		tokenPair.RefreshToken,
+		int(tokenPair.RefreshExpiresIn),
+		"/",
+		h.config.CookieDomain,
+		h.config.CookieSecure,
+		h.config.CookieHTTPOnly,
+	)
+}
+
+func (h *OAuth2Handlers) clearAuthCookies(c *gin.Context) {
+	// Clear access token cookie
+	c.SetCookie(
+		h.config.AccessTokenCookieName,
+		"",
+		-1,
+		"/",
+		h.config.CookieDomain,
+		h.config.CookieSecure,
+		h.config.CookieHTTPOnly,
+	)
+
+	// Clear refresh token cookie
+	c.SetCookie(
+		h.config.RefreshTokenCookieName,
+		"",
+		-1,
+		"/",
+		h.config.CookieDomain,
+		h.config.CookieSecure,
+		h.config.CookieHTTPOnly,
+	)
+}
+
+func (h *OAuth2Handlers) isValidRedirectURL(redirectURL string) bool {
+	// Parse the URL
+	parsedURL, err := url.Parse(redirectURL)
+	if err != nil {
+		return false
+	}
+
+	// Allow relative URLs
+	if parsedURL.Host == "" {
+		return true
+	}
+
+	// TODO: Implement allowlist of valid redirect URLs
+	// For now, only allow same-origin redirects
+	return false
+}
+
+func (h *OAuth2Handlers) redirectWithError(c *gin.Context, message, details string) {
+	// For API clients, return JSON
+	if c.GetHeader("Accept") == "application/json" {
+		c.JSON(http.StatusBadRequest, types.Response{
+			Success: false,
+			Message: message,
+			Error: &types.ErrorInfo{
+				Code:    "OAUTH2_ERROR",
+				Message: details,
+			},
+		})
+		return
+	}
+
+	// For web clients, redirect to error page
+	errorURL := h.config.DefaultErrorRedirect + "?error=" + url.QueryEscape(message)
+	if details != "" {
+		errorURL += "&details=" + url.QueryEscape(details)
+	}
+	c.Redirect(http.StatusFound, errorURL)
+}
