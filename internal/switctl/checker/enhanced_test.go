@@ -54,7 +54,10 @@ func (s *EnhancedTestSuite) SetupTest() {
 	s.tempDir, err = os.MkdirTemp("", "enhanced-checker-test-*")
 	s.Require().NoError(err)
 
-	s.logger = &MockLogger{messages: make([]LogMessage, 0)}
+	s.logger = &MockLogger{
+		mu:       sync.Mutex{},
+		messages: make([]LogMessage, 0),
+	}
 }
 
 func (s *EnhancedTestSuite) TearDownTest() {
@@ -301,7 +304,15 @@ func (s *EnhancedTestSuite) TestMemoryLeaksAndResourceCleanup() {
 	runtime.ReadMemStats(&memStatsAfter)
 
 	// Memory usage should not grow excessively
-	memoryGrowth := memStatsAfter.Alloc - memStatsBefore.Alloc
+	// Handle potential underflow when memory usage decreases
+	var memoryGrowth int64
+	if memStatsAfter.Alloc >= memStatsBefore.Alloc {
+		memoryGrowth = int64(memStatsAfter.Alloc - memStatsBefore.Alloc)
+	} else {
+		// Memory actually decreased, which is good
+		memoryGrowth = 0
+	}
+
 	s.True(memoryGrowth < 10*1024*1024, "Memory growth should be less than 10MB, got %d bytes", memoryGrowth)
 }
 
