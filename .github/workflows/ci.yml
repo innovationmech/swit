@@ -16,6 +16,10 @@ on:
 
 env:
   GO_VERSION: '1.23'
+
+# Set minimal permissions for GITHUB_TOKEN
+permissions:
+  contents: read
   
 # 确保所有 status checks 都有明确的状态
 concurrency:
