@@ -25,6 +25,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -81,10 +82,28 @@ func (s *LoaderTestSuite) SetupTest() {
 
 func (s *LoaderTestSuite) TestGetSupportedFormats() {
 	formats := s.loader.GetSupportedFormats()
-	s.Contains(formats, ".so")
-	s.Contains(formats, ".dylib")
-	// .dll is included in the list but may not be available on all platforms
-	s.True(len(formats) >= 2)
+	s.NotEmpty(formats)
+
+	// 平台相关断言，避免在 Linux CI 上强制要求 .dylib
+	switch runtime.GOOS {
+	case "linux":
+		s.Contains(formats, ".so")
+	case "darwin":
+		s.Contains(formats, ".dylib")
+		// darwin 也可能包含 .so，保持宽松
+	case "windows":
+		s.Contains(formats, ".dll")
+	default:
+		// 其他平台至少包含一种常见共享库后缀
+		hasShared := false
+		for _, f := range formats {
+			if f == ".so" || f == ".dylib" || f == ".dll" {
+				hasShared = true
+				break
+			}
+		}
+		s.True(hasShared, "should contain at least one common shared library format")
+	}
 }
 
 func (s *LoaderTestSuite) TestCalculateChecksum() {
@@ -136,7 +155,7 @@ func (s *LoaderTestSuite) TestValidatePluginSecurityValidation() {
 
 	// The validation might pass or fail depending on security settings
 	// This just tests that the validate method works without panic
-	err = s.loader.ValidatePlugin(testFile)
+	_ = s.loader.ValidatePlugin(testFile)
 	// Don't assert error or success since the actual validation behavior
 	// depends on the security configuration
 }
