@@ -33,6 +33,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/server"
 )
 
@@ -238,6 +239,9 @@ func (h *ExampleHTTPHandler) handleCreateUser(c *gin.Context) {
 }
 
 func main() {
+	// Initialize logger first
+	logger.InitLogger()
+
 	// Create server configuration
 	config := server.NewServerConfig()
 	config.ServiceName = "sentry-example-service"
