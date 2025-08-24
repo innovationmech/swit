@@ -9,10 +9,7 @@ on:
       - '.github/workflows/docs-*.yml'
   pull_request:
     branches: [ master, dev ]
-    paths-ignore:
-      - 'docs/**'
-      - 'README.md'
-      - '.github/workflows/docs-*.yml'
+  # 注意：不要忽略文档改动，否则必需的状态检查不会产生，PR 无法合并
 
 env:
   GO_VERSION: '1.23'
