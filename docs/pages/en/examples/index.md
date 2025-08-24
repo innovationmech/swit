@@ -46,6 +46,27 @@ cd examples/full-featured-service
 go run main.go
 ```
 
+### 📊 Sentry Monitoring Example
+Demonstrates comprehensive error monitoring and performance tracking with Sentry integration.
+
+- **Path**: `examples/sentry-example-service/`
+- **Features**: Error capture, performance monitoring, custom context, panic recovery
+- **Best For**: Production monitoring, error tracking, performance analysis
+
+```bash
+cd examples/sentry-example-service
+export SENTRY_DSN="your-sentry-dsn"
+go run main.go
+```
+
+**Test Endpoints:**
+- `GET /api/v1/error/500` - Generate server error
+- `GET /api/v1/slow` - Performance monitoring test
+- `GET /api/v1/panic` - Panic recovery test
+- `POST /api/v1/error/custom` - Custom error with context
+
+[→ Detailed Sentry Example Guide](/en/examples/sentry-service)
+
 ## Reference Implementations
 
 ### 👥 User Management Service (switserve)
