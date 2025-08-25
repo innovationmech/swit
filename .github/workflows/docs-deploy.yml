@@ -373,7 +373,7 @@ jobs:
           EOF
 
       - name: 📤 Upload build artifacts
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: ${{ env.DOCS_DIR }}/dist
   # 部署到 GitHub Pages
