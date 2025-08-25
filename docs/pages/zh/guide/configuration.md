@@ -175,6 +175,201 @@ discovery:
 - **fail_fast**：如果发现注册失败，服务器启动失败
 - **strict**：需要发现健康检查，对任何发现问题都快速失败
 
+## 监控配置（Sentry）
+
+框架通过 Sentry 集成提供全面的错误监控和性能跟踪。
+
+### 基本 Sentry 配置
+
+```yaml
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN}"          # 通过环境变量设置
+  environment: "production"      # 部署环境
+  release: "v1.2.3"             # 可选的发布版本
+  sample_rate: 1.0              # 错误采样率 (0.0-1.0)
+  traces_sample_rate: 0.1       # 性能采样率 (0.0-1.0)
+```
+
+### 完整 Sentry 配置
+
+```yaml
+sentry:
+  # 基本设置
+  enabled: true
+  dsn: "${SENTRY_DSN}"
+  environment: "production"
+  release: "v1.2.3"
+  server_name: "my-server-01"
+  
+  # 采样配置
+  sample_rate: 1.0              # 捕获所有错误
+  traces_sample_rate: 0.1       # 捕获 10% 的性能跟踪
+  profiles_sample_rate: 0.1     # 捕获 10% 的性能分析数据
+  
+  # 性能和跟踪
+  attach_stacktrace: true       # 在错误中包含堆栈跟踪
+  enable_tracing: true          # 启用性能监控
+  enable_profiling: true        # 启用性能分析（需要跟踪）
+  
+  # 调试和开发
+  debug: false                  # 启用调试日志
+  
+  # 框架集成
+  integrate_http: true          # 启用 HTTP 中间件
+  integrate_grpc: true          # 启用 gRPC 中间件
+  capture_panics: true          # 捕获和恢复恐慌
+  max_breadcrumbs: 30          # 最大面包屑轨迹长度
+  
+  # 上下文和数据
+  max_request_body_size: 1024   # 捕获的最大请求体（字节）
+  send_default_pii: false       # 不发送个人识别信息
+  
+  # 自定义标签（添加到所有事件）
+  tags:
+    service: "user-management"
+    version: "1.2.3"
+    datacenter: "us-west"
+    team: "platform"
+  
+  # 错误过滤
+  ignore_errors:
+    - "connection timeout"
+    - "user not found"
+    - "context deadline exceeded"
+  
+  # HTTP 特定过滤
+  http_ignore_paths:
+    - "/health"
+    - "/metrics"
+    - "/favicon.ico"
+    - "/robots.txt"
+  
+  # HTTP 状态码过滤
+  http_ignore_status_codes:
+    - 404    # 未找到错误
+    - 400    # 错误请求
+    - 401    # 未授权（预期的）
+```
+
+### 环境特定 Sentry 配置
+
+#### 开发环境
+```yaml
+sentry:
+  enabled: true
+  debug: true                   # 用于故障排除的详细日志
+  sample_rate: 1.0             # 捕获所有错误以进行测试
+  traces_sample_rate: 1.0      # 捕获所有跟踪以进行开发
+  environment: "development"
+  integrate_http: true
+  integrate_grpc: true
+```
+
+#### 预发环境
+```yaml
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN_STAGING}"
+  environment: "staging"
+  sample_rate: 1.0             # 在预发环境中捕获所有错误
+  traces_sample_rate: 0.5      # 50% 性能采样
+  enable_profiling: true       # 在预发环境中测试性能分析
+  ignore_errors:
+    - "test error"             # 过滤特定于测试的错误
+```
+
+#### 生产环境
+```yaml
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN_PRODUCTION}"
+  environment: "production"
+  release: "${APP_VERSION}"    # 从 CI/CD 流水线设置
+  sample_rate: 1.0             # 捕获所有错误
+  traces_sample_rate: 0.1      # 10% 性能采样
+  profiles_sample_rate: 0.1    # 10% 性能分析
+  enable_profiling: true
+  
+  # 生产特定过滤
+  http_ignore_status_codes:
+    - 404
+    - 400
+    - 401
+    - 403
+  
+  ignore_errors:
+    - "connection refused"
+    - "timeout"
+    - "rate limit exceeded"
+```
+
+### Sentry 配置最佳实践
+
+#### 采样策略
+- **开发环境**：高采样率 (1.0) 用于全面调试
+- **预发环境**：中等采样率 (0.5) 用于现实测试
+- **生产环境**：低采样率 (0.1) 用于管理数量和成本
+
+#### 错误过滤
+- 过滤预期错误（4xx HTTP 状态码）
+- 忽略健康检查和指标端点
+- 过滤噪音连接错误
+- 使用特定错误模式而不是广泛过滤
+
+#### 性能监控
+- 在所有环境中启用跟踪
+- 在生产环境中使用保守采样
+- 监控性能分析开销
+- 设置适当的请求体大小限制
+
+#### 安全考虑
+- 永远不要记录敏感数据（PII、凭据）
+- 对 DSN 配置使用环境变量
+- 过滤包含秘密的请求体和标头
+- 在生产环境中谨慎使用调试模式
+
+### Sentry 环境变量
+
+```bash
+# 必需
+export SENTRY_DSN="https://public@sentry.io/project-id"
+
+# 可选覆盖
+export SENTRY_ENVIRONMENT="production"
+export SENTRY_RELEASE="v1.2.3"
+export SENTRY_SAMPLE_RATE="1.0"
+export SENTRY_TRACES_SAMPLE_RATE="0.1"
+export SENTRY_DEBUG="false"
+export SENTRY_SERVER_NAME="my-server-01"
+```
+
+### Sentry 验证
+
+框架在启动时验证 Sentry 配置：
+
+- **DSN 格式**：验证 DSN URL 格式
+- **采样率**：确保值在 0.0 和 1.0 之间
+- **环境**：验证环境字符串格式
+- **依赖项**：检查所需的 Sentry SDK 版本
+
+```go
+// 配置验证示例
+config := &ServerConfig{
+    Sentry: SentryConfig{
+        Enabled:           true,
+        DSN:              "invalid-dsn",  // 这将导致验证错误
+        SampleRate:       2.0,            // 这将导致验证错误
+        TracesSampleRate: -0.1,           // 这将导致验证错误
+    },
+}
+
+// 验证将失败并显示详细错误消息
+if err := config.Validate(); err != nil {
+    log.Fatal("配置验证失败:", err)
+}
+```
+
 ## 环境特定配置
 
 ### 开发配置

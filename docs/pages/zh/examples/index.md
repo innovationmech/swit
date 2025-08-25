@@ -46,6 +46,27 @@ cd examples/full-featured-service
 go run main.go
 ```
 
+### 📊 Sentry 监控示例
+演示 Sentry 集成的全面错误监控和性能跟踪。
+
+- **路径**: `examples/sentry-example-service/`
+- **特性**: 错误捕获、性能监控、自定义上下文、恐慌恢复
+- **适用于**: 生产监控、错误跟踪、性能分析
+
+```bash
+cd examples/sentry-example-service
+export SENTRY_DSN="your-sentry-dsn"
+go run main.go
+```
+
+**测试端点:**
+- `GET /api/v1/error/500` - 生成服务器错误
+- `GET /api/v1/slow` - 性能监控测试
+- `GET /api/v1/panic` - 恐慌恢复测试
+- `POST /api/v1/error/custom` - 带上下文的自定义错误
+
+[→ 详细 Sentry 示例指南](/zh/examples/sentry-service)
+
 ## 参考实现
 
 ### 👥 用户管理服务 (switserve)

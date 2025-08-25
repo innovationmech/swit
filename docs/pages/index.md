@@ -3,7 +3,7 @@ layout: home
 title: Swit Framework
 description: Modern Go Microservice Development Framework
 titleTemplate: Production-ready microservice foundation
-# Last updated: 2025-08-18
+# Last updated: 2025-08-24
 
 hero:
   name: "Swit"
@@ -15,10 +15,10 @@ hero:
   actions:
     - theme: brand
       text: Get Started
-      link: /en/guide/getting-started
+      link: /swit/en/guide/getting-started
     - theme: alt
       text: 查看中文文档
-      link: /zh/guide/getting-started
+      link: /swit/zh/guide/getting-started
     - theme: alt
       text: View on GitHub
       link: https://github.com/innovationmech/swit
@@ -30,18 +30,18 @@ features:
   - icon: 🔄
     title: Multi-Transport Support
     details: Seamless HTTP and gRPC transport coordination with pluggable architecture
+  - icon: 🔍
+    title: Error Monitoring & Observability
+    details: Comprehensive Sentry integration for error tracking, performance monitoring, and real-time alerts
+  - icon: 🛠️
+    title: CLI Development Tools
+    details: Powerful switctl CLI for scaffolding, code generation, quality checks, and template management
   - icon: 📦
     title: Dependency Injection
     details: Factory-based dependency container with automatic lifecycle management
-  - icon: 📊
-    title: Performance Monitoring
-    details: Built-in metrics collection and performance profiling with threshold monitoring
-  - icon: 🔍
-    title: Service Discovery
-    details: Consul-based service registration with health check integration
-  - icon: 📚
-    title: Rich Examples
-    details: Complete reference implementations and best practice examples
+  - icon: 🔒
+    title: Production Security
+    details: Built-in security best practices, vulnerability scanning, and secure development workflows
 ---
 
 ## Quick Start
@@ -49,11 +49,11 @@ features:
 Choose your preferred language to get started with Swit framework:
 
 <div style="display: flex; gap: 1rem; margin: 2rem 0;">
-  <a href="/en/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
+  <a href="/swit/en/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
     <h3>🇺🇸 English Documentation</h3>
     <p>Complete guide and API reference in English</p>
   </a>
-  <a href="/zh/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
+  <a href="/swit/zh/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
     <h3>🇨🇳 中文文档</h3>
     <p>完整的中文指南和 API 参考</p>
   </a>
@@ -63,16 +63,16 @@ Choose your preferred language to get started with Swit framework:
 
 <div class="stats-grid">
   <div class="stat-card">
-    <div class="stat-number">2</div>
-    <div class="stat-label">Core Services</div>
-  </div>
-  <div class="stat-card">
     <div class="stat-number">MIT</div>
     <div class="stat-label">License</div>
   </div>
   <div class="stat-card">
     <div class="stat-number">Go 1.24+</div>
     <div class="stat-label">Requirements</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">Production</div>
+    <div class="stat-label">Ready</div>
   </div>
 </div>
 

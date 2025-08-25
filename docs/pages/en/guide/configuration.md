@@ -199,6 +199,261 @@ discovery:
 - **fail_fast**: Server startup fails if discovery registration fails
 - **strict**: Requires discovery health check and fails fast on any discovery issues
 
+## Monitoring Configuration (Sentry)
+
+The framework provides comprehensive error monitoring and performance tracking through Sentry integration.
+
+### Basic Sentry Configuration
+
+```yaml
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN}"          # Set via environment variable
+  environment: "production"      # deployment environment
+  release: "v1.2.3"             # optional release version
+  sample_rate: 1.0              # error sampling rate (0.0-1.0)
+  traces_sample_rate: 0.1       # performance sampling rate (0.0-1.0)
+```
+
+### Complete Sentry Configuration
+
+```yaml
+sentry:
+  # Basic settings
+  enabled: true
+  dsn: "${SENTRY_DSN}"
+  environment: "production"
+  release: "v1.2.3"
+  server_name: "my-server-01"
+  
+  # Sampling configuration
+  sample_rate: 1.0              # Capture all errors
+  traces_sample_rate: 0.1       # Capture 10% of performance traces
+  profiles_sample_rate: 0.1     # Capture 10% of profiling data
+  
+  # Performance and tracing
+  attach_stacktrace: true       # Include stack traces with errors
+  enable_tracing: true          # Enable performance monitoring
+  enable_profiling: true        # Enable profiling (requires traces)
+  
+  # Debug and development
+  debug: false                  # Enable debug logging
+  
+  # Framework integration
+  integrate_http: true          # Enable HTTP middleware
+  integrate_grpc: true          # Enable gRPC middleware
+  capture_panics: true          # Capture and recover from panics
+  max_breadcrumbs: 30          # Maximum breadcrumb trail length
+  
+  # Context and data
+  max_request_body_size: 1024   # Max request body to capture (bytes)
+  send_default_pii: false       # Don't send personally identifiable info
+  
+  # Custom tags (added to all events)
+  tags:
+    service: "user-management"
+    version: "1.2.3"
+    datacenter: "us-west"
+    team: "platform"
+  
+  # Error filtering
+  ignore_errors:
+    - "connection timeout"
+    - "user not found"
+    - "context deadline exceeded"
+  
+  # HTTP-specific filtering
+  http_ignore_paths:
+    - "/health"
+    - "/metrics"
+    - "/favicon.ico"
+    - "/robots.txt"
+  
+  # HTTP status code filtering
+  http_ignore_status_codes:
+    - 404    # Not found errors
+    - 400    # Bad request errors
+    - 401    # Unauthorized (expected)
+```
+
+### Environment-Specific Sentry Configuration
+
+#### Development
+```yaml
+sentry:
+  enabled: true
+  debug: true                   # Verbose logging for troubleshooting
+  sample_rate: 1.0             # Capture all errors for testing
+  traces_sample_rate: 1.0      # Capture all traces for development
+  environment: "development"
+  integrate_http: true
+  integrate_grpc: true
+```
+
+#### Staging
+```yaml
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN_STAGING}"
+  environment: "staging"
+  sample_rate: 1.0             # Capture all errors in staging
+  traces_sample_rate: 0.5      # 50% performance sampling
+  enable_profiling: true       # Test profiling in staging
+  ignore_errors:
+    - "test error"             # Filter out test-specific errors
+```
+
+#### Production
+```yaml
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN_PRODUCTION}"
+  environment: "production"
+  release: "${APP_VERSION}"    # Set from CI/CD pipeline
+  sample_rate: 1.0             # Capture all errors
+  traces_sample_rate: 0.1      # 10% performance sampling
+  profiles_sample_rate: 0.1    # 10% profiling
+  enable_profiling: true
+  
+  # Production-specific filtering
+  http_ignore_status_codes:
+    - 404
+    - 400
+    - 401
+    - 403
+  
+  ignore_errors:
+    - "connection refused"
+    - "timeout"
+    - "rate limit exceeded"
+```
+
+### Sentry Configuration Best Practices
+
+#### Sampling Strategy
+- **Development**: High sampling rates (1.0) for comprehensive debugging
+- **Staging**: Medium sampling rates (0.5) for realistic testing
+- **Production**: Low sampling rates (0.1) to manage volume and costs
+
+#### Error Filtering
+- Filter out expected errors (4xx HTTP status codes)
+- Ignore health check and metrics endpoints
+- Filter noisy connection errors
+- Use specific error patterns rather than broad filters
+
+#### Performance Monitoring
+- Enable tracing in all environments
+- Use conservative sampling in production
+- Monitor profiling overhead
+- Set appropriate request body size limits
+
+#### Security Considerations
+- Never log sensitive data (PII, credentials)
+- Use environment variables for DSN configuration
+- Filter request bodies and headers containing secrets
+- Be cautious with debug mode in production
+
+### Sentry Environment Variables
+
+```bash
+# Required
+export SENTRY_DSN="https://public@sentry.io/project-id"
+
+# Optional overrides
+export SENTRY_ENVIRONMENT="production"
+export SENTRY_RELEASE="v1.2.3"
+export SENTRY_SAMPLE_RATE="1.0"
+export SENTRY_TRACES_SAMPLE_RATE="0.1"
+export SENTRY_DEBUG="false"
+export SENTRY_SERVER_NAME="my-server-01"
+```
+
+### Sentry Validation
+
+The framework validates Sentry configuration on startup:
+
+- **DSN Format**: Validates DSN URL format
+- **Sampling Rates**: Ensures values are between 0.0 and 1.0
+- **Environment**: Validates environment string format
+- **Dependencies**: Checks for required Sentry SDK version
+
+```go
+// Configuration validation example
+config := &ServerConfig{
+    Sentry: SentryConfig{
+        Enabled:           true,
+        DSN:              "invalid-dsn",  // This will cause validation error
+        SampleRate:       2.0,            // This will cause validation error
+        TracesSampleRate: -0.1,           // This will cause validation error
+    },
+}
+
+// Validation will fail with detailed error messages
+if err := config.Validate(); err != nil {
+    log.Fatal("Configuration validation failed:", err)
+}
+```
+
+### Sentry Integration Examples
+
+#### Custom Error Context
+```go
+import "github.com/getsentry/sentry-go"
+
+func (h *Handler) ProcessOrder(c *gin.Context) {
+    // Add custom context to Sentry
+    sentry.ConfigureScope(func(scope *sentry.Scope) {
+        scope.SetTag("operation", "process_order")
+        scope.SetContext("order", map[string]interface{}{
+            "id":       orderID,
+            "amount":   order.Amount,
+            "currency": order.Currency,
+        })
+    })
+    
+    // Business logic that might error
+    if err := h.service.ProcessOrder(orderID); err != nil {
+        // Error will include the context above
+        sentry.CaptureException(err)
+        c.JSON(500, gin.H{"error": "Order processing failed"})
+        return
+    }
+}
+```
+
+#### Custom Performance Tracking
+```go
+func (s *Service) ExpensiveOperation() error {
+    // Create custom transaction
+    transaction := sentry.StartTransaction(
+        context.Background(),
+        "expensive-operation",
+    )
+    defer transaction.Finish()
+    
+    // Add operation metadata
+    transaction.SetTag("operation_type", "data_processing")
+    transaction.SetData("batch_size", batchSize)
+    
+    // Create span for database operation
+    dbSpan := transaction.StartChild("database.query")
+    dbSpan.SetTag("table", "orders")
+    
+    result, err := s.db.ProcessBatch()
+    
+    if err != nil {
+        dbSpan.SetStatus(sentry.SpanStatusInternalError)
+        transaction.SetStatus(sentry.SpanStatusInternalError)
+        return err
+    }
+    
+    dbSpan.SetData("rows_processed", result.Count)
+    dbSpan.Finish()
+    
+    return nil
+}
+```
+
 ## Environment-Specific Configuration
 
 ### Development Configuration

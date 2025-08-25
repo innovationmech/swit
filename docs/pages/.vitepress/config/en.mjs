@@ -58,6 +58,7 @@ export const enConfig = defineConfig({
     
     nav: [
       { text: 'Guide', link: '/en/guide/getting-started' },
+      { text: 'CLI Tools', link: '/en/cli/' },
       { text: 'Examples', link: '/en/examples/' },
       { text: 'API', link: '/en/api/' },
       { text: 'Community', link: '/en/community/' }
@@ -84,16 +85,35 @@ export const enConfig = defineConfig({
         {
           text: 'Advanced Topics',
           items: [
+            { text: 'Error Monitoring', link: '/en/guide/monitoring' },
             { text: 'Performance Monitoring', link: '/en/guide/performance' },
             { text: 'Service Discovery', link: '/en/guide/service-discovery' },
             { text: 'Testing', link: '/en/guide/testing' }
           ]
         },
         {
+          text: 'Migration & Maintenance',
+          items: [
+            { text: 'Migration Guide', link: '/en/guide/migration' },
+            { text: 'Troubleshooting & FAQ', link: '/en/guide/troubleshooting' }
+          ]
+        },
+        {
           text: 'Website Usage',
           items: [
-            { text: 'Website Usage Guide', link: '/en/guide/website-usage' },
-            { text: 'Troubleshooting & FAQ', link: '/en/guide/troubleshooting' }
+            { text: 'Website Usage Guide', link: '/en/guide/website-usage' }
+          ]
+        }
+      ],
+      
+      '/en/cli/': [
+        {
+          text: 'CLI Tools (switctl)',
+          items: [
+            { text: 'Overview', link: '/en/cli/' },
+            { text: 'Getting Started', link: '/en/cli/getting-started' },
+            { text: 'Commands Reference', link: '/en/cli/commands' },
+            { text: 'Template System', link: '/en/cli/templates' }
           ]
         }
       ],
@@ -105,7 +125,8 @@ export const enConfig = defineConfig({
             { text: 'Overview', link: '/en/examples/' },
             { text: 'Simple HTTP Service', link: '/en/examples/simple-http' },
             { text: 'gRPC Service', link: '/en/examples/grpc-service' },
-            { text: 'Full-Featured Service', link: '/en/examples/full-featured' }
+            { text: 'Full-Featured Service', link: '/en/examples/full-featured' },
+            { text: 'Sentry Monitoring', link: '/en/examples/sentry-service' }
           ]
         }
       ],

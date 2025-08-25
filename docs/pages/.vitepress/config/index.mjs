@@ -8,7 +8,7 @@ export default defineConfig({
   
   // Multi-language configuration
   locales: {
-    root: {
+    en: {
       label: 'English',
       ...enConfig
     },

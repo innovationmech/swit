@@ -53,7 +53,7 @@ export const sharedConfig = {
       "license": "MIT",
       "codeRepository": "https://github.com/innovationmech/swit",
       "downloadUrl": "https://github.com/innovationmech/swit/releases",
-      "installUrl": "https://innovationmech.github.io/swit/guide/getting-started.html",
+      "installUrl": "https://innovationmech.github.io/swit/en/guide/getting-started.html",
       "screenshot": "/images/framework-screenshot.png",
       "softwareVersion": "1.0.0",
       "releaseNotes": "https://github.com/innovationmech/swit/releases",

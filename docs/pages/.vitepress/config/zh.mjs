@@ -62,6 +62,7 @@ export const zhConfig = defineConfig({
     
     nav: [
       { text: '指南', link: '/zh/guide/getting-started' },
+      { text: 'CLI 工具', link: '/zh/cli/' },
       { text: '示例', link: '/zh/examples/' },
       { text: 'API', link: '/zh/api/' },
       { text: '社区', link: '/zh/community/' }
@@ -88,6 +89,7 @@ export const zhConfig = defineConfig({
         {
           text: '高级主题',
           items: [
+            { text: '错误监控', link: '/zh/guide/monitoring' },
             { text: '性能监控', link: '/zh/guide/performance' },
             { text: '服务发现', link: '/zh/guide/service-discovery' },
             { text: '测试', link: '/zh/guide/testing' }
@@ -102,6 +104,18 @@ export const zhConfig = defineConfig({
         }
       ],
       
+      '/zh/cli/': [
+        {
+          text: 'CLI 工具 (switctl)',
+          items: [
+            { text: '概览', link: '/zh/cli/' },
+            { text: '入门指南', link: '/zh/cli/getting-started' },
+            { text: '命令参考', link: '/zh/cli/commands' },
+            { text: '模板系统', link: '/zh/cli/templates' }
+          ]
+        }
+      ],
+      
       '/zh/examples/': [
         {
           text: '示例',
@@ -109,7 +123,8 @@ export const zhConfig = defineConfig({
             { text: '概览', link: '/zh/examples/' },
             { text: '简单 HTTP 服务', link: '/zh/examples/simple-http' },
             { text: 'gRPC 服务', link: '/zh/examples/grpc-service' },
-            { text: '全功能服务', link: '/zh/examples/full-featured' }
+            { text: '全功能服务', link: '/zh/examples/full-featured' },
+            { text: 'Sentry 监控', link: '/zh/examples/sentry-service' }
           ]
         }
       ],
