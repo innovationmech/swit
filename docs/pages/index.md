@@ -4,6 +4,38 @@ title: Swit Framework
 description: Modern Go Microservice Development Framework
 titleTemplate: Production-ready microservice foundation
 # Last updated: 2025-08-24
+head:
+  - - script
+    - type: text/javascript
+    - |
+      // Browser language detection and auto-redirect
+      (function() {
+        // Only run on the root page
+        if (window.location.pathname !== '/' && !window.location.pathname.startsWith('/swit/')) return;
+        
+        // Don't redirect if user has manually selected a language
+        if (localStorage.getItem('vitepress-preferred-locale')) return;
+        
+        // Detect user's preferred language
+        const userLang = navigator.language || navigator.userLanguage;
+        const langCode = userLang.toLowerCase();
+        
+        let targetLang = 'en'; // default to English
+        
+        // Check if user prefers Chinese
+        if (langCode.startsWith('zh')) {
+          targetLang = 'zh';
+        }
+        
+        // Get current path and redirect to appropriate language version
+        const currentPath = window.location.pathname;
+        const basePath = '/swit/';
+        
+        // If we're on the root page, redirect to language-specific page
+        if (currentPath === '/' || currentPath === basePath) {
+          window.location.href = basePath + targetLang + '/';
+        }
+      })();
 
 hero:
   name: "Swit"
@@ -15,10 +47,10 @@ hero:
   actions:
     - theme: brand
       text: Get Started
-      link: /swit/en/guide/getting-started
+      link: /en/guide/getting-started
     - theme: alt
       text: 查看中文文档
-      link: /swit/zh/guide/getting-started
+      link: /zh/guide/getting-started
     - theme: alt
       text: View on GitHub
       link: https://github.com/innovationmech/swit
@@ -49,11 +81,11 @@ features:
 Choose your preferred language to get started with Swit framework:
 
 <div style="display: flex; gap: 1rem; margin: 2rem 0;">
-  <a href="/swit/en/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
+  <a href="/en/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
     <h3>🇺🇸 English Documentation</h3>
     <p>Complete guide and API reference in English</p>
   </a>
-  <a href="/swit/zh/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
+  <a href="/zh/guide/getting-started" style="flex: 1; padding: 1rem; border: 1px solid var(--vp-c-border); border-radius: 8px; text-decoration: none;">
     <h3>🇨🇳 中文文档</h3>
     <p>完整的中文指南和 API 参考</p>
   </a>
