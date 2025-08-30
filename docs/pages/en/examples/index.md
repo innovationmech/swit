@@ -449,7 +449,7 @@ func setupRedis() *redis.Client {
 
 ### Docker Deployment
 ```dockerfile
-FROM golang:1.24-alpine AS builder
+FROM golang:1.23.12-alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./

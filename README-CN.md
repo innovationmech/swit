@@ -5,7 +5,7 @@
 [![codecov](https://codecov.io/gh/innovationmech/swit/branch/master/graph/badge.svg)](https://codecov.io/gh/innovationmech/swit)
 [![Go Report Card](https://goreportcard.com/badge/github.com/innovationmech/swit)](https://goreportcard.com/report/github.com/innovationmech/swit)
 [![Go Reference](https://pkg.go.dev/badge/github.com/innovationmech/swit.svg)](https://pkg.go.dev/github.com/innovationmech/swit)
-![Go Version](https://img.shields.io/badge/go-%3E%3D1.24-blue.svg)
+![Go Version](https://img.shields.io/badge/go-%3E%3D1.23.12-blue.svg)
 [![GitHub release](https://img.shields.io/github/release/innovationmech/swit.svg)](https://github.com/innovationmech/swit/releases)
 [![License](https://img.shields.io/github/license/innovationmech/swit.svg)](LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/innovationmech/swit.svg)](https://github.com/innovationmech/swit/issues)
@@ -267,7 +267,7 @@ type ConfigValidator interface {
 ## 要求
 
 ### 框架核心要求
-- **Go 1.24+** - 支持泛型的现代 Go 版本
+- **Go 1.23.12+** - 支持泛型的现代 Go 版本
 - **Git** - 用于框架和示例代码管理
 
 ### 可选依赖（服务特定）

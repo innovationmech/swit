@@ -4,7 +4,7 @@ Welcome to the Swit Go Microservice Framework! This guide will help you get up a
 
 ## Requirements
 
-- **Go 1.24+** - Modern Go version with generics support
+- **Go 1.23.12+** - Modern Go version with generics support
 - **Git** - For framework and example code management
 
 ## Installation

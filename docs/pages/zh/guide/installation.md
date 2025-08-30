@@ -6,7 +6,7 @@
 
 在安装 Swit 之前，请确保您满足以下要求：
 
-- **Go 1.24+** - 支持泛型的现代 Go 版本
+- **Go 1.23.12+** - 支持泛型的现代 Go 版本
 - **Git** - 用于框架和示例代码管理
 - **Make** - 用于构建和开发命令（可选但推荐）
 
@@ -18,7 +18,7 @@
 go version
 ```
 
-您应该看到 Go 1.24 或更高版本。如果您没有安装 Go，请访问 [https://golang.org/doc/install](https://golang.org/doc/install)。
+您应该看到 Go 1.23.12 或更高版本。如果您没有安装 Go，请访问 [https://golang.org/doc/install](https://golang.org/doc/install)。
 
 ## 安装 Swit 框架
 
@@ -143,9 +143,9 @@ make ci
 
 **Go 版本过旧：**
 ```
-go get: module github.com/innovationmech/swit requires Go 1.24
+go get: module github.com/innovationmech/swit requires Go 1.23.12
 ```
-解决方案：将 Go 升级到 1.24 或更高版本。
+解决方案：将 Go 升级到 1.23.12 或更高版本。
 
 **模块未找到：**
 ```

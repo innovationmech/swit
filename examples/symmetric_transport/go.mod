@@ -2,8 +2,6 @@ module github.com/innovationmech/swit/examples/symmetric_transport
 
 go 1.23.12
 
-toolchain go1.24.4
-
 // Use the local swit module
 replace github.com/innovationmech/swit => ../../
 
@@ -11,6 +9,7 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/innovationmech/swit v0.0.0-00010101000000-000000000000
 	github.com/stretchr/testify v1.9.0
+	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.73.0
 )
 
@@ -37,7 +36,6 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/net v0.40.0 // indirect

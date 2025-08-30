@@ -271,7 +271,7 @@ Description of what actually happened
 
 ## Environment Information
 - Operating System: macOS 13.0
-- Go Version: 1.24.0
+- Go Version: 1.23.12
 - Swit Version: v1.0.0
 - Database: MySQL 8.0
 

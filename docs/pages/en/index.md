@@ -62,7 +62,7 @@ Get started building microservices with Swit framework:
     <div class="stat-label">Open Source</div>
   </div>
   <div class="stat-card">
-    <div class="stat-number">Go 1.24+</div>
+    <div class="stat-number">Go 1.23.12+</div>
     <div class="stat-label">Requirements</div>
   </div>
   <div class="stat-card">

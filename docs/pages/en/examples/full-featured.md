@@ -187,7 +187,7 @@ config := &server.ServerConfig{
 ## Running the Example
 
 ### Prerequisites
-- Go 1.24+ installed
+- Go 1.23.12+ installed
 - gRPC tools installed (for gRPC testing)
 - Framework dependencies available
 

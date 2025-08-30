@@ -62,7 +62,7 @@ features:
     <div class="stat-label">开源许可证</div>
   </div>
   <div class="stat-card">
-    <div class="stat-number">Go 1.24+</div>
+    <div class="stat-number">Go 1.23.12+</div>
     <div class="stat-label">运行要求</div>
   </div>
   <div class="stat-card">
