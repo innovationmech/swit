@@ -76,6 +76,27 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		return nil, fmt.Errorf("invalid server configuration: %w", err)
 	}
 
+	// Initialize logger with configuration
+	loggerConfig := &logger.LoggerConfig{
+		Level:              config.Logging.Level,
+		Development:        config.Logging.Development,
+		Encoding:           config.Logging.Encoding,
+		OutputPaths:        config.Logging.OutputPaths,
+		ErrorOutputPaths:   config.Logging.ErrorOutputPaths,
+		DisableCaller:      config.Logging.DisableCaller,
+		DisableStacktrace:  config.Logging.DisableStacktrace,
+		SamplingEnabled:    config.Logging.SamplingEnabled,
+		SamplingInitial:    config.Logging.SamplingInitial,
+		SamplingThereafter: config.Logging.SamplingThereafter,
+	}
+	logger.InitLoggerWithConfig(loggerConfig)
+
+	// Log initialization with service info
+	logger.Logger.Info("Initializing business server",
+		zap.String("service", config.ServiceName),
+		zap.String("log_level", config.Logging.Level),
+		zap.String("log_encoding", config.Logging.Encoding))
+
 	server := &BusinessServerImpl{
 		config:           config,
 		dependencies:     deps,

@@ -23,6 +23,10 @@ package discovery
 
 import (
 	"sync"
+
+	"go.uber.org/zap"
+
+	"github.com/innovationmech/swit/pkg/logger"
 )
 
 // Manager 服务发现管理器
@@ -43,6 +47,7 @@ func GetManager() *Manager {
 		manager = &Manager{
 			instances: make(map[string]*ServiceDiscovery),
 		}
+		logger.GetLogger().Info("Service discovery manager initialized")
 	})
 	return manager
 }
@@ -53,6 +58,8 @@ func (m *Manager) GetServiceDiscovery(address string) (*ServiceDiscovery, error)
 	m.mu.RLock()
 	if sd, exists := m.instances[address]; exists {
 		m.mu.RUnlock()
+		logger.GetLogger().Debug("Using existing service discovery instance",
+			zap.String("address", address))
 		return sd, nil
 	}
 	m.mu.RUnlock()
@@ -63,16 +70,26 @@ func (m *Manager) GetServiceDiscovery(address string) (*ServiceDiscovery, error)
 
 	// 双重检查，避免并发创建
 	if sd, exists := m.instances[address]; exists {
+		logger.GetLogger().Debug("Service discovery instance created by concurrent request",
+			zap.String("address", address))
 		return sd, nil
 	}
 
 	// 创建新的服务发现实例
+	logger.GetLogger().Info("Creating new service discovery instance",
+		zap.String("address", address))
+
 	sd, err := NewServiceDiscovery(address)
 	if err != nil {
+		logger.GetLogger().Error("Failed to create service discovery instance",
+			zap.String("address", address),
+			zap.Error(err))
 		return nil, err
 	}
 
 	m.instances[address] = sd
+	logger.GetLogger().Info("Service discovery instance created successfully",
+		zap.String("address", address))
 	return sd, nil
 }
 
@@ -87,9 +104,21 @@ func (m *Manager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	instanceCount := len(m.instances)
+	if instanceCount > 0 {
+		logger.GetLogger().Info("Closing service discovery instances",
+			zap.Int("count", instanceCount))
+	}
+
 	// 清理所有实例
 	for address := range m.instances {
+		logger.GetLogger().Debug("Closing service discovery instance",
+			zap.String("address", address))
 		delete(m.instances, address)
+	}
+
+	if instanceCount > 0 {
+		logger.GetLogger().Info("All service discovery instances closed")
 	}
 }
 
