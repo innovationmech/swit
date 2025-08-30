@@ -201,34 +201,42 @@ type MetricsCollectorAdapter struct {
 	collector *server.PrometheusMetricsCollector
 }
 
+// NewMetricsCollectorAdapter creates a new adapter that bridges server.PrometheusMetricsCollector to types.MetricsCollector interface
 func NewMetricsCollectorAdapter(collector *server.PrometheusMetricsCollector) *MetricsCollectorAdapter {
 	return &MetricsCollectorAdapter{collector: collector}
 }
 
+// IncrementCounter increments a counter metric by 1
 func (a *MetricsCollectorAdapter) IncrementCounter(name string, labels map[string]string) {
 	a.collector.IncrementCounter(name, labels)
 }
 
+// AddToCounter adds a value to a counter metric
 func (a *MetricsCollectorAdapter) AddToCounter(name string, value float64, labels map[string]string) {
 	a.collector.AddToCounter(name, value, labels)
 }
 
+// SetGauge sets a gauge metric to a specific value
 func (a *MetricsCollectorAdapter) SetGauge(name string, value float64, labels map[string]string) {
 	a.collector.SetGauge(name, value, labels)
 }
 
+// IncrementGauge increments a gauge metric by 1
 func (a *MetricsCollectorAdapter) IncrementGauge(name string, labels map[string]string) {
 	a.collector.IncrementGauge(name, labels)
 }
 
+// DecrementGauge decrements a gauge metric by 1
 func (a *MetricsCollectorAdapter) DecrementGauge(name string, labels map[string]string) {
 	a.collector.DecrementGauge(name, labels)
 }
 
+// ObserveHistogram adds an observation to a histogram metric
 func (a *MetricsCollectorAdapter) ObserveHistogram(name string, value float64, labels map[string]string) {
 	a.collector.ObserveHistogram(name, value, labels)
 }
 
+// GetMetrics returns all collected metrics, converting from server.Metric to types.Metric format
 func (a *MetricsCollectorAdapter) GetMetrics() []types.Metric {
 	serverMetrics := a.collector.GetMetrics()
 	typesMetrics := make([]types.Metric, len(serverMetrics))
@@ -263,6 +271,7 @@ func (a *MetricsCollectorAdapter) GetMetrics() []types.Metric {
 	return typesMetrics
 }
 
+// GetMetric returns a specific metric by name, converting from server.Metric to types.Metric format
 func (a *MetricsCollectorAdapter) GetMetric(name string) (*types.Metric, bool) {
 	serverMetric, found := a.collector.GetMetric(name)
 	if !found {
@@ -297,6 +306,7 @@ func (a *MetricsCollectorAdapter) GetMetric(name string) (*types.Metric, bool) {
 	return typesMetric, true
 }
 
+// Reset clears all metrics from the underlying collector
 func (a *MetricsCollectorAdapter) Reset() {
 	a.collector.Reset()
 }
