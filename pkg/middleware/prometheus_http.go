@@ -24,6 +24,7 @@ package middleware
 import (
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -84,6 +85,7 @@ type PrometheusHTTPMiddleware struct {
 	config           *PrometheusHTTPConfig
 	metricsCollector types.MetricsCollector
 	pathCounter      map[string]int
+	pathCounterMutex sync.RWMutex
 }
 
 // NewPrometheusHTTPMiddleware creates a new HTTP metrics middleware
@@ -228,11 +230,17 @@ func (m *PrometheusHTTPMiddleware) getNormalizedPath(c *gin.Context) string {
 		path = m.normalizePath(path)
 	}
 
-	// Check cardinality limits
+	// Check cardinality limits with thread-safe operations
 	if m.config.MaxPathCardinality > 0 {
+		m.pathCounterMutex.Lock()
+		defer m.pathCounterMutex.Unlock()
+
 		if len(m.pathCounter) >= m.config.MaxPathCardinality {
-			// Use a generic "other" endpoint to prevent cardinality explosion
-			return "/other"
+			// Check if this path already exists to avoid rejecting it
+			if _, exists := m.pathCounter[path]; !exists {
+				// Use a generic "other" endpoint to prevent cardinality explosion
+				return "/other"
+			}
 		}
 		m.pathCounter[path]++
 	}
@@ -379,12 +387,16 @@ func (m *PrometheusHTTPMiddleware) UpdateConfig(config *PrometheusHTTPConfig) {
 	m.config.CollectResponseSize = config.CollectResponseSize
 }
 
-// GetPathCardinality returns the current path cardinality count
+// GetPathCardinality returns the current path cardinality count (thread-safe)
 func (m *PrometheusHTTPMiddleware) GetPathCardinality() int {
+	m.pathCounterMutex.RLock()
+	defer m.pathCounterMutex.RUnlock()
 	return len(m.pathCounter)
 }
 
-// ResetPathCounter resets the path counter (useful for testing)
+// ResetPathCounter resets the path counter (useful for testing, thread-safe)
 func (m *PrometheusHTTPMiddleware) ResetPathCounter() {
+	m.pathCounterMutex.Lock()
+	defer m.pathCounterMutex.Unlock()
 	m.pathCounter = make(map[string]int)
 }

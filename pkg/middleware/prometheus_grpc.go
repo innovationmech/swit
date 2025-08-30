@@ -23,6 +23,7 @@ package middleware
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -152,8 +153,10 @@ func (i *PrometheusGRPCInterceptor) StreamServerInterceptor() grpc.StreamServerI
 		// Calculate duration
 		duration := time.Since(start)
 
-		// Collect metrics
-		i.collectStreamMetrics(info.FullMethod, duration, wrappedStream.sentCount, wrappedStream.receivedCount, err)
+		// Collect metrics with atomic reads
+		sentCount := atomic.LoadInt64(&wrappedStream.sentCount)
+		receivedCount := atomic.LoadInt64(&wrappedStream.receivedCount)
+		i.collectStreamMetrics(info.FullMethod, duration, sentCount, receivedCount, err)
 
 		return err
 	}
@@ -164,14 +167,14 @@ type metricsServerStream struct {
 	grpc.ServerStream
 	method        string
 	interceptor   *PrometheusGRPCInterceptor
-	sentCount     int
-	receivedCount int
+	sentCount     int64
+	receivedCount int64
 }
 
 func (s *metricsServerStream) SendMsg(m interface{}) error {
 	err := s.ServerStream.SendMsg(m)
 	if err == nil && s.interceptor.config.CollectStreamMessages {
-		s.sentCount++
+		atomic.AddInt64(&s.sentCount, 1)
 		s.interceptor.recordMessageSent(s.method)
 	}
 	return err
@@ -180,7 +183,7 @@ func (s *metricsServerStream) SendMsg(m interface{}) error {
 func (s *metricsServerStream) RecvMsg(m interface{}) error {
 	err := s.ServerStream.RecvMsg(m)
 	if err == nil && s.interceptor.config.CollectStreamMessages {
-		s.receivedCount++
+		atomic.AddInt64(&s.receivedCount, 1)
 		s.interceptor.recordMessageReceived(s.method)
 	}
 	return err
@@ -233,7 +236,7 @@ func (i *PrometheusGRPCInterceptor) collectUnaryMetrics(method string, duration 
 }
 
 // collectStreamMetrics collects metrics for streaming RPCs
-func (i *PrometheusGRPCInterceptor) collectStreamMetrics(method string, duration time.Duration, sentCount, receivedCount int, err error) {
+func (i *PrometheusGRPCInterceptor) collectStreamMetrics(method string, duration time.Duration, sentCount, receivedCount int64, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Logger.Error("gRPC stream metrics collection panic",

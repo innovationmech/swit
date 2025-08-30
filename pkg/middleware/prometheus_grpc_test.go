@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1121,4 +1122,201 @@ func BenchmarkPrometheusGRPCInterceptor_StreamDisabled(b *testing.B) {
 		mockStream := newMockServerStream(ctx)
 		_ = streamInterceptor(nil, mockStream, info, handler)
 	}
+}
+
+// TestPrometheusGRPCInterceptor_RaceConditionSafety tests thread safety under high concurrency
+func TestPrometheusGRPCInterceptor_RaceConditionSafety(t *testing.T) {
+	collector := newMockGRPCMetricsCollector()
+	interceptor := NewPrometheusGRPCInterceptor(collector, &PrometheusGRPCConfig{
+		Enabled:               true,
+		ServiceName:           "test-service",
+		CollectStreamMessages: true,
+	})
+
+	unaryInterceptor := interceptor.UnaryServerInterceptor()
+	streamInterceptor := interceptor.StreamServerInterceptor()
+
+	// Test concurrent unary calls
+	t.Run("ConcurrentUnaryRequests", func(t *testing.T) {
+		const numGoroutines = 100
+		const callsPerGoroutine = 50
+		var wg sync.WaitGroup
+
+		// Mock unary handler
+		handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+			time.Sleep(time.Microsecond) // Simulate small processing delay
+			return "response", nil
+		}
+
+		info := &grpc.UnaryServerInfo{
+			FullMethod: "/test.RaceTestService/ConcurrentMethod",
+		}
+
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func(goroutineID int) {
+				defer wg.Done()
+
+				for j := 0; j < callsPerGoroutine; j++ {
+					ctx := context.Background()
+					req := fmt.Sprintf("request_%d_%d", goroutineID, j)
+
+					_, err := unaryInterceptor(ctx, req, info, handler)
+					assert.NoError(t, err)
+				}
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Verify metrics were collected without race conditions
+		totalCalls := numGoroutines * callsPerGoroutine
+
+		// grpc_server_started_total doesn't include code
+		startedLabels := map[string]string{
+			"service": "test-service",
+			"method":  "/test.RaceTestService/ConcurrentMethod",
+		}
+
+		// grpc_server_handled_total includes code
+		handledLabels := map[string]string{
+			"service": "test-service",
+			"method":  "/test.RaceTestService/ConcurrentMethod",
+			"code":    "OK",
+		}
+
+		assert.Equal(t, float64(totalCalls), collector.getCounterValue("grpc_server_started_total", startedLabels))
+		assert.Equal(t, float64(totalCalls), collector.getCounterValue("grpc_server_handled_total", handledLabels))
+	})
+
+	// Test concurrent streaming calls (basic)
+	t.Run("ConcurrentStreamingRequests", func(t *testing.T) {
+		const numGoroutines = 50
+		var wg sync.WaitGroup
+
+		// Simple stream handler that doesn't send/receive messages
+		handler := func(srv interface{}, stream grpc.ServerStream) error {
+			// Just simulate some processing without message exchange
+			time.Sleep(time.Microsecond)
+			return nil
+		}
+
+		info := &grpc.StreamServerInfo{
+			FullMethod: "/test.RaceTestService/ConcurrentStreamMethod",
+		}
+
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func(goroutineID int) {
+				defer wg.Done()
+
+				ctx := context.Background()
+				mockStream := newMockServerStream(ctx)
+
+				err := streamInterceptor(nil, mockStream, info, handler)
+				assert.NoError(t, err)
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Verify streaming metrics were collected safely
+		// grpc_server_started_total doesn't include code
+		startedStreamLabels := map[string]string{
+			"service": "test-service",
+			"method":  "/test.RaceTestService/ConcurrentStreamMethod",
+		}
+
+		// grpc_server_handled_total includes code
+		handledStreamLabels := map[string]string{
+			"service": "test-service",
+			"method":  "/test.RaceTestService/ConcurrentStreamMethod",
+			"code":    "OK",
+		}
+
+		assert.Equal(t, float64(numGoroutines), collector.getCounterValue("grpc_server_started_total", startedStreamLabels))
+		assert.Equal(t, float64(numGoroutines), collector.getCounterValue("grpc_server_handled_total", handledStreamLabels))
+	})
+}
+
+// TestPrometheusGRPCInterceptor_AtomicMessageCounting specifically tests atomic counter operations
+func TestPrometheusGRPCInterceptor_AtomicMessageCounting(t *testing.T) {
+	collector := newMockGRPCMetricsCollector()
+	interceptor := NewPrometheusGRPCInterceptor(collector, &PrometheusGRPCConfig{
+		Enabled:               true,
+		ServiceName:           "test-service",
+		CollectStreamMessages: true,
+	})
+
+	// Test direct atomic operations on the wrapped stream
+	ctx := context.Background()
+	mockStream := newMockServerStream(ctx)
+
+	// Create wrapped stream directly
+	wrappedStream := &metricsServerStream{
+		ServerStream:  mockStream,
+		method:        "/test.TestService/AtomicTest",
+		interceptor:   interceptor,
+		sentCount:     0,
+		receivedCount: 0,
+	}
+
+	// Test concurrent message operations
+	const numGoroutines = 100
+	const messagesPerGoroutine = 50
+	var wg sync.WaitGroup
+
+	// Add messages to the mock stream's buffer for RecvMsg to consume
+	totalMessages := numGoroutines * messagesPerGoroutine
+	for i := 0; i < totalMessages; i++ {
+		mockStream.addRecvMsg(fmt.Sprintf("message-%d", i))
+	}
+
+	// Test concurrent SendMsg operations
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < messagesPerGoroutine; j++ {
+				wrappedStream.SendMsg(&struct{}{})
+			}
+		}()
+	}
+
+	// Test concurrent RecvMsg operations
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < messagesPerGoroutine; j++ {
+				var msg interface{}
+				wrappedStream.RecvMsg(&msg)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Verify atomic counting worked correctly
+	expectedMessages := int64(numGoroutines * messagesPerGoroutine)
+	sentCount := atomic.LoadInt64(&wrappedStream.sentCount)
+	receivedCount := atomic.LoadInt64(&wrappedStream.receivedCount)
+
+	assert.Equal(t, expectedMessages, sentCount, "Sent message count should be accurate")
+	assert.Equal(t, expectedMessages, receivedCount, "Received message count should be accurate")
+
+	t.Logf("Successfully counted %d sent and %d received messages with atomic operations",
+		sentCount, receivedCount)
+
+	// Also verify the metrics were collected atomically
+	msgLabels := map[string]string{
+		"service": "test-service",
+		"method":  "/test.TestService/AtomicTest",
+	}
+
+	metricSentCount := collector.getCounterValue("grpc_server_msg_sent_total", msgLabels)
+	metricRecvCount := collector.getCounterValue("grpc_server_msg_received_total", msgLabels)
+
+	assert.Equal(t, float64(expectedMessages), metricSentCount, "Metric sent count should match atomic count")
+	assert.Equal(t, float64(expectedMessages), metricRecvCount, "Metric received count should match atomic count")
 }

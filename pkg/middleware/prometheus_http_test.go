@@ -1003,3 +1003,73 @@ func BenchmarkPrometheusHTTPMiddleware_PathNormalization(b *testing.B) {
 		router.ServeHTTP(w, req)
 	}
 }
+
+// TestPrometheusHTTPMiddleware_RaceConditionSafety tests thread safety under high concurrency
+func TestPrometheusHTTPMiddleware_RaceConditionSafety(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	collector := newMockMetricsCollector()
+	config := &PrometheusHTTPConfig{
+		Enabled:            true,
+		ServiceName:        "test-service",
+		MaxPathCardinality: 10,
+		PathNormalization:  true,
+	}
+
+	middleware := NewPrometheusHTTPMiddleware(collector, config)
+
+	router := gin.New()
+	router.Use(middleware.Middleware())
+	router.GET("/*path", func(c *gin.Context) {
+		c.JSON(200, gin.H{"message": "ok"})
+	})
+
+	// Test concurrent access to pathCounter map
+	const numGoroutines = 50
+	const requestsPerGoroutine = 20
+	var wg sync.WaitGroup
+
+	// Use multiple unique paths to stress test the pathCounter map
+	paths := make([]string, numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		paths[i] = fmt.Sprintf("/api/test%d", i)
+	}
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+
+			path := paths[goroutineID]
+			for j := 0; j < requestsPerGoroutine; j++ {
+				req := httptest.NewRequest("GET", path, nil)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+
+				// Verify response
+				assert.Equal(t, 200, w.Code)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify pathCounter operations were thread-safe
+	cardinality := middleware.GetPathCardinality()
+	assert.True(t, cardinality <= config.MaxPathCardinality,
+		"Path cardinality (%d) should not exceed max (%d)", cardinality, config.MaxPathCardinality)
+
+	// Test concurrent reset operations
+	var resetWg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		resetWg.Add(1)
+		go func() {
+			defer resetWg.Done()
+			middleware.ResetPathCounter()
+		}()
+	}
+	resetWg.Wait()
+
+	// Verify reset worked correctly
+	assert.Equal(t, 0, middleware.GetPathCardinality())
+}
