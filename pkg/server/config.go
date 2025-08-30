@@ -39,6 +39,7 @@ type ServerConfig struct {
 	Discovery       DiscoveryConfig  `yaml:"discovery" json:"discovery"`
 	Middleware      MiddlewareConfig `yaml:"middleware" json:"middleware"`
 	Sentry          SentryConfig     `yaml:"sentry" json:"sentry"`
+	Logging         LoggingConfig    `yaml:"logging" json:"logging"`
 	ShutdownTimeout time.Duration    `yaml:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
@@ -202,6 +203,20 @@ type SentryConfig struct {
 	IgnoreErrors         []string          `yaml:"ignore_errors" json:"ignore_errors"`
 	HTTPIgnorePaths      []string          `yaml:"http_ignore_paths" json:"http_ignore_paths"`
 	HTTPIgnoreStatusCode []int             `yaml:"http_ignore_status_codes" json:"http_ignore_status_codes"`
+}
+
+// LoggingConfig holds logging configuration
+type LoggingConfig struct {
+	Level              string   `yaml:"level" json:"level"`
+	Development        bool     `yaml:"development" json:"development"`
+	Encoding           string   `yaml:"encoding" json:"encoding"`
+	OutputPaths        []string `yaml:"output_paths" json:"output_paths"`
+	ErrorOutputPaths   []string `yaml:"error_output_paths" json:"error_output_paths"`
+	DisableCaller      bool     `yaml:"disable_caller" json:"disable_caller"`
+	DisableStacktrace  bool     `yaml:"disable_stacktrace" json:"disable_stacktrace"`
+	SamplingEnabled    bool     `yaml:"sampling_enabled" json:"sampling_enabled"`
+	SamplingInitial    int      `yaml:"sampling_initial" json:"sampling_initial"`
+	SamplingThereafter int      `yaml:"sampling_thereafter" json:"sampling_thereafter"`
 }
 
 // NewServerConfig creates a new ServerConfig with default values
@@ -403,6 +418,30 @@ func (c *ServerConfig) SetDefaults() {
 		c.Sentry.HTTPIgnoreStatusCode = []int{400, 401, 403, 404}
 	}
 
+	// Logging defaults
+	if c.Logging.Level == "" {
+		c.Logging.Level = "info"
+	}
+	if c.Logging.Encoding == "" {
+		if c.Logging.Development {
+			c.Logging.Encoding = "console"
+		} else {
+			c.Logging.Encoding = "json"
+		}
+	}
+	if len(c.Logging.OutputPaths) == 0 {
+		c.Logging.OutputPaths = []string{"stdout"}
+	}
+	if len(c.Logging.ErrorOutputPaths) == 0 {
+		c.Logging.ErrorOutputPaths = []string{"stderr"}
+	}
+	if c.Logging.SamplingEnabled && c.Logging.SamplingInitial == 0 {
+		c.Logging.SamplingInitial = 100
+	}
+	if c.Logging.SamplingEnabled && c.Logging.SamplingThereafter == 0 {
+		c.Logging.SamplingThereafter = 100
+	}
+
 	// Server defaults
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 5 * time.Second
@@ -588,6 +627,41 @@ func (c *ServerConfig) Validate() error {
 			if code < 100 || code > 599 {
 				return fmt.Errorf("sentry.http_ignore_status_codes contains invalid HTTP status code: %d", code)
 			}
+		}
+	}
+
+	// Validate logging configuration
+	// Set default level if empty
+	if c.Logging.Level == "" {
+		c.Logging.Level = "info"
+	}
+	validLogLevels := map[string]bool{
+		"debug": true, "info": true, "warn": true, "error": true,
+		"dpanic": true, "panic": true, "fatal": true,
+	}
+	if !validLogLevels[c.Logging.Level] {
+		return fmt.Errorf("logging.level must be one of: debug, info, warn, error, dpanic, panic, fatal")
+	}
+
+	// Set default encoding if empty
+	if c.Logging.Encoding == "" {
+		if c.Logging.Development {
+			c.Logging.Encoding = "console"
+		} else {
+			c.Logging.Encoding = "json"
+		}
+	}
+	validEncodings := map[string]bool{"json": true, "console": true}
+	if !validEncodings[c.Logging.Encoding] {
+		return fmt.Errorf("logging.encoding must be one of: json, console")
+	}
+
+	if c.Logging.SamplingEnabled {
+		if c.Logging.SamplingInitial <= 0 {
+			return fmt.Errorf("logging.sampling_initial must be positive when sampling is enabled")
+		}
+		if c.Logging.SamplingThereafter <= 0 {
+			return fmt.Errorf("logging.sampling_thereafter must be positive when sampling is enabled")
 		}
 	}
 

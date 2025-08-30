@@ -25,7 +25,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,6 +32,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/server"
 )
@@ -232,7 +233,8 @@ func main() {
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
-		log.Fatal("Invalid configuration:", err)
+		logger.GetLogger().Fatal("Invalid configuration",
+			zap.Error(err))
 	}
 
 	// Create service and dependencies
@@ -246,7 +248,8 @@ func main() {
 	// Create base server
 	baseServer, err := server.NewBusinessServerCore(config, service, deps)
 	if err != nil {
-		log.Fatal("Failed to create server:", err)
+		logger.GetLogger().Fatal("Failed to create server",
+			zap.Error(err))
 	}
 
 	// Start server
@@ -254,25 +257,29 @@ func main() {
 	defer cancel()
 
 	if err := baseServer.Start(ctx); err != nil {
-		log.Fatal("Failed to start server:", err)
+		logger.GetLogger().Fatal("Failed to start server",
+			zap.Error(err))
 	}
 
-	log.Printf("Simple HTTP service started successfully")
-	log.Printf("HTTP server listening on: %s", baseServer.GetHTTPAddress())
-	log.Printf("Try: curl http://%s/api/v1/hello?name=YourName", baseServer.GetHTTPAddress())
+	logger.GetLogger().Info("Simple HTTP service started successfully",
+		zap.String("http_address", baseServer.GetHTTPAddress()),
+		zap.String("service_name", "simple-http-service"))
+	logger.GetLogger().Info("Example endpoint",
+		zap.String("url", fmt.Sprintf("http://%s/api/v1/hello?name=YourName", baseServer.GetHTTPAddress())))
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	log.Println("Shutdown signal received, stopping server...")
+	logger.GetLogger().Info("Shutdown signal received, stopping server")
 
 	// Graceful shutdown
 	if err := baseServer.Shutdown(); err != nil {
-		log.Printf("Error during shutdown: %v", err)
+		logger.GetLogger().Error("Error during shutdown",
+			zap.Error(err))
 	} else {
-		log.Println("Server stopped gracefully")
+		logger.GetLogger().Info("Server stopped gracefully")
 	}
 }
 

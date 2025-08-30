@@ -46,6 +46,12 @@ func (c *ServerConfig) DeepCopy() *ServerConfig {
 	// Deep copy Middleware configuration
 	copy.Middleware = c.Middleware // Simple struct, no nested pointers
 
+	// Deep copy Sentry configuration
+	copy.Sentry = c.deepCopySentryConfig()
+
+	// Deep copy Logging configuration
+	copy.Logging = c.deepCopyLoggingConfig()
+
 	return copy
 }
 
@@ -178,4 +184,81 @@ func (c *ServerConfig) deepCopyDiscoveryConfig() DiscoveryConfig {
 	}
 
 	return discoveryCopy
+}
+
+// deepCopySentryConfig creates a deep copy of SentryConfig
+func (c *ServerConfig) deepCopySentryConfig() SentryConfig {
+	sentryCopy := SentryConfig{
+		Enabled:          c.Sentry.Enabled,
+		DSN:              c.Sentry.DSN,
+		Environment:      c.Sentry.Environment,
+		Release:          c.Sentry.Release,
+		SampleRate:       c.Sentry.SampleRate,
+		TracesSampleRate: c.Sentry.TracesSampleRate,
+		AttachStacktrace: c.Sentry.AttachStacktrace,
+		EnableTracing:    c.Sentry.EnableTracing,
+		Debug:            c.Sentry.Debug,
+		ServerName:       c.Sentry.ServerName,
+		BeforeSend:       c.Sentry.BeforeSend,
+		IntegrateHTTP:    c.Sentry.IntegrateHTTP,
+		IntegrateGRPC:    c.Sentry.IntegrateGRPC,
+		CapturePanics:    c.Sentry.CapturePanics,
+		MaxBreadcrumbs:   c.Sentry.MaxBreadcrumbs,
+	}
+
+	// Deep copy Tags map
+	if c.Sentry.Tags != nil {
+		sentryCopy.Tags = make(map[string]string, len(c.Sentry.Tags))
+		for k, v := range c.Sentry.Tags {
+			sentryCopy.Tags[k] = v
+		}
+	}
+
+	// Deep copy IgnoreErrors slice
+	if c.Sentry.IgnoreErrors != nil {
+		sentryCopy.IgnoreErrors = make([]string, len(c.Sentry.IgnoreErrors))
+		copy(sentryCopy.IgnoreErrors, c.Sentry.IgnoreErrors)
+	}
+
+	// Deep copy HTTPIgnorePaths slice
+	if c.Sentry.HTTPIgnorePaths != nil {
+		sentryCopy.HTTPIgnorePaths = make([]string, len(c.Sentry.HTTPIgnorePaths))
+		copy(sentryCopy.HTTPIgnorePaths, c.Sentry.HTTPIgnorePaths)
+	}
+
+	// Deep copy HTTPIgnoreStatusCode slice
+	if c.Sentry.HTTPIgnoreStatusCode != nil {
+		sentryCopy.HTTPIgnoreStatusCode = make([]int, len(c.Sentry.HTTPIgnoreStatusCode))
+		copy(sentryCopy.HTTPIgnoreStatusCode, c.Sentry.HTTPIgnoreStatusCode)
+	}
+
+	return sentryCopy
+}
+
+// deepCopyLoggingConfig creates a deep copy of LoggingConfig
+func (c *ServerConfig) deepCopyLoggingConfig() LoggingConfig {
+	loggingCopy := LoggingConfig{
+		Level:              c.Logging.Level,
+		Development:        c.Logging.Development,
+		Encoding:           c.Logging.Encoding,
+		DisableCaller:      c.Logging.DisableCaller,
+		DisableStacktrace:  c.Logging.DisableStacktrace,
+		SamplingEnabled:    c.Logging.SamplingEnabled,
+		SamplingInitial:    c.Logging.SamplingInitial,
+		SamplingThereafter: c.Logging.SamplingThereafter,
+	}
+
+	// Deep copy OutputPaths slice
+	if c.Logging.OutputPaths != nil {
+		loggingCopy.OutputPaths = make([]string, len(c.Logging.OutputPaths))
+		copy(loggingCopy.OutputPaths, c.Logging.OutputPaths)
+	}
+
+	// Deep copy ErrorOutputPaths slice
+	if c.Logging.ErrorOutputPaths != nil {
+		loggingCopy.ErrorOutputPaths = make([]string, len(c.Logging.ErrorOutputPaths))
+		copy(loggingCopy.ErrorOutputPaths, c.Logging.ErrorOutputPaths)
+	}
+
+	return loggingCopy
 }

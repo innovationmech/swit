@@ -321,6 +321,14 @@ func (suite *IntegrationTestSuite) SetupTest() {
 			EnableRateLimit: false,
 			EnableLogging:   true,
 		},
+		Sentry: SentryConfig{
+			Enabled: false,
+		},
+		Logging: LoggingConfig{
+			Level:       "info",
+			Encoding:    "console",
+			Development: true,
+		},
 	}
 
 	// Create test dependencies
