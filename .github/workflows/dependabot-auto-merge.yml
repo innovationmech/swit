@@ -56,7 +56,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
-            await github.issues.createComment({
+            await github.rest.issues.createComment({
               ...context.repo,
               issue_number: pr.number,
               body: 'ℹ️ 此 Dependabot PR 为常规版本更新（非安全），已禁用自动合并，请人工评估。'
