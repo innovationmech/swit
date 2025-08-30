@@ -863,12 +863,12 @@ func TestMetricsServerStream_SendRecvMsg(t *testing.T) {
 			"method":  "/test.TestService/TestStream",
 		}
 		assert.Equal(t, float64(1), collector.getCounterValue("grpc_server_msg_sent_total", expectedLabels))
-		assert.Equal(t, 1, wrappedStream.sentCount)
+		assert.Equal(t, int64(1), wrappedStream.sentCount)
 	})
 
 	t.Run("SendMsgWithError", func(t *testing.T) {
 		collector.Reset()
-		wrappedStream.sentCount = 0 // Reset sentCount from previous test
+		atomic.StoreInt64(&wrappedStream.sentCount, 0) // Reset sentCount from previous test
 
 		mockStream.setSendError(errors.New("send error"))
 
@@ -881,12 +881,12 @@ func TestMetricsServerStream_SendRecvMsg(t *testing.T) {
 			"method":  "/test.TestService/TestStream",
 		}
 		assert.Equal(t, float64(0), collector.getCounterValue("grpc_server_msg_sent_total", expectedLabels))
-		assert.Equal(t, 0, wrappedStream.sentCount) // Should remain 0 after error
+		assert.Equal(t, int64(0), wrappedStream.sentCount) // Should remain 0 after error
 	})
 
 	t.Run("RecvMsg", func(t *testing.T) {
 		collector.Reset()
-		wrappedStream.receivedCount = 0 // Reset receivedCount from previous tests
+		atomic.StoreInt64(&wrappedStream.receivedCount, 0) // Reset receivedCount from previous tests
 		mockStream.setSendError(nil)    // Reset error
 
 		mockStream.addRecvMsg("message")
@@ -900,12 +900,12 @@ func TestMetricsServerStream_SendRecvMsg(t *testing.T) {
 			"method":  "/test.TestService/TestStream",
 		}
 		assert.Equal(t, float64(1), collector.getCounterValue("grpc_server_msg_received_total", expectedLabels))
-		assert.Equal(t, 1, wrappedStream.receivedCount)
+		assert.Equal(t, int64(1), wrappedStream.receivedCount)
 	})
 
 	t.Run("RecvMsgWithError", func(t *testing.T) {
 		collector.Reset()
-		wrappedStream.receivedCount = 0 // Reset receivedCount from previous tests
+		atomic.StoreInt64(&wrappedStream.receivedCount, 0) // Reset receivedCount from previous tests
 
 		mockStream.setRecvError(io.EOF)
 
@@ -920,7 +920,7 @@ func TestMetricsServerStream_SendRecvMsg(t *testing.T) {
 			"method":  "/test.TestService/TestStream",
 		}
 		assert.Equal(t, float64(0), collector.getCounterValue("grpc_server_msg_received_total", expectedLabels))
-		assert.Equal(t, 0, wrappedStream.receivedCount) // Should remain 0 after error
+		assert.Equal(t, int64(0), wrappedStream.receivedCount) // Should remain 0 after error
 	})
 
 	t.Run("StreamMessagesDisabled", func(t *testing.T) {
