@@ -70,7 +70,7 @@ func TestServerConfig_DeepCopy(t *testing.T) {
 				// Verify headers are copied
 				assert.Equal(t, original.HTTP.Headers, copy.HTTP.Headers)
 				// Verify they are different map instances
-				assert.NotSame(t, original.HTTP.Headers, copy.HTTP.Headers)
+				assert.NotSame(t, &original.HTTP.Headers, &copy.HTTP.Headers)
 
 				// Modify original and verify copy is not affected
 				original.HTTP.Headers["X-Modified"] = "modified"
@@ -95,10 +95,10 @@ func TestServerConfig_DeepCopy(t *testing.T) {
 				assert.Equal(t, original.HTTP.Middleware.CORSConfig.ExposeHeaders, copy.HTTP.Middleware.CORSConfig.ExposeHeaders)
 
 				// Verify they are different slice instances
-				assert.NotSame(t, original.HTTP.Middleware.CORSConfig.AllowOrigins, copy.HTTP.Middleware.CORSConfig.AllowOrigins)
-				assert.NotSame(t, original.HTTP.Middleware.CORSConfig.AllowMethods, copy.HTTP.Middleware.CORSConfig.AllowMethods)
-				assert.NotSame(t, original.HTTP.Middleware.CORSConfig.AllowHeaders, copy.HTTP.Middleware.CORSConfig.AllowHeaders)
-				assert.NotSame(t, original.HTTP.Middleware.CORSConfig.ExposeHeaders, copy.HTTP.Middleware.CORSConfig.ExposeHeaders)
+				assert.NotSame(t, &original.HTTP.Middleware.CORSConfig.AllowOrigins, &copy.HTTP.Middleware.CORSConfig.AllowOrigins)
+				assert.NotSame(t, &original.HTTP.Middleware.CORSConfig.AllowMethods, &copy.HTTP.Middleware.CORSConfig.AllowMethods)
+				assert.NotSame(t, &original.HTTP.Middleware.CORSConfig.AllowHeaders, &copy.HTTP.Middleware.CORSConfig.AllowHeaders)
+				assert.NotSame(t, &original.HTTP.Middleware.CORSConfig.ExposeHeaders, &copy.HTTP.Middleware.CORSConfig.ExposeHeaders)
 
 				// Modify original and verify copy is not affected
 				original.HTTP.Middleware.CORSConfig.AllowOrigins = append(original.HTTP.Middleware.CORSConfig.AllowOrigins, "https://modified.com")
@@ -119,7 +119,7 @@ func TestServerConfig_DeepCopy(t *testing.T) {
 				// Verify custom headers are copied
 				assert.Equal(t, original.HTTP.Middleware.CustomHeaders, copy.HTTP.Middleware.CustomHeaders)
 				// Verify they are different map instances
-				assert.NotSame(t, original.HTTP.Middleware.CustomHeaders, copy.HTTP.Middleware.CustomHeaders)
+				assert.NotSame(t, &original.HTTP.Middleware.CustomHeaders, &copy.HTTP.Middleware.CustomHeaders)
 
 				// Modify original and verify copy is not affected
 				original.HTTP.Middleware.CustomHeaders["X-Modified"] = "modified"
@@ -137,7 +137,7 @@ func TestServerConfig_DeepCopy(t *testing.T) {
 				// Verify tags are copied
 				assert.Equal(t, original.Discovery.Tags, copy.Discovery.Tags)
 				// Verify they are different slice instances
-				assert.NotSame(t, original.Discovery.Tags, copy.Discovery.Tags)
+				assert.NotSame(t, &original.Discovery.Tags, &copy.Discovery.Tags)
 
 				// Modify original and verify copy is not affected
 				original.Discovery.Tags = append(original.Discovery.Tags, "modified")
@@ -176,10 +176,10 @@ func TestServerConfig_DeepCopy(t *testing.T) {
 				assert.Equal(t, original.Discovery.ServiceName, copy.Discovery.ServiceName)
 
 				// Verify nested structures are independent
-				assert.NotSame(t, original.HTTP.Headers, copy.HTTP.Headers)
-				assert.NotSame(t, original.HTTP.Middleware.CustomHeaders, copy.HTTP.Middleware.CustomHeaders)
-				assert.NotSame(t, original.HTTP.Middleware.CORSConfig.AllowOrigins, copy.HTTP.Middleware.CORSConfig.AllowOrigins)
-				assert.NotSame(t, original.Discovery.Tags, copy.Discovery.Tags)
+				assert.NotSame(t, &original.HTTP.Headers, &copy.HTTP.Headers)
+				assert.NotSame(t, &original.HTTP.Middleware.CustomHeaders, &copy.HTTP.Middleware.CustomHeaders)
+				assert.NotSame(t, &original.HTTP.Middleware.CORSConfig.AllowOrigins, &copy.HTTP.Middleware.CORSConfig.AllowOrigins)
+				assert.NotSame(t, &original.Discovery.Tags, &copy.Discovery.Tags)
 
 				// Test independence by modifying original
 				original.HTTP.Headers["X-Modified"] = "modified"
@@ -266,17 +266,17 @@ func TestServerConfig_DeepCopy_EmptySlicesAndMaps(t *testing.T) {
 	assert.Equal(t, config.ServiceName, copy.ServiceName)
 	assert.NotNil(t, copy.HTTP.Headers)
 	assert.Empty(t, copy.HTTP.Headers)
-	assert.NotSame(t, config.HTTP.Headers, copy.HTTP.Headers)
+	assert.NotSame(t, &config.HTTP.Headers, &copy.HTTP.Headers)
 
 	assert.NotNil(t, copy.HTTP.Middleware.CustomHeaders)
 	assert.Empty(t, copy.HTTP.Middleware.CustomHeaders)
-	assert.NotSame(t, config.HTTP.Middleware.CustomHeaders, copy.HTTP.Middleware.CustomHeaders)
+	assert.NotSame(t, &config.HTTP.Middleware.CustomHeaders, &copy.HTTP.Middleware.CustomHeaders)
 
 	assert.NotNil(t, copy.HTTP.Middleware.CORSConfig.AllowOrigins)
 	assert.Empty(t, copy.HTTP.Middleware.CORSConfig.AllowOrigins)
-	assert.NotSame(t, config.HTTP.Middleware.CORSConfig.AllowOrigins, copy.HTTP.Middleware.CORSConfig.AllowOrigins)
+	assert.NotSame(t, &config.HTTP.Middleware.CORSConfig.AllowOrigins, &copy.HTTP.Middleware.CORSConfig.AllowOrigins)
 
 	assert.NotNil(t, copy.Discovery.Tags)
 	assert.Empty(t, copy.Discovery.Tags)
-	assert.NotSame(t, config.Discovery.Tags, copy.Discovery.Tags)
+	assert.NotSame(t, &config.Discovery.Tags, &copy.Discovery.Tags)
 }

@@ -466,7 +466,7 @@ func TestTemplateRegistry_GetAllTemplates(t *testing.T) {
 	assert.NotEmpty(t, templates)
 
 	// Should be a copy, not the original map
-	assert.NotSame(t, registry.templates, templates)
+	assert.NotSame(t, &registry.templates, &templates)
 
 	// Should contain expected templates
 	assert.Contains(t, templates, "web-api")
