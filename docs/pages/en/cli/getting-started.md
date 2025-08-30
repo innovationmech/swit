@@ -4,7 +4,7 @@ This tutorial walks you through using switctl to create your first microservice 
 
 ## Prerequisites
 
-- Go 1.24 or later
+- Go 1.23.12 or later
 - Git
 - Basic understanding of microservices
 

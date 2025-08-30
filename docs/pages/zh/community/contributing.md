@@ -53,7 +53,7 @@
 
 ### 前置条件
 
-- **Go 1.24+** - 支持泛型的最新 Go 版本
+- **Go 1.23.12+** - 支持泛型的最新 Go 版本
 - **Git** - 版本控制系统
 - **Make** - 构建自动化工具
 - **Docker**（可选）- 用于构建容器镜像
@@ -328,7 +328,7 @@ func ProcessRequest(ctx context.Context, req *Request) (*Response, error) {
 实际发生的事情。
 
 ## 环境
-- Go 版本：1.24.0
+- Go 版本：1.23.12
 - 操作系统：Ubuntu 22.04
 - 框架版本：v1.0.0
 

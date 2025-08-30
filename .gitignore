@@ -28,6 +28,7 @@ licenses_temp.txt
 coverage.out
 coverage.html
 *.prof
+*.test
 
 # Go 相关文件
 *.log

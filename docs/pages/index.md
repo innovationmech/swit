@@ -99,7 +99,7 @@ Choose your preferred language to get started with Swit framework:
     <div class="stat-label">License</div>
   </div>
   <div class="stat-card">
-    <div class="stat-number">Go 1.24+</div>
+    <div class="stat-number">Go 1.23.12+</div>
     <div class="stat-label">Requirements</div>
   </div>
   <div class="stat-card">

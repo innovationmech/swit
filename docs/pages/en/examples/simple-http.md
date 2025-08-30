@@ -107,7 +107,7 @@ config := &server.ServerConfig{
 ## Running the Example
 
 ### Prerequisites
-- Go 1.24+ installed
+- Go 1.23.12+ installed
 - Framework dependencies available
 
 ### Quick Start

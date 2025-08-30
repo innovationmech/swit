@@ -6,7 +6,7 @@ This guide will help you install the Swit Go Microservice Framework and set up y
 
 Before installing Swit, make sure you have the following requirements:
 
-- **Go 1.24+** - Modern Go version with generics support
+- **Go 1.23.12+** - Modern Go version with generics support
 - **Git** - For framework and example code management
 - **Make** - For building and development commands (optional but recommended)
 
@@ -18,7 +18,7 @@ Check your Go version:
 go version
 ```
 
-You should see Go version 1.24 or higher. If you don't have Go installed, visit [https://golang.org/doc/install](https://golang.org/doc/install).
+You should see Go version 1.23.12 or higher. If you don't have Go installed, visit [https://golang.org/doc/install](https://golang.org/doc/install).
 
 ## Install Swit Framework
 
@@ -143,9 +143,9 @@ For the best development experience with VS Code:
 
 **Go version too old:**
 ```
-go get: module github.com/innovationmech/swit requires Go 1.24
+go get: module github.com/innovationmech/swit requires Go 1.23.12
 ```
-Solution: Upgrade Go to version 1.24 or higher.
+Solution: Upgrade Go to version 1.23.12 or higher.
 
 **Module not found:**
 ```

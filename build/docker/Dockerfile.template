@@ -2,7 +2,7 @@
 # 可以配合构建脚本使用
 
 # 构建所有服务的 Dockerfile
-FROM golang:1.24-alpine AS builder
+FROM golang:1.23.12-alpine AS builder
 
 WORKDIR /app
 

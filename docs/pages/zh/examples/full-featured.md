@@ -187,7 +187,7 @@ config := &server.ServerConfig{
 ## 运行示例
 
 ### 前置条件
-- 已安装 Go 1.24+
+- 已安装 Go 1.23.12+
 - 已安装 gRPC 工具（用于 gRPC 测试）
 - 框架依赖可用
 

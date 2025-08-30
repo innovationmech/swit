@@ -53,7 +53,7 @@ Before you start contributing, please:
 
 ### Prerequisites
 
-- **Go 1.24+** - Latest Go version with generics support
+- **Go 1.23.12+** - Latest Go version with generics support
 - **Git** - Version control system
 - **Make** - Build automation tool
 - **Docker** (optional) - For building container images
@@ -329,7 +329,7 @@ What you expected to happen.
 What actually happened.
 
 ## Environment
-- Go version: 1.24.0
+- Go version: 1.23.12
 - OS: Ubuntu 22.04
 - Framework version: v1.0.0
 

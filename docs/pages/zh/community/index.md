@@ -271,7 +271,7 @@ func TestHTTPIntegration(t *testing.T) {
 
 ## 环境信息
 - 操作系统: macOS 13.0
-- Go 版本: 1.24.0
+- Go 版本: 1.23.12
 - Swit 版本: v1.0.0
 - 数据库: MySQL 8.0
 
