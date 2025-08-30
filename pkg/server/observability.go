@@ -418,13 +418,19 @@ type SystemInfo struct {
 	} `json:"mem_stats"`
 }
 
+// PrometheusHandler defines the interface for Prometheus HTTP handler
+type PrometheusHandler interface {
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
 // ObservabilityManager manages observability features for the server
 type ObservabilityManager struct {
-	serviceName string
-	metrics     *ServerMetrics
-	startTime   time.Time
-	version     string
-	buildInfo   map[string]string
+	serviceName       string
+	metrics           *ServerMetrics
+	startTime         time.Time
+	version           string
+	buildInfo         map[string]string
+	prometheusHandler PrometheusHandler
 }
 
 // NewObservabilityManager creates a new observability manager
@@ -445,6 +451,11 @@ func (om *ObservabilityManager) SetVersion(version string) {
 // SetBuildInfo sets build information
 func (om *ObservabilityManager) SetBuildInfo(info map[string]string) {
 	om.buildInfo = info
+}
+
+// SetPrometheusHandler sets the Prometheus HTTP handler
+func (om *ObservabilityManager) SetPrometheusHandler(handler PrometheusHandler) {
+	om.prometheusHandler = handler
 }
 
 // GetMetrics returns the metrics collector
@@ -520,7 +531,7 @@ func (om *ObservabilityManager) RegisterDebugEndpoints(router *gin.Engine, serve
 		c.JSON(http.StatusOK, status)
 	})
 
-	// Metrics endpoint
+	// Metrics endpoint (JSON format for debug)
 	debugGroup.GET("/metrics", func(c *gin.Context) {
 		metrics := om.metrics.collector.GetMetrics()
 		c.JSON(http.StatusOK, map[string]interface{}{
@@ -671,4 +682,35 @@ func (om *ObservabilityManager) RegisterHealthEndpoint(router *gin.Engine, serve
 
 		c.JSON(statusCode, healthStatus)
 	})
+}
+
+// RegisterPrometheusEndpoint registers the Prometheus metrics endpoint
+func (om *ObservabilityManager) RegisterPrometheusEndpoint(router *gin.Engine) {
+	// Register the main /metrics endpoint for Prometheus format
+	router.GET("/metrics", func(c *gin.Context) {
+		if om.prometheusHandler != nil {
+			// Use Prometheus handler if available
+			om.prometheusHandler.ServeHTTP(c.Writer, c.Request)
+		} else {
+			// Fallback to JSON format if Prometheus handler is not set
+			metrics := om.metrics.collector.GetMetrics()
+			c.JSON(http.StatusOK, map[string]interface{}{
+				"metrics":   metrics,
+				"timestamp": time.Now(),
+				"format":    "json", // Indicate this is the fallback format
+			})
+		}
+	})
+}
+
+// RegisterObservabilityEndpoints registers all observability endpoints (convenience method)
+func (om *ObservabilityManager) RegisterObservabilityEndpoints(router *gin.Engine, server BusinessServerCore) {
+	// Register the main Prometheus endpoint
+	om.RegisterPrometheusEndpoint(router)
+
+	// Register health endpoint
+	om.RegisterHealthEndpoint(router, server)
+
+	// Register debug endpoints
+	om.RegisterDebugEndpoints(router, server)
 }
