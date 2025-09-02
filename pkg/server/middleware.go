@@ -139,9 +139,18 @@ func (m *MiddlewareManager) ConfigureHTTPMiddleware(router *gin.Engine) error {
 	if m.config.Prometheus.Enabled {
 		prometheusMiddleware := m.createPrometheusHTTPMiddleware()
 		if err := prometheusMiddleware(router); err != nil {
-			return fmt.Errorf("failed to configure Prometheus middleware: %w", err)
+			// Log error but continue with graceful degradation
+			logger.Logger.Warn("Failed to configure Prometheus middleware, continuing without it",
+				zap.Error(err),
+				zap.String("service", m.config.ServiceName))
+
+			// Optionally disable Prometheus for subsequent operations
+			m.config.Prometheus.Enabled = false
+
+			// Continue server startup without Prometheus middleware
+		} else {
+			logger.Logger.Debug("Prometheus HTTP middleware configured successfully")
 		}
-		logger.Logger.Debug("Prometheus HTTP middleware configured")
 	}
 
 	// Configure Sentry middleware if enabled
@@ -206,10 +215,19 @@ func (m *MiddlewareManager) GetGRPCInterceptors() ([]grpc.UnaryServerInterceptor
 
 	// Add Prometheus interceptors if enabled
 	if m.config.Prometheus.Enabled {
-		prometheusUnaryInterceptor, prometheusStreamInterceptor := m.createPrometheusGRPCInterceptors()
-		unaryInterceptors = append(unaryInterceptors, prometheusUnaryInterceptor)
-		streamInterceptors = append(streamInterceptors, prometheusStreamInterceptor)
-		logger.Logger.Debug("Prometheus gRPC interceptors configured")
+		prometheusUnaryInterceptor, prometheusStreamInterceptor, err := m.createPrometheusGRPCInterceptorsWithError()
+		if err != nil {
+			// Log error but continue with graceful degradation
+			logger.Logger.Warn("Failed to configure Prometheus gRPC interceptors, continuing without them",
+				zap.Error(err),
+				zap.String("service", m.config.ServiceName))
+
+			// Continue without Prometheus interceptors
+		} else {
+			unaryInterceptors = append(unaryInterceptors, prometheusUnaryInterceptor)
+			streamInterceptors = append(streamInterceptors, prometheusStreamInterceptor)
+			logger.Logger.Debug("Prometheus gRPC interceptors configured successfully")
+		}
 	}
 
 	// Add authentication interceptor
@@ -342,27 +360,81 @@ func (m *MiddlewareManager) createCustomHeadersMiddleware(headers map[string]str
 // createPrometheusHTTPMiddleware creates Prometheus HTTP middleware
 func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc {
 	return func(router *gin.Engine) error {
-		// Create Prometheus metrics collector
-		prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
+		// Validate Prometheus configuration first
+		if err := m.validatePrometheusConfig(); err != nil {
+			return fmt.Errorf("invalid Prometheus configuration: %w", err)
+		}
 
-		// Create HTTP middleware configuration
+		// Create Prometheus metrics collector with error handling
+		prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
+		if prometheusCollector == nil {
+			return fmt.Errorf("failed to create Prometheus metrics collector")
+		}
+
+		// Create HTTP middleware configuration with validation
 		httpConfig := middleware.DefaultPrometheusHTTPConfig()
+		if httpConfig == nil {
+			return fmt.Errorf("failed to create default Prometheus HTTP configuration")
+		}
+
 		httpConfig.ServiceName = m.config.ServiceName
 		httpConfig.MaxPathCardinality = m.config.Prometheus.CardinalityLimit
 
-		// Create HTTP middleware
+		// Create HTTP middleware with error handling
 		prometheusMiddleware := middleware.NewPrometheusHTTPMiddleware(prometheusCollector, httpConfig)
+		if prometheusMiddleware == nil {
+			return fmt.Errorf("failed to create Prometheus HTTP middleware")
+		}
+
+		// Apply middleware with panic recovery
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Logger.Error("Panic occurred while applying Prometheus middleware",
+					zap.Any("panic", r))
+			}
+		}()
+
 		router.Use(prometheusMiddleware.Middleware())
 
-		// Expose metrics endpoint
-		router.GET(m.config.Prometheus.Endpoint, gin.WrapH(prometheusCollector.GetHandler()))
+		// Expose metrics endpoint with validation
+		if m.config.Prometheus.Endpoint == "" {
+			return fmt.Errorf("Prometheus endpoint cannot be empty")
+		}
 
-		logger.Logger.Info("Prometheus HTTP middleware configured",
+		metricsHandler := prometheusCollector.GetHandler()
+		if metricsHandler == nil {
+			return fmt.Errorf("failed to get Prometheus metrics handler")
+		}
+
+		router.GET(m.config.Prometheus.Endpoint, gin.WrapH(metricsHandler))
+
+		logger.Logger.Info("Prometheus HTTP middleware configured successfully",
 			zap.String("endpoint", m.config.Prometheus.Endpoint),
 			zap.String("namespace", m.config.Prometheus.Namespace),
 			zap.String("service", m.config.ServiceName))
 		return nil
 	}
+}
+
+// validatePrometheusConfig validates the Prometheus configuration
+func (m *MiddlewareManager) validatePrometheusConfig() error {
+	if !m.config.Prometheus.Enabled {
+		return fmt.Errorf("Prometheus is not enabled")
+	}
+
+	if m.config.Prometheus.Endpoint == "" {
+		return fmt.Errorf("Prometheus endpoint cannot be empty")
+	}
+
+	if m.config.Prometheus.Namespace == "" {
+		return fmt.Errorf("Prometheus namespace cannot be empty")
+	}
+
+	if m.config.Prometheus.CardinalityLimit < 0 {
+		return fmt.Errorf("Prometheus cardinality limit cannot be negative")
+	}
+
+	return nil
 }
 
 // createSentryHTTPMiddleware creates Sentry HTTP middleware
@@ -525,17 +597,45 @@ func (m *MiddlewareManager) createGRPCRateLimitStreamInterceptor() grpc.StreamSe
 
 // createPrometheusGRPCInterceptors creates Prometheus gRPC interceptors
 func (m *MiddlewareManager) createPrometheusGRPCInterceptors() (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor) {
-	// Create Prometheus metrics collector
-	prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
+	unary, stream, _ := m.createPrometheusGRPCInterceptorsWithError()
+	return unary, stream
+}
 
-	// Create gRPC interceptor configuration
+// createPrometheusGRPCInterceptorsWithError creates Prometheus gRPC interceptors with error handling
+func (m *MiddlewareManager) createPrometheusGRPCInterceptorsWithError() (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor, error) {
+	// Validate Prometheus configuration first
+	if err := m.validatePrometheusConfig(); err != nil {
+		return nil, nil, fmt.Errorf("invalid Prometheus configuration: %w", err)
+	}
+
+	// Create Prometheus metrics collector with error handling
+	prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
+	if prometheusCollector == nil {
+		return nil, nil, fmt.Errorf("failed to create Prometheus metrics collector")
+	}
+
+	// Create gRPC interceptor configuration with validation
 	grpcConfig := middleware.DefaultPrometheusGRPCConfig()
+	if grpcConfig == nil {
+		return nil, nil, fmt.Errorf("failed to create default Prometheus gRPC configuration")
+	}
 	grpcConfig.ServiceName = m.config.ServiceName
 
-	// Create gRPC interceptor
+	// Create gRPC interceptor with error handling
 	prometheusInterceptor := middleware.NewPrometheusGRPCInterceptor(prometheusCollector, grpcConfig)
+	if prometheusInterceptor == nil {
+		return nil, nil, fmt.Errorf("failed to create Prometheus gRPC interceptor")
+	}
 
-	return prometheusInterceptor.UnaryServerInterceptor(), prometheusInterceptor.StreamServerInterceptor()
+	// Get interceptors with validation
+	unaryInterceptor := prometheusInterceptor.UnaryServerInterceptor()
+	streamInterceptor := prometheusInterceptor.StreamServerInterceptor()
+
+	if unaryInterceptor == nil || streamInterceptor == nil {
+		return nil, nil, fmt.Errorf("failed to get Prometheus gRPC interceptors")
+	}
+
+	return unaryInterceptor, streamInterceptor, nil
 }
 
 // createSentryGRPCInterceptors creates Sentry gRPC interceptors
