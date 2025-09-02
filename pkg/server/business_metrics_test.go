@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -138,7 +139,7 @@ func TestBusinessMetricsManager_RecordMetrics(t *testing.T) {
 		for _, metric := range metrics {
 			if metric.Name == "api_requests_total" {
 				found = true
-				assert.Equal(t, MetricTypeCounter, metric.Type)
+				assert.Equal(t, types.CounterType, metric.Type)
 				assert.Equal(t, int64(1), metric.Value)
 				assert.Equal(t, "test-service", metric.Labels["service"])
 				assert.Equal(t, "/api/test", metric.Labels["endpoint"])
@@ -152,7 +153,7 @@ func TestBusinessMetricsManager_RecordMetrics(t *testing.T) {
 		assert.True(t, len(testHook.events) > 0)
 		lastEvent := testHook.events[len(testHook.events)-1]
 		assert.Equal(t, "api_requests_total", lastEvent.Name)
-		assert.Equal(t, MetricTypeCounter, lastEvent.Type)
+		assert.Equal(t, types.CounterType, lastEvent.Type)
 		testHook.mu.RUnlock()
 	})
 
@@ -170,7 +171,7 @@ func TestBusinessMetricsManager_RecordMetrics(t *testing.T) {
 		for _, metric := range metrics {
 			if metric.Name == "queue_size" {
 				found = true
-				assert.Equal(t, MetricTypeGauge, metric.Type)
+				assert.Equal(t, types.GaugeType, metric.Type)
 				assert.Equal(t, 42.0, metric.Value)
 				assert.Equal(t, "test-service", metric.Labels["service"])
 				assert.Equal(t, "processing", metric.Labels["queue"])
@@ -194,7 +195,7 @@ func TestBusinessMetricsManager_RecordMetrics(t *testing.T) {
 		for _, metric := range metrics {
 			if metric.Name == "http_request_duration_seconds" {
 				found = true
-				assert.Equal(t, MetricTypeHistogram, metric.Type)
+				assert.Equal(t, types.HistogramType, metric.Type)
 				assert.Equal(t, "test-service", metric.Labels["service"])
 				assert.Equal(t, "GET", metric.Labels["method"])
 				break
@@ -235,7 +236,7 @@ func TestBusinessMetricsManager_CustomMetrics(t *testing.T) {
 	t.Run("register and retrieve custom metric", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:        "custom_business_metric",
-			Type:        MetricTypeGauge,
+			Type:        types.GaugeType,
 			Description: "Custom business metric for testing",
 			Labels:      []string{"department", "region"},
 		}
@@ -337,7 +338,7 @@ func TestLoggingBusinessMetricsHook(t *testing.T) {
 
 	event := BusinessMetricEvent{
 		Name:      "test_metric",
-		Type:      MetricTypeCounter,
+		Type:      types.CounterType,
 		Value:     1.0,
 		Labels:    map[string]string{"test": "value"},
 		Timestamp: time.Now(),
@@ -358,13 +359,13 @@ func TestAggregationBusinessMetricsHook(t *testing.T) {
 	t.Run("aggregate counters", func(t *testing.T) {
 		event1 := BusinessMetricEvent{
 			Name:   "test_counter",
-			Type:   MetricTypeCounter,
+			Type:   types.CounterType,
 			Value:  5.0,
 			Source: "service1",
 		}
 		event2 := BusinessMetricEvent{
 			Name:   "test_counter",
-			Type:   MetricTypeCounter,
+			Type:   types.CounterType,
 			Value:  3.0,
 			Source: "service1",
 		}
@@ -380,13 +381,13 @@ func TestAggregationBusinessMetricsHook(t *testing.T) {
 	t.Run("set gauges", func(t *testing.T) {
 		event1 := BusinessMetricEvent{
 			Name:   "test_gauge",
-			Type:   MetricTypeGauge,
+			Type:   types.GaugeType,
 			Value:  42.0,
 			Source: "service1",
 		}
 		event2 := BusinessMetricEvent{
 			Name:   "test_gauge",
-			Type:   MetricTypeGauge,
+			Type:   types.GaugeType,
 			Value:  84.0,
 			Source: "service1",
 		}

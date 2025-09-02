@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -163,16 +164,16 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 			switch metric.Name {
 			case "swit_server_memory_bytes":
 				foundMemory = true
-				assert.Equal(t, MetricTypeGauge, metric.Type)
+				assert.Equal(t, types.GaugeType, metric.Type)
 				assert.Contains(t, metric.Labels, "service")
 				assert.Contains(t, metric.Labels, "type")
 			case "swit_server_goroutines":
 				foundGoroutines = true
-				assert.Equal(t, MetricTypeGauge, metric.Type)
+				assert.Equal(t, types.GaugeType, metric.Type)
 				assert.Contains(t, metric.Labels, "service")
 			case "swit_server_uptime_seconds":
 				foundUptime = true
-				assert.Equal(t, MetricTypeGauge, metric.Type)
+				assert.Equal(t, types.GaugeType, metric.Type)
 				assert.Contains(t, metric.Labels, "service")
 			}
 		}

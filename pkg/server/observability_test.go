@@ -59,7 +59,7 @@ func TestSimpleMetricsCollector_Counter(t *testing.T) {
 
 		metric := metrics[0]
 		assert.Equal(t, "test_counter", metric.Name)
-		assert.Equal(t, MetricTypeCounter, metric.Type)
+		assert.Equal(t, types.CounterType, metric.Type)
 		assert.Equal(t, int64(2), metric.Value)
 		assert.Equal(t, labels, metric.Labels)
 	})
@@ -86,7 +86,7 @@ func TestSimpleMetricsCollector_Gauge(t *testing.T) {
 
 		metric, exists := collector.GetMetric("test_gauge")
 		require.True(t, exists)
-		assert.Equal(t, MetricTypeGauge, metric.Type)
+		assert.Equal(t, types.GaugeType, metric.Type)
 		assert.Equal(t, 42.5, metric.Value)
 	})
 
@@ -124,7 +124,7 @@ func TestSimpleMetricsCollector_Histogram(t *testing.T) {
 
 	metric, exists := collector.GetMetric("test_histogram")
 	require.True(t, exists)
-	assert.Equal(t, MetricTypeHistogram, metric.Type)
+	assert.Equal(t, types.HistogramType, metric.Type)
 
 	value, ok := metric.Value.(map[string]interface{})
 	require.True(t, ok)
@@ -218,7 +218,7 @@ func TestServerMetrics_RecordMethods(t *testing.T) {
 
 		histogram, exists := collector.GetMetric("server_uptime_seconds")
 		require.True(t, exists)
-		assert.Equal(t, MetricTypeHistogram, histogram.Type)
+		assert.Equal(t, types.HistogramType, histogram.Type)
 	})
 
 	t.Run("RecordTransportStart", func(t *testing.T) {
@@ -325,7 +325,7 @@ func TestServerMetrics_RecordMethods(t *testing.T) {
 
 		histogram, exists := collector.GetMetric("operation_duration_seconds")
 		require.True(t, exists)
-		assert.Equal(t, MetricTypeHistogram, histogram.Type)
+		assert.Equal(t, types.HistogramType, histogram.Type)
 	})
 }
 
@@ -643,10 +643,10 @@ func TestServerMetrics_GetCollector(t *testing.T) {
 }
 
 func TestMetricTypes(t *testing.T) {
-	assert.Equal(t, MetricType("counter"), MetricTypeCounter)
-	assert.Equal(t, MetricType("gauge"), MetricTypeGauge)
-	assert.Equal(t, MetricType("histogram"), MetricTypeHistogram)
-	assert.Equal(t, MetricType("summary"), MetricTypeSummary)
+	assert.Equal(t, MetricType("counter"), types.CounterType)
+	assert.Equal(t, MetricType("gauge"), types.GaugeType)
+	assert.Equal(t, MetricType("histogram"), types.HistogramType)
+	assert.Equal(t, MetricType("summary"), types.SummaryType)
 }
 
 func TestSystemInfo(t *testing.T) {

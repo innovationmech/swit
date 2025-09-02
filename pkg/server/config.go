@@ -220,6 +220,23 @@ type LoggingConfig struct {
 	SamplingThereafter int      `yaml:"sampling_thereafter" json:"sampling_thereafter"`
 }
 
+// PrometheusConfig holds Prometheus metrics configuration
+type PrometheusConfig struct {
+	Enabled          bool              `yaml:"enabled" json:"enabled"`
+	Endpoint         string            `yaml:"endpoint" json:"endpoint"`
+	Namespace        string            `yaml:"namespace" json:"namespace"`
+	Subsystem        string            `yaml:"subsystem" json:"subsystem"`
+	Buckets          PrometheusBuckets `yaml:"buckets" json:"buckets"`
+	Labels           map[string]string `yaml:"labels" json:"labels"`
+	CardinalityLimit int               `yaml:"cardinality_limit" json:"cardinality_limit"`
+}
+
+// PrometheusBuckets holds histogram bucket configurations for different metric types
+type PrometheusBuckets struct {
+	Duration []float64 `yaml:"duration" json:"duration"`
+	Size     []float64 `yaml:"size" json:"size"`
+}
+
 // NewServerConfig creates a new ServerConfig with default values
 func NewServerConfig() *ServerConfig {
 	config := &ServerConfig{}
@@ -462,6 +479,9 @@ func (c *ServerConfig) SetDefaults() {
 	}
 	if c.Prometheus.Labels == nil {
 		c.Prometheus.Labels = make(map[string]string)
+	}
+	if c.Prometheus.CardinalityLimit == 0 {
+		c.Prometheus.CardinalityLimit = 10000 // Default limit to prevent memory exhaustion
 	}
 
 	// Server defaults
@@ -720,6 +740,14 @@ func (c *ServerConfig) Validate() error {
 			if c.Prometheus.Buckets.Size[i] <= c.Prometheus.Buckets.Size[i-1] {
 				return fmt.Errorf("prometheus.buckets.size must be sorted in ascending order")
 			}
+		}
+
+		// Validate cardinality limit
+		if c.Prometheus.CardinalityLimit <= 0 {
+			return fmt.Errorf("prometheus.cardinality_limit must be positive")
+		}
+		if c.Prometheus.CardinalityLimit > 100000 {
+			return fmt.Errorf("prometheus.cardinality_limit exceeds recommended maximum of 100000")
 		}
 	}
 

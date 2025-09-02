@@ -35,23 +35,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/types"
 )
 
-// PrometheusConfig holds configuration for Prometheus metrics integration
-type PrometheusConfig struct {
-	Enabled   bool              `yaml:"enabled" json:"enabled"`
-	Endpoint  string            `yaml:"endpoint" json:"endpoint"`
-	Namespace string            `yaml:"namespace" json:"namespace"`
-	Subsystem string            `yaml:"subsystem" json:"subsystem"`
-	Buckets   PrometheusBuckets `yaml:"buckets" json:"buckets"`
-	Labels    map[string]string `yaml:"labels" json:"labels"`
-}
-
-// PrometheusBuckets defines bucket configurations for histograms
-type PrometheusBuckets struct {
-	Duration []float64 `yaml:"duration" json:"duration"`
-	Size     []float64 `yaml:"size" json:"size"`
-}
+// Note: PrometheusConfig and PrometheusBuckets are defined in config.go to avoid duplication
 
 // DefaultPrometheusConfig returns a default Prometheus configuration
 func DefaultPrometheusConfig() *PrometheusConfig {
@@ -64,7 +51,8 @@ func DefaultPrometheusConfig() *PrometheusConfig {
 			Duration: []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},
 			Size:     []float64{100, 1000, 10000, 100000, 1000000},
 		},
-		Labels: make(map[string]string),
+		Labels:           make(map[string]string),
+		CardinalityLimit: 10000,
 	}
 }
 
@@ -88,6 +76,11 @@ type PrometheusMetricsCollector struct {
 func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsCollector {
 	if config == nil || !config.Enabled {
 		config = DefaultPrometheusConfig()
+	} else {
+		// Apply defaults to missing fields
+		if config.CardinalityLimit == 0 {
+			config.CardinalityLimit = 10000
+		}
 	}
 
 	registry := prometheus.NewRegistry()
@@ -99,7 +92,7 @@ func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsC
 		gauges:         make(map[string]*prometheus.GaugeVec),
 		histograms:     make(map[string]*prometheus.HistogramVec),
 		summaries:      make(map[string]*prometheus.SummaryVec),
-		maxCardinality: 10000, // Default cardinality limit
+		maxCardinality: config.CardinalityLimit,
 		currentMetrics: make(map[string]int),
 	}
 }
@@ -180,11 +173,11 @@ func (pmc *PrometheusMetricsCollector) ObserveHistogram(name string, value float
 }
 
 // GetMetrics returns all collected metrics (for backward compatibility)
-func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
+func (pmc *PrometheusMetricsCollector) GetMetrics() []types.Metric {
 	pmc.mu.RLock()
 	defer pmc.mu.RUnlock()
 
-	var metrics []Metric
+	var metrics []types.Metric
 
 	// Gather metrics from Prometheus registry
 	metricFamilies, err := pmc.registry.Gather()
@@ -203,35 +196,35 @@ func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
 				labels[lp.GetName()] = lp.GetValue()
 			}
 
-			var value interface{}
-			var metricType MetricType
+			var value any
+			var metricType types.MetricType
 
 			switch mf.GetType() {
 			case dto.MetricType_COUNTER:
 				value = m.GetCounter().GetValue()
-				metricType = MetricTypeCounter
+				metricType = types.CounterType
 			case dto.MetricType_GAUGE:
 				value = m.GetGauge().GetValue()
-				metricType = MetricTypeGauge
+				metricType = types.GaugeType
 			case dto.MetricType_HISTOGRAM:
 				hist := m.GetHistogram()
-				value = map[string]interface{}{
+				value = map[string]any{
 					"count": hist.GetSampleCount(),
 					"sum":   hist.GetSampleSum(),
 				}
-				metricType = MetricTypeHistogram
+				metricType = types.HistogramType
 			case dto.MetricType_SUMMARY:
 				summ := m.GetSummary()
-				value = map[string]interface{}{
+				value = map[string]any{
 					"count": summ.GetSampleCount(),
 					"sum":   summ.GetSampleSum(),
 				}
-				metricType = MetricTypeSummary
+				metricType = types.SummaryType
 			default:
 				continue
 			}
 
-			metrics = append(metrics, Metric{
+			metrics = append(metrics, types.Metric{
 				Name:      metricName,
 				Type:      metricType,
 				Value:     value,
@@ -245,7 +238,7 @@ func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
 }
 
 // GetMetric returns a specific metric by name (for backward compatibility)
-func (pmc *PrometheusMetricsCollector) GetMetric(name string) (*Metric, bool) {
+func (pmc *PrometheusMetricsCollector) GetMetric(name string) (*types.Metric, bool) {
 	metrics := pmc.GetMetrics()
 	for _, metric := range metrics {
 		if metric.Name == name {

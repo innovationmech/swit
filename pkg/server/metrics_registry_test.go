@@ -26,6 +26,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/innovationmech/swit/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,7 +67,7 @@ func TestMetricsRegistry_RegisterMetric(t *testing.T) {
 	t.Run("valid custom metric registration", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:        "custom_counter",
-			Type:        MetricTypeCounter,
+			Type:        types.CounterType,
 			Description: "A custom counter metric",
 			Labels:      []string{"service", "method"},
 		}
@@ -87,7 +88,7 @@ func TestMetricsRegistry_RegisterMetric(t *testing.T) {
 	t.Run("invalid metric - empty name", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name: "",
-			Type: MetricTypeCounter,
+			Type: types.CounterType,
 		}
 
 		err := registry.RegisterMetric(definition)
@@ -109,7 +110,7 @@ func TestMetricsRegistry_RegisterMetric(t *testing.T) {
 	t.Run("duplicate custom metric", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name: "duplicate_custom",
-			Type: MetricTypeGauge,
+			Type: types.GaugeType,
 		}
 
 		err := registry.RegisterMetric(definition)
@@ -124,7 +125,7 @@ func TestMetricsRegistry_RegisterMetric(t *testing.T) {
 	t.Run("conflict with predefined metric", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name: "http_requests_total", // This is a predefined metric
-			Type: MetricTypeCounter,
+			Type: types.CounterType,
 		}
 
 		err := registry.RegisterMetric(definition)
@@ -139,7 +140,7 @@ func TestMetricsRegistry_GetMetricDefinition(t *testing.T) {
 	// Register a custom metric
 	customDef := MetricDefinition{
 		Name:        "custom_test_metric",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "Test histogram",
 		Labels:      []string{"endpoint", "status"},
 		Buckets:     []float64{0.1, 0.5, 1.0, 5.0},
@@ -152,7 +153,7 @@ func TestMetricsRegistry_GetMetricDefinition(t *testing.T) {
 		assert.True(t, exists)
 		assert.NotNil(t, def)
 		assert.Equal(t, "http_requests_total", def.Name)
-		assert.Equal(t, MetricTypeCounter, def.Type)
+		assert.Equal(t, types.CounterType, def.Type)
 		assert.Contains(t, def.Labels, "method")
 		assert.Contains(t, def.Labels, "status")
 	})
@@ -178,15 +179,15 @@ func TestMetricsRegistry_ListMetrics(t *testing.T) {
 	customMetrics := []MetricDefinition{
 		{
 			Name: "custom_gauge",
-			Type: MetricTypeGauge,
+			Type: types.GaugeType,
 		},
 		{
 			Name: "custom_counter",
-			Type: MetricTypeCounter,
+			Type: types.CounterType,
 		},
 		{
 			Name:    "another_custom",
-			Type:    MetricTypeHistogram,
+			Type:    types.HistogramType,
 			Buckets: []float64{0.1, 1.0},
 		},
 	}
@@ -278,7 +279,7 @@ func TestMetricsRegistry_UnregisterCustomMetric(t *testing.T) {
 	// Register a custom metric
 	customMetric := MetricDefinition{
 		Name: "metric_to_unregister",
-		Type: MetricTypeCounter,
+		Type: types.CounterType,
 	}
 	err := registry.RegisterMetric(customMetric)
 	require.NoError(t, err)
@@ -319,7 +320,7 @@ func TestMetricsRegistry_IsRegistered(t *testing.T) {
 	// Register a custom metric
 	customMetric := MetricDefinition{
 		Name: "registered_custom",
-		Type: MetricTypeGauge,
+		Type: types.GaugeType,
 	}
 	err := registry.RegisterMetric(customMetric)
 	require.NoError(t, err)
@@ -343,7 +344,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("valid counter metric", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:        "valid_counter",
-			Type:        MetricTypeCounter,
+			Type:        types.CounterType,
 			Description: "A valid counter",
 			Labels:      []string{"service", "method"},
 		}
@@ -355,7 +356,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("valid gauge metric", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:   "valid_gauge",
-			Type:   MetricTypeGauge,
+			Type:   types.GaugeType,
 			Labels: []string{"instance"},
 		}
 
@@ -366,7 +367,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("valid histogram metric", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:    "valid_histogram",
-			Type:    MetricTypeHistogram,
+			Type:    types.HistogramType,
 			Buckets: []float64{0.1, 0.5, 1.0, 5.0, 10.0},
 			Labels:  []string{"endpoint"},
 		}
@@ -378,7 +379,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("valid summary metric", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name: "valid_summary",
-			Type: MetricTypeSummary,
+			Type: types.SummaryType,
 			Objectives: map[float64]float64{
 				0.5:  0.05,
 				0.9:  0.01,
@@ -394,7 +395,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("invalid metric - empty name", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name: "",
-			Type: MetricTypeCounter,
+			Type: types.CounterType,
 		}
 
 		err := registry.ValidateMetric(definition)
@@ -427,7 +428,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("invalid histogram - no buckets", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name: "histogram_no_buckets",
-			Type: MetricTypeHistogram,
+			Type: types.HistogramType,
 		}
 
 		err := registry.ValidateMetric(definition)
@@ -438,7 +439,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("invalid summary - no objectives", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name: "summary_no_objectives",
-			Type: MetricTypeSummary,
+			Type: types.SummaryType,
 		}
 
 		err := registry.ValidateMetric(definition)
@@ -449,7 +450,7 @@ func TestMetricsRegistry_ValidateMetric(t *testing.T) {
 	t.Run("invalid labels - empty label name", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:   "invalid_labels",
-			Type:   MetricTypeCounter,
+			Type:   types.CounterType,
 			Labels: []string{"valid_label", "", "another_valid"},
 		}
 
@@ -467,7 +468,7 @@ func TestMetricsRegistry_GetMetricNames(t *testing.T) {
 	for _, name := range customMetrics {
 		err := registry.RegisterMetric(MetricDefinition{
 			Name: name,
-			Type: MetricTypeCounter,
+			Type: types.CounterType,
 		})
 		require.NoError(t, err)
 	}
@@ -515,9 +516,9 @@ func TestMetricsRegistry_GetMetricsCount(t *testing.T) {
 
 	// Add custom metrics
 	customMetrics := []MetricDefinition{
-		{Name: "custom_1", Type: MetricTypeCounter},
-		{Name: "custom_2", Type: MetricTypeGauge},
-		{Name: "custom_3", Type: MetricTypeHistogram, Buckets: []float64{1, 5}},
+		{Name: "custom_1", Type: types.CounterType},
+		{Name: "custom_2", Type: types.GaugeType},
+		{Name: "custom_3", Type: types.HistogramType, Buckets: []float64{1, 5}},
 	}
 
 	for _, metric := range customMetrics {
@@ -541,27 +542,27 @@ func TestMetricsRegistry_PredefinedMetricsContent(t *testing.T) {
 	}{
 		{
 			name:           "http_requests_total",
-			expectedType:   MetricTypeCounter,
+			expectedType:   types.CounterType,
 			expectedLabels: []string{"method", "endpoint", "status"},
 		},
 		{
 			name:           "http_request_duration_seconds",
-			expectedType:   MetricTypeHistogram,
+			expectedType:   types.HistogramType,
 			expectedLabels: []string{"method", "endpoint"},
 		},
 		{
 			name:           "grpc_server_started_total",
-			expectedType:   MetricTypeCounter,
+			expectedType:   types.CounterType,
 			expectedLabels: []string{"method"},
 		},
 		{
 			name:           "server_uptime_seconds",
-			expectedType:   MetricTypeGauge,
+			expectedType:   types.GaugeType,
 			expectedLabels: []string{"service"},
 		},
 		{
 			name:           "transport_status",
-			expectedType:   MetricTypeGauge,
+			expectedType:   types.GaugeType,
 			expectedLabels: []string{"transport", "status"},
 		},
 	}
@@ -577,7 +578,7 @@ func TestMetricsRegistry_PredefinedMetricsContent(t *testing.T) {
 			assert.NotEmpty(t, def.Description)
 
 			// Verify histogram buckets for histogram metrics
-			if tc.expectedType == MetricTypeHistogram {
+			if tc.expectedType == types.HistogramType {
 				assert.NotEmpty(t, def.Buckets, "Histogram should have buckets")
 			}
 		})
@@ -602,7 +603,7 @@ func TestMetricsRegistry_ThreadSafety(t *testing.T) {
 				metricName := fmt.Sprintf("concurrent_metric_%d_%d", id, j)
 				err := registry.RegisterMetric(MetricDefinition{
 					Name: metricName,
-					Type: MetricTypeCounter,
+					Type: types.CounterType,
 				})
 				assert.NoError(t, err)
 			}
@@ -632,7 +633,7 @@ func TestMetricsRegistry_ThreadSafety(t *testing.T) {
 				metricName := fmt.Sprintf("to_unregister_%d_%d", id, j)
 				registry.RegisterMetric(MetricDefinition{
 					Name: metricName,
-					Type: MetricTypeGauge,
+					Type: types.GaugeType,
 				})
 
 				// Then try to unregister it
@@ -658,7 +659,7 @@ func TestMetricsRegistry_EdgeCases(t *testing.T) {
 	t.Run("empty buckets slice for histogram", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:    "empty_buckets_histogram",
-			Type:    MetricTypeHistogram,
+			Type:    types.HistogramType,
 			Buckets: []float64{}, // Empty slice
 		}
 
@@ -670,7 +671,7 @@ func TestMetricsRegistry_EdgeCases(t *testing.T) {
 	t.Run("empty objectives map for summary", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:       "empty_objectives_summary",
-			Type:       MetricTypeSummary,
+			Type:       types.SummaryType,
 			Objectives: map[float64]float64{}, // Empty map
 		}
 
@@ -682,7 +683,7 @@ func TestMetricsRegistry_EdgeCases(t *testing.T) {
 	t.Run("nil labels slice", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:   "nil_labels",
-			Type:   MetricTypeCounter,
+			Type:   types.CounterType,
 			Labels: nil,
 		}
 
@@ -693,7 +694,7 @@ func TestMetricsRegistry_EdgeCases(t *testing.T) {
 	t.Run("valid empty labels slice", func(t *testing.T) {
 		definition := MetricDefinition{
 			Name:   "empty_labels",
-			Type:   MetricTypeGauge,
+			Type:   types.GaugeType,
 			Labels: []string{},
 		}
 
@@ -710,7 +711,7 @@ func BenchmarkMetricsRegistry_RegisterMetric(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		definition := MetricDefinition{
 			Name: fmt.Sprintf("benchmark_metric_%d", i),
-			Type: MetricTypeCounter,
+			Type: types.CounterType,
 		}
 		registry.RegisterMetric(definition)
 	}
@@ -723,7 +724,7 @@ func BenchmarkMetricsRegistry_GetMetricDefinition(b *testing.B) {
 	for i := 0; i < 1000; i++ {
 		registry.RegisterMetric(MetricDefinition{
 			Name: fmt.Sprintf("benchmark_metric_%d", i),
-			Type: MetricTypeGauge,
+			Type: types.GaugeType,
 		})
 	}
 
@@ -744,7 +745,7 @@ func BenchmarkMetricsRegistry_ListMetrics(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		registry.RegisterMetric(MetricDefinition{
 			Name: fmt.Sprintf("list_benchmark_%d", i),
-			Type: MetricTypeCounter,
+			Type: types.CounterType,
 		})
 	}
 
@@ -759,7 +760,7 @@ func BenchmarkMetricsRegistry_ValidateMetric(b *testing.B) {
 
 	definition := MetricDefinition{
 		Name:    "benchmark_validation",
-		Type:    MetricTypeHistogram,
+		Type:    types.HistogramType,
 		Labels:  []string{"service", "method", "endpoint"},
 		Buckets: []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},
 	}

@@ -21,6 +21,8 @@
 
 package types
 
+import "time"
+
 // MetricsCollector defines the interface for collecting metrics
 // This interface is defined in types to avoid import cycles between middleware and server packages
 type MetricsCollector interface {
@@ -58,8 +60,8 @@ const (
 type Metric struct {
 	Name        string            `json:"name"`
 	Type        MetricType        `json:"type"`
-	Value       float64           `json:"value"`
+	Value       any               `json:"value"`
 	Labels      map[string]string `json:"labels"`
-	Timestamp   int64             `json:"timestamp"`
+	Timestamp   time.Time         `json:"timestamp"`
 	Description string            `json:"description,omitempty"`
 }

@@ -263,7 +263,7 @@ func (a *MetricsCollectorAdapter) GetMetrics() []types.Metric {
 			Type:        types.MetricType(sm.Type),
 			Value:       value,
 			Labels:      sm.Labels,
-			Timestamp:   sm.Timestamp.Unix(),
+			Timestamp:   sm.Timestamp,
 			Description: sm.Description,
 		}
 	}
@@ -299,7 +299,7 @@ func (a *MetricsCollectorAdapter) GetMetric(name string) (*types.Metric, bool) {
 		Type:        types.MetricType(serverMetric.Type),
 		Value:       value,
 		Labels:      serverMetric.Labels,
-		Timestamp:   serverMetric.Timestamp.Unix(),
+		Timestamp:   serverMetric.Timestamp,
 		Description: serverMetric.Description,
 	}
 

@@ -341,12 +341,25 @@ func (m *MiddlewareManager) createCustomHeadersMiddleware(headers map[string]str
 // createPrometheusHTTPMiddleware creates Prometheus HTTP middleware
 func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc {
 	return func(router *gin.Engine) error {
-		// TODO: Fix interface mismatch between server.MetricsCollector and types.MetricsCollector
-		// The prometheus collector from server package doesn't implement types.MetricsCollector properly
-		// This needs architectural changes to align the interfaces
-		logger.Logger.Info("Prometheus HTTP middleware placeholder - not yet fully integrated",
+		// Create Prometheus metrics collector
+		prometheusCollector := NewPrometheusMetricsCollector(&m.config.Prometheus)
+
+		// Create HTTP middleware configuration
+		httpConfig := middleware.DefaultPrometheusHTTPConfig()
+		httpConfig.ServiceName = m.config.ServiceName
+		httpConfig.MaxPathCardinality = m.config.Prometheus.CardinalityLimit
+
+		// Create HTTP middleware
+		prometheusMiddleware := middleware.NewPrometheusHTTPMiddleware(prometheusCollector, httpConfig)
+		router.Use(prometheusMiddleware.Middleware())
+
+		// Expose metrics endpoint
+		router.GET(m.config.Prometheus.Endpoint, gin.WrapH(prometheusCollector.GetHandler()))
+
+		logger.Logger.Info("Prometheus HTTP middleware configured",
 			zap.String("endpoint", m.config.Prometheus.Endpoint),
-			zap.String("namespace", m.config.Prometheus.Namespace))
+			zap.String("namespace", m.config.Prometheus.Namespace),
+			zap.String("service", m.config.ServiceName))
 		return nil
 	}
 }
@@ -511,19 +524,17 @@ func (m *MiddlewareManager) createGRPCRateLimitStreamInterceptor() grpc.StreamSe
 
 // createPrometheusGRPCInterceptors creates Prometheus gRPC interceptors
 func (m *MiddlewareManager) createPrometheusGRPCInterceptors() (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor) {
-	// TODO: Fix interface mismatch and implement proper Prometheus gRPC interceptors
-	// For now, create placeholder interceptors that log the configuration
-	unaryInterceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// Placeholder for Prometheus metrics collection
-		return handler(ctx, req)
-	}
+	// Create Prometheus metrics collector
+	prometheusCollector := NewPrometheusMetricsCollector(&m.config.Prometheus)
 
-	streamInterceptor := func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// Placeholder for Prometheus metrics collection
-		return handler(srv, stream)
-	}
+	// Create gRPC interceptor configuration
+	grpcConfig := middleware.DefaultPrometheusGRPCConfig()
+	grpcConfig.ServiceName = m.config.ServiceName
 
-	return unaryInterceptor, streamInterceptor
+	// Create gRPC interceptor
+	prometheusInterceptor := middleware.NewPrometheusGRPCInterceptor(prometheusCollector, grpcConfig)
+
+	return prometheusInterceptor.UnaryServerInterceptor(), prometheusInterceptor.StreamServerInterceptor()
 }
 
 // createSentryGRPCInterceptors creates Sentry gRPC interceptors
