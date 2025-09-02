@@ -33,6 +33,7 @@ on:
 
 # 设置权限
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -443,25 +444,33 @@ jobs:
   trigger-deploy:
     runs-on: ubuntu-latest
     needs: push-changes
-    if: needs.push-changes.result == 'success'
+    # 仅在非 PR 事件运行，避免 fork PR 上的 GITHUB_TOKEN 权限受限导致 403
+    if: needs.push-changes.result == 'success' && github.event_name != 'pull_request'
+    permissions:
+      actions: write
     steps:
       - name: 🚀 Trigger documentation deployment
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { data: workflow } = await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'docs-deploy.yml',
-              ref: 'master',
-              inputs: {
-                environment: 'production',
-                force_sync: 'false'
-              }
-            });
-            
-            console.log('🚀 Documentation deployment triggered');
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'docs-deploy.yml',
+                ref: 'master',
+                inputs: {
+                  environment: 'production',
+                  force_sync: 'false'
+                }
+              });
+              console.log('🚀 Documentation deployment triggered');
+            } catch (err) {
+              core.warning(`Failed to trigger docs-deploy: ${err?.status} ${err?.message}`);
+              core.warning('Ensure: 1) This job is not running on a fork PR, 2) GITHUB_TOKEN has actions: write (workflow permissions set to Read and write), 3) docs-deploy.yml has workflow_dispatch.');
+              throw err;
+            }
 
   # 发送同步报告
   send-sync-report:
