@@ -34,47 +34,10 @@ import (
 	"github.com/innovationmech/swit/pkg/types"
 )
 
-// MetricType represents different types of metrics
-type MetricType string
-
-const (
-	MetricTypeCounter   MetricType = "counter"
-	MetricTypeGauge     MetricType = "gauge"
-	MetricTypeHistogram MetricType = "histogram"
-	MetricTypeSummary   MetricType = "summary"
-)
-
-// Metric represents a single metric with its metadata
-type Metric struct {
-	Name        string            `json:"name"`
-	Type        MetricType        `json:"type"`
-	Value       interface{}       `json:"value"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	Description string            `json:"description,omitempty"`
-	Timestamp   time.Time         `json:"timestamp"`
-}
-
-// MetricsCollector defines the interface for collecting metrics
-type MetricsCollector interface {
-	// Counter operations
-	IncrementCounter(name string, labels map[string]string)
-	AddToCounter(name string, value float64, labels map[string]string)
-
-	// Gauge operations
-	SetGauge(name string, value float64, labels map[string]string)
-	IncrementGauge(name string, labels map[string]string)
-	DecrementGauge(name string, labels map[string]string)
-
-	// Histogram operations
-	ObserveHistogram(name string, value float64, labels map[string]string)
-
-	// Metric retrieval
-	GetMetrics() []Metric
-	GetMetric(name string) (*Metric, bool)
-
-	// Cleanup
-	Reset()
-}
+// Use MetricsCollector and Metric from types package to avoid duplication
+type MetricsCollector = types.MetricsCollector
+type Metric = types.Metric
+type MetricType = types.MetricType
 
 // SimpleMetricsCollector provides a basic in-memory metrics collector
 type SimpleMetricsCollector struct {
@@ -112,7 +75,7 @@ func (smc *SimpleMetricsCollector) AddToCounter(name string, value float64, labe
 		data = &metricData{
 			metric: Metric{
 				Name:      name,
-				Type:      MetricTypeCounter,
+				Type:      types.CounterType,
 				Labels:    labels,
 				Timestamp: time.Now(),
 			},
@@ -136,7 +99,7 @@ func (smc *SimpleMetricsCollector) SetGauge(name string, value float64, labels m
 		data = &metricData{
 			metric: Metric{
 				Name:      name,
-				Type:      MetricTypeGauge,
+				Type:      types.GaugeType,
 				Labels:    labels,
 				Timestamp: time.Now(),
 			},
@@ -160,7 +123,7 @@ func (smc *SimpleMetricsCollector) IncrementGauge(name string, labels map[string
 		data = &metricData{
 			metric: Metric{
 				Name:      name,
-				Type:      MetricTypeGauge,
+				Type:      types.GaugeType,
 				Labels:    labels,
 				Timestamp: time.Now(),
 			},
@@ -202,7 +165,7 @@ func (smc *SimpleMetricsCollector) ObserveHistogram(name string, value float64, 
 		data = &metricData{
 			metric: Metric{
 				Name:      name,
-				Type:      MetricTypeHistogram,
+				Type:      types.HistogramType,
 				Labels:    labels,
 				Timestamp: time.Now(),
 			},
@@ -433,7 +396,7 @@ type ObservabilityManager struct {
 	prometheusHandler PrometheusHandler
 
 	// Prometheus integration
-	prometheusCollector *PrometheusMetricsCollector
+	prometheusCollector *types.PrometheusMetricsCollector
 	metricsRegistry     *MetricsRegistry
 
 	// Business metrics
@@ -447,19 +410,22 @@ type ObservabilityManager struct {
 }
 
 // NewObservabilityManager creates a new observability manager
-func NewObservabilityManager(serviceName string, collector MetricsCollector) *ObservabilityManager {
+func NewObservabilityManager(serviceName string, prometheusConfig *PrometheusConfig, collector MetricsCollector) *ObservabilityManager {
 	// Initialize Prometheus collector and registry
-	var prometheusCollector *PrometheusMetricsCollector
+	var prometheusCollector *types.PrometheusMetricsCollector
 	if collector != nil {
 		// Try to cast to Prometheus collector
-		if pmc, ok := collector.(*PrometheusMetricsCollector); ok {
+		if pmc, ok := collector.(*types.PrometheusMetricsCollector); ok {
 			prometheusCollector = pmc
 		}
 	}
 
-	// If no Prometheus collector provided, create a default one
+	// If no Prometheus collector provided, create one with the given configuration
 	if prometheusCollector == nil {
-		prometheusCollector = NewPrometheusMetricsCollector(DefaultPrometheusConfig())
+		if prometheusConfig == nil || !prometheusConfig.Enabled {
+			prometheusConfig = types.DefaultPrometheusConfig()
+		}
+		prometheusCollector = types.NewPrometheusMetricsCollector(prometheusConfig)
 	}
 
 	metricsRegistry := NewMetricsRegistry()
@@ -650,7 +616,7 @@ func (om *ObservabilityManager) StartSystemMetricsCollection(ctx context.Context
 }
 
 // GetPrometheusCollector returns the Prometheus metrics collector for advanced usage
-func (om *ObservabilityManager) GetPrometheusCollector() *PrometheusMetricsCollector {
+func (om *ObservabilityManager) GetPrometheusCollector() *types.PrometheusMetricsCollector {
 	return om.prometheusCollector
 }
 
@@ -906,8 +872,16 @@ func (om *ObservabilityManager) RegisterPrometheusEndpoint(router *gin.Engine) {
 
 // RegisterObservabilityEndpoints registers all observability endpoints (convenience method)
 func (om *ObservabilityManager) RegisterObservabilityEndpoints(router *gin.Engine, server BusinessServerCore) {
-	// Register the main Prometheus endpoint
-	om.RegisterPrometheusEndpoint(router)
+	// Register the main Prometheus endpoint only if Prometheus middleware is not enabled
+	// to avoid duplicate route registration
+	if serverImpl, ok := server.(*BusinessServerImpl); ok {
+		if !serverImpl.config.Prometheus.Enabled {
+			om.RegisterPrometheusEndpoint(router)
+		}
+	} else {
+		// Fallback: register if we can't determine the configuration
+		om.RegisterPrometheusEndpoint(router)
+	}
 
 	// Register health endpoint
 	om.RegisterHealthEndpoint(router, server)

@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 //
 
-package server
+package types
 
 import (
 	"fmt"
@@ -37,17 +37,18 @@ import (
 	"github.com/innovationmech/swit/pkg/logger"
 )
 
-// PrometheusConfig holds configuration for Prometheus metrics integration
+// PrometheusConfig holds Prometheus metrics configuration
 type PrometheusConfig struct {
-	Enabled   bool              `yaml:"enabled" json:"enabled"`
-	Endpoint  string            `yaml:"endpoint" json:"endpoint"`
-	Namespace string            `yaml:"namespace" json:"namespace"`
-	Subsystem string            `yaml:"subsystem" json:"subsystem"`
-	Buckets   PrometheusBuckets `yaml:"buckets" json:"buckets"`
-	Labels    map[string]string `yaml:"labels" json:"labels"`
+	Enabled          bool              `yaml:"enabled" json:"enabled"`
+	Endpoint         string            `yaml:"endpoint" json:"endpoint"`
+	Namespace        string            `yaml:"namespace" json:"namespace"`
+	Subsystem        string            `yaml:"subsystem" json:"subsystem"`
+	Buckets          PrometheusBuckets `yaml:"buckets" json:"buckets"`
+	Labels           map[string]string `yaml:"labels" json:"labels"`
+	CardinalityLimit int               `yaml:"cardinality_limit" json:"cardinality_limit"`
 }
 
-// PrometheusBuckets defines bucket configurations for histograms
+// PrometheusBuckets holds histogram bucket configurations for different metric types
 type PrometheusBuckets struct {
 	Duration []float64 `yaml:"duration" json:"duration"`
 	Size     []float64 `yaml:"size" json:"size"`
@@ -64,7 +65,8 @@ func DefaultPrometheusConfig() *PrometheusConfig {
 			Duration: []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},
 			Size:     []float64{100, 1000, 10000, 100000, 1000000},
 		},
-		Labels: make(map[string]string),
+		Labels:           make(map[string]string),
+		CardinalityLimit: 10000,
 	}
 }
 
@@ -86,8 +88,13 @@ type PrometheusMetricsCollector struct {
 
 // NewPrometheusMetricsCollector creates a new Prometheus-backed metrics collector
 func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsCollector {
-	if config == nil {
+	if config == nil || !config.Enabled {
 		config = DefaultPrometheusConfig()
+	} else {
+		// Apply defaults to missing fields
+		if config.CardinalityLimit == 0 {
+			config.CardinalityLimit = 10000
+		}
 	}
 
 	registry := prometheus.NewRegistry()
@@ -99,7 +106,7 @@ func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsC
 		gauges:         make(map[string]*prometheus.GaugeVec),
 		histograms:     make(map[string]*prometheus.HistogramVec),
 		summaries:      make(map[string]*prometheus.SummaryVec),
-		maxCardinality: 10000, // Default cardinality limit
+		maxCardinality: config.CardinalityLimit,
 		currentMetrics: make(map[string]int),
 	}
 }
@@ -189,7 +196,9 @@ func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
 	// Gather metrics from Prometheus registry
 	metricFamilies, err := pmc.registry.Gather()
 	if err != nil {
-		logger.Logger.Error("Failed to gather Prometheus metrics", zap.Error(err))
+		if logger.Logger != nil {
+			logger.Logger.Error("Failed to gather Prometheus metrics", zap.Error(err))
+		}
 		return metrics
 	}
 
@@ -203,30 +212,30 @@ func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
 				labels[lp.GetName()] = lp.GetValue()
 			}
 
-			var value interface{}
+			var value any
 			var metricType MetricType
 
 			switch mf.GetType() {
 			case dto.MetricType_COUNTER:
 				value = m.GetCounter().GetValue()
-				metricType = MetricTypeCounter
+				metricType = CounterType
 			case dto.MetricType_GAUGE:
 				value = m.GetGauge().GetValue()
-				metricType = MetricTypeGauge
+				metricType = GaugeType
 			case dto.MetricType_HISTOGRAM:
 				hist := m.GetHistogram()
-				value = map[string]interface{}{
+				value = map[string]any{
 					"count": hist.GetSampleCount(),
 					"sum":   hist.GetSampleSum(),
 				}
-				metricType = MetricTypeHistogram
+				metricType = HistogramType
 			case dto.MetricType_SUMMARY:
 				summ := m.GetSummary()
-				value = map[string]interface{}{
+				value = map[string]any{
 					"count": summ.GetSampleCount(),
 					"sum":   summ.GetSampleSum(),
 				}
-				metricType = MetricTypeSummary
+				metricType = SummaryType
 			default:
 				continue
 			}
@@ -488,9 +497,11 @@ func (pmc *PrometheusMetricsCollector) checkCardinality(metricName string, label
 
 	// Simple cardinality check - in practice, you'd want more sophisticated tracking
 	if current >= 1000 { // Per-metric limit
-		logger.Logger.Warn("Metric cardinality limit approaching",
-			zap.String("metric", metricName),
-			zap.Int("current", current))
+		if logger.Logger != nil {
+			logger.Logger.Warn("Metric cardinality limit approaching",
+				zap.String("metric", metricName),
+				zap.Int("current", current))
+		}
 		return false
 	}
 
@@ -505,13 +516,17 @@ func (pmc *PrometheusMetricsCollector) checkCardinality(metricName string, label
 func (pmc *PrometheusMetricsCollector) safeMetricOperation(operation func() error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Logger.Error("Prometheus metric operation panicked",
-				zap.Any("panic", r))
+			if logger.Logger != nil {
+				logger.Logger.Error("Prometheus metric operation panicked",
+					zap.Any("panic", r))
+			}
 		}
 	}()
 
 	if err := operation(); err != nil {
-		logger.Logger.Debug("Prometheus metric operation failed",
-			zap.Error(err))
+		if logger.Logger != nil {
+			logger.Logger.Debug("Prometheus metric operation failed",
+				zap.Error(err))
+		}
 	}
 }

@@ -54,6 +54,15 @@ func TestNewServerConfig(t *testing.T) {
 	assert.False(t, config.Middleware.EnableRateLimit)
 	assert.True(t, config.Middleware.EnableLogging)
 	assert.Equal(t, 5*time.Second, config.ShutdownTimeout)
+
+	// Test Prometheus defaults
+	assert.True(t, config.Prometheus.Enabled)
+	assert.Equal(t, "/metrics", config.Prometheus.Endpoint)
+	assert.Equal(t, "swit", config.Prometheus.Namespace)
+	assert.Equal(t, "server", config.Prometheus.Subsystem)
+	assert.Equal(t, []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10}, config.Prometheus.Buckets.Duration)
+	assert.Equal(t, []float64{100, 1000, 10000, 100000, 1000000}, config.Prometheus.Buckets.Size)
+	assert.NotNil(t, config.Prometheus.Labels)
 }
 
 func TestServerConfig_SetDefaults(t *testing.T) {
@@ -188,6 +197,18 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					SamplingInitial:    0,
 					SamplingThereafter: 0,
 				},
+				Prometheus: PrometheusConfig{
+					Enabled:   true,
+					Endpoint:  "/metrics",
+					Namespace: "swit",
+					Subsystem: "server",
+					Buckets: PrometheusBuckets{
+						Duration: []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},
+						Size:     []float64{100, 1000, 10000, 100000, 1000000},
+					},
+					Labels:           make(map[string]string),
+					CardinalityLimit: 10000,
+				},
 				ShutdownTimeout: 5 * time.Second,
 			},
 		},
@@ -321,6 +342,18 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					SamplingEnabled:    false,
 					SamplingInitial:    0,
 					SamplingThereafter: 0,
+				},
+				Prometheus: PrometheusConfig{
+					Enabled:   true,
+					Endpoint:  "/metrics",
+					Namespace: "swit",
+					Subsystem: "server",
+					Buckets: PrometheusBuckets{
+						Duration: []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},
+						Size:     []float64{100, 1000, 10000, 100000, 1000000},
+					},
+					Labels:           make(map[string]string),
+					CardinalityLimit: 10000,
 				},
 				ShutdownTimeout: 5 * time.Second,
 			},
@@ -502,6 +535,81 @@ func TestServerConfig_Validate(t *testing.T) {
 				ShutdownTimeout: -1 * time.Second,
 			},
 			wantErr: "shutdown_timeout must be positive",
+		},
+		{
+			name: "prometheus enabled with missing endpoint",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Prometheus: PrometheusConfig{
+					Enabled:   true,
+					Endpoint:  "", // Empty endpoint should fail
+					Namespace: "swit",
+					Subsystem: "server",
+					Buckets: PrometheusBuckets{
+						Duration: []float64{0.1, 1.0},
+						Size:     []float64{100, 1000},
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+			wantErr: "prometheus.endpoint cannot be empty when Prometheus is enabled",
+		},
+		{
+			name: "prometheus endpoint without leading slash",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Prometheus: PrometheusConfig{
+					Enabled:   true,
+					Endpoint:  "metrics", // Missing leading slash
+					Namespace: "swit",
+					Subsystem: "server",
+					Buckets: PrometheusBuckets{
+						Duration: []float64{0.1, 1.0},
+						Size:     []float64{100, 1000},
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+			wantErr: "prometheus.endpoint must start with '/'",
+		},
+		{
+			name: "prometheus buckets not sorted",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Prometheus: PrometheusConfig{
+					Enabled:   true,
+					Endpoint:  "/metrics",
+					Namespace: "swit",
+					Subsystem: "server",
+					Buckets: PrometheusBuckets{
+						Duration: []float64{1.0, 0.1}, // Not sorted
+						Size:     []float64{100, 1000},
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+			wantErr: "prometheus.buckets.duration must be sorted in ascending order",
 		},
 	}
 

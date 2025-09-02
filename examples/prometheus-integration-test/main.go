@@ -196,13 +196,13 @@ func (d *SimpleDependencyContainer) AddService(name string, service interface{})
 	d.services[name] = service
 }
 
-// MetricsCollectorAdapter adapts server.PrometheusMetricsCollector to types.MetricsCollector
+// MetricsCollectorAdapter adapts types.PrometheusMetricsCollector to types.MetricsCollector
 type MetricsCollectorAdapter struct {
-	collector *server.PrometheusMetricsCollector
+	collector *types.PrometheusMetricsCollector
 }
 
-// NewMetricsCollectorAdapter creates a new adapter that bridges server.PrometheusMetricsCollector to types.MetricsCollector interface
-func NewMetricsCollectorAdapter(collector *server.PrometheusMetricsCollector) *MetricsCollectorAdapter {
+// NewMetricsCollectorAdapter creates a new adapter that bridges types.PrometheusMetricsCollector to types.MetricsCollector interface
+func NewMetricsCollectorAdapter(collector *types.PrometheusMetricsCollector) *MetricsCollectorAdapter {
 	return &MetricsCollectorAdapter{collector: collector}
 }
 
@@ -263,7 +263,7 @@ func (a *MetricsCollectorAdapter) GetMetrics() []types.Metric {
 			Type:        types.MetricType(sm.Type),
 			Value:       value,
 			Labels:      sm.Labels,
-			Timestamp:   sm.Timestamp.Unix(),
+			Timestamp:   sm.Timestamp,
 			Description: sm.Description,
 		}
 	}
@@ -299,7 +299,7 @@ func (a *MetricsCollectorAdapter) GetMetric(name string) (*types.Metric, bool) {
 		Type:        types.MetricType(serverMetric.Type),
 		Value:       value,
 		Labels:      serverMetric.Labels,
-		Timestamp:   serverMetric.Timestamp.Unix(),
+		Timestamp:   serverMetric.Timestamp,
 		Description: serverMetric.Description,
 	}
 
@@ -316,11 +316,11 @@ func main() {
 	logger.InitLogger()
 
 	// Create a Prometheus metrics collector for demonstration
-	prometheusConfig := server.DefaultPrometheusConfig()
+	prometheusConfig := types.DefaultPrometheusConfig()
 	prometheusConfig.Namespace = "swit_test"
 	prometheusConfig.Subsystem = "prometheus_integration"
 
-	prometheusCollector := server.NewPrometheusMetricsCollector(prometheusConfig)
+	prometheusCollector := types.NewPrometheusMetricsCollector(prometheusConfig)
 
 	// Create an adapter to make it compatible with types.MetricsCollector
 	metricsAdapter := NewMetricsCollectorAdapter(prometheusCollector)

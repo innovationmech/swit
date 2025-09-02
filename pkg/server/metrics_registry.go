@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/innovationmech/swit/pkg/types"
 )
 
 // MetricDefinition represents a metric definition with its metadata
@@ -190,19 +192,19 @@ func (mr *MetricsRegistry) ValidateMetric(definition MetricDefinition) error {
 
 	// Validate metric type
 	switch definition.Type {
-	case MetricTypeCounter, MetricTypeGauge, MetricTypeHistogram, MetricTypeSummary:
+	case types.CounterType, types.GaugeType, types.HistogramType, types.SummaryType:
 		// Valid types
 	default:
 		return fmt.Errorf("invalid metric type: %s", definition.Type)
 	}
 
 	// Validate histogram-specific fields
-	if definition.Type == MetricTypeHistogram && len(definition.Buckets) == 0 {
+	if definition.Type == types.HistogramType && len(definition.Buckets) == 0 {
 		return fmt.Errorf("histogram metric must have buckets defined")
 	}
 
 	// Validate summary-specific fields
-	if definition.Type == MetricTypeSummary && len(definition.Objectives) == 0 {
+	if definition.Type == types.SummaryType && len(definition.Objectives) == 0 {
 		return fmt.Errorf("summary metric must have objectives defined")
 	}
 
@@ -221,14 +223,14 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 	// HTTP Metrics
 	mr.predefinedMetrics["http_requests_total"] = MetricDefinition{
 		Name:        "http_requests_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of HTTP requests",
 		Labels:      []string{"method", "endpoint", "status"},
 	}
 
 	mr.predefinedMetrics["http_request_duration_seconds"] = MetricDefinition{
 		Name:        "http_request_duration_seconds",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "HTTP request duration in seconds",
 		Labels:      []string{"method", "endpoint"},
 		Buckets:     []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},
@@ -236,7 +238,7 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 
 	mr.predefinedMetrics["http_request_size_bytes"] = MetricDefinition{
 		Name:        "http_request_size_bytes",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "HTTP request size in bytes",
 		Labels:      []string{"method", "endpoint"},
 		Buckets:     []float64{100, 1000, 10000, 100000, 1000000},
@@ -244,7 +246,7 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 
 	mr.predefinedMetrics["http_response_size_bytes"] = MetricDefinition{
 		Name:        "http_response_size_bytes",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "HTTP response size in bytes",
 		Labels:      []string{"method", "endpoint"},
 		Buckets:     []float64{100, 1000, 10000, 100000, 1000000},
@@ -252,7 +254,7 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 
 	mr.predefinedMetrics["http_active_requests"] = MetricDefinition{
 		Name:        "http_active_requests",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Number of active HTTP requests",
 		Labels:      []string{},
 	}
@@ -260,21 +262,21 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 	// gRPC Metrics
 	mr.predefinedMetrics["grpc_server_started_total"] = MetricDefinition{
 		Name:        "grpc_server_started_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of gRPC calls started",
 		Labels:      []string{"method"},
 	}
 
 	mr.predefinedMetrics["grpc_server_handled_total"] = MetricDefinition{
 		Name:        "grpc_server_handled_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of gRPC calls handled",
 		Labels:      []string{"method", "code"},
 	}
 
 	mr.predefinedMetrics["grpc_server_handling_seconds"] = MetricDefinition{
 		Name:        "grpc_server_handling_seconds",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "gRPC call handling duration in seconds",
 		Labels:      []string{"method"},
 		Buckets:     []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},
@@ -282,14 +284,14 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 
 	mr.predefinedMetrics["grpc_server_msg_received_total"] = MetricDefinition{
 		Name:        "grpc_server_msg_received_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of gRPC messages received",
 		Labels:      []string{"method"},
 	}
 
 	mr.predefinedMetrics["grpc_server_msg_sent_total"] = MetricDefinition{
 		Name:        "grpc_server_msg_sent_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of gRPC messages sent",
 		Labels:      []string{"method"},
 	}
@@ -297,14 +299,14 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 	// Server Metrics
 	mr.predefinedMetrics["server_uptime_seconds"] = MetricDefinition{
 		Name:        "server_uptime_seconds",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Server uptime in seconds",
 		Labels:      []string{"service"},
 	}
 
 	mr.predefinedMetrics["server_startup_duration_seconds"] = MetricDefinition{
 		Name:        "server_startup_duration_seconds",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "Server startup duration in seconds",
 		Labels:      []string{"service"},
 		Buckets:     []float64{0.1, 0.5, 1, 2, 5, 10, 30},
@@ -312,7 +314,7 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 
 	mr.predefinedMetrics["server_shutdown_duration_seconds"] = MetricDefinition{
 		Name:        "server_shutdown_duration_seconds",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "Server shutdown duration in seconds",
 		Labels:      []string{"service"},
 		Buckets:     []float64{0.1, 0.5, 1, 2, 5, 10, 30},
@@ -320,28 +322,28 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 
 	mr.predefinedMetrics["server_goroutines"] = MetricDefinition{
 		Name:        "server_goroutines",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Number of goroutines",
 		Labels:      []string{"service"},
 	}
 
 	mr.predefinedMetrics["server_memory_bytes"] = MetricDefinition{
 		Name:        "server_memory_bytes",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Server memory usage in bytes",
 		Labels:      []string{"service", "type"},
 	}
 
 	mr.predefinedMetrics["server_gc_duration_seconds"] = MetricDefinition{
 		Name:        "server_gc_duration_seconds",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Time spent in garbage collection",
 		Labels:      []string{"service"},
 	}
 
 	mr.predefinedMetrics["server_start_time"] = MetricDefinition{
 		Name:        "server_start_time",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Server start time as unix timestamp",
 		Labels:      []string{"service"},
 	}
@@ -349,42 +351,42 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 	// Transport Metrics
 	mr.predefinedMetrics["transport_status"] = MetricDefinition{
 		Name:        "transport_status",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Transport status (1 = up, 0 = down)",
 		Labels:      []string{"transport", "status"},
 	}
 
 	mr.predefinedMetrics["transport_connections_active"] = MetricDefinition{
 		Name:        "transport_connections_active",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Number of active connections",
 		Labels:      []string{"transport"},
 	}
 
 	mr.predefinedMetrics["transport_connections_total"] = MetricDefinition{
 		Name:        "transport_connections_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of connections",
 		Labels:      []string{"transport"},
 	}
 
 	mr.predefinedMetrics["transport_starts_total"] = MetricDefinition{
 		Name:        "transport_starts_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of transport starts",
 		Labels:      []string{"service", "transport"},
 	}
 
 	mr.predefinedMetrics["transport_stops_total"] = MetricDefinition{
 		Name:        "transport_stops_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of transport stops",
 		Labels:      []string{"service", "transport"},
 	}
 
 	mr.predefinedMetrics["active_transports"] = MetricDefinition{
 		Name:        "active_transports",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Number of active transports",
 		Labels:      []string{"service", "transport"},
 	}
@@ -392,14 +394,14 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 	// Service Registration Metrics
 	mr.predefinedMetrics["service_registrations_total"] = MetricDefinition{
 		Name:        "service_registrations_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of service registrations",
 		Labels:      []string{"service", "type"},
 	}
 
 	mr.predefinedMetrics["registered_services"] = MetricDefinition{
 		Name:        "registered_services",
-		Type:        MetricTypeGauge,
+		Type:        types.GaugeType,
 		Description: "Number of registered services",
 		Labels:      []string{"service", "type"},
 	}
@@ -407,7 +409,7 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 	// Error Metrics
 	mr.predefinedMetrics["errors_total"] = MetricDefinition{
 		Name:        "errors_total",
-		Type:        MetricTypeCounter,
+		Type:        types.CounterType,
 		Description: "Total number of errors",
 		Labels:      []string{"service", "error_type", "operation"},
 	}
@@ -415,7 +417,7 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 	// Operation Metrics
 	mr.predefinedMetrics["operation_duration_seconds"] = MetricDefinition{
 		Name:        "operation_duration_seconds",
-		Type:        MetricTypeHistogram,
+		Type:        types.HistogramType,
 		Description: "Operation duration in seconds",
 		Labels:      []string{"service", "operation"},
 		Buckets:     []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10},

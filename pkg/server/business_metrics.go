@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/types"
 )
 
 // BusinessMetricsHook defines the interface for custom business metrics hooks
@@ -170,7 +171,7 @@ func (bmm *BusinessMetricsManager) RecordCounter(name string, value float64, lab
 	// Create and trigger event
 	event := BusinessMetricEvent{
 		Name:      name,
-		Type:      MetricTypeCounter,
+		Type:      types.CounterType,
 		Value:     value,
 		Labels:    labels,
 		Timestamp: time.Now(),
@@ -196,7 +197,7 @@ func (bmm *BusinessMetricsManager) RecordGauge(name string, value float64, label
 	// Create and trigger event
 	event := BusinessMetricEvent{
 		Name:      name,
-		Type:      MetricTypeGauge,
+		Type:      types.GaugeType,
 		Value:     value,
 		Labels:    labels,
 		Timestamp: time.Now(),
@@ -222,7 +223,7 @@ func (bmm *BusinessMetricsManager) RecordHistogram(name string, value float64, l
 	// Create and trigger event
 	event := BusinessMetricEvent{
 		Name:      name,
-		Type:      MetricTypeHistogram,
+		Type:      types.HistogramType,
 		Value:     value,
 		Labels:    labels,
 		Timestamp: time.Now(),
@@ -359,11 +360,11 @@ func (abmh *AggregationBusinessMetricsHook) OnMetricRecorded(event BusinessMetri
 	key := fmt.Sprintf("%s_%s", event.Source, event.Name)
 
 	switch event.Type {
-	case MetricTypeCounter:
+	case types.CounterType:
 		if value, ok := event.Value.(float64); ok {
 			abmh.counters[key] += value
 		}
-	case MetricTypeGauge:
+	case types.GaugeType:
 		if value, ok := event.Value.(float64); ok {
 			abmh.gauges[key] = value // Gauges are set, not added
 		}

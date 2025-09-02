@@ -108,7 +108,7 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		metrics:              NewPerformanceMetrics(),
 		monitor:              NewPerformanceMonitor(),
 		sentryManager:        NewSentryManager(&config.Sentry),
-		observabilityManager: NewObservabilityManager(config.ServiceName, nil),
+		observabilityManager: NewObservabilityManager(config.ServiceName, &config.Prometheus, nil),
 	}
 
 	// Add default performance monitoring hooks
@@ -552,7 +552,7 @@ func (s *BusinessServerImpl) GetObservabilityManager() *ObservabilityManager {
 }
 
 // GetPrometheusCollector returns the Prometheus metrics collector
-func (s *BusinessServerImpl) GetPrometheusCollector() *PrometheusMetricsCollector {
+func (s *BusinessServerImpl) GetPrometheusCollector() *types.PrometheusMetricsCollector {
 	if s.observabilityManager != nil {
 		return s.observabilityManager.GetPrometheusCollector()
 	}
