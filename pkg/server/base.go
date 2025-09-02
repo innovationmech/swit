@@ -552,7 +552,7 @@ func (s *BusinessServerImpl) GetObservabilityManager() *ObservabilityManager {
 }
 
 // GetPrometheusCollector returns the Prometheus metrics collector
-func (s *BusinessServerImpl) GetPrometheusCollector() *PrometheusMetricsCollector {
+func (s *BusinessServerImpl) GetPrometheusCollector() *types.PrometheusMetricsCollector {
 	if s.observabilityManager != nil {
 		return s.observabilityManager.GetPrometheusCollector()
 	}

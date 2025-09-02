@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 //
 
-package server
+package types
 
 import (
 	"fmt"
@@ -35,10 +35,24 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/innovationmech/swit/pkg/logger"
-	"github.com/innovationmech/swit/pkg/types"
 )
 
-// Note: PrometheusConfig and PrometheusBuckets are defined in config.go to avoid duplication
+// PrometheusConfig holds Prometheus metrics configuration
+type PrometheusConfig struct {
+	Enabled          bool              `yaml:"enabled" json:"enabled"`
+	Endpoint         string            `yaml:"endpoint" json:"endpoint"`
+	Namespace        string            `yaml:"namespace" json:"namespace"`
+	Subsystem        string            `yaml:"subsystem" json:"subsystem"`
+	Buckets          PrometheusBuckets `yaml:"buckets" json:"buckets"`
+	Labels           map[string]string `yaml:"labels" json:"labels"`
+	CardinalityLimit int               `yaml:"cardinality_limit" json:"cardinality_limit"`
+}
+
+// PrometheusBuckets holds histogram bucket configurations for different metric types
+type PrometheusBuckets struct {
+	Duration []float64 `yaml:"duration" json:"duration"`
+	Size     []float64 `yaml:"size" json:"size"`
+}
 
 // DefaultPrometheusConfig returns a default Prometheus configuration
 func DefaultPrometheusConfig() *PrometheusConfig {
@@ -173,16 +187,18 @@ func (pmc *PrometheusMetricsCollector) ObserveHistogram(name string, value float
 }
 
 // GetMetrics returns all collected metrics (for backward compatibility)
-func (pmc *PrometheusMetricsCollector) GetMetrics() []types.Metric {
+func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
 	pmc.mu.RLock()
 	defer pmc.mu.RUnlock()
 
-	var metrics []types.Metric
+	var metrics []Metric
 
 	// Gather metrics from Prometheus registry
 	metricFamilies, err := pmc.registry.Gather()
 	if err != nil {
-		logger.Logger.Error("Failed to gather Prometheus metrics", zap.Error(err))
+		if logger.Logger != nil {
+			logger.Logger.Error("Failed to gather Prometheus metrics", zap.Error(err))
+		}
 		return metrics
 	}
 
@@ -197,34 +213,34 @@ func (pmc *PrometheusMetricsCollector) GetMetrics() []types.Metric {
 			}
 
 			var value any
-			var metricType types.MetricType
+			var metricType MetricType
 
 			switch mf.GetType() {
 			case dto.MetricType_COUNTER:
 				value = m.GetCounter().GetValue()
-				metricType = types.CounterType
+				metricType = CounterType
 			case dto.MetricType_GAUGE:
 				value = m.GetGauge().GetValue()
-				metricType = types.GaugeType
+				metricType = GaugeType
 			case dto.MetricType_HISTOGRAM:
 				hist := m.GetHistogram()
 				value = map[string]any{
 					"count": hist.GetSampleCount(),
 					"sum":   hist.GetSampleSum(),
 				}
-				metricType = types.HistogramType
+				metricType = HistogramType
 			case dto.MetricType_SUMMARY:
 				summ := m.GetSummary()
 				value = map[string]any{
 					"count": summ.GetSampleCount(),
 					"sum":   summ.GetSampleSum(),
 				}
-				metricType = types.SummaryType
+				metricType = SummaryType
 			default:
 				continue
 			}
 
-			metrics = append(metrics, types.Metric{
+			metrics = append(metrics, Metric{
 				Name:      metricName,
 				Type:      metricType,
 				Value:     value,
@@ -238,7 +254,7 @@ func (pmc *PrometheusMetricsCollector) GetMetrics() []types.Metric {
 }
 
 // GetMetric returns a specific metric by name (for backward compatibility)
-func (pmc *PrometheusMetricsCollector) GetMetric(name string) (*types.Metric, bool) {
+func (pmc *PrometheusMetricsCollector) GetMetric(name string) (*Metric, bool) {
 	metrics := pmc.GetMetrics()
 	for _, metric := range metrics {
 		if metric.Name == name {
@@ -481,9 +497,11 @@ func (pmc *PrometheusMetricsCollector) checkCardinality(metricName string, label
 
 	// Simple cardinality check - in practice, you'd want more sophisticated tracking
 	if current >= 1000 { // Per-metric limit
-		logger.Logger.Warn("Metric cardinality limit approaching",
-			zap.String("metric", metricName),
-			zap.Int("current", current))
+		if logger.Logger != nil {
+			logger.Logger.Warn("Metric cardinality limit approaching",
+				zap.String("metric", metricName),
+				zap.Int("current", current))
+		}
 		return false
 	}
 
@@ -498,13 +516,17 @@ func (pmc *PrometheusMetricsCollector) checkCardinality(metricName string, label
 func (pmc *PrometheusMetricsCollector) safeMetricOperation(operation func() error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Logger.Error("Prometheus metric operation panicked",
-				zap.Any("panic", r))
+			if logger.Logger != nil {
+				logger.Logger.Error("Prometheus metric operation panicked",
+					zap.Any("panic", r))
+			}
 		}
 	}()
 
 	if err := operation(); err != nil {
-		logger.Logger.Debug("Prometheus metric operation failed",
-			zap.Error(err))
+		if logger.Logger != nil {
+			logger.Logger.Debug("Prometheus metric operation failed",
+				zap.Error(err))
+		}
 	}
 }

@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package server
+package types
 
 import (
 	"fmt"
@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/innovationmech/swit/pkg/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 )
@@ -103,7 +102,7 @@ func TestPrometheusMetricsCollector_CounterOperations(t *testing.T) {
 		for _, metric := range metrics {
 			if strings.Contains(metric.Name, "test_counter") {
 				found = true
-				assert.Equal(t, types.CounterType, metric.Type)
+				assert.Equal(t, CounterType, metric.Type)
 				assert.Equal(t, 2.0, metric.Value)
 				break
 			}
@@ -160,7 +159,7 @@ func TestPrometheusMetricsCollector_GaugeOperations(t *testing.T) {
 		for _, metric := range metrics {
 			if strings.Contains(metric.Name, "test_gauge") {
 				found = true
-				assert.Equal(t, types.GaugeType, metric.Type)
+				assert.Equal(t, GaugeType, metric.Type)
 				assert.Equal(t, 100.0, metric.Value)
 				break
 			}
@@ -222,7 +221,7 @@ func TestPrometheusMetricsCollector_HistogramOperations(t *testing.T) {
 		for _, metric := range metrics {
 			if strings.Contains(metric.Name, "test_duration") {
 				found = true
-				assert.Equal(t, types.HistogramType, metric.Type)
+				assert.Equal(t, HistogramType, metric.Type)
 
 				// Check histogram structure
 				histData, ok := metric.Value.(map[string]interface{})
@@ -351,15 +350,15 @@ func TestPrometheusMetricsCollector_GetMetrics(t *testing.T) {
 	for _, metric := range metrics {
 		if strings.Contains(metric.Name, "test_counter") {
 			counterFound = true
-			assert.Equal(t, types.CounterType, metric.Type)
+			assert.Equal(t, CounterType, metric.Type)
 		}
 		if strings.Contains(metric.Name, "test_gauge") {
 			gaugeFound = true
-			assert.Equal(t, types.GaugeType, metric.Type)
+			assert.Equal(t, GaugeType, metric.Type)
 		}
 		if strings.Contains(metric.Name, "test_histogram") {
 			histogramFound = true
-			assert.Equal(t, types.HistogramType, metric.Type)
+			assert.Equal(t, HistogramType, metric.Type)
 		}
 	}
 
@@ -565,11 +564,11 @@ func TestPrometheusMetricsCollector_MetricTypeConversion(t *testing.T) {
 		typeMap[metric.Type] = true
 
 		switch metric.Type {
-		case types.CounterType:
+		case CounterType:
 			assert.IsType(t, float64(0), metric.Value, "Counter value should be float64")
-		case types.GaugeType:
+		case GaugeType:
 			assert.IsType(t, float64(0), metric.Value, "Gauge value should be float64")
-		case types.HistogramType:
+		case HistogramType:
 			histValue, ok := metric.Value.(map[string]interface{})
 			assert.True(t, ok, "Histogram value should be a map")
 			assert.Contains(t, histValue, "count")
@@ -578,9 +577,9 @@ func TestPrometheusMetricsCollector_MetricTypeConversion(t *testing.T) {
 	}
 
 	// Verify we got the expected types
-	assert.True(t, typeMap[types.CounterType], "Should have counter metrics")
-	assert.True(t, typeMap[types.GaugeType], "Should have gauge metrics")
-	assert.True(t, typeMap[types.HistogramType], "Should have histogram metrics")
+	assert.True(t, typeMap[CounterType], "Should have counter metrics")
+	assert.True(t, typeMap[GaugeType], "Should have gauge metrics")
+	assert.True(t, typeMap[HistogramType], "Should have histogram metrics")
 }
 
 func TestPrometheusMetricsCollector_DoubleRegistrationPrevention(t *testing.T) {

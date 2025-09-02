@@ -33,6 +33,7 @@ import (
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -342,7 +343,7 @@ func (m *MiddlewareManager) createCustomHeadersMiddleware(headers map[string]str
 func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc {
 	return func(router *gin.Engine) error {
 		// Create Prometheus metrics collector
-		prometheusCollector := NewPrometheusMetricsCollector(&m.config.Prometheus)
+		prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
 
 		// Create HTTP middleware configuration
 		httpConfig := middleware.DefaultPrometheusHTTPConfig()
@@ -525,7 +526,7 @@ func (m *MiddlewareManager) createGRPCRateLimitStreamInterceptor() grpc.StreamSe
 // createPrometheusGRPCInterceptors creates Prometheus gRPC interceptors
 func (m *MiddlewareManager) createPrometheusGRPCInterceptors() (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor) {
 	// Create Prometheus metrics collector
-	prometheusCollector := NewPrometheusMetricsCollector(&m.config.Prometheus)
+	prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
 
 	// Create gRPC interceptor configuration
 	grpcConfig := middleware.DefaultPrometheusGRPCConfig()

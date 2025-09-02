@@ -396,7 +396,7 @@ type ObservabilityManager struct {
 	prometheusHandler PrometheusHandler
 
 	// Prometheus integration
-	prometheusCollector *PrometheusMetricsCollector
+	prometheusCollector *types.PrometheusMetricsCollector
 	metricsRegistry     *MetricsRegistry
 
 	// Business metrics
@@ -412,10 +412,10 @@ type ObservabilityManager struct {
 // NewObservabilityManager creates a new observability manager
 func NewObservabilityManager(serviceName string, prometheusConfig *PrometheusConfig, collector MetricsCollector) *ObservabilityManager {
 	// Initialize Prometheus collector and registry
-	var prometheusCollector *PrometheusMetricsCollector
+	var prometheusCollector *types.PrometheusMetricsCollector
 	if collector != nil {
 		// Try to cast to Prometheus collector
-		if pmc, ok := collector.(*PrometheusMetricsCollector); ok {
+		if pmc, ok := collector.(*types.PrometheusMetricsCollector); ok {
 			prometheusCollector = pmc
 		}
 	}
@@ -423,9 +423,9 @@ func NewObservabilityManager(serviceName string, prometheusConfig *PrometheusCon
 	// If no Prometheus collector provided, create one with the given configuration
 	if prometheusCollector == nil {
 		if prometheusConfig == nil || !prometheusConfig.Enabled {
-			prometheusConfig = DefaultPrometheusConfig()
+			prometheusConfig = types.DefaultPrometheusConfig()
 		}
-		prometheusCollector = NewPrometheusMetricsCollector(prometheusConfig)
+		prometheusCollector = types.NewPrometheusMetricsCollector(prometheusConfig)
 	}
 
 	metricsRegistry := NewMetricsRegistry()
@@ -616,7 +616,7 @@ func (om *ObservabilityManager) StartSystemMetricsCollection(ctx context.Context
 }
 
 // GetPrometheusCollector returns the Prometheus metrics collector for advanced usage
-func (om *ObservabilityManager) GetPrometheusCollector() *PrometheusMetricsCollector {
+func (om *ObservabilityManager) GetPrometheusCollector() *types.PrometheusMetricsCollector {
 	return om.prometheusCollector
 }
 

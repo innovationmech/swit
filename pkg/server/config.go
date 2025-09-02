@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/innovationmech/swit/pkg/types"
 )
 
 // ServerConfig holds the complete configuration for a base server instance
@@ -220,22 +222,10 @@ type LoggingConfig struct {
 	SamplingThereafter int      `yaml:"sampling_thereafter" json:"sampling_thereafter"`
 }
 
-// PrometheusConfig holds Prometheus metrics configuration
-type PrometheusConfig struct {
-	Enabled          bool              `yaml:"enabled" json:"enabled"`
-	Endpoint         string            `yaml:"endpoint" json:"endpoint"`
-	Namespace        string            `yaml:"namespace" json:"namespace"`
-	Subsystem        string            `yaml:"subsystem" json:"subsystem"`
-	Buckets          PrometheusBuckets `yaml:"buckets" json:"buckets"`
-	Labels           map[string]string `yaml:"labels" json:"labels"`
-	CardinalityLimit int               `yaml:"cardinality_limit" json:"cardinality_limit"`
-}
-
-// PrometheusBuckets holds histogram bucket configurations for different metric types
-type PrometheusBuckets struct {
-	Duration []float64 `yaml:"duration" json:"duration"`
-	Size     []float64 `yaml:"size" json:"size"`
-}
+// PrometheusConfig is now defined in types package to avoid circular dependencies
+// Use types.PrometheusConfig instead
+type PrometheusConfig = types.PrometheusConfig
+type PrometheusBuckets = types.PrometheusBuckets
 
 // NewServerConfig creates a new ServerConfig with default values
 func NewServerConfig() *ServerConfig {
