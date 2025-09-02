@@ -459,7 +459,7 @@ func NewObservabilityManager(serviceName string, prometheusConfig *PrometheusCon
 
 	// If no Prometheus collector provided, create one with the given configuration
 	if prometheusCollector == nil {
-		if prometheusConfig == nil {
+		if prometheusConfig == nil || !prometheusConfig.Enabled {
 			prometheusConfig = DefaultPrometheusConfig()
 		}
 		prometheusCollector = NewPrometheusMetricsCollector(prometheusConfig)

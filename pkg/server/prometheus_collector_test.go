@@ -293,6 +293,7 @@ func TestPrometheusMetricsCollector_MetricNamingAndLabels(t *testing.T) {
 
 func TestPrometheusMetricsCollector_BucketSelection(t *testing.T) {
 	config := &PrometheusConfig{
+		Enabled: true,
 		Buckets: PrometheusBuckets{
 			Duration: []float64{0.1, 0.5, 1.0},
 			Size:     []float64{1000, 5000, 10000},

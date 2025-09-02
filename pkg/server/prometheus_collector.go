@@ -86,7 +86,7 @@ type PrometheusMetricsCollector struct {
 
 // NewPrometheusMetricsCollector creates a new Prometheus-backed metrics collector
 func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsCollector {
-	if config == nil {
+	if config == nil || !config.Enabled {
 		config = DefaultPrometheusConfig()
 	}
 
