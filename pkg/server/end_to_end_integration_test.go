@@ -210,12 +210,6 @@ func (suite *EndToEndTestSuite) createTestServer(serviceName string, httpPort, g
 			"service": serviceName,
 		})
 	})
-	httpHandler.AddRoute("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "healthy",
-			"service": serviceName,
-		})
-	})
 	service.AddHTTPHandler(httpHandler)
 
 	// Add gRPC service

@@ -440,7 +440,10 @@ type ObservabilityManager struct {
 	businessMetricsManager *BusinessMetricsManager
 
 	// System metrics tracking
-	mu sync.RWMutex
+	mu            sync.RWMutex
+	lastMemStats  runtime.MemStats
+	lastMemUpdate time.Time
+	memStatsCache time.Duration // Cache duration for memory stats
 }
 
 // NewObservabilityManager creates a new observability manager
@@ -469,6 +472,7 @@ func NewObservabilityManager(serviceName string, collector MetricsCollector) *Ob
 		prometheusCollector:    prometheusCollector,
 		metricsRegistry:        metricsRegistry,
 		businessMetricsManager: NewBusinessMetricsManager(serviceName, prometheusCollector, metricsRegistry),
+		memStatsCache:          5 * time.Second, // Cache memory stats for 5 seconds
 	}
 
 	// Set the Prometheus handler
@@ -567,56 +571,62 @@ func (om *ObservabilityManager) RecordServiceRegistration(serviceName, serviceTy
 	om.metrics.RecordServiceRegistration(serviceName, serviceType)
 }
 
+// getCachedMemStats returns cached memory stats or fetches new ones if cache is expired
+func (om *ObservabilityManager) getCachedMemStats() runtime.MemStats {
+	now := time.Now()
+
+	// Check if cache is still valid
+	if !om.lastMemUpdate.IsZero() && now.Sub(om.lastMemUpdate) < om.memStatsCache {
+		return om.lastMemStats
+	}
+
+	// Cache is expired, fetch new stats
+	runtime.ReadMemStats(&om.lastMemStats)
+	om.lastMemUpdate = now
+
+	return om.lastMemStats
+}
+
+// createLabelsWithType creates a copy of base labels with an added type label
+func createLabelsWithType(baseLabels map[string]string, labelType string) map[string]string {
+	labels := make(map[string]string, len(baseLabels)+1)
+	for k, v := range baseLabels {
+		labels[k] = v
+	}
+	labels["type"] = labelType
+	return labels
+}
+
 // UpdateSystemMetrics updates system performance metrics (memory, goroutines, GC, uptime)
 func (om *ObservabilityManager) UpdateSystemMetrics() {
 	om.mu.Lock()
 	defer om.mu.Unlock()
 
-	labels := map[string]string{"service": om.serviceName}
+	baseLabels := map[string]string{"service": om.serviceName}
 
-	// Get memory stats
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
+	// Get cached memory stats to avoid expensive runtime.ReadMemStats calls
+	memStats := om.getCachedMemStats()
 
-	// Update memory metrics with different types
-	memoryLabels := map[string]string{"service": om.serviceName}
+	// Update memory metrics with different types using helper function
+	om.prometheusCollector.SetGauge("memory_bytes", float64(memStats.Alloc),
+		createLabelsWithType(baseLabels, "alloc"))
 
-	// Allocated memory
-	allocLabels := make(map[string]string)
-	for k, v := range memoryLabels {
-		allocLabels[k] = v
-	}
-	allocLabels["type"] = "alloc"
-	om.prometheusCollector.SetGauge("server_memory_bytes", float64(memStats.Alloc), allocLabels)
+	om.prometheusCollector.SetGauge("memory_bytes", float64(memStats.Sys),
+		createLabelsWithType(baseLabels, "sys"))
 
-	// System memory
-	sysLabels := make(map[string]string)
-	for k, v := range memoryLabels {
-		sysLabels[k] = v
-	}
-	sysLabels["type"] = "sys"
-	om.prometheusCollector.SetGauge("server_memory_bytes", float64(memStats.Sys), sysLabels)
-
-	// Total allocated memory
-	totalAllocLabels := make(map[string]string)
-	for k, v := range memoryLabels {
-		totalAllocLabels[k] = v
-	}
-	totalAllocLabels["type"] = "total_alloc"
-	om.prometheusCollector.SetGauge("server_memory_bytes", float64(memStats.TotalAlloc), totalAllocLabels)
+	om.prometheusCollector.SetGauge("memory_bytes", float64(memStats.TotalAlloc),
+		createLabelsWithType(baseLabels, "total_alloc"))
 
 	// Update goroutine count
-	om.prometheusCollector.SetGauge("server_goroutines", float64(runtime.NumGoroutine()), labels)
+	om.prometheusCollector.SetGauge("goroutines", float64(runtime.NumGoroutine()), baseLabels)
 
 	// Update GC metrics
 	gcDuration := time.Duration(memStats.PauseTotalNs).Seconds()
-	om.prometheusCollector.SetGauge("server_gc_duration_seconds", gcDuration, labels)
+	om.prometheusCollector.SetGauge("gc_duration_seconds", gcDuration, baseLabels)
 
 	// Update uptime
 	uptime := time.Since(om.startTime).Seconds()
-	om.prometheusCollector.SetGauge("server_uptime_seconds", uptime, labels)
-
-	// The Prometheus metrics are already updated above, no need for legacy method
+	om.prometheusCollector.SetGauge("uptime_seconds", uptime, baseLabels)
 }
 
 // StartSystemMetricsCollection starts periodic collection of system metrics

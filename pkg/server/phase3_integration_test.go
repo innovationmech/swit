@@ -23,6 +23,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -36,10 +37,13 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 	config := &ServerConfig{
 		ServiceName: "test-phase3-service",
 		HTTP: HTTPConfig{
-			Port:        "0", // Dynamic port allocation
-			Enabled:     true,
-			TestMode:    true,
-			EnableReady: true,
+			Port:         "0", // Dynamic port allocation
+			Enabled:      true,
+			TestMode:     true,
+			EnableReady:  true,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  60 * time.Second,
 		},
 		GRPC: GRPCConfig{
 			Port:    "0",   // Dynamic port allocation
@@ -87,7 +91,7 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 		assert.NotEmpty(t, httpAddr)
 
 		// Test Prometheus metrics endpoint
-		resp, err := http.Get("http://localhost" + httpAddr + "/metrics")
+		resp, err := http.Get(fmt.Sprintf("http://%s/metrics", httpAddr))
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -95,7 +99,7 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 		assert.Contains(t, resp.Header.Get("Content-Type"), "text/plain")
 
 		// Test debug endpoints
-		debugResp, err := http.Get("http://localhost" + httpAddr + "/debug/status")
+		debugResp, err := http.Get(fmt.Sprintf("http://%s/debug/status", httpAddr))
 		require.NoError(t, err)
 		defer debugResp.Body.Close()
 
@@ -103,7 +107,7 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 		assert.Contains(t, debugResp.Header.Get("Content-Type"), "application/json")
 
 		// Test health endpoint
-		healthResp, err := http.Get("http://localhost" + httpAddr + "/health")
+		healthResp, err := http.Get(fmt.Sprintf("http://%s/health", httpAddr))
 		require.NoError(t, err)
 		defer healthResp.Body.Close()
 

@@ -60,6 +60,7 @@ type BusinessMetricsManager struct {
 	// Hook management
 	mu          sync.RWMutex
 	hooksByName map[string]BusinessMetricsHook
+	hookSem     chan struct{} // Semaphore to limit concurrent hook executions
 }
 
 // NewBusinessMetricsManager creates a new business metrics manager
@@ -77,6 +78,7 @@ func NewBusinessMetricsManager(serviceName string, collector MetricsCollector, r
 		serviceName: serviceName,
 		hooks:       make([]BusinessMetricsHook, 0),
 		hooksByName: make(map[string]BusinessMetricsHook),
+		hookSem:     make(chan struct{}, 10), // Limit to 10 concurrent hook executions
 	}
 }
 
@@ -281,10 +283,14 @@ func (bmm *BusinessMetricsManager) triggerHooks(event BusinessMetricEvent) {
 	copy(hooks, bmm.hooks)
 	bmm.mu.RUnlock()
 
-	// Trigger hooks concurrently to avoid blocking
+	// Trigger hooks concurrently to avoid blocking, with concurrency control
 	for _, hook := range hooks {
 		go func(h BusinessMetricsHook) {
+			// Acquire semaphore before executing hook
+			bmm.hookSem <- struct{}{}
 			defer func() {
+				// Release semaphore and handle panics
+				<-bmm.hookSem
 				if r := recover(); r != nil {
 					logger.Logger.Error("Business metrics hook panicked",
 						zap.String("hook_name", h.GetHookName()),

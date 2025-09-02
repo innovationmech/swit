@@ -343,9 +343,6 @@ func (suite *IntegrationTestSuite) SetupTest() {
 	httpHandler.AddRoute("/test", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "test response"})
 	})
-	httpHandler.AddRoute("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
-	})
 	suite.testService.AddHTTPHandler(httpHandler)
 
 	// Add test gRPC service
