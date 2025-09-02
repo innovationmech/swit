@@ -887,7 +887,7 @@ func TestMetricsServerStream_SendRecvMsg(t *testing.T) {
 	t.Run("RecvMsg", func(t *testing.T) {
 		collector.Reset()
 		atomic.StoreInt64(&wrappedStream.receivedCount, 0) // Reset receivedCount from previous tests
-		mockStream.setSendError(nil)    // Reset error
+		mockStream.setSendError(nil)                       // Reset error
 
 		mockStream.addRecvMsg("message")
 
@@ -1262,7 +1262,7 @@ func TestPrometheusGRPCInterceptor_AtomicMessageCounting(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				
+
 				// Each goroutine gets its own mock to avoid race conditions in test mock
 				mockStream := newMockServerStream(ctx)
 				wrappedStream := &metricsServerStream{
@@ -1272,12 +1272,12 @@ func TestPrometheusGRPCInterceptor_AtomicMessageCounting(t *testing.T) {
 					sentCount:     0,
 					receivedCount: 0,
 				}
-				
+
 				// Send messages
 				for j := 0; j < numOperations/10; j++ {
 					wrappedStream.SendMsg(&struct{}{})
 				}
-				
+
 				// Atomically add to total
 				atomic.AddInt64(&totalSent, atomic.LoadInt64(&wrappedStream.sentCount))
 			}()
@@ -1298,15 +1298,15 @@ func TestPrometheusGRPCInterceptor_AtomicMessageCounting(t *testing.T) {
 			wg.Add(1)
 			go func(goroutineID int) {
 				defer wg.Done()
-				
+
 				// Each goroutine gets its own mock to avoid race conditions in test mock
 				mockStream := newMockServerStream(ctx)
-				
+
 				// Pre-populate with messages for this goroutine
 				for k := 0; k < numOperations/10; k++ {
 					mockStream.addRecvMsg(fmt.Sprintf("msg-%d-%d", goroutineID, k))
 				}
-				
+
 				wrappedStream := &metricsServerStream{
 					ServerStream:  mockStream,
 					method:        "/test.TestService/AtomicTest",
@@ -1314,13 +1314,13 @@ func TestPrometheusGRPCInterceptor_AtomicMessageCounting(t *testing.T) {
 					sentCount:     0,
 					receivedCount: 0,
 				}
-				
+
 				// Receive messages
 				for j := 0; j < numOperations/10; j++ {
 					var msg interface{}
 					wrappedStream.RecvMsg(&msg)
 				}
-				
+
 				// Atomically add to total
 				atomic.AddInt64(&totalReceived, atomic.LoadInt64(&wrappedStream.receivedCount))
 			}(i)
