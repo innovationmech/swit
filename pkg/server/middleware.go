@@ -134,6 +134,15 @@ func (m *MiddlewareManager) ConfigureHTTPMiddleware(router *gin.Engine) error {
 		logger.Logger.Debug("Custom headers middleware configured", zap.Any("headers", middlewareConfig.CustomHeaders))
 	}
 
+	// Configure Prometheus middleware if enabled
+	if m.config.Prometheus.Enabled {
+		prometheusMiddleware := m.createPrometheusHTTPMiddleware()
+		if err := prometheusMiddleware(router); err != nil {
+			return fmt.Errorf("failed to configure Prometheus middleware: %w", err)
+		}
+		logger.Logger.Debug("Prometheus HTTP middleware configured")
+	}
+
 	// Configure Sentry middleware if enabled
 	if m.config.Sentry.Enabled && m.config.Sentry.IntegrateHTTP {
 		sentryMiddleware := m.createSentryHTTPMiddleware()
@@ -156,6 +165,7 @@ func (m *MiddlewareManager) ConfigureHTTPMiddleware(router *gin.Engine) error {
 		zap.Bool("rate_limit", middlewareConfig.EnableRateLimit),
 		zap.Bool("logging", middlewareConfig.EnableLogging),
 		zap.Bool("timeout", middlewareConfig.EnableTimeout),
+		zap.Bool("prometheus", m.config.Prometheus.Enabled),
 		zap.Bool("sentry", m.config.Sentry.Enabled && m.config.Sentry.IntegrateHTTP),
 		zap.Int("custom_middleware_count", len(m.httpMiddlewares)))
 
@@ -193,6 +203,14 @@ func (m *MiddlewareManager) GetGRPCInterceptors() ([]grpc.UnaryServerInterceptor
 		logger.Logger.Debug("gRPC metrics interceptors configured")
 	}
 
+	// Add Prometheus interceptors if enabled
+	if m.config.Prometheus.Enabled {
+		prometheusUnaryInterceptor, prometheusStreamInterceptor := m.createPrometheusGRPCInterceptors()
+		unaryInterceptors = append(unaryInterceptors, prometheusUnaryInterceptor)
+		streamInterceptors = append(streamInterceptors, prometheusStreamInterceptor)
+		logger.Logger.Debug("Prometheus gRPC interceptors configured")
+	}
+
 	// Add authentication interceptor
 	if interceptorConfig.EnableAuth {
 		unaryInterceptors = append(unaryInterceptors, m.createGRPCAuthUnaryInterceptor())
@@ -223,6 +241,7 @@ func (m *MiddlewareManager) GetGRPCInterceptors() ([]grpc.UnaryServerInterceptor
 		zap.Bool("recovery", interceptorConfig.EnableRecovery),
 		zap.Bool("logging", interceptorConfig.EnableLogging),
 		zap.Bool("metrics", interceptorConfig.EnableMetrics),
+		zap.Bool("prometheus", m.config.Prometheus.Enabled),
 		zap.Bool("auth", interceptorConfig.EnableAuth),
 		zap.Bool("rate_limit", interceptorConfig.EnableRateLimit),
 		zap.Bool("sentry", m.config.Sentry.Enabled && m.config.Sentry.IntegrateGRPC),
@@ -315,6 +334,19 @@ func (m *MiddlewareManager) createCustomHeadersMiddleware(headers map[string]str
 			c.Next()
 		}
 		router.Use(headersMiddleware)
+		return nil
+	}
+}
+
+// createPrometheusHTTPMiddleware creates Prometheus HTTP middleware
+func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc {
+	return func(router *gin.Engine) error {
+		// TODO: Fix interface mismatch between server.MetricsCollector and types.MetricsCollector
+		// The prometheus collector from server package doesn't implement types.MetricsCollector properly
+		// This needs architectural changes to align the interfaces
+		logger.Logger.Info("Prometheus HTTP middleware placeholder - not yet fully integrated",
+			zap.String("endpoint", m.config.Prometheus.Endpoint),
+			zap.String("namespace", m.config.Prometheus.Namespace))
 		return nil
 	}
 }
@@ -475,6 +507,23 @@ func (m *MiddlewareManager) createGRPCRateLimitStreamInterceptor() grpc.StreamSe
 		// This would typically use a rate limiter similar to HTTP middleware
 		return handler(srv, stream)
 	}
+}
+
+// createPrometheusGRPCInterceptors creates Prometheus gRPC interceptors
+func (m *MiddlewareManager) createPrometheusGRPCInterceptors() (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor) {
+	// TODO: Fix interface mismatch and implement proper Prometheus gRPC interceptors
+	// For now, create placeholder interceptors that log the configuration
+	unaryInterceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Placeholder for Prometheus metrics collection
+		return handler(ctx, req)
+	}
+
+	streamInterceptor := func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		// Placeholder for Prometheus metrics collection
+		return handler(srv, stream)
+	}
+
+	return unaryInterceptor, streamInterceptor
 }
 
 // createSentryGRPCInterceptors creates Sentry gRPC interceptors

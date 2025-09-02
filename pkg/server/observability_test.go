@@ -331,7 +331,7 @@ func TestServerMetrics_RecordMethods(t *testing.T) {
 
 func TestNewObservabilityManager(t *testing.T) {
 	collector := NewSimpleMetricsCollector()
-	manager := NewObservabilityManager("test-service", collector)
+	manager := NewObservabilityManager("test-service", nil, collector)
 
 	assert.NotNil(t, manager)
 	assert.Equal(t, "test-service", manager.serviceName)
@@ -340,7 +340,7 @@ func TestNewObservabilityManager(t *testing.T) {
 }
 
 func TestObservabilityManager_SetMethods(t *testing.T) {
-	manager := NewObservabilityManager("test-service", nil)
+	manager := NewObservabilityManager("test-service", nil, nil)
 
 	t.Run("SetVersion", func(t *testing.T) {
 		manager.SetVersion("1.0.0")
@@ -442,7 +442,7 @@ func (m *MockBusinessServer) GetPerformanceMonitor() *PerformanceMonitor {
 }
 
 func TestObservabilityManager_GetServerStatus(t *testing.T) {
-	manager := NewObservabilityManager("test-service", NewSimpleMetricsCollector())
+	manager := NewObservabilityManager("test-service", nil, NewSimpleMetricsCollector())
 	manager.SetVersion("1.0.0")
 	manager.SetBuildInfo(map[string]string{"commit": "abc123"})
 
@@ -490,7 +490,7 @@ func TestObservabilityManager_RegisterDebugEndpoints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	manager := NewObservabilityManager("test-service", nil)
+	manager := NewObservabilityManager("test-service", nil, nil)
 	manager.SetVersion("1.0.0")
 
 	mockServer := new(MockBusinessServer)
@@ -548,7 +548,7 @@ func TestObservabilityManager_RegisterHealthEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
-	manager := NewObservabilityManager("test-service", nil)
+	manager := NewObservabilityManager("test-service", nil, nil)
 	manager.SetVersion("1.0.0")
 
 	t.Run("healthy server", func(t *testing.T) {
@@ -650,7 +650,7 @@ func TestMetricTypes(t *testing.T) {
 }
 
 func TestSystemInfo(t *testing.T) {
-	manager := NewObservabilityManager("test-service", nil)
+	manager := NewObservabilityManager("test-service", nil, nil)
 	status := manager.GetServerStatus(nil)
 
 	assert.NotEmpty(t, status.SystemInfo.GoVersion)
@@ -666,7 +666,7 @@ func TestSystemInfo(t *testing.T) {
 
 func TestObservabilityManager_GetMetrics(t *testing.T) {
 	collector := NewSimpleMetricsCollector()
-	manager := NewObservabilityManager("test-service", collector)
+	manager := NewObservabilityManager("test-service", nil, collector)
 
 	// Add some test metrics
 	collector.IncrementCounter("test_counter", map[string]string{"label": "value"})

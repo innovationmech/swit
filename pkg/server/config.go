@@ -40,6 +40,7 @@ type ServerConfig struct {
 	Middleware      MiddlewareConfig `yaml:"middleware" json:"middleware"`
 	Sentry          SentryConfig     `yaml:"sentry" json:"sentry"`
 	Logging         LoggingConfig    `yaml:"logging" json:"logging"`
+	Prometheus      PrometheusConfig `yaml:"prometheus" json:"prometheus"`
 	ShutdownTimeout time.Duration    `yaml:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
@@ -442,6 +443,27 @@ func (c *ServerConfig) SetDefaults() {
 		c.Logging.SamplingThereafter = 100
 	}
 
+	// Prometheus defaults
+	c.Prometheus.Enabled = true
+	if c.Prometheus.Endpoint == "" {
+		c.Prometheus.Endpoint = "/metrics"
+	}
+	if c.Prometheus.Namespace == "" {
+		c.Prometheus.Namespace = "swit"
+	}
+	if c.Prometheus.Subsystem == "" {
+		c.Prometheus.Subsystem = "server"
+	}
+	if len(c.Prometheus.Buckets.Duration) == 0 {
+		c.Prometheus.Buckets.Duration = []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10}
+	}
+	if len(c.Prometheus.Buckets.Size) == 0 {
+		c.Prometheus.Buckets.Size = []float64{100, 1000, 10000, 100000, 1000000}
+	}
+	if c.Prometheus.Labels == nil {
+		c.Prometheus.Labels = make(map[string]string)
+	}
+
 	// Server defaults
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 5 * time.Second
@@ -662,6 +684,42 @@ func (c *ServerConfig) Validate() error {
 		}
 		if c.Logging.SamplingThereafter <= 0 {
 			return fmt.Errorf("logging.sampling_thereafter must be positive when sampling is enabled")
+		}
+	}
+
+	// Validate Prometheus configuration
+	if c.Prometheus.Enabled {
+		if c.Prometheus.Endpoint == "" {
+			return fmt.Errorf("prometheus.endpoint cannot be empty when Prometheus is enabled")
+		}
+		if !strings.HasPrefix(c.Prometheus.Endpoint, "/") {
+			return fmt.Errorf("prometheus.endpoint must start with '/'")
+		}
+		if c.Prometheus.Namespace == "" {
+			return fmt.Errorf("prometheus.namespace cannot be empty when Prometheus is enabled")
+		}
+		if c.Prometheus.Subsystem == "" {
+			return fmt.Errorf("prometheus.subsystem cannot be empty when Prometheus is enabled")
+		}
+
+		// Validate buckets
+		if len(c.Prometheus.Buckets.Duration) == 0 {
+			return fmt.Errorf("prometheus.buckets.duration cannot be empty")
+		}
+		if len(c.Prometheus.Buckets.Size) == 0 {
+			return fmt.Errorf("prometheus.buckets.size cannot be empty")
+		}
+
+		// Validate that buckets are sorted
+		for i := 1; i < len(c.Prometheus.Buckets.Duration); i++ {
+			if c.Prometheus.Buckets.Duration[i] <= c.Prometheus.Buckets.Duration[i-1] {
+				return fmt.Errorf("prometheus.buckets.duration must be sorted in ascending order")
+			}
+		}
+		for i := 1; i < len(c.Prometheus.Buckets.Size); i++ {
+			if c.Prometheus.Buckets.Size[i] <= c.Prometheus.Buckets.Size[i-1] {
+				return fmt.Errorf("prometheus.buckets.size must be sorted in ascending order")
+			}
 		}
 	}
 

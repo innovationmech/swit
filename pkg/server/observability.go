@@ -447,7 +447,7 @@ type ObservabilityManager struct {
 }
 
 // NewObservabilityManager creates a new observability manager
-func NewObservabilityManager(serviceName string, collector MetricsCollector) *ObservabilityManager {
+func NewObservabilityManager(serviceName string, prometheusConfig *PrometheusConfig, collector MetricsCollector) *ObservabilityManager {
 	// Initialize Prometheus collector and registry
 	var prometheusCollector *PrometheusMetricsCollector
 	if collector != nil {
@@ -457,9 +457,12 @@ func NewObservabilityManager(serviceName string, collector MetricsCollector) *Ob
 		}
 	}
 
-	// If no Prometheus collector provided, create a default one
+	// If no Prometheus collector provided, create one with the given configuration
 	if prometheusCollector == nil {
-		prometheusCollector = NewPrometheusMetricsCollector(DefaultPrometheusConfig())
+		if prometheusConfig == nil {
+			prometheusConfig = DefaultPrometheusConfig()
+		}
+		prometheusCollector = NewPrometheusMetricsCollector(prometheusConfig)
 	}
 
 	metricsRegistry := NewMetricsRegistry()
