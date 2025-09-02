@@ -57,6 +57,9 @@ type BusinessServerImpl struct {
 	metrics   *PerformanceMetrics
 	monitor   *PerformanceMonitor
 
+	// Observability and Prometheus metrics
+	observabilityManager *ObservabilityManager
+
 	// Error monitoring
 	sentryManager *SentryManager
 }
@@ -98,13 +101,14 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		zap.String("log_encoding", config.Logging.Encoding))
 
 	server := &BusinessServerImpl{
-		config:           config,
-		dependencies:     deps,
-		serviceRegistrar: registrar,
-		transportManager: transport.NewTransportCoordinator(),
-		metrics:          NewPerformanceMetrics(),
-		monitor:          NewPerformanceMonitor(),
-		sentryManager:    NewSentryManager(&config.Sentry),
+		config:               config,
+		dependencies:         deps,
+		serviceRegistrar:     registrar,
+		transportManager:     transport.NewTransportCoordinator(),
+		metrics:              NewPerformanceMetrics(),
+		monitor:              NewPerformanceMonitor(),
+		sentryManager:        NewSentryManager(&config.Sentry),
+		observabilityManager: NewObservabilityManager(config.ServiceName, nil),
 	}
 
 	// Add default performance monitoring hooks
@@ -328,11 +332,29 @@ func (s *BusinessServerImpl) Start(ctx context.Context) error {
 	transports := s.transportManager.GetTransports()
 	s.metrics.RecordServiceMetrics(0, len(transports)) // Service count would need registry integration
 
+	// Record Prometheus metrics via observability manager
+	s.observabilityManager.RecordServerStartup(startupDuration)
+	s.observabilityManager.UpdateSystemMetrics()
+
+	// Record transport startup metrics
+	for _, transport := range transports {
+		transportName := "unknown"
+		if s.httpTransport != nil && transport == s.httpTransport {
+			transportName = "http"
+		} else if s.grpcTransport != nil && transport == s.grpcTransport {
+			transportName = "grpc"
+		}
+		s.observabilityManager.RecordTransportStart(transportName)
+	}
+
 	// Trigger performance monitoring hooks
 	s.monitor.RecordEvent("server_startup_success")
 
 	// Start periodic metrics collection
 	go s.monitor.StartPeriodicCollection(context.Background(), 30*time.Second)
+
+	// Start Prometheus system metrics collection
+	go s.observabilityManager.StartSystemMetricsCollection(context.Background(), 30*time.Second)
 
 	logger.Logger.Info("Base server started successfully",
 		zap.String("service", s.config.ServiceName),
@@ -374,6 +396,22 @@ func (s *BusinessServerImpl) Stop(ctx context.Context) error {
 	shutdownDuration := time.Since(stopTime)
 	s.metrics.RecordShutdownTime(shutdownDuration)
 	s.metrics.RecordMemoryUsage()
+
+	// Record Prometheus shutdown metrics via observability manager
+	s.observabilityManager.RecordServerShutdown(shutdownDuration)
+	s.observabilityManager.UpdateSystemMetrics()
+
+	// Record transport shutdown metrics
+	transports := s.transportManager.GetTransports()
+	for _, transport := range transports {
+		transportName := "unknown"
+		if s.httpTransport != nil && transport == s.httpTransport {
+			transportName = "http"
+		} else if s.grpcTransport != nil && transport == s.grpcTransport {
+			transportName = "grpc"
+		}
+		s.observabilityManager.RecordTransportStop(transportName)
+	}
 
 	// Trigger performance monitoring hooks
 	s.monitor.RecordEvent("server_shutdown_success")
@@ -508,6 +546,27 @@ func (s *BusinessServerImpl) GetSentryManager() *SentryManager {
 	return s.sentryManager
 }
 
+// GetObservabilityManager returns the observability manager instance
+func (s *BusinessServerImpl) GetObservabilityManager() *ObservabilityManager {
+	return s.observabilityManager
+}
+
+// GetPrometheusCollector returns the Prometheus metrics collector
+func (s *BusinessServerImpl) GetPrometheusCollector() *PrometheusMetricsCollector {
+	if s.observabilityManager != nil {
+		return s.observabilityManager.GetPrometheusCollector()
+	}
+	return nil
+}
+
+// GetBusinessMetricsManager returns the business metrics manager
+func (s *BusinessServerImpl) GetBusinessMetricsManager() *BusinessMetricsManager {
+	if s.observabilityManager != nil {
+		return s.observabilityManager.GetBusinessMetricsManager()
+	}
+	return nil
+}
+
 // isTransportRunning checks if a transport is currently running
 func (s *BusinessServerImpl) isTransportRunning(t transport.NetworkTransport) bool {
 	s.mu.RLock()
@@ -539,6 +598,11 @@ func (s *BusinessServerImpl) configureHTTPMiddleware() error {
 	middlewareManager := NewMiddlewareManager(s.config)
 	if err := middlewareManager.ConfigureHTTPMiddleware(router); err != nil {
 		return fmt.Errorf("failed to configure HTTP middleware: %w", err)
+	}
+
+	// Register observability endpoints including Prometheus metrics
+	if s.observabilityManager != nil {
+		s.observabilityManager.RegisterObservabilityEndpoints(router, s)
 	}
 
 	return nil

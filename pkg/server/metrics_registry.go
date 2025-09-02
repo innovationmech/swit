@@ -339,6 +339,13 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 		Labels:      []string{"service"},
 	}
 
+	mr.predefinedMetrics["server_start_time"] = MetricDefinition{
+		Name:        "server_start_time",
+		Type:        MetricTypeGauge,
+		Description: "Server start time as unix timestamp",
+		Labels:      []string{"service"},
+	}
+
 	// Transport Metrics
 	mr.predefinedMetrics["transport_status"] = MetricDefinition{
 		Name:        "transport_status",
@@ -359,6 +366,27 @@ func (mr *MetricsRegistry) registerPredefinedMetrics() {
 		Type:        MetricTypeCounter,
 		Description: "Total number of connections",
 		Labels:      []string{"transport"},
+	}
+
+	mr.predefinedMetrics["transport_starts_total"] = MetricDefinition{
+		Name:        "transport_starts_total",
+		Type:        MetricTypeCounter,
+		Description: "Total number of transport starts",
+		Labels:      []string{"service", "transport"},
+	}
+
+	mr.predefinedMetrics["transport_stops_total"] = MetricDefinition{
+		Name:        "transport_stops_total",
+		Type:        MetricTypeCounter,
+		Description: "Total number of transport stops",
+		Labels:      []string{"service", "transport"},
+	}
+
+	mr.predefinedMetrics["active_transports"] = MetricDefinition{
+		Name:        "active_transports",
+		Type:        MetricTypeGauge,
+		Description: "Number of active transports",
+		Labels:      []string{"service", "transport"},
 	}
 
 	// Service Registration Metrics

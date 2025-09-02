@@ -431,16 +431,54 @@ type ObservabilityManager struct {
 	version           string
 	buildInfo         map[string]string
 	prometheusHandler PrometheusHandler
+
+	// Prometheus integration
+	prometheusCollector *PrometheusMetricsCollector
+	metricsRegistry     *MetricsRegistry
+
+	// Business metrics
+	businessMetricsManager *BusinessMetricsManager
+
+	// System metrics tracking
+	mu            sync.RWMutex
+	lastMemStats  runtime.MemStats
+	lastMemUpdate time.Time
+	memStatsCache time.Duration // Cache duration for memory stats
 }
 
 // NewObservabilityManager creates a new observability manager
 func NewObservabilityManager(serviceName string, collector MetricsCollector) *ObservabilityManager {
-	return &ObservabilityManager{
-		serviceName: serviceName,
-		metrics:     NewServerMetrics(serviceName, collector),
-		startTime:   time.Now(),
-		buildInfo:   make(map[string]string),
+	// Initialize Prometheus collector and registry
+	var prometheusCollector *PrometheusMetricsCollector
+	if collector != nil {
+		// Try to cast to Prometheus collector
+		if pmc, ok := collector.(*PrometheusMetricsCollector); ok {
+			prometheusCollector = pmc
+		}
 	}
+
+	// If no Prometheus collector provided, create a default one
+	if prometheusCollector == nil {
+		prometheusCollector = NewPrometheusMetricsCollector(DefaultPrometheusConfig())
+	}
+
+	metricsRegistry := NewMetricsRegistry()
+
+	om := &ObservabilityManager{
+		serviceName:            serviceName,
+		metrics:                NewServerMetrics(serviceName, prometheusCollector),
+		startTime:              time.Now(),
+		buildInfo:              make(map[string]string),
+		prometheusCollector:    prometheusCollector,
+		metricsRegistry:        metricsRegistry,
+		businessMetricsManager: NewBusinessMetricsManager(serviceName, prometheusCollector, metricsRegistry),
+		memStatsCache:          5 * time.Second, // Cache memory stats for 5 seconds
+	}
+
+	// Set the Prometheus handler
+	om.prometheusHandler = prometheusCollector.GetHandler()
+
+	return om
 }
 
 // SetVersion sets the service version
@@ -461,6 +499,169 @@ func (om *ObservabilityManager) SetPrometheusHandler(handler PrometheusHandler) 
 // GetMetrics returns the metrics collector
 func (om *ObservabilityManager) GetMetrics() *ServerMetrics {
 	return om.metrics
+}
+
+// RecordServerStartup records server startup metrics including startup duration
+func (om *ObservabilityManager) RecordServerStartup(duration time.Duration) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+
+	labels := map[string]string{"service": om.serviceName}
+
+	// Record startup duration
+	om.prometheusCollector.ObserveHistogram("server_startup_duration_seconds", duration.Seconds(), labels)
+
+	// Set server start time for uptime calculation
+	om.prometheusCollector.SetGauge("server_start_time", float64(om.startTime.Unix()), labels)
+
+	// Record server startup event
+	om.metrics.RecordServerStart()
+}
+
+// RecordServerShutdown records server shutdown metrics
+func (om *ObservabilityManager) RecordServerShutdown(duration time.Duration) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+
+	labels := map[string]string{"service": om.serviceName}
+
+	// Record shutdown duration
+	om.prometheusCollector.ObserveHistogram("server_shutdown_duration_seconds", duration.Seconds(), labels)
+
+	// Record server shutdown event
+	om.metrics.RecordServerStop()
+}
+
+// RecordTransportLifecycle records transport start/stop events
+func (om *ObservabilityManager) RecordTransportStart(transportType string) {
+	labels := map[string]string{
+		"service":   om.serviceName,
+		"transport": transportType,
+	}
+
+	// Record transport start
+	om.prometheusCollector.IncrementCounter("transport_starts_total", labels)
+	om.prometheusCollector.IncrementGauge("active_transports", labels)
+	om.metrics.RecordTransportStart(transportType)
+}
+
+func (om *ObservabilityManager) RecordTransportStop(transportType string) {
+	labels := map[string]string{
+		"service":   om.serviceName,
+		"transport": transportType,
+	}
+
+	// Record transport stop
+	om.prometheusCollector.IncrementCounter("transport_stops_total", labels)
+	om.prometheusCollector.DecrementGauge("active_transports", labels)
+	om.metrics.RecordTransportStop(transportType)
+}
+
+// RecordServiceRegistration records service registration events
+func (om *ObservabilityManager) RecordServiceRegistration(serviceName, serviceType string) {
+	labels := map[string]string{
+		"service":            om.serviceName,
+		"registered_service": serviceName,
+		"service_type":       serviceType,
+	}
+
+	// Record service registration
+	om.prometheusCollector.IncrementCounter("service_registrations_total", labels)
+	om.prometheusCollector.IncrementGauge("registered_services", labels)
+	om.metrics.RecordServiceRegistration(serviceName, serviceType)
+}
+
+// getCachedMemStats returns cached memory stats or fetches new ones if cache is expired
+func (om *ObservabilityManager) getCachedMemStats() runtime.MemStats {
+	now := time.Now()
+
+	// Check if cache is still valid
+	if !om.lastMemUpdate.IsZero() && now.Sub(om.lastMemUpdate) < om.memStatsCache {
+		return om.lastMemStats
+	}
+
+	// Cache is expired, fetch new stats
+	runtime.ReadMemStats(&om.lastMemStats)
+	om.lastMemUpdate = now
+
+	return om.lastMemStats
+}
+
+// createLabelsWithType creates a copy of base labels with an added type label
+func createLabelsWithType(baseLabels map[string]string, labelType string) map[string]string {
+	labels := make(map[string]string, len(baseLabels)+1)
+	for k, v := range baseLabels {
+		labels[k] = v
+	}
+	labels["type"] = labelType
+	return labels
+}
+
+// UpdateSystemMetrics updates system performance metrics (memory, goroutines, GC, uptime)
+func (om *ObservabilityManager) UpdateSystemMetrics() {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+
+	baseLabels := map[string]string{"service": om.serviceName}
+
+	// Get cached memory stats to avoid expensive runtime.ReadMemStats calls
+	memStats := om.getCachedMemStats()
+
+	// Update memory metrics with different types using helper function
+	om.prometheusCollector.SetGauge("memory_bytes", float64(memStats.Alloc),
+		createLabelsWithType(baseLabels, "alloc"))
+
+	om.prometheusCollector.SetGauge("memory_bytes", float64(memStats.Sys),
+		createLabelsWithType(baseLabels, "sys"))
+
+	om.prometheusCollector.SetGauge("memory_bytes", float64(memStats.TotalAlloc),
+		createLabelsWithType(baseLabels, "total_alloc"))
+
+	// Update goroutine count
+	om.prometheusCollector.SetGauge("goroutines", float64(runtime.NumGoroutine()), baseLabels)
+
+	// Update GC metrics
+	gcDuration := time.Duration(memStats.PauseTotalNs).Seconds()
+	om.prometheusCollector.SetGauge("gc_duration_seconds", gcDuration, baseLabels)
+
+	// Update uptime
+	uptime := time.Since(om.startTime).Seconds()
+	om.prometheusCollector.SetGauge("uptime_seconds", uptime, baseLabels)
+}
+
+// StartSystemMetricsCollection starts periodic collection of system metrics
+func (om *ObservabilityManager) StartSystemMetricsCollection(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 30 * time.Second // Default collection interval
+	}
+
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				om.UpdateSystemMetrics()
+			}
+		}
+	}()
+}
+
+// GetPrometheusCollector returns the Prometheus metrics collector for advanced usage
+func (om *ObservabilityManager) GetPrometheusCollector() *PrometheusMetricsCollector {
+	return om.prometheusCollector
+}
+
+// GetMetricsRegistry returns the metrics registry
+func (om *ObservabilityManager) GetMetricsRegistry() *MetricsRegistry {
+	return om.metricsRegistry
+}
+
+// GetBusinessMetricsManager returns the business metrics manager
+func (om *ObservabilityManager) GetBusinessMetricsManager() *BusinessMetricsManager {
+	return om.businessMetricsManager
 }
 
 // GetServerStatus returns comprehensive server status
