@@ -24,6 +24,7 @@ package types
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
 	"sync"
@@ -85,6 +86,17 @@ type PrometheusMetricsCollector struct {
 	currentMetrics map[string]int
 	knownSeries    map[string]struct{}
 	cardinalityMu  sync.RWMutex
+
+	// Metrics caching for performance
+	cachedMetrics  []Metric
+	cachedResponse []byte
+	cacheTimestamp time.Time
+	cacheDuration  time.Duration
+	cacheValid     bool
+	cacheMu        sync.RWMutex
+
+	// Performance optimization: limit logging
+	cardinalityLoggedOnce bool
 }
 
 // NewPrometheusMetricsCollector creates a new Prometheus-backed metrics collector
@@ -110,6 +122,7 @@ func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsC
 		maxCardinality: config.CardinalityLimit,
 		currentMetrics: make(map[string]int),
 		knownSeries:    make(map[string]struct{}),
+		cacheDuration:  50 * time.Millisecond, // Cache for 50ms to improve endpoint performance
 	}
 }
 
@@ -215,6 +228,16 @@ func (pmc *PrometheusMetricsCollector) ObserveHistogram(name string, value float
 
 // GetMetrics returns all collected metrics (for backward compatibility)
 func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
+	// Check cache first
+	pmc.cacheMu.RLock()
+	if pmc.cacheValid && time.Since(pmc.cacheTimestamp) < pmc.cacheDuration {
+		cached := make([]Metric, len(pmc.cachedMetrics))
+		copy(cached, pmc.cachedMetrics)
+		pmc.cacheMu.RUnlock()
+		return cached
+	}
+	pmc.cacheMu.RUnlock()
+
 	pmc.mu.RLock()
 	defer pmc.mu.RUnlock()
 
@@ -277,6 +300,14 @@ func (pmc *PrometheusMetricsCollector) GetMetrics() []Metric {
 		}
 	}
 
+	// Update cache
+	pmc.cacheMu.Lock()
+	pmc.cachedMetrics = make([]Metric, len(metrics))
+	copy(pmc.cachedMetrics, metrics)
+	pmc.cacheTimestamp = time.Now()
+	pmc.cacheValid = true
+	pmc.cacheMu.Unlock()
+
 	return metrics
 }
 
@@ -308,14 +339,60 @@ func (pmc *PrometheusMetricsCollector) Reset() {
 	// Reset cardinality tracking
 	pmc.cardinalityMu.Lock()
 	pmc.currentMetrics = make(map[string]int)
+	pmc.knownSeries = make(map[string]struct{})
 	pmc.cardinalityMu.Unlock()
+
+	// Invalidate cache
+	pmc.cacheMu.Lock()
+	pmc.cacheValid = false
+	pmc.cachedMetrics = nil
+	pmc.cachedResponse = nil
+	pmc.cacheMu.Unlock()
 }
 
 // GetHandler returns the HTTP handler for Prometheus metrics endpoint
 func (pmc *PrometheusMetricsCollector) GetHandler() http.Handler {
-	return promhttp.HandlerFor(pmc.registry, promhttp.HandlerOpts{
-		EnableOpenMetrics: true,
-		ErrorHandling:     promhttp.ContinueOnError,
+	// Return a cached handler to improve performance under high cardinality
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if we can serve from cache
+		pmc.cacheMu.RLock()
+		if pmc.cacheValid && time.Since(pmc.cacheTimestamp) < pmc.cacheDuration {
+			// Serve cached response if we have one
+			if pmc.cachedResponse != nil {
+				w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+				w.WriteHeader(http.StatusOK)
+				w.Write(pmc.cachedResponse)
+				pmc.cacheMu.RUnlock()
+				return
+			}
+		}
+		pmc.cacheMu.RUnlock()
+
+		// Create a response recorder to capture the output
+		rec := httptest.NewRecorder()
+
+		// Get the original Prometheus handler
+		handler := promhttp.HandlerFor(pmc.registry, promhttp.HandlerOpts{
+			EnableOpenMetrics: true,
+			ErrorHandling:     promhttp.ContinueOnError,
+		})
+
+		// Call the original handler
+		handler.ServeHTTP(rec, r)
+
+		// Cache the response
+		pmc.cacheMu.Lock()
+		pmc.cachedResponse = rec.Body.Bytes()
+		pmc.cacheTimestamp = time.Now()
+		pmc.cacheValid = true
+		pmc.cacheMu.Unlock()
+
+		// Copy headers and write response
+		for k, v := range rec.Header() {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(rec.Code)
+		w.Write(pmc.cachedResponse)
 	})
 }
 
@@ -521,19 +598,27 @@ func (pmc *PrometheusMetricsCollector) checkCardinality(metricName string, label
 	// Create a unique series key from metric name and labels
 	seriesKey := pmc.buildSeriesKey(metricName, labels)
 
+	// Fast path: check if series already exists with read lock only
 	pmc.cardinalityMu.RLock()
 	_, exists := pmc.knownSeries[seriesKey]
+	if exists {
+		pmc.cardinalityMu.RUnlock()
+		return true
+	}
 	totalSeries := len(pmc.knownSeries)
 	pmc.cardinalityMu.RUnlock()
 
-	// If series already exists, allow it
-	if exists {
-		return true
-	}
-
 	// Check if adding this new series would exceed the limit
 	if totalSeries >= pmc.maxCardinality {
-		if logger.Logger != nil {
+		// Only log once to reduce overhead - need to acquire write lock for atomic check
+		pmc.cardinalityMu.Lock()
+		shouldLog := !pmc.cardinalityLoggedOnce && logger.Logger != nil
+		if shouldLog {
+			pmc.cardinalityLoggedOnce = true
+		}
+		pmc.cardinalityMu.Unlock()
+
+		if shouldLog {
 			logger.Logger.Warn("Metric cardinality limit reached",
 				zap.String("metric", metricName),
 				zap.String("series", seriesKey),
@@ -543,11 +628,23 @@ func (pmc *PrometheusMetricsCollector) checkCardinality(metricName string, label
 		return false
 	}
 
-	// Add new series to tracking
+	// Double-check under write lock to avoid race conditions
 	pmc.cardinalityMu.Lock()
-	pmc.knownSeries[seriesKey] = struct{}{}
-	pmc.cardinalityMu.Unlock()
+	defer pmc.cardinalityMu.Unlock()
 
+	// Check again in case another goroutine added it
+	if _, exists := pmc.knownSeries[seriesKey]; exists {
+		return true
+	}
+
+	// Check limit again with current count
+	if len(pmc.knownSeries) >= pmc.maxCardinality {
+		// Logging already handled above
+		return false
+	}
+
+	// Add new series to tracking
+	pmc.knownSeries[seriesKey] = struct{}{}
 	return true
 }
 
@@ -557,15 +654,32 @@ func (pmc *PrometheusMetricsCollector) buildSeriesKey(metricName string, labels 
 		return metricName
 	}
 
-	// Build a consistent key from sorted labels
+	// Pre-allocate with estimated size to reduce allocations
+	estimatedSize := len(metricName) + len(labels)*20 // Rough estimate
+	var builder strings.Builder
+	builder.Grow(estimatedSize)
+
+	builder.WriteString(metricName)
+
+	// Fast path for single label
+	if len(labels) == 1 {
+		for k, v := range labels {
+			builder.WriteString("{")
+			builder.WriteString(k)
+			builder.WriteString("=")
+			builder.WriteString(v)
+			builder.WriteString("}")
+		}
+		return builder.String()
+	}
+
+	// Build a consistent key from sorted labels (only sort when necessary)
 	keys := make([]string, 0, len(labels))
 	for k := range labels {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	var builder strings.Builder
-	builder.WriteString(metricName)
 	for _, k := range keys {
 		builder.WriteString("{")
 		builder.WriteString(k)

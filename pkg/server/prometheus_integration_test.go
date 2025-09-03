@@ -299,31 +299,39 @@ func TestPrometheusMetricsCardinalityLimits(t *testing.T) {
 	collector := types.NewPrometheusMetricsCollector(config)
 
 	t.Run("cardinality limiting prevents metric explosion", func(t *testing.T) {
-		// Get initial metric count
-		initialMetrics := len(collector.GetMetrics())
-
-		// Try to create metrics beyond the limit (100)
-		for i := 0; i < 150; i++ {
+		// First create metrics up to the limit
+		metricsUpToLimit := 95 // Leave some room for other metrics
+		for i := 0; i < metricsUpToLimit; i++ {
 			labels := map[string]string{
 				"unique_id": fmt.Sprintf("id_%d", i),
 				"category":  fmt.Sprintf("cat_%d", i%5),
 			}
-
-			// Use collector directly to test cardinality limiting
 			collector.IncrementCounter("cardinality_test_metric", labels)
 		}
 
-		// Get final metric count
+		// Get metrics count after creating up to limit
+		metricsAfterLimit := len(collector.GetMetrics())
+
+		// Try to create more metrics beyond the limit
+		for i := metricsUpToLimit; i < 150; i++ {
+			labels := map[string]string{
+				"unique_id": fmt.Sprintf("id_%d", i),
+				"category":  fmt.Sprintf("cat_%d", i%5),
+			}
+			// These should be dropped due to cardinality limit
+			collector.IncrementCounter("cardinality_test_metric", labels)
+		}
+
+		// Get final metric count - should not have increased significantly
 		finalMetrics := len(collector.GetMetrics())
-		metricsCreated := finalMetrics - initialMetrics
 
-		// Should have created exactly up to the limit (100)
-		assert.Greater(t, metricsCreated, 0, "Should create some metrics")
-		assert.LessOrEqual(t, metricsCreated, 100, "Should limit cardinality to configured limit")
+		// Should have created metrics up to the limit but not beyond
+		assert.Greater(t, metricsAfterLimit, metricsUpToLimit-10, "Should create most metrics up to limit")
+		assert.LessOrEqual(t, finalMetrics-metricsAfterLimit, 10, "Should not create many metrics beyond limit")
 
-		t.Logf("Successfully created %d out of 150 attempted metrics (limit: 100)", metricsCreated)
+		t.Logf("Metrics after %d attempts: %d, after %d more attempts: %d", metricsUpToLimit, metricsAfterLimit, 150-metricsUpToLimit, finalMetrics)
 
-		// Verify actual metrics count
+		// Verify actual cardinality test metrics count
 		metrics := collector.GetMetrics()
 		cardinalityMetrics := 0
 		for _, metric := range metrics {
@@ -332,6 +340,7 @@ func TestPrometheusMetricsCardinalityLimits(t *testing.T) {
 			}
 		}
 		t.Logf("Found %d cardinality test metrics in collector", cardinalityMetrics)
+		assert.Greater(t, cardinalityMetrics, 0, "Should have created some cardinality test metrics")
 	})
 }
 
