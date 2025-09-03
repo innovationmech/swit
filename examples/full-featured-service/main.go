@@ -30,7 +30,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -39,7 +38,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"gopkg.in/yaml.v3"
 
 	interaction "github.com/innovationmech/swit/api/gen/go/proto/swit/interaction/v1"
 	"github.com/innovationmech/swit/pkg/logger"
@@ -63,11 +61,11 @@ func NewFullFeaturedService(name string) *FullFeaturedService {
 func (s *FullFeaturedService) RegisterServices(registry server.BusinessServiceRegistry) error {
 	// Register HTTP handler
 	httpHandler := &FullFeaturedHTTPHandler{
-		serviceName: s.name,
-		userCount: 1000, // Simulate starting user count
+		serviceName:         s.name,
+		userCount:           1000, // Simulate starting user count
 		processingQueueSize: 0,
-		cacheHits: 0,
-		cacheMisses: 0,
+		cacheHits:           0,
+		cacheMisses:         0,
 	}
 	if err := registry.RegisterBusinessHTTPHandler(httpHandler); err != nil {
 		return fmt.Errorf("failed to register HTTP handler: %w", err)
@@ -90,13 +88,13 @@ func (s *FullFeaturedService) RegisterServices(registry server.BusinessServiceRe
 
 // FullFeaturedHTTPHandler implements the HTTPHandler interface
 type FullFeaturedHTTPHandler struct {
-	serviceName string
+	serviceName      string
 	metricsCollector types.MetricsCollector
 	// Business data structures
-	userCount int64
-	processingQueueSize int64
+	userCount              int64
+	processingQueueSize    int64
 	cacheHits, cacheMisses int64
-	mu sync.RWMutex
+	mu                     sync.RWMutex
 }
 
 // RegisterRoutes registers HTTP routes with the router
@@ -116,7 +114,7 @@ func (h *FullFeaturedHTTPHandler) RegisterRoutes(router interface{}) error {
 		api.GET("/status", h.handleStatus)
 		api.GET("/metrics", h.handleMetrics)
 		api.POST("/echo", h.handleEcho)
-		
+
 		// Business endpoints demonstrating various metrics
 		api.POST("/orders", h.handleCreateOrder)
 		api.GET("/analytics", h.handleAnalytics)
@@ -134,7 +132,7 @@ func (h *FullFeaturedHTTPHandler) GetServiceName() string {
 // handleGreet handles the HTTP greet endpoint
 func (h *FullFeaturedHTTPHandler) handleGreet(c *gin.Context) {
 	start := time.Now()
-	
+
 	var request struct {
 		Name string `json:"name" binding:"required"`
 	}
@@ -144,8 +142,8 @@ func (h *FullFeaturedHTTPHandler) handleGreet(c *gin.Context) {
 		if h.metricsCollector != nil {
 			h.metricsCollector.IncrementCounter("http_greet_errors_total", map[string]string{
 				"error_type": "validation_error",
-				"endpoint": "/api/v1/greet",
-				"protocol": "http",
+				"endpoint":   "/api/v1/greet",
+				"protocol":   "http",
 			})
 		}
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -154,27 +152,27 @@ func (h *FullFeaturedHTTPHandler) handleGreet(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Simulate user registration (business logic)
 	h.mu.Lock()
 	h.userCount++
 	currentUsers := h.userCount
 	h.mu.Unlock()
-	
+
 	// Business metrics - track greetings and user count
 	name := request.Name
 	if h.metricsCollector != nil {
 		h.metricsCollector.IncrementCounter("http_greet_requests_total", map[string]string{
-			"name": name,
+			"name":     name,
 			"endpoint": "/api/v1/greet",
 			"protocol": "http",
 		})
-		
+
 		// Track current user count as gauge
 		h.metricsCollector.SetGauge("business_users_total", float64(currentUsers), map[string]string{
 			"service": h.serviceName,
 		})
-		
+
 		// Simulate cache lookup with hit/miss ratio
 		cacheHit := rand.Intn(100) < 80 // 80% cache hit rate
 		if cacheHit {
@@ -182,7 +180,7 @@ func (h *FullFeaturedHTTPHandler) handleGreet(c *gin.Context) {
 			h.cacheHits++
 			h.mu.Unlock()
 			h.metricsCollector.IncrementCounter("cache_operations_total", map[string]string{
-				"result": "hit",
+				"result":    "hit",
 				"operation": "user_lookup",
 			})
 		} else {
@@ -190,17 +188,17 @@ func (h *FullFeaturedHTTPHandler) handleGreet(c *gin.Context) {
 			h.cacheMisses++
 			h.mu.Unlock()
 			h.metricsCollector.IncrementCounter("cache_operations_total", map[string]string{
-				"result": "miss",
+				"result":    "miss",
 				"operation": "user_lookup",
 			})
 		}
-		
+
 		// Cache hit rate gauge
 		h.mu.RLock()
 		totalOps := h.cacheHits + h.cacheMisses
 		hitRate := float64(h.cacheHits) / float64(totalOps)
 		h.mu.RUnlock()
-		
+
 		if totalOps > 0 {
 			h.metricsCollector.SetGauge("cache_hit_rate", hitRate, map[string]string{
 				"service": h.serviceName,
@@ -215,14 +213,14 @@ func (h *FullFeaturedHTTPHandler) handleGreet(c *gin.Context) {
 		"protocol":  "HTTP",
 		"user_id":   currentUsers,
 	})
-	
+
 	// Track response time
 	if h.metricsCollector != nil {
 		duration := time.Since(start).Seconds()
 		h.metricsCollector.ObserveHistogram("http_request_duration_seconds", duration, map[string]string{
 			"endpoint": "/api/v1/greet",
 			"protocol": "http",
-			"name": name,
+			"name":     name,
 		})
 	}
 }
@@ -277,9 +275,9 @@ func (h *FullFeaturedHTTPHandler) handleEcho(c *gin.Context) {
 // handleCreateOrder handles the order creation endpoint (demonstrates business KPI metrics)
 func (h *FullFeaturedHTTPHandler) handleCreateOrder(c *gin.Context) {
 	start := time.Now()
-	
+
 	var request struct {
-		CustomerID string  `json:"customer_id" binding:"required"`
+		CustomerID string `json:"customer_id" binding:"required"`
 		Items      []struct {
 			Product  string  `json:"product" binding:"required"`
 			Quantity int     `json:"quantity" binding:"required"`
@@ -291,7 +289,7 @@ func (h *FullFeaturedHTTPHandler) handleCreateOrder(c *gin.Context) {
 		if h.metricsCollector != nil {
 			h.metricsCollector.IncrementCounter("order_errors_total", map[string]string{
 				"error_type": "validation_error",
-				"endpoint": "/api/v1/orders",
+				"endpoint":   "/api/v1/orders",
 			})
 		}
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -300,7 +298,7 @@ func (h *FullFeaturedHTTPHandler) handleCreateOrder(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Calculate order total
 	var orderTotal float64
 	itemCount := 0
@@ -308,41 +306,41 @@ func (h *FullFeaturedHTTPHandler) handleCreateOrder(c *gin.Context) {
 		orderTotal += item.Price * float64(item.Quantity)
 		itemCount += item.Quantity
 	}
-	
+
 	// Business metrics
 	if h.metricsCollector != nil {
 		// Order metrics
 		h.metricsCollector.IncrementCounter("orders_created_total", map[string]string{
 			"customer_type": "regular", // Could be derived from customer_id
 		})
-		
+
 		// Revenue metrics (in cents to avoid float issues)
 		h.metricsCollector.ObserveHistogram("order_value_dollars", orderTotal, map[string]string{
 			"order_type": "online",
 		})
-		
+
 		// Item metrics
 		h.metricsCollector.ObserveHistogram("order_item_count", float64(itemCount), map[string]string{
 			"order_type": "online",
 		})
-		
+
 		// Processing queue simulation
 		h.mu.Lock()
 		h.processingQueueSize++
 		currentQueueSize := h.processingQueueSize
 		h.mu.Unlock()
-		
+
 		h.metricsCollector.SetGauge("processing_queue_size", float64(currentQueueSize), map[string]string{
 			"queue_type": "orders",
 		})
 	}
-	
+
 	// Simulate processing time based on order complexity
 	processingTime := time.Duration(50+len(request.Items)*10) * time.Millisecond
 	time.Sleep(processingTime)
-	
+
 	orderID := fmt.Sprintf("order_%d", time.Now().Unix())
-	
+
 	c.JSON(http.StatusCreated, gin.H{
 		"order_id":    orderID,
 		"customer_id": request.CustomerID,
@@ -351,7 +349,7 @@ func (h *FullFeaturedHTTPHandler) handleCreateOrder(c *gin.Context) {
 		"status":      "created",
 		"timestamp":   time.Now().UTC(),
 	})
-	
+
 	// Track response time
 	if h.metricsCollector != nil {
 		duration := time.Since(start).Seconds()
@@ -359,14 +357,14 @@ func (h *FullFeaturedHTTPHandler) handleCreateOrder(c *gin.Context) {
 			"endpoint": "/api/v1/orders",
 			"protocol": "http",
 		})
-		
+
 		// Simulate order processing completion
 		go func() {
 			time.Sleep(2 * time.Second) // Simulate processing
 			h.mu.Lock()
 			h.processingQueueSize--
 			h.mu.Unlock()
-			
+
 			if h.metricsCollector != nil {
 				h.metricsCollector.SetGauge("processing_queue_size", float64(h.processingQueueSize), map[string]string{
 					"queue_type": "orders",
@@ -382,44 +380,44 @@ func (h *FullFeaturedHTTPHandler) handleCreateOrder(c *gin.Context) {
 // handleAnalytics handles the analytics endpoint (demonstrates gauge metrics)
 func (h *FullFeaturedHTTPHandler) handleAnalytics(c *gin.Context) {
 	start := time.Now()
-	
+
 	h.mu.RLock()
 	currentUsers := h.userCount
 	queueSize := h.processingQueueSize
 	cacheHits := h.cacheHits
 	cacheMisses := h.cacheMisses
 	h.mu.RUnlock()
-	
+
 	// Update analytics gauges
 	if h.metricsCollector != nil {
 		h.metricsCollector.SetGauge("active_users_gauge", float64(currentUsers), map[string]string{
 			"service": h.serviceName,
 		})
-		
+
 		h.metricsCollector.SetGauge("system_load_percent", float64(rand.Intn(100)), map[string]string{
 			"component": "cpu",
 		})
-		
+
 		h.metricsCollector.SetGauge("system_load_percent", float64(rand.Intn(80)), map[string]string{
 			"component": "memory",
 		})
-		
+
 		// Multi-dimensional business metrics
 		regions := []string{"us-east", "us-west", "eu-west", "asia"}
 		for _, region := range regions {
 			h.metricsCollector.SetGauge("regional_active_sessions", float64(rand.Intn(500)+100), map[string]string{
-				"region": region,
+				"region":  region,
 				"service": h.serviceName,
 			})
 		}
 	}
-	
+
 	totalCacheOps := cacheHits + cacheMisses
 	hitRate := 0.0
 	if totalCacheOps > 0 {
 		hitRate = float64(cacheHits) / float64(totalCacheOps)
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"analytics": map[string]interface{}{
 			"total_users":           currentUsers,
@@ -437,7 +435,7 @@ func (h *FullFeaturedHTTPHandler) handleAnalytics(c *gin.Context) {
 		},
 		"timestamp": time.Now().UTC(),
 	})
-	
+
 	if h.metricsCollector != nil {
 		duration := time.Since(start).Seconds()
 		h.metricsCollector.ObserveHistogram("http_request_duration_seconds", duration, map[string]string{
@@ -450,7 +448,7 @@ func (h *FullFeaturedHTTPHandler) handleAnalytics(c *gin.Context) {
 // handleProcessJob handles the job processing endpoint (demonstrates summary metrics)
 func (h *FullFeaturedHTTPHandler) handleProcessJob(c *gin.Context) {
 	start := time.Now()
-	
+
 	var request struct {
 		JobType   string                 `json:"job_type" binding:"required"`
 		Priority  string                 `json:"priority"`
@@ -462,7 +460,7 @@ func (h *FullFeaturedHTTPHandler) handleProcessJob(c *gin.Context) {
 		if h.metricsCollector != nil {
 			h.metricsCollector.IncrementCounter("job_errors_total", map[string]string{
 				"error_type": "validation_error",
-				"endpoint": "/api/v1/process",
+				"endpoint":   "/api/v1/process",
 			})
 		}
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -471,7 +469,7 @@ func (h *FullFeaturedHTTPHandler) handleProcessJob(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Default values
 	if request.Priority == "" {
 		request.Priority = "normal"
@@ -479,7 +477,7 @@ func (h *FullFeaturedHTTPHandler) handleProcessJob(c *gin.Context) {
 	if request.BatchSize == 0 {
 		request.BatchSize = 1
 	}
-	
+
 	// Simulate processing time based on job type and batch size
 	baseTime := 100 * time.Millisecond
 	switch request.JobType {
@@ -490,10 +488,10 @@ func (h *FullFeaturedHTTPHandler) handleProcessJob(c *gin.Context) {
 	case "email_sending":
 		baseTime = 200 * time.Millisecond
 	}
-	
+
 	processingTime := time.Duration(int64(baseTime) * int64(request.BatchSize))
 	time.Sleep(processingTime)
-	
+
 	// Track job metrics
 	if h.metricsCollector != nil {
 		h.metricsCollector.IncrementCounter("jobs_processed_total", map[string]string{
@@ -501,29 +499,29 @@ func (h *FullFeaturedHTTPHandler) handleProcessJob(c *gin.Context) {
 			"priority": request.Priority,
 			"status":   "completed",
 		})
-		
+
 		h.metricsCollector.ObserveHistogram("job_processing_duration_seconds", processingTime.Seconds(), map[string]string{
 			"job_type": request.JobType,
 			"priority": request.Priority,
 		})
-		
+
 		h.metricsCollector.ObserveHistogram("job_batch_size", float64(request.BatchSize), map[string]string{
 			"job_type": request.JobType,
 		})
 	}
-	
+
 	jobID := fmt.Sprintf("job_%s_%d", request.JobType, time.Now().Unix())
-	
+
 	c.JSON(http.StatusOK, gin.H{
-		"job_id":       jobID,
-		"job_type":     request.JobType,
-		"priority":     request.Priority,
-		"batch_size":   request.BatchSize,
+		"job_id":             jobID,
+		"job_type":           request.JobType,
+		"priority":           request.Priority,
+		"batch_size":         request.BatchSize,
 		"processing_time_ms": processingTime.Milliseconds(),
-		"status":       "completed",
-		"timestamp":    time.Now().UTC(),
+		"status":             "completed",
+		"timestamp":          time.Now().UTC(),
 	})
-	
+
 	if h.metricsCollector != nil {
 		duration := time.Since(start).Seconds()
 		h.metricsCollector.ObserveHistogram("http_request_duration_seconds", duration, map[string]string{
