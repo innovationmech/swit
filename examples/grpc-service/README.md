@@ -1,12 +1,16 @@
-# gRPC Service Example
+# gRPC Service with Prometheus Metrics
 
-This example demonstrates how to create a gRPC service using the base server framework.
+This example demonstrates how to create a gRPC service using the base server framework with integrated Prometheus metrics collection.
 
 ## Features
 
 - gRPC-only service (no HTTP)
 - Protocol Buffer definitions
-- Health checks
+- Prometheus metrics integration
+- Custom business metrics
+- YAML configuration support
+- Environment variable overrides
+- Health checks and reflection
 - Dependency injection
 - Graceful shutdown
 - Optional service discovery
@@ -61,13 +65,59 @@ grpcurl -plaintext -d '{"name": "Alice"}' \
   localhost:9090 swit.interaction.v1.GreeterService/SayHello
 ```
 
-
-
 #### Health Check
 
 ```bash
 grpcurl -plaintext localhost:9090 grpc.health.v1.Health/Check
 ```
+
+## Custom Metrics
+
+This gRPC service collects the following custom business metrics:
+
+### Counter Metrics
+- `swit_grpc_greeter_grpc_hello_requests_total` - Total hello requests by method and name
+- `swit_grpc_greeter_grpc_errors_total` - Total gRPC errors by method, error type, and code
+
+### Histogram Metrics  
+- `swit_grpc_greeter_grpc_request_duration_seconds` - gRPC request duration by method and name
+
+## Configuration
+
+### Using YAML Configuration File
+
+Create a `swit.yaml` file in the same directory as the executable:
+
+```yaml
+service_name: "grpc-greeter-service"
+shutdown_timeout: "30s"
+
+grpc:
+  enabled: true
+  port: "9090"
+  enable_reflection: true
+  enable_health_service: true
+
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "swit"
+  subsystem: "grpc_greeter"
+  labels:
+    service: "grpc-greeter-service"
+    version: "v1"
+    protocol: "grpc"
+```
+
+### Environment Variables
+
+Override configuration with environment variables:
+
+- `GRPC_PORT` - gRPC server port (default: 9090)
+- `CONFIG_PATH` - Configuration file path (default: swit.yaml)
+- `PROMETHEUS_ENABLED` - Enable/disable Prometheus metrics (default: true)
+- `DISCOVERY_ENABLED` - Enable/disable service discovery (default: false)
+- `CONSUL_ADDRESS` - Consul server address (default: localhost:8500)
 
 ### Using Go Client
 

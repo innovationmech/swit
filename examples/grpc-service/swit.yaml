@@ -1,0 +1,46 @@
+service_name: "grpc-greeter-service"
+shutdown_timeout: "30s"
+
+http:
+  enabled: false
+
+grpc:
+  enabled: true
+  port: "9090"
+  address: ""
+  enable_reflection: true
+  enable_health_service: true
+  max_recv_msg_size: 4194304  # 4MB
+  max_send_msg_size: 4194304  # 4MB
+  keepalive_params:
+    max_connection_idle: "15m"
+    max_connection_age: "30m"
+    max_connection_age_grace: "5m"
+    time: "5m"
+    timeout: "1m"
+  keepalive_policy:
+    min_time: "5m"
+    permit_without_stream: false
+
+discovery:
+  enabled: false
+  address: "localhost:8500"
+  service_name: "grpc-greeter-service"
+  tags: ["grpc", "greeter", "v1"]
+
+middleware:
+  enable_logging: true
+
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "swit"
+  subsystem: "grpc_greeter"
+  cardinality_limit: 10000
+  buckets:
+    duration: [0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10]
+    size: [100, 1000, 10000, 100000, 1000000]
+  labels:
+    service: "grpc-greeter-service"
+    version: "v1"
+    protocol: "grpc"

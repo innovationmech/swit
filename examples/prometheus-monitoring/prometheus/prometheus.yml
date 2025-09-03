@@ -1,0 +1,87 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'monitoring-demo'
+    replica: 'prometheus-01'
+
+rule_files:
+  - "/etc/prometheus/rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Business service metrics
+  - job_name: 'business-service'
+    static_configs:
+      - targets: ['business-service:8080']
+    metrics_path: /metrics
+    scrape_interval: 5s
+    scrape_timeout: 10s
+    honor_labels: true
+    honor_timestamps: true
+    
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 10s
+    
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 5s
+    
+  # cAdvisor for container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 5s
+    
+  # Alertmanager monitoring
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+    scrape_interval: 10s
+
+  # Additional business service endpoints for demonstration
+  - job_name: 'business-service-detailed'
+    static_configs:
+      - targets: ['business-service:8080']
+    metrics_path: /metrics
+    scrape_interval: 10s
+    metric_relabel_configs:
+      # Add environment label to all metrics
+      - target_label: environment
+        replacement: demo
+      # Add datacenter label
+      - target_label: datacenter
+        replacement: us-east-1
+      # Relabel high cardinality metrics
+      - source_labels: [__name__]
+        regex: 'swit_business_(.*)'
+        target_label: metric_category
+        replacement: business
+      - source_labels: [__name__]  
+        regex: 'swit_server_(.*)'
+        target_label: metric_category
+        replacement: infrastructure
+
+# Storage configuration
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 1GB
+    
+# Remote write configuration (for external storage)
+# remote_write:
+#   - url: "https://prometheus-remote-write-endpoint"
+#     queue_config:
+#       max_samples_per_send: 1000
+#       max_shards: 200
+#       capacity: 2500

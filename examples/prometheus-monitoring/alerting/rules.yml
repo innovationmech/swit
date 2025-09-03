@@ -1,0 +1,181 @@
+groups:
+  # Business KPI Alerts
+  - name: business_kpis
+    rules:
+      - alert: HighOrderErrorRate
+        expr: rate(swit_business_order_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "High order error rate detected"
+          description: "Order error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+          
+      - alert: LowConversionRate
+        expr: avg(swit_business_conversion_rate_percent) < 2.0
+        for: 10m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Conversion rate is below threshold"
+          description: "Average conversion rate is {{ $value }}%, which is below the 2% threshold"
+          
+      - alert: InventoryLowStock
+        expr: swit_business_inventory_levels < 10
+        for: 1m
+        labels:
+          severity: critical
+          category: inventory
+        annotations:
+          summary: "Low inventory alert for {{ $labels.product }}"
+          description: "Product {{ $labels.product }} has only {{ $value }} units remaining"
+
+      - alert: RevenueDropAlert
+        expr: rate(swit_business_order_value_dollars_sum[1h]) < 100
+        for: 30m
+        labels:
+          severity: warning
+          category: revenue
+        annotations:
+          summary: "Revenue rate has dropped significantly"
+          description: "Hourly revenue rate is ${{ $value | printf \"%.2f\" }}, below expected $100/hour"
+
+  # Payment Processing Alerts
+  - name: payment_processing
+    rules:
+      - alert: PaymentFailureSpike
+        expr: rate(swit_business_payments_processed_total{status="failed"}[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          category: payments
+        annotations:
+          summary: "Payment failure rate spike detected"
+          description: "Payment failure rate is {{ $value | humanizePercentage }} for {{ $labels.method }}"
+          
+      - alert: SlowPaymentProcessing
+        expr: histogram_quantile(0.95, rate(swit_business_payment_processing_duration_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Slow payment processing detected"
+          description: "95th percentile payment processing time is {{ $value }}s for {{ $labels.method }}"
+
+  # System Performance Alerts
+  - name: system_performance
+    rules:
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.95, rate(swit_business_request_duration_seconds_bucket[5m])) > 1.0
+        for: 2m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High request latency on {{ $labels.endpoint }}"
+          description: "95th percentile latency is {{ $value }}s for {{ $labels.endpoint }}"
+          
+      - alert: HighErrorRate
+        expr: rate(swit_business_job_errors_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.endpoint }}"
+
+      - alert: LowCacheHitRate
+        expr: swit_business_cache_hit_rate < 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Cache hit rate is low"
+          description: "Cache hit rate for {{ $labels.cache_type }} is {{ $value | humanizePercentage }}"
+
+  # Infrastructure Alerts
+  - name: infrastructure
+    rules:
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% for {{ $labels.instance }}"
+          
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 500
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High memory usage detected"  
+          description: "Memory usage is {{ $value }}MB for {{ $labels.instance }}"
+
+  # User Experience Alerts
+  - name: user_experience
+    rules:
+      - alert: LoginFailureSpike
+        expr: rate(swit_business_user_logins_total{status="failed"}[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          category: user_experience
+        annotations:
+          summary: "Login failure rate spike"
+          description: "Login failure rate is {{ $value | humanizePercentage }} in {{ $labels.region }}"
+          
+      - alert: LowActiveUsers
+        expr: swit_business_active_users_total < 50
+        for: 10m
+        labels:
+          severity: info
+          category: user_experience
+        annotations:
+          summary: "Low active user count"
+          description: "Only {{ $value }} active users currently"
+
+  # Queue Processing Alerts
+  - name: queue_processing
+    rules:
+      - alert: ProcessingQueueBacklog
+        expr: swit_business_processing_queue_size > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: processing
+        annotations:
+          summary: "Processing queue backlog detected"
+          description: "{{ $labels.queue_type }} queue has {{ $value }} items pending"
+          
+      - alert: SlowJobProcessing
+        expr: histogram_quantile(0.95, rate(swit_business_job_processing_duration_seconds_bucket[10m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          category: processing
+        annotations:
+          summary: "Slow job processing detected"
+          description: "95th percentile processing time for {{ $labels.job_type }} jobs is {{ $value }}s"
+
+  # Regional Performance Alerts
+  - name: regional_performance
+    rules:
+      - alert: RegionalServiceDegradation
+        expr: rate(swit_business_regional_active_sessions[5m]) < rate(swit_business_regional_active_sessions[5m] offset 1h) * 0.7
+        for: 10m
+        labels:
+          severity: warning
+          category: regional
+        annotations:
+          summary: "Regional service degradation in {{ $labels.region }}"
+          description: "Active sessions in {{ $labels.region }} have dropped by more than 30% compared to 1 hour ago"
