@@ -74,7 +74,7 @@ func (s *GreeterService) RegisterServices(registry server.BusinessServiceRegistr
 
 // GreeterGRPCService implements the GRPCService interface
 type GreeterGRPCService struct {
-	serviceName string
+	serviceName      string
 	metricsCollector types.MetricsCollector
 	interaction.UnimplementedGreeterServiceServer
 }
@@ -99,26 +99,26 @@ func (s *GreeterGRPCService) GetServiceName() string {
 // SayHello implements the SayHello RPC method
 func (s *GreeterGRPCService) SayHello(ctx context.Context, req *interaction.SayHelloRequest) (*interaction.SayHelloResponse, error) {
 	start := time.Now()
-	
+
 	// Validate request
 	if req.GetName() == "" {
 		// Track validation errors
 		if s.metricsCollector != nil {
 			s.metricsCollector.IncrementCounter("grpc_errors_total", map[string]string{
-				"method": "SayHello",
+				"method":     "SayHello",
 				"error_type": "validation_error",
 				"error_code": "invalid_argument",
 			})
 		}
 		return nil, status.Error(codes.InvalidArgument, "name cannot be empty")
 	}
-	
+
 	// Track request by name for business metrics
 	name := req.GetName()
 	if s.metricsCollector != nil {
 		s.metricsCollector.IncrementCounter("grpc_hello_requests_total", map[string]string{
 			"method": "SayHello",
-			"name": name,
+			"name":   name,
 		})
 	}
 
@@ -126,13 +126,13 @@ func (s *GreeterGRPCService) SayHello(ctx context.Context, req *interaction.SayH
 	response := &interaction.SayHelloResponse{
 		Message: fmt.Sprintf("Hello, %s!", req.GetName()),
 	}
-	
+
 	// Track response time
 	if s.metricsCollector != nil {
 		duration := time.Since(start).Seconds()
 		s.metricsCollector.ObserveHistogram("grpc_request_duration_seconds", duration, map[string]string{
 			"method": "SayHello",
-			"name": name,
+			"name":   name,
 		})
 	}
 
@@ -202,27 +202,28 @@ func (d *GreeterDependencyContainer) Close() error {
 func (d *GreeterDependencyContainer) AddService(name string, service interface{}) {
 	d.services[name] = service
 }
+
 // loadConfigFromFile loads configuration from YAML file
 func loadConfigFromFile(configPath string) (*server.ServerConfig, error) {
 	config := &server.ServerConfig{}
-	
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// File doesn't exist, return default config
 		return createDefaultConfig(), nil
 	}
-	
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	
+
 	if err := yaml.Unmarshal(data, config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
-	
+
 	// Apply environment variable overrides
 	applyEnvironmentOverrides(config)
-	
+
 	return config, nil
 }
 
@@ -294,12 +295,12 @@ func main() {
 			configPath = filepath.Join(filepath.Dir(execDir), configPath)
 		}
 	}
-	
+
 	config, err := loadConfigFromFile(configPath)
 	if err != nil {
 		log.Fatal("Failed to load configuration:", err)
 	}
-	
+
 	// Fallback to hardcoded config if file loading fails
 	if config == nil {
 		log.Println("Using default configuration")

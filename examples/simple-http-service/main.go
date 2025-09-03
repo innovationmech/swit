@@ -75,7 +75,7 @@ func (s *SimpleHTTPService) RegisterServices(registry server.BusinessServiceRegi
 
 // SimpleHTTPHandler implements the HTTPHandler interface
 type SimpleHTTPHandler struct {
-	serviceName string
+	serviceName      string
 	metricsCollector types.MetricsCollector
 }
 
@@ -105,17 +105,17 @@ func (h *SimpleHTTPHandler) GetServiceName() string {
 // handleHello handles the hello endpoint
 func (h *SimpleHTTPHandler) handleHello(c *gin.Context) {
 	start := time.Now()
-	
+
 	// Business metrics - track hello requests by name
 	name := c.Query("name")
 	if name == "" {
 		name = "World"
 	}
-	
+
 	// Track request count and duration
 	if h.metricsCollector != nil {
 		h.metricsCollector.IncrementCounter("hello_requests_total", map[string]string{
-			"name": name,
+			"name":     name,
 			"endpoint": "/api/v1/hello",
 		})
 	}
@@ -125,12 +125,12 @@ func (h *SimpleHTTPHandler) handleHello(c *gin.Context) {
 		"service":   h.serviceName,
 		"timestamp": time.Now().UTC(),
 	})
-	
+
 	// Track response time
 	if h.metricsCollector != nil {
 		duration := time.Since(start).Seconds()
 		h.metricsCollector.ObserveHistogram("hello_request_duration_seconds", duration, map[string]string{
-			"name": name,
+			"name":     name,
 			"endpoint": "/api/v1/hello",
 		})
 	}
@@ -149,7 +149,7 @@ func (h *SimpleHTTPHandler) handleStatus(c *gin.Context) {
 // handleEcho handles the echo endpoint
 func (h *SimpleHTTPHandler) handleEcho(c *gin.Context) {
 	start := time.Now()
-	
+
 	var request struct {
 		Message string `json:"message" binding:"required"`
 	}
@@ -159,7 +159,7 @@ func (h *SimpleHTTPHandler) handleEcho(c *gin.Context) {
 		if h.metricsCollector != nil {
 			h.metricsCollector.IncrementCounter("echo_errors_total", map[string]string{
 				"error_type": "validation_error",
-				"endpoint": "/api/v1/echo",
+				"endpoint":   "/api/v1/echo",
 			})
 		}
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -168,7 +168,7 @@ func (h *SimpleHTTPHandler) handleEcho(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	// Track message length for business metrics
 	messageLength := float64(len(request.Message))
 	if h.metricsCollector != nil {
@@ -185,7 +185,7 @@ func (h *SimpleHTTPHandler) handleEcho(c *gin.Context) {
 		"service":   h.serviceName,
 		"timestamp": time.Now().UTC(),
 	})
-	
+
 	// Track response time
 	if h.metricsCollector != nil {
 		duration := time.Since(start).Seconds()
@@ -255,27 +255,28 @@ func (d *SimpleDependencyContainer) Close() error {
 func (d *SimpleDependencyContainer) AddService(name string, service interface{}) {
 	d.services[name] = service
 }
+
 // loadConfigFromFile loads configuration from YAML file
 func loadConfigFromFile(configPath string) (*server.ServerConfig, error) {
 	config := &server.ServerConfig{}
-	
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// File doesn't exist, return default config
 		return createDefaultConfig(), nil
 	}
-	
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	
+
 	if err := yaml.Unmarshal(data, config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
-	
+
 	// Apply environment variable overrides
 	applyEnvironmentOverrides(config)
-	
+
 	return config, nil
 }
 
@@ -340,12 +341,12 @@ func main() {
 			configPath = filepath.Join(filepath.Dir(execDir), configPath)
 		}
 	}
-	
+
 	config, err := loadConfigFromFile(configPath)
 	if err != nil {
 		logger.GetLogger().Fatal("Failed to load configuration", zap.Error(err))
 	}
-	
+
 	// Fallback to hardcoded config if file loading fails
 	if config == nil {
 		logger.GetLogger().Warn("Using default configuration")
