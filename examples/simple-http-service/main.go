@@ -28,14 +28,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/server"
+	"github.com/innovationmech/swit/pkg/types"
 )
 
 // SimpleHTTPService implements the ServiceRegistrar interface
@@ -53,7 +56,10 @@ func NewSimpleHTTPService(name string) *SimpleHTTPService {
 // RegisterServices registers the HTTP handlers with the server
 func (s *SimpleHTTPService) RegisterServices(registry server.BusinessServiceRegistry) error {
 	// Register HTTP handler
-	httpHandler := &SimpleHTTPHandler{serviceName: s.name}
+	httpHandler := &SimpleHTTPHandler{
+		serviceName: s.name,
+		// Note: metrics collector would be injected in a real application
+	}
 	if err := registry.RegisterBusinessHTTPHandler(httpHandler); err != nil {
 		return fmt.Errorf("failed to register HTTP handler: %w", err)
 	}
@@ -69,7 +75,8 @@ func (s *SimpleHTTPService) RegisterServices(registry server.BusinessServiceRegi
 
 // SimpleHTTPHandler implements the HTTPHandler interface
 type SimpleHTTPHandler struct {
-	serviceName string
+	serviceName      string
+	metricsCollector types.MetricsCollector
 }
 
 // RegisterRoutes registers HTTP routes with the router
@@ -97,9 +104,20 @@ func (h *SimpleHTTPHandler) GetServiceName() string {
 
 // handleHello handles the hello endpoint
 func (h *SimpleHTTPHandler) handleHello(c *gin.Context) {
+	start := time.Now()
+
+	// Business metrics - track hello requests by name
 	name := c.Query("name")
 	if name == "" {
 		name = "World"
+	}
+
+	// Track request count and duration
+	if h.metricsCollector != nil {
+		h.metricsCollector.IncrementCounter("hello_requests_total", map[string]string{
+			"name":     name,
+			"endpoint": "/api/v1/hello",
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -107,6 +125,15 @@ func (h *SimpleHTTPHandler) handleHello(c *gin.Context) {
 		"service":   h.serviceName,
 		"timestamp": time.Now().UTC(),
 	})
+
+	// Track response time
+	if h.metricsCollector != nil {
+		duration := time.Since(start).Seconds()
+		h.metricsCollector.ObserveHistogram("hello_request_duration_seconds", duration, map[string]string{
+			"name":     name,
+			"endpoint": "/api/v1/hello",
+		})
+	}
 }
 
 // handleStatus handles the status endpoint
@@ -121,11 +148,20 @@ func (h *SimpleHTTPHandler) handleStatus(c *gin.Context) {
 
 // handleEcho handles the echo endpoint
 func (h *SimpleHTTPHandler) handleEcho(c *gin.Context) {
+	start := time.Now()
+
 	var request struct {
 		Message string `json:"message" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
+		// Track errors
+		if h.metricsCollector != nil {
+			h.metricsCollector.IncrementCounter("echo_errors_total", map[string]string{
+				"error_type": "validation_error",
+				"endpoint":   "/api/v1/echo",
+			})
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request",
 			"details": err.Error(),
@@ -133,11 +169,30 @@ func (h *SimpleHTTPHandler) handleEcho(c *gin.Context) {
 		return
 	}
 
+	// Track message length for business metrics
+	messageLength := float64(len(request.Message))
+	if h.metricsCollector != nil {
+		h.metricsCollector.IncrementCounter("echo_requests_total", map[string]string{
+			"endpoint": "/api/v1/echo",
+		})
+		h.metricsCollector.ObserveHistogram("echo_message_length_bytes", messageLength, map[string]string{
+			"endpoint": "/api/v1/echo",
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"echo":      request.Message,
 		"service":   h.serviceName,
 		"timestamp": time.Now().UTC(),
 	})
+
+	// Track response time
+	if h.metricsCollector != nil {
+		duration := time.Since(start).Seconds()
+		h.metricsCollector.ObserveHistogram("echo_request_duration_seconds", duration, map[string]string{
+			"endpoint": "/api/v1/echo",
+		})
+	}
 }
 
 // SimpleHealthCheck implements the HealthCheck interface
@@ -200,12 +255,34 @@ func (d *SimpleDependencyContainer) Close() error {
 func (d *SimpleDependencyContainer) AddService(name string, service interface{}) {
 	d.services[name] = service
 }
-func main() {
-	// Initialize logger
-	logger.InitLogger()
 
-	// Create configuration
-	config := &server.ServerConfig{
+// loadConfigFromFile loads configuration from YAML file
+func loadConfigFromFile(configPath string) (*server.ServerConfig, error) {
+	config := &server.ServerConfig{}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		// File doesn't exist, return default config
+		return createDefaultConfig(), nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := yaml.Unmarshal(data, config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Apply environment variable overrides
+	applyEnvironmentOverrides(config)
+
+	return config, nil
+}
+
+// createDefaultConfig creates default configuration
+func createDefaultConfig() *server.ServerConfig {
+	return &server.ServerConfig{
 		ServiceName: "simple-http-service",
 		HTTP: server.HTTPConfig{
 			Port:         getEnv("HTTP_PORT", "8080"),
@@ -229,6 +306,51 @@ func main() {
 			EnableCORS:    true,
 			EnableLogging: true,
 		},
+		Prometheus: *types.DefaultPrometheusConfig(),
+	}
+}
+
+// applyEnvironmentOverrides applies environment variable overrides
+func applyEnvironmentOverrides(config *server.ServerConfig) {
+	if httpPort := os.Getenv("HTTP_PORT"); httpPort != "" {
+		config.HTTP.Port = httpPort
+	}
+	if grpcPort := os.Getenv("GRPC_PORT"); grpcPort != "" {
+		config.GRPC.Port = grpcPort
+	}
+	if discoveryEnabled := os.Getenv("DISCOVERY_ENABLED"); discoveryEnabled != "" {
+		config.Discovery.Enabled = discoveryEnabled == "true" || discoveryEnabled == "1"
+	}
+	if consulAddr := os.Getenv("CONSUL_ADDRESS"); consulAddr != "" {
+		config.Discovery.Address = consulAddr
+	}
+	if prometheusEnabled := os.Getenv("PROMETHEUS_ENABLED"); prometheusEnabled != "" {
+		config.Prometheus.Enabled = prometheusEnabled == "true" || prometheusEnabled == "1"
+	}
+}
+
+func main() {
+	// Initialize logger
+	logger.InitLogger()
+
+	// Load configuration from file or use defaults
+	configPath := getEnv("CONFIG_PATH", "swit.yaml")
+	if !filepath.IsAbs(configPath) {
+		// Make path relative to executable directory
+		if execDir, err := os.Executable(); err == nil {
+			configPath = filepath.Join(filepath.Dir(execDir), configPath)
+		}
+	}
+
+	config, err := loadConfigFromFile(configPath)
+	if err != nil {
+		logger.GetLogger().Fatal("Failed to load configuration", zap.Error(err))
+	}
+
+	// Fallback to hardcoded config if file loading fails
+	if config == nil {
+		logger.GetLogger().Warn("Using default configuration")
+		config = createDefaultConfig()
 	}
 
 	// Validate configuration

@@ -1,0 +1,147 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@example.com'
+  
+templates:
+  - '/etc/alertmanager/*.tmpl'
+
+route:
+  group_by: ['alertname', 'category']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'default'
+  routes:
+    # Critical business alerts
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      routes:
+        - match:
+            category: business
+          receiver: 'business-critical'
+        - match:
+            category: payments
+          receiver: 'payments-critical'
+    
+    # Business KPI alerts
+    - match:
+        category: business
+      receiver: 'business-alerts'
+      
+    # Infrastructure alerts
+    - match:
+        category: infrastructure
+      receiver: 'infrastructure-alerts'
+      
+    # User experience alerts
+    - match:
+        category: user_experience
+      receiver: 'user-experience-alerts'
+
+receivers:
+  - name: 'default'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL_HERE'
+        channel: '#alerts'
+        title: 'Monitoring Alert'
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+        
+  - name: 'critical-alerts'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL_HERE'
+        channel: '#critical-alerts'
+        title: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+    email_configs:
+      - to: 'oncall@example.com'
+        subject: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          Category: {{ .Labels.category }}
+          {{ end }}
+        
+  - name: 'business-critical'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL_HERE'
+        channel: '#business-alerts'
+        title: 'BUSINESS CRITICAL: {{ .GroupLabels.alertname }}'
+        text: |
+          🚨 Business Critical Alert 🚨
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+        
+  - name: 'payments-critical'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL_HERE'  
+        channel: '#payments-alerts'
+        title: 'PAYMENT SYSTEM ALERT: {{ .GroupLabels.alertname }}'
+        text: |
+          💳 Payment System Alert 💳
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+    # PagerDuty integration for payment issues
+    pagerduty_configs:
+      - routing_key: 'YOUR_PAGERDUTY_INTEGRATION_KEY'
+        description: 'Payment System Alert: {{ .GroupLabels.alertname }}'
+        
+  - name: 'business-alerts'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL_HERE'
+        channel: '#business-metrics'
+        title: 'Business Metrics Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          📊 Business Metrics Alert 📊
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        
+  - name: 'infrastructure-alerts'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL_HERE'
+        channel: '#infrastructure'
+        title: 'Infrastructure Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          🖥️ Infrastructure Alert 🖥️
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        
+  - name: 'user-experience-alerts'
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL_HERE'
+        channel: '#user-experience'
+        title: 'User Experience Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          👤 User Experience Alert 👤
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+
+inhibit_rules:
+  # Inhibit high error rate alerts when the service is down
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match:
+      alertname: 'HighErrorRate'
+    equal: ['service']
+    
+  # Inhibit low conversion rate alerts during payment issues
+  - source_match:
+      alertname: 'PaymentFailureSpike'
+    target_match:
+      alertname: 'LowConversionRate'
+    equal: ['service']

@@ -28,16 +28,19 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gopkg.in/yaml.v3"
 
 	interaction "github.com/innovationmech/swit/api/gen/go/proto/swit/interaction/v1"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/server"
+	"github.com/innovationmech/swit/pkg/types"
 )
 
 // GreeterService implements the ServiceRegistrar interface
@@ -71,7 +74,8 @@ func (s *GreeterService) RegisterServices(registry server.BusinessServiceRegistr
 
 // GreeterGRPCService implements the GRPCService interface
 type GreeterGRPCService struct {
-	serviceName string
+	serviceName      string
+	metricsCollector types.MetricsCollector
 	interaction.UnimplementedGreeterServiceServer
 }
 
@@ -94,14 +98,42 @@ func (s *GreeterGRPCService) GetServiceName() string {
 
 // SayHello implements the SayHello RPC method
 func (s *GreeterGRPCService) SayHello(ctx context.Context, req *interaction.SayHelloRequest) (*interaction.SayHelloResponse, error) {
+	start := time.Now()
+
 	// Validate request
 	if req.GetName() == "" {
+		// Track validation errors
+		if s.metricsCollector != nil {
+			s.metricsCollector.IncrementCounter("grpc_errors_total", map[string]string{
+				"method":     "SayHello",
+				"error_type": "validation_error",
+				"error_code": "invalid_argument",
+			})
+		}
 		return nil, status.Error(codes.InvalidArgument, "name cannot be empty")
+	}
+
+	// Track request by name for business metrics
+	name := req.GetName()
+	if s.metricsCollector != nil {
+		s.metricsCollector.IncrementCounter("grpc_hello_requests_total", map[string]string{
+			"method": "SayHello",
+			"name":   name,
+		})
 	}
 
 	// Create response
 	response := &interaction.SayHelloResponse{
 		Message: fmt.Sprintf("Hello, %s!", req.GetName()),
+	}
+
+	// Track response time
+	if s.metricsCollector != nil {
+		duration := time.Since(start).Seconds()
+		s.metricsCollector.ObserveHistogram("grpc_request_duration_seconds", duration, map[string]string{
+			"method": "SayHello",
+			"name":   name,
+		})
 	}
 
 	return response, nil
@@ -170,12 +202,34 @@ func (d *GreeterDependencyContainer) Close() error {
 func (d *GreeterDependencyContainer) AddService(name string, service interface{}) {
 	d.services[name] = service
 }
-func main() {
-	// Initialize logger
-	logger.InitLogger()
 
-	// Create configuration
-	config := &server.ServerConfig{
+// loadConfigFromFile loads configuration from YAML file
+func loadConfigFromFile(configPath string) (*server.ServerConfig, error) {
+	config := &server.ServerConfig{}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		// File doesn't exist, return default config
+		return createDefaultConfig(), nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := yaml.Unmarshal(data, config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Apply environment variable overrides
+	applyEnvironmentOverrides(config)
+
+	return config, nil
+}
+
+// createDefaultConfig creates default configuration
+func createDefaultConfig() *server.ServerConfig {
+	return &server.ServerConfig{
 		ServiceName: "grpc-greeter-service",
 		HTTP: server.HTTPConfig{
 			Enabled: false, // Disable HTTP for this gRPC-only service
@@ -209,6 +263,48 @@ func main() {
 		Middleware: server.MiddlewareConfig{
 			EnableLogging: true,
 		},
+		Prometheus: *types.DefaultPrometheusConfig(),
+	}
+}
+
+// applyEnvironmentOverrides applies environment variable overrides
+func applyEnvironmentOverrides(config *server.ServerConfig) {
+	if grpcPort := os.Getenv("GRPC_PORT"); grpcPort != "" {
+		config.GRPC.Port = grpcPort
+	}
+	if discoveryEnabled := os.Getenv("DISCOVERY_ENABLED"); discoveryEnabled != "" {
+		config.Discovery.Enabled = discoveryEnabled == "true" || discoveryEnabled == "1"
+	}
+	if consulAddr := os.Getenv("CONSUL_ADDRESS"); consulAddr != "" {
+		config.Discovery.Address = consulAddr
+	}
+	if prometheusEnabled := os.Getenv("PROMETHEUS_ENABLED"); prometheusEnabled != "" {
+		config.Prometheus.Enabled = prometheusEnabled == "true" || prometheusEnabled == "1"
+	}
+}
+
+func main() {
+	// Initialize logger
+	logger.InitLogger()
+
+	// Load configuration from file or use defaults
+	configPath := getEnv("CONFIG_PATH", "swit.yaml")
+	if !filepath.IsAbs(configPath) {
+		// Make path relative to executable directory
+		if execDir, err := os.Executable(); err == nil {
+			configPath = filepath.Join(filepath.Dir(execDir), configPath)
+		}
+	}
+
+	config, err := loadConfigFromFile(configPath)
+	if err != nil {
+		log.Fatal("Failed to load configuration:", err)
+	}
+
+	// Fallback to hardcoded config if file loading fails
+	if config == nil {
+		log.Println("Using default configuration")
+		config = createDefaultConfig()
 	}
 
 	// Validate configuration
