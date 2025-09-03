@@ -1,21 +1,33 @@
-# Error Monitoring and Performance Tracking
+# Monitoring and Observability
 
-The Swit framework provides comprehensive error monitoring and performance tracking capabilities through Sentry integration. This guide covers everything from basic setup to advanced configuration and troubleshooting.
+The Swit framework provides comprehensive monitoring and observability capabilities through two main systems: **Sentry** for error monitoring and **Prometheus** for metrics collection. This guide covers everything from basic setup to advanced configuration and troubleshooting.
 
 ## Overview
 
 Swit's monitoring system includes:
 
+### Error Monitoring (Sentry)
 - **Automatic Error Capture**: HTTP and gRPC errors are automatically captured with full context
 - **Performance Monitoring**: Request tracing, transaction monitoring, and performance metrics
 - **Smart Filtering**: Configurable error filtering to reduce noise (ignores 4xx errors by default)
 - **Context Enrichment**: Request metadata, user context, and custom tags in error reports
 - **Panic Recovery**: Automatic panic capture and recovery with detailed stack traces
+
+### Metrics Collection (Prometheus)
+- **Built-in Metrics**: HTTP/gRPC request metrics, server performance, and transport status
+- **Custom Metrics**: Counters, gauges, histograms with configurable labels and buckets
+- **Business Metrics**: High-level business logic metrics with event hooks
+- **Cardinality Control**: Automatic cardinality limiting to prevent metric explosion
+- **Performance Optimized**: <5% overhead with >10k RPS capability
 - **Zero-Config Defaults**: Works out-of-the-box with sensible production defaults
 
 ## Quick Start
 
-### 1. Basic Configuration
+This section covers both Sentry (error monitoring) and Prometheus (metrics collection) setup.
+
+### Sentry Setup
+
+#### 1. Basic Configuration
 
 Add Sentry configuration to your service config file:
 
@@ -31,7 +43,7 @@ sentry:
   traces_sample_rate: 0.1
 ```
 
-### 2. Environment Setup
+#### 2. Environment Setup
 
 Set your Sentry DSN:
 
@@ -39,7 +51,7 @@ Set your Sentry DSN:
 export SENTRY_DSN="https://your-dsn@sentry.io/your-project-id"
 ```
 
-### 3. Framework Integration
+#### 3. Framework Integration
 
 The framework handles Sentry automatically:
 
@@ -69,7 +81,75 @@ func main() {
 
 That's it! Your service now has comprehensive error monitoring and performance tracking.
 
-## Advanced Configuration
+### Prometheus Setup
+
+#### 1. Basic Configuration
+
+Add Prometheus configuration to your service config file:
+
+```yaml
+# swit.yaml
+service_name: "my-service"
+
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "myapp"
+  subsystem: "server" 
+  buckets:
+    duration: [0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10]
+    size: [100, 1000, 10000, 100000, 1000000]
+  cardinality_limit: 10000
+```
+
+#### 2. Framework Integration
+
+The framework automatically sets up Prometheus metrics:
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "github.com/innovationmech/swit/pkg/server"
+)
+
+func main() {
+    config := server.NewServerConfig()
+    config.ServiceName = "my-service"
+    
+    // Prometheus metrics will be automatically enabled
+    baseServer, err := server.NewBusinessServerCore(config, myService, nil)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Start server - metrics collection begins automatically
+    // Metrics endpoint available at http://localhost:8080/metrics
+    baseServer.Start(context.Background())
+}
+```
+
+#### 3. Accessing Metrics
+
+Once running, metrics are available at the `/metrics` endpoint:
+
+```bash
+curl http://localhost:8080/metrics
+
+# Example output:
+# HELP swit_server_http_requests_total Total number of HTTP requests
+# TYPE swit_server_http_requests_total counter
+# swit_server_http_requests_total{method="GET",endpoint="/api/users",status="200"} 42
+# 
+# HELP swit_server_http_request_duration_seconds HTTP request duration in seconds  
+# TYPE swit_server_http_request_duration_seconds histogram
+# swit_server_http_request_duration_seconds_bucket{method="GET",endpoint="/api/users",le="0.1"} 35
+# swit_server_http_request_duration_seconds_bucket{method="GET",endpoint="/api/users",le="0.5"} 40
+```
+
+## Sentry Advanced Configuration
 
 ### Complete Configuration Reference
 
@@ -156,7 +236,290 @@ sentry:
   enable_profiling: true
 ```
 
-## Performance Monitoring
+## Prometheus Advanced Configuration
+
+### Complete Configuration Reference
+
+```yaml
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "myapp"           # Metric name prefix
+  subsystem: "server"          # Metric name subsystem
+  
+  # Histogram bucket configurations
+  buckets:
+    # For duration metrics (seconds)
+    duration: [0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10]
+    # For size metrics (bytes)
+    size: [100, 1000, 10000, 100000, 1000000]
+  
+  # Global labels applied to all metrics
+  labels:
+    service: "user-service"
+    version: "v1.2.3"
+    datacenter: "us-west"
+  
+  # Cardinality control
+  cardinality_limit: 10000     # Max unique label combinations
+```
+
+### Built-in Metrics
+
+The framework automatically collects these metrics:
+
+#### HTTP Metrics
+- `http_requests_total` - Total HTTP requests by method, endpoint, status
+- `http_request_duration_seconds` - Request duration histogram 
+- `http_request_size_bytes` - Request body size histogram
+- `http_response_size_bytes` - Response body size histogram
+- `http_active_requests` - Current number of active requests
+
+#### gRPC Metrics  
+- `grpc_server_started_total` - Total gRPC calls started
+- `grpc_server_handled_total` - Total gRPC calls completed
+- `grpc_server_handling_seconds` - gRPC call duration histogram
+- `grpc_server_msg_received_total` - Total messages received
+- `grpc_server_msg_sent_total` - Total messages sent
+
+#### Server Metrics
+- `server_uptime_seconds` - Server uptime
+- `server_startup_duration_seconds` - Server startup time
+- `server_shutdown_duration_seconds` - Server shutdown time  
+- `server_goroutines` - Number of goroutines
+- `server_memory_bytes` - Memory usage by type
+- `server_start_time` - Server start timestamp
+
+#### Transport Metrics
+- `transport_status` - Transport health status (1=up, 0=down)
+- `transport_connections_active` - Active connections
+- `transport_connections_total` - Total connections
+- `active_transports` - Number of active transports
+
+### Custom Business Metrics
+
+Add custom metrics for your business logic:
+
+```go
+import (
+    "github.com/innovationmech/swit/pkg/server"
+    "github.com/innovationmech/swit/pkg/types"
+)
+
+type OrderService struct {
+    metricsManager *server.BusinessMetricsManager
+}
+
+func NewOrderService(bmm *server.BusinessMetricsManager) *OrderService {
+    // Register custom metric definitions
+    bmm.RegisterCustomMetric(server.MetricDefinition{
+        Name:        "orders_processed_total",
+        Type:        types.CounterType,
+        Description: "Total orders processed",
+        Labels:      []string{"status", "payment_method", "region"},
+    })
+    
+    bmm.RegisterCustomMetric(server.MetricDefinition{
+        Name:        "order_value_dollars",
+        Type:        types.HistogramType,
+        Description: "Order value distribution in dollars",
+        Labels:      []string{"region"},
+        Buckets:     []float64{10, 50, 100, 500, 1000, 5000},
+    })
+    
+    return &OrderService{metricsManager: bmm}
+}
+
+func (s *OrderService) ProcessOrder(order *Order) error {
+    // Record business metrics
+    s.metricsManager.RecordCounter("orders_processed_total", 1.0, map[string]string{
+        "status":         "success",
+        "payment_method": order.PaymentMethod,
+        "region":         order.Region,
+    })
+    
+    s.metricsManager.RecordHistogram("order_value_dollars", order.Value, map[string]string{
+        "region": order.Region,
+    })
+    
+    // Track processing queue depth
+    s.metricsManager.RecordGauge("order_queue_depth", float64(s.getQueueDepth()), nil)
+    
+    return nil
+}
+```
+
+### Metrics Hooks and Event Processing
+
+Set up hooks to process metric events:
+
+```go
+import "github.com/innovationmech/swit/pkg/server"
+
+func setupMetricsHooks(bmm *server.BusinessMetricsManager) {
+    // Add logging hook
+    loggingHook := server.NewLoggingBusinessMetricsHook()
+    bmm.RegisterHook(loggingHook)
+    
+    // Add aggregation hook for dashboards
+    aggregationHook := server.NewAggregationBusinessMetricsHook()
+    bmm.RegisterHook(aggregationHook)
+    
+    // Custom hook for alerting
+    alertingHook := &AlertingMetricsHook{
+        alertManager: myAlertManager,
+    }
+    bmm.RegisterHook(alertingHook)
+}
+
+type AlertingMetricsHook struct {
+    name         string
+    alertManager AlertManager
+}
+
+func (a *AlertingMetricsHook) OnMetricRecorded(event server.BusinessMetricEvent) {
+    // Send alerts for high error rates
+    if event.Name == "http_requests_total" && 
+       event.Labels["status"] >= "500" {
+        a.alertManager.SendAlert("High error rate detected", event)
+    }
+    
+    // Alert on queue depth
+    if event.Name == "order_queue_depth" && event.Value.(float64) > 1000 {
+        a.alertManager.SendAlert("Queue depth critical", event)
+    }
+}
+
+func (a *AlertingMetricsHook) GetHookName() string {
+    return "alerting_hook"
+}
+```
+
+### Environment-Specific Configuration
+
+#### Development
+```yaml
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "dev"
+  cardinality_limit: 1000      # Lower limit for dev
+```
+
+#### Staging  
+```yaml
+prometheus:
+  enabled: true
+  endpoint: "/metrics"  
+  namespace: "staging"
+  cardinality_limit: 5000
+  labels:
+    environment: "staging"
+```
+
+#### Production
+```yaml  
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "prod"
+  cardinality_limit: 10000
+  labels:
+    environment: "production"
+    service: "user-service"
+    version: "${SERVICE_VERSION}"
+```
+
+### Integration with Prometheus Server
+
+#### Prometheus Server Configuration
+
+Add your service to `prometheus.yml`:
+
+```yaml
+global:
+  scrape_interval: 15s
+  
+scrape_configs:
+  - job_name: 'swit-services'
+    static_configs:
+      - targets: ['localhost:8080']  # Your service
+    scrape_interval: 10s
+    metrics_path: /metrics
+    
+    # Relabel metrics to add instance info
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: host
+        replacement: '${1}'
+```
+
+#### Service Discovery with Consul
+
+If using Consul service discovery:
+
+```yaml
+scrape_configs:
+  - job_name: 'swit-services-consul'
+    consul_sd_configs:
+      - server: 'localhost:8500'
+        services: ['user-service', 'order-service']
+    
+    relabel_configs:
+      - source_labels: [__meta_consul_service]
+        target_label: job
+      - source_labels: [__meta_consul_node]
+        target_label: instance
+```
+
+### Performance Optimization
+
+#### Cardinality Management
+
+Prevent metric explosion with cardinality limits:
+
+```go
+// Good: Limited, predictable labels
+metricsManager.RecordCounter("api_requests_total", 1.0, map[string]string{
+    "method":   "GET",           // ~10 values
+    "endpoint": "/api/users",    // ~50 values  
+    "status":   "200",           // ~20 values
+    // Total combinations: 10 * 50 * 20 = 10,000
+})
+
+// Bad: Unlimited cardinality
+metricsManager.RecordCounter("api_requests_total", 1.0, map[string]string{
+    "method":    "GET",
+    "user_id":   "123456",       // Millions of unique values!
+    "request_id": uuid.New(),    // Always unique!
+    // This will quickly hit cardinality limits
+})
+```
+
+#### Performance Benchmarks
+
+Expected performance characteristics:
+
+- **Throughput**: >10,000 operations per second
+- **Latency**: <1ms per metric operation  
+- **Memory**: <1KB per unique metric series
+- **CPU Overhead**: <5% of total application CPU
+- **Endpoint Response**: <100ms for `/metrics`
+
+#### Memory Management
+
+```go
+// Reset metrics collector to free memory
+collector.Reset()
+
+// Or create new collector for clean slate
+newCollector := types.NewPrometheusMetricsCollector(config)
+```
+
+## Sentry Performance Monitoring
 
 ### Transaction Tracking
 

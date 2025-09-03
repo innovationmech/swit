@@ -457,16 +457,19 @@ func TestPrometheusMetricsCollector_CardinalityLimiting(t *testing.T) {
 	t.Run("cardinality tracking", func(t *testing.T) {
 		metricName := "cardinality_test"
 
-		// Add metrics up to per-metric limit (1000)
-		for i := 0; i < 1001; i++ {
+		// The maxCardinality is set to 5, which is the total limit across all metrics
+		// One metric was already added in the previous test, so we have 4 slots left
+		// Test up to the remaining limit (4) and verify rejection after
+		for i := 0; i < 10; i++ {
 			result := collector.checkCardinality(metricName, map[string]string{
 				"iteration": fmt.Sprintf("%d", i),
 			})
 
-			if i < 1000 {
-				assert.True(t, result, "Should allow metrics under limit")
+			// First test added 1 metric, so we have 4 slots left (5 - 1 = 4)
+			if i < 4 {
+				assert.True(t, result, fmt.Sprintf("Should allow metric %d under remaining limit of 4", i))
 			} else {
-				assert.False(t, result, "Should reject metrics over limit")
+				assert.False(t, result, fmt.Sprintf("Should reject metric %d over limit of 5", i))
 			}
 		}
 	})

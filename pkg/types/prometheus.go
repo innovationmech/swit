@@ -83,6 +83,7 @@ type PrometheusMetricsCollector struct {
 	// Cardinality limiting
 	maxCardinality int
 	currentMetrics map[string]int
+	knownSeries    map[string]struct{}
 	cardinalityMu  sync.RWMutex
 }
 
@@ -108,6 +109,7 @@ func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsC
 		summaries:      make(map[string]*prometheus.SummaryVec),
 		maxCardinality: config.CardinalityLimit,
 		currentMetrics: make(map[string]int),
+		knownSeries:    make(map[string]struct{}),
 	}
 }
 
@@ -118,6 +120,11 @@ func (pmc *PrometheusMetricsCollector) IncrementCounter(name string, labels map[
 
 // AddToCounter adds a value to a counter metric
 func (pmc *PrometheusMetricsCollector) AddToCounter(name string, value float64, labels map[string]string) {
+	// Check cardinality before proceeding
+	if !pmc.checkCardinality(name, labels) {
+		return // Silently drop metrics that would exceed cardinality limit
+	}
+
 	pmc.safeMetricOperation(func() error {
 		counter, err := pmc.getOrCreateCounter(name, labels)
 		if err != nil {
@@ -132,6 +139,11 @@ func (pmc *PrometheusMetricsCollector) AddToCounter(name string, value float64, 
 
 // SetGauge sets a gauge metric to a specific value
 func (pmc *PrometheusMetricsCollector) SetGauge(name string, value float64, labels map[string]string) {
+	// Check cardinality before proceeding
+	if !pmc.checkCardinality(name, labels) {
+		return // Silently drop metrics that would exceed cardinality limit
+	}
+
 	pmc.safeMetricOperation(func() error {
 		gauge, err := pmc.getOrCreateGauge(name, labels)
 		if err != nil {
@@ -146,6 +158,11 @@ func (pmc *PrometheusMetricsCollector) SetGauge(name string, value float64, labe
 
 // IncrementGauge increments a gauge metric by 1
 func (pmc *PrometheusMetricsCollector) IncrementGauge(name string, labels map[string]string) {
+	// Check cardinality before proceeding
+	if !pmc.checkCardinality(name, labels) {
+		return // Silently drop metrics that would exceed cardinality limit
+	}
+
 	pmc.safeMetricOperation(func() error {
 		gauge, err := pmc.getOrCreateGauge(name, labels)
 		if err != nil {
@@ -160,6 +177,11 @@ func (pmc *PrometheusMetricsCollector) IncrementGauge(name string, labels map[st
 
 // DecrementGauge decrements a gauge metric by 1
 func (pmc *PrometheusMetricsCollector) DecrementGauge(name string, labels map[string]string) {
+	// Check cardinality before proceeding
+	if !pmc.checkCardinality(name, labels) {
+		return // Silently drop metrics that would exceed cardinality limit
+	}
+
 	pmc.safeMetricOperation(func() error {
 		gauge, err := pmc.getOrCreateGauge(name, labels)
 		if err != nil {
@@ -174,6 +196,11 @@ func (pmc *PrometheusMetricsCollector) DecrementGauge(name string, labels map[st
 
 // ObserveHistogram adds an observation to a histogram metric
 func (pmc *PrometheusMetricsCollector) ObserveHistogram(name string, value float64, labels map[string]string) {
+	// Check cardinality before proceeding
+	if !pmc.checkCardinality(name, labels) {
+		return // Silently drop metrics that would exceed cardinality limit
+	}
+
 	pmc.safeMetricOperation(func() error {
 		histogram, err := pmc.getOrCreateHistogram(name, labels)
 		if err != nil {
@@ -491,25 +518,62 @@ func (pmc *PrometheusMetricsCollector) checkCardinality(metricName string, label
 		return true // No limit
 	}
 
+	// Create a unique series key from metric name and labels
+	seriesKey := pmc.buildSeriesKey(metricName, labels)
+
 	pmc.cardinalityMu.RLock()
-	current := pmc.currentMetrics[metricName]
+	_, exists := pmc.knownSeries[seriesKey]
+	totalSeries := len(pmc.knownSeries)
 	pmc.cardinalityMu.RUnlock()
 
-	// Simple cardinality check - in practice, you'd want more sophisticated tracking
-	if current >= 1000 { // Per-metric limit
+	// If series already exists, allow it
+	if exists {
+		return true
+	}
+
+	// Check if adding this new series would exceed the limit
+	if totalSeries >= pmc.maxCardinality {
 		if logger.Logger != nil {
-			logger.Logger.Warn("Metric cardinality limit approaching",
+			logger.Logger.Warn("Metric cardinality limit reached",
 				zap.String("metric", metricName),
-				zap.Int("current", current))
+				zap.String("series", seriesKey),
+				zap.Int("current", totalSeries),
+				zap.Int("limit", pmc.maxCardinality))
 		}
 		return false
 	}
 
+	// Add new series to tracking
 	pmc.cardinalityMu.Lock()
-	pmc.currentMetrics[metricName]++
+	pmc.knownSeries[seriesKey] = struct{}{}
 	pmc.cardinalityMu.Unlock()
 
 	return true
+}
+
+// buildSeriesKey creates a unique key for a metric series
+func (pmc *PrometheusMetricsCollector) buildSeriesKey(metricName string, labels map[string]string) string {
+	if len(labels) == 0 {
+		return metricName
+	}
+
+	// Build a consistent key from sorted labels
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var builder strings.Builder
+	builder.WriteString(metricName)
+	for _, k := range keys {
+		builder.WriteString("{")
+		builder.WriteString(k)
+		builder.WriteString("=")
+		builder.WriteString(labels[k])
+		builder.WriteString("}")
+	}
+	return builder.String()
 }
 
 // safeMetricOperation wraps metric operations with error handling
