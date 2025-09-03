@@ -273,9 +273,10 @@ func BenchmarkPrometheusMemoryUsage(b *testing.B) {
 // TestPrometheusPerformanceRequirements validates performance requirements
 func TestPrometheusPerformanceRequirements(t *testing.T) {
 	config := &types.PrometheusConfig{
-		Enabled:   true,
-		Namespace: "perf_test",
-		Subsystem: "server",
+		Enabled:          true,
+		Namespace:        "perf_test",
+		Subsystem:        "server",
+		CardinalityLimit: 50000, // High limit for performance testing
 	}
 	collector := types.NewPrometheusMetricsCollector(config)
 	bmm := NewBusinessMetricsManager("perf-test-service", collector, nil)
@@ -286,6 +287,7 @@ func TestPrometheusPerformanceRequirements(t *testing.T) {
 		const numGoroutines = 10
 
 		var totalOps int64
+		var totalOpsMutex sync.Mutex
 		var wg sync.WaitGroup
 		start := time.Now()
 
@@ -313,7 +315,9 @@ func TestPrometheusPerformanceRequirements(t *testing.T) {
 
 					localOps++
 				}
+				totalOpsMutex.Lock()
 				totalOps += int64(localOps)
+				totalOpsMutex.Unlock()
 			}(i)
 		}
 
@@ -459,7 +463,7 @@ func TestLoadTestPrometheusMetrics(t *testing.T) {
 		Enabled:          true,
 		Namespace:        "load_test",
 		Subsystem:        "server",
-		CardinalityLimit: 10000,
+		CardinalityLimit: 100000, // Very high limit for load testing
 	})
 	bmm := NewBusinessMetricsManager("load-test-service", collector, nil)
 
@@ -470,6 +474,7 @@ func TestLoadTestPrometheusMetrics(t *testing.T) {
 
 		var totalRequests int64
 		var errors int64
+		var counterMutex sync.Mutex
 		var wg sync.WaitGroup
 
 		startTime := time.Now()
@@ -517,8 +522,10 @@ func TestLoadTestPrometheusMetrics(t *testing.T) {
 					}
 				}
 
+				counterMutex.Lock()
 				totalRequests += int64(localRequests)
 				errors += int64(localErrors)
+				counterMutex.Unlock()
 			}(i)
 		}
 
