@@ -1,0 +1,102 @@
+# Jaeger All-in-One 配置文件
+# 用于开发和演示环境
+
+# 基础配置
+jaeger:
+  # 服务名称
+  service_name: "jaeger-all-in-one"
+  
+  # 日志级别
+  log_level: "info"
+  
+  # 存储配置
+  storage:
+    type: "memory"  # 开发环境使用内存存储
+    memory:
+      max_traces: 50000  # 最大追踪数量
+    
+    # 生产环境配置示例（注释掉）
+    # type: "elasticsearch" 
+    # elasticsearch:
+    #   server_urls: ["http://elasticsearch:9200"]
+    #   username: "elastic"
+    #   password: "changeme"
+    #   index_prefix: "jaeger"
+
+# Collector 配置
+collector:
+  # HTTP 端口
+  http_port: 14268
+  
+  # gRPC 端口
+  grpc_port: 14250
+  
+  # Zipkin 兼容端口
+  zipkin_port: 9411
+  
+  # OTLP 配置
+  otlp:
+    enabled: true
+    grpc_port: 4317
+    http_port: 4318
+
+# Agent 配置（All-in-One 模式包含）
+agent:
+  # Thrift compact 协议端口
+  thrift_compact_port: 6831
+  
+  # Thrift binary 协议端口
+  thrift_binary_port: 6832
+  
+  # 配置端口
+  config_port: 5778
+
+# Query 服务配置
+query:
+  # Web UI 端口
+  http_port: 16686
+  
+  # 基础路径
+  base_path: "/"
+  
+  # UI 配置
+  ui:
+    # 默认查看器时间范围（小时）
+    default_lookback: "1h"
+    
+    # 最大查看器时间范围（小时）  
+    max_lookback: "168h"  # 7天
+
+# 采样配置
+sampling:
+  # 默认采样策略
+  default_strategy:
+    type: "probabilistic"
+    param: 1.0  # 100% 采样（开发环境）
+
+# 环境变量配置（Docker 环境变量会覆盖这些设置）
+environment:
+  # 存储类型
+  SPAN_STORAGE_TYPE: "memory"
+  
+  # Collector 端口
+  COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
+  COLLECTOR_OTLP_ENABLED: "true"
+  
+  # Query 配置
+  QUERY_BASE_PATH: "/"
+  
+  # 日志配置
+  LOG_LEVEL: "info"
+
+# 监控配置
+monitoring:
+  # 健康检查
+  health_check:
+    enabled: true
+    port: 14269
+  
+  # 指标采集
+  metrics:
+    enabled: true
+    namespace: "jaeger"
