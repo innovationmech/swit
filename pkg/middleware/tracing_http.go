@@ -35,10 +35,10 @@ import (
 
 // HTTPTracingConfig holds configuration for HTTP tracing middleware
 type HTTPTracingConfig struct {
-	SkipPaths        []string // Paths to skip tracing
-	RecordReqBody    bool     // Whether to record request body
-	RecordRespBody   bool     // Whether to record response body
-	MaxBodySize      int      // Maximum size of body to record
+	SkipPaths        []string                             // Paths to skip tracing
+	RecordReqBody    bool                                 // Whether to record request body
+	RecordRespBody   bool                                 // Whether to record response body
+	MaxBodySize      int                                  // Maximum size of body to record
 	CustomAttributes map[string]func(*gin.Context) string // Custom attribute extractors
 }
 
@@ -130,7 +130,7 @@ func TracingMiddlewareWithConfig(tm tracing.TracingManager, config *HTTPTracingC
 		respWriter := &responseWriter{
 			ResponseWriter: c.Writer,
 			statusCode:     http.StatusOK,
-			size:          0,
+			size:           0,
 		}
 		c.Writer = respWriter
 
@@ -145,7 +145,7 @@ func TracingMiddlewareWithConfig(tm tracing.TracingManager, config *HTTPTracingC
 		// Set span status based on HTTP status code
 		if statusCode >= 400 {
 			span.SetStatus(codes.Error, http.StatusText(statusCode))
-			
+
 			// Add error information if available
 			if len(c.Errors) > 0 {
 				span.RecordError(c.Errors.Last())
@@ -192,7 +192,7 @@ type tracingRoundTripper struct {
 // RoundTrip implements http.RoundTripper
 func (t *tracingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-	
+
 	operationName := req.Method + " " + req.URL.Path
 	ctx, span := t.tm.StartSpan(
 		ctx,
@@ -210,11 +210,11 @@ func (t *tracingRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 
 	// Inject tracing headers
 	t.tm.InjectHTTPHeaders(ctx, req.Header)
-	
+
 	// Make the request with traced context
 	req = req.WithContext(ctx)
 	resp, err := t.base.RoundTrip(req)
-	
+
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -244,7 +244,7 @@ type responseWriter struct {
 func (w *responseWriter) Write(b []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(b)
 	w.size += int64(n)
-	if len(w.body) + len(b) <= 4096 { // Limit body capture to 4KB
+	if len(w.body)+len(b) <= 4096 { // Limit body capture to 4KB
 		w.body = append(w.body, b...)
 	}
 	return n, err

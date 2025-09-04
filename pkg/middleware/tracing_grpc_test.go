@@ -39,7 +39,7 @@ func TestUnaryServerInterceptor(t *testing.T) {
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
@@ -56,14 +56,14 @@ func TestUnaryServerInterceptor(t *testing.T) {
 		}
 
 		resp, err := interceptor(context.Background(), "test-request", info, handler)
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, "success", resp)
 	})
 
 	t.Run("error request records error in span", func(t *testing.T) {
 		testErr := status.Error(codes.Internal, "test error")
-		
+
 		handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 			return nil, testErr
 		}
@@ -73,7 +73,7 @@ func TestUnaryServerInterceptor(t *testing.T) {
 		}
 
 		resp, err := interceptor(context.Background(), "test-request", info, handler)
-		
+
 		assert.Error(t, err)
 		assert.Nil(t, resp)
 		assert.Equal(t, testErr, err)
@@ -84,7 +84,7 @@ func TestUnaryServerInterceptorWithConfig(t *testing.T) {
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestUnaryServerInterceptorWithConfig(t *testing.T) {
 		}
 
 		resp, err := interceptor(context.Background(), "test-request", info, handler)
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, "success", resp)
 	})
@@ -123,7 +123,7 @@ func TestUnaryServerInterceptorWithConfig(t *testing.T) {
 		}
 
 		resp, err := interceptor(context.Background(), "test-request", info, handler)
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, "healthy", resp)
 	})
@@ -133,7 +133,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
@@ -157,13 +157,13 @@ func TestUnaryClientInterceptor(t *testing.T) {
 			cc,
 			invoker,
 		)
-		
+
 		assert.NoError(t, err)
 	})
 
 	t.Run("error request records error in span", func(t *testing.T) {
 		testErr := status.Error(codes.Unavailable, "service unavailable")
-		
+
 		invoker := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return testErr
 		}
@@ -178,7 +178,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 			cc,
 			invoker,
 		)
-		
+
 		assert.Error(t, err)
 		assert.Equal(t, testErr, err)
 	})
@@ -186,7 +186,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 
 func TestDefaultGRPCTracingConfig(t *testing.T) {
 	config := DefaultGRPCTracingConfig()
-	
+
 	assert.NotNil(t, config)
 	assert.Contains(t, config.SkipMethods, "/grpc.health.v1.Health/Check")
 	assert.Contains(t, config.SkipMethods, "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo")
@@ -239,33 +239,33 @@ func TestSplitMethodName(t *testing.T) {
 
 func TestFormatPayload(t *testing.T) {
 	tests := []struct {
-		name        string
-		payload     interface{}
-		maxSize     int
+		name         string
+		payload      interface{}
+		maxSize      int
 		wantContains string
 	}{
 		{
-			name:        "nil payload",
-			payload:     nil,
-			maxSize:     100,
+			name:         "nil payload",
+			payload:      nil,
+			maxSize:      100,
 			wantContains: "",
 		},
 		{
-			name:        "string payload",
-			payload:     "test message",
-			maxSize:     100,
+			name:         "string payload",
+			payload:      "test message",
+			maxSize:      100,
 			wantContains: "test message",
 		},
 		{
-			name:        "struct payload",
-			payload:     struct{ Name string }{Name: "test"},
-			maxSize:     100,
+			name:         "struct payload",
+			payload:      struct{ Name string }{Name: "test"},
+			maxSize:      100,
 			wantContains: "test",
 		},
 		{
-			name:        "large payload truncated",
-			payload:     "this is a very long message that exceeds the maximum size limit",
-			maxSize:     10,
+			name:         "large payload truncated",
+			payload:      "this is a very long message that exceeds the maximum size limit",
+			maxSize:      10,
 			wantContains: "...",
 		},
 	}

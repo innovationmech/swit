@@ -41,10 +41,10 @@ import (
 
 // GRPCTracingConfig holds configuration for gRPC tracing interceptors
 type GRPCTracingConfig struct {
-	SkipMethods      []string // Methods to skip tracing
-	RecordReqPayload bool     // Whether to record request payload
-	RecordRespPayload bool    // Whether to record response payload
-	MaxPayloadSize   int      // Maximum size of payload to record
+	SkipMethods       []string // Methods to skip tracing
+	RecordReqPayload  bool     // Whether to record request payload
+	RecordRespPayload bool     // Whether to record response payload
+	MaxPayloadSize    int      // Maximum size of payload to record
 }
 
 // DefaultGRPCTracingConfig returns default gRPC tracing configuration
@@ -77,7 +77,7 @@ func UnaryServerInterceptorWithConfig(tm tracing.TracingManager, config *GRPCTra
 
 		// Extract method and service names
 		service, method := splitMethodName(info.FullMethod)
-		
+
 		// Start span
 		ctx, span := tm.StartSpan(
 			ctx,
@@ -110,7 +110,7 @@ func UnaryServerInterceptorWithConfig(tm tracing.TracingManager, config *GRPCTra
 			span.SetAttribute(string(semconv.RPCGRPCStatusCodeKey), int(grpcStatus.Code()))
 			span.SetStatus(codes.Error, grpcStatus.Message())
 			span.RecordError(err)
-			
+
 			// Add error details
 			span.AddEvent("grpc.error", trace.WithAttributes(
 				attribute.String("grpc.error.message", grpcStatus.Message()),
@@ -119,7 +119,7 @@ func UnaryServerInterceptorWithConfig(tm tracing.TracingManager, config *GRPCTra
 		} else {
 			span.SetAttribute(string(semconv.RPCGRPCStatusCodeKey), 0) // OK
 			span.SetStatus(codes.Ok, "")
-			
+
 			// Record response payload if configured
 			if config.RecordRespPayload {
 				span.SetAttribute("rpc.response.payload", formatPayload(resp, config.MaxPayloadSize))
@@ -150,7 +150,7 @@ func StreamServerInterceptorWithConfig(tm tracing.TracingManager, config *GRPCTr
 
 		// Extract method and service names
 		service, method := splitMethodName(info.FullMethod)
-		
+
 		// Start span
 		ctx, span := tm.StartSpan(
 			ctx,
@@ -198,7 +198,7 @@ func UnaryClientInterceptor(tm tracing.TracingManager) grpc.UnaryClientIntercept
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		// Extract method and service names
 		service, methodName := splitMethodName(method)
-		
+
 		// Start span
 		ctx, span := tm.StartSpan(
 			ctx,
@@ -241,7 +241,7 @@ func StreamClientInterceptor(tm tracing.TracingManager) grpc.StreamClientInterce
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		// Extract method and service names
 		service, methodName := splitMethodName(method)
-		
+
 		// Start span
 		ctx, span := tm.StartSpan(
 			ctx,
@@ -344,6 +344,7 @@ func injectTracingIntoMetadata(ctx context.Context, tm tracing.TracingManager) c
 
 // splitMethodName splits a gRPC method name into service and method parts
 func splitMethodName(fullMethodName string) (string, string) {
+	original := fullMethodName
 	fullMethodName = strings.TrimPrefix(fullMethodName, "/")
 	parts := strings.Split(fullMethodName, "/")
 	if len(parts) == 2 {
@@ -351,7 +352,7 @@ func splitMethodName(fullMethodName string) (string, string) {
 	}
 	// Fallback: use the last part as service, full name as method
 	service := path.Base(fullMethodName)
-	return service, fullMethodName
+	return service, original
 }
 
 // formatPayload formats a payload for recording in spans
@@ -359,7 +360,7 @@ func formatPayload(payload interface{}, maxSize int) string {
 	if payload == nil {
 		return ""
 	}
-	
+
 	// This is a simple string representation
 	// In a real implementation, you might want to use JSON marshaling
 	// with size limits and sanitization

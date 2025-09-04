@@ -39,7 +39,7 @@ func TestTracingMiddleware(t *testing.T) {
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestTracingMiddleware(t *testing.T) {
 	t.Run("successful request creates span", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/test", nil)
 		req.Header.Set("User-Agent", "test-agent")
-		
+
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, req)
 
@@ -71,7 +71,7 @@ func TestTracingMiddleware(t *testing.T) {
 	t.Run("error request records error in span", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/error", nil)
 		resp := httptest.NewRecorder()
-		
+
 		router.ServeHTTP(resp, req)
 
 		assert.Equal(t, http.StatusInternalServerError, resp.Code)
@@ -83,7 +83,7 @@ func TestTracingMiddlewareWithConfig(t *testing.T) {
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestTracingMiddlewareWithConfig(t *testing.T) {
 	t.Run("normal path creates span", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/test", nil)
 		resp := httptest.NewRecorder()
-		
+
 		router.ServeHTTP(resp, req)
 
 		assert.Equal(t, http.StatusOK, resp.Code)
@@ -120,7 +120,7 @@ func TestTracingMiddlewareWithConfig(t *testing.T) {
 	t.Run("skip path does not create span", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/health", nil)
 		resp := httptest.NewRecorder()
-		
+
 		router.ServeHTTP(resp, req)
 
 		assert.Equal(t, http.StatusOK, resp.Code)
@@ -131,7 +131,7 @@ func TestHTTPClientTracingRoundTripper(t *testing.T) {
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
@@ -162,7 +162,7 @@ func TestHTTPClientTracingRoundTripper(t *testing.T) {
 
 func TestDefaultHTTPTracingConfig(t *testing.T) {
 	config := DefaultHTTPTracingConfig()
-	
+
 	assert.NotNil(t, config)
 	assert.Contains(t, config.SkipPaths, "/health")
 	assert.Contains(t, config.SkipPaths, "/ready")
@@ -175,22 +175,22 @@ func TestDefaultHTTPTracingConfig(t *testing.T) {
 
 func TestResponseWriter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	
+
 	t.Run("response writer captures data", func(t *testing.T) {
 		// Create a proper gin ResponseWriter
 		recorder := httptest.NewRecorder()
 		ginCtx, _ := gin.CreateTestContext(recorder)
-		
+
 		rw := &responseWriter{
 			ResponseWriter: ginCtx.Writer,
 			statusCode:     http.StatusOK,
-			size:          0,
+			size:           0,
 		}
 
 		// Write response
 		data := []byte("test response")
 		n, err := rw.Write(data)
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, len(data), n)
 		assert.Equal(t, int64(len(data)), rw.size)
@@ -200,33 +200,33 @@ func TestResponseWriter(t *testing.T) {
 	t.Run("response writer captures status code", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		ginCtx, _ := gin.CreateTestContext(recorder)
-		
+
 		rw := &responseWriter{
 			ResponseWriter: ginCtx.Writer,
 			statusCode:     http.StatusOK,
-			size:          0,
+			size:           0,
 		}
 
 		// Write header
 		rw.WriteHeader(http.StatusCreated)
-		
+
 		assert.Equal(t, http.StatusCreated, rw.statusCode)
 	})
 
 	t.Run("response writer limits body capture", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		ginCtx, _ := gin.CreateTestContext(recorder)
-		
+
 		rw := &responseWriter{
 			ResponseWriter: ginCtx.Writer,
 			statusCode:     http.StatusOK,
-			size:          0,
+			size:           0,
 		}
 
 		// Write large response
 		largeData := strings.Repeat("x", 5000)
 		n, err := rw.Write([]byte(largeData))
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, len(largeData), n)
 		assert.Equal(t, int64(len(largeData)), rw.size)

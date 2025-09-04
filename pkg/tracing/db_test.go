@@ -34,14 +34,14 @@ func TestNewGormTracing(t *testing.T) {
 	config := DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
 
 	t.Run("creates with default config", func(t *testing.T) {
 		gt := NewGormTracing(tm, nil)
-		
+
 		assert.NotNil(t, gt)
 		assert.Equal(t, tm, gt.tm)
 		assert.NotNil(t, gt.config)
@@ -57,7 +57,7 @@ func TestNewGormTracing(t *testing.T) {
 		}
 
 		gt := NewGormTracing(tm, customConfig)
-		
+
 		assert.NotNil(t, gt)
 		assert.Equal(t, tm, gt.tm)
 		assert.Equal(t, customConfig, gt.config)
@@ -68,7 +68,7 @@ func TestNewGormTracing(t *testing.T) {
 
 func TestDefaultGormTracingConfig(t *testing.T) {
 	config := DefaultGormTracingConfig()
-	
+
 	assert.NotNil(t, config)
 	assert.True(t, config.RecordSQL)
 	assert.True(t, config.SanitizeSQL)
@@ -80,13 +80,13 @@ func TestGormTracingName(t *testing.T) {
 	config := DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
 
 	gt := NewGormTracing(tm, nil)
-	
+
 	assert.Equal(t, "tracing", gt.Name())
 }
 
@@ -94,7 +94,7 @@ func TestSanitizeSQL(t *testing.T) {
 	config := DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestInstallGormTracing(t *testing.T) {
 	config := DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
-	
+
 	tm := NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
@@ -154,10 +154,10 @@ func TestInstallGormTracing(t *testing.T) {
 		// We can't easily test this without a real database connection
 		// This test mainly verifies the function signature and basic setup
 		tracingConfig := DefaultGormTracingConfig()
-		
+
 		assert.NotNil(t, tracingConfig)
 		assert.True(t, tracingConfig.RecordSQL)
-		
+
 		// Test that NewGormTracing works with the config
 		gt := NewGormTracing(tm, tracingConfig)
 		assert.NotNil(t, gt)
@@ -169,10 +169,10 @@ func TestGormDBWithTracing(t *testing.T) {
 		// This is a simple wrapper function test
 		// We can't test the actual functionality without a database connection
 		ctx := context.WithValue(context.Background(), "test", "value")
-		
+
 		// The function should accept any context
 		assert.NotNil(t, ctx)
-		
+
 		// Test that the context value is preserved
 		value := ctx.Value("test")
 		assert.Equal(t, "value", value)

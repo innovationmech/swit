@@ -37,10 +37,10 @@ import (
 
 // GormTracingConfig holds configuration for GORM tracing
 type GormTracingConfig struct {
-	RecordSQL      bool // Whether to record SQL statements
-	SanitizeSQL    bool // Whether to sanitize SQL parameters
+	RecordSQL      bool          // Whether to record SQL statements
+	SanitizeSQL    bool          // Whether to sanitize SQL parameters
 	SlowThreshold  time.Duration // Threshold for marking queries as slow
-	SkipOperations []string // Operations to skip (e.g., "SELECT", "INSERT")
+	SkipOperations []string      // Operations to skip (e.g., "SELECT", "INSERT")
 }
 
 // DefaultGormTracingConfig returns default GORM tracing configuration
@@ -270,7 +270,7 @@ func (gt *GormTracing) finishSpan(db *gorm.DB) {
 		if st, ok := startTime.(time.Time); ok {
 			duration := time.Since(st)
 			span.SetAttribute("db.duration_ms", float64(duration.Nanoseconds())/1e6)
-			
+
 			// Mark as slow if exceeds threshold
 			if duration > gt.config.SlowThreshold {
 				span.SetAttribute("db.slow_query", true)
@@ -304,7 +304,7 @@ func (gt *GormTracing) finishSpan(db *gorm.DB) {
 	if db.Error != nil {
 		span.RecordError(db.Error)
 		span.SetStatus(codes.Error, db.Error.Error())
-		
+
 		// Add error event
 		span.AddEvent("db.error", trace.WithAttributes(
 			attribute.String("db.error.message", db.Error.Error()),
@@ -329,11 +329,11 @@ func (gt *GormTracing) sanitizeSQL(sql string) string {
 	// Replace parameter placeholders with ? to avoid logging sensitive data
 	paramRegex := regexp.MustCompile(`\$\d+|\?`)
 	sanitized := paramRegex.ReplaceAllString(sql, "?")
-	
+
 	// Remove extra whitespace
 	spaceRegex := regexp.MustCompile(`\s+`)
 	sanitized = spaceRegex.ReplaceAllString(sanitized, " ")
-	
+
 	return strings.TrimSpace(sanitized)
 }
 
