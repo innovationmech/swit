@@ -24,6 +24,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"path"
 	"strings"
 
@@ -319,15 +320,17 @@ func extractTracingFromMetadata(ctx context.Context, tm tracing.TracingManager) 
 		return ctx
 	}
 
-	// Convert metadata to HTTP headers format for extraction
-	headers := make(map[string][]string)
+	// Convert gRPC metadata to HTTP headers format for extraction
+	headers := make(http.Header)
 	for k, v := range md {
-		headers[k] = v
+		// gRPC metadata keys are lowercase, but propagation works with any case
+		for _, value := range v {
+			headers.Add(k, value)
+		}
 	}
 
-	// Use the tracing manager's extraction method (we'll need to adapt this)
-	// For now, just return the context as-is since we need header-based extraction
-	return ctx
+	// Extract tracing context using the tracing manager
+	return tm.ExtractHTTPHeaders(headers)
 }
 
 // injectTracingIntoMetadata injects tracing context into gRPC metadata
@@ -337,8 +340,26 @@ func injectTracingIntoMetadata(ctx context.Context, tm tracing.TracingManager) c
 		md = metadata.New(nil)
 	}
 
-	// We need to adapt this to work with the tracing manager's injection method
-	// For now, just return the context as-is
+	// Create HTTP headers for injection
+	headers := make(http.Header)
+
+	// Copy existing metadata to headers
+	for k, v := range md {
+		for _, value := range v {
+			headers.Add(k, value)
+		}
+	}
+
+	// Inject tracing context using the tracing manager
+	tm.InjectHTTPHeaders(ctx, headers)
+
+	// Convert headers back to gRPC metadata
+	for k, v := range headers {
+		// gRPC metadata keys should be lowercase
+		key := strings.ToLower(k)
+		md.Set(key, v...)
+	}
+
 	return metadata.NewOutgoingContext(ctx, md)
 }
 
