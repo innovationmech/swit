@@ -254,37 +254,108 @@ func (s *authService) Login(ctx context.Context, username, password string) (*ty
 
 // RefreshToken generates new access and refresh tokens
 func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*types.AuthResponse, error) {
-	// Validate refresh token
-	claims, err := utils.ValidateRefreshToken(refreshToken)
-	if err != nil {
-		return nil, err
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "AuthService.RefreshToken",
+			tracing.WithAttributes(
+				attribute.String("token.type", "refresh"),
+			),
+		)
+		defer span.End()
+	}
+
+	// Validate refresh token span
+	var claims map[string]interface{}
+	var err error
+	if s.config.TracingManager != nil {
+		_, validateSpan := s.config.TracingManager.StartSpan(ctx, "validate_refresh_token")
+		claims, err = utils.ValidateRefreshToken(refreshToken)
+		if err != nil {
+			validateSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token validation failed")
+			validateSpan.End()
+			return nil, err
+		}
+		validateSpan.End()
+	} else {
+		claims, err = utils.ValidateRefreshToken(refreshToken)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	userID, ok := claims["user_id"].(string)
 	if !ok {
+		if span != nil {
+			span.SetStatus(codes.Error, "invalid token claims")
+		}
 		return nil, fmt.Errorf("invalid token")
 	}
 
-	// Get existing token
-	token, err := s.config.TokenRepo.GetByRefreshToken(ctx, refreshToken)
-	if err != nil {
-		return nil, err
+	// Get existing token span
+	var token *model.Token
+	if s.config.TracingManager != nil {
+		_, getTokenSpan := s.config.TracingManager.StartSpan(ctx, "get_token_by_refresh")
+		token, err = s.config.TokenRepo.GetByRefreshToken(ctx, refreshToken)
+		if err != nil {
+			getTokenSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token retrieval failed")
+			getTokenSpan.End()
+			return nil, err
+		}
+		getTokenSpan.SetAttribute("token.user_id", userID)
+		getTokenSpan.End()
+	} else {
+		token, err = s.config.TokenRepo.GetByRefreshToken(ctx, refreshToken)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if refresh token is still valid
 	if !token.IsValid || time.Now().After(token.RefreshExpiresAt) {
+		if span != nil {
+			span.SetStatus(codes.Error, "refresh token has expired")
+			span.SetAttribute("token.expired", true)
+		}
 		return nil, fmt.Errorf("refresh token has expired")
 	}
 
-	// Generate new tokens
-	newAccessToken, accessExpiresAt, err := utils.GenerateAccessToken(userID)
-	if err != nil {
-		return nil, err
-	}
+	// Generate new tokens span
+	var newAccessToken, newRefreshToken string
+	var accessExpiresAt, refreshExpiresAt time.Time
+	if s.config.TracingManager != nil {
+		_, generateSpan := s.config.TracingManager.StartSpan(ctx, "generate_new_tokens")
 
-	newRefreshToken, refreshExpiresAt, err := utils.GenerateRefreshToken(userID)
-	if err != nil {
-		return nil, err
+		newAccessToken, accessExpiresAt, err = utils.GenerateAccessToken(userID)
+		if err != nil {
+			generateSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "access token generation failed")
+			generateSpan.End()
+			return nil, err
+		}
+
+		newRefreshToken, refreshExpiresAt, err = utils.GenerateRefreshToken(userID)
+		if err != nil {
+			generateSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "refresh token generation failed")
+			generateSpan.End()
+			return nil, err
+		}
+
+		generateSpan.SetAttribute("token.user_id", userID)
+		generateSpan.End()
+	} else {
+		newAccessToken, accessExpiresAt, err = utils.GenerateAccessToken(userID)
+		if err != nil {
+			return nil, err
+		}
+
+		newRefreshToken, refreshExpiresAt, err = utils.GenerateRefreshToken(userID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Update token record
@@ -293,8 +364,29 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*t
 	token.AccessExpiresAt = accessExpiresAt
 	token.RefreshExpiresAt = refreshExpiresAt
 
-	if err := s.config.TokenRepo.Update(ctx, token); err != nil {
-		return nil, err
+	// Update token in repository span
+	if s.config.TracingManager != nil {
+		_, updateSpan := s.config.TracingManager.StartSpan(ctx, "update_token")
+
+		if err := s.config.TokenRepo.Update(ctx, token); err != nil {
+			updateSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token update failed")
+			updateSpan.End()
+			return nil, err
+		}
+
+		updateSpan.SetAttribute("token.user_id", userID)
+		updateSpan.SetAttribute("operation.success", true)
+		updateSpan.End()
+	} else {
+		if err := s.config.TokenRepo.Update(ctx, token); err != nil {
+			return nil, err
+		}
+	}
+
+	if span != nil {
+		span.SetAttribute("auth.user_id", userID)
+		span.SetAttribute("operation.success", true)
 	}
 
 	return &types.AuthResponse{
@@ -307,32 +399,111 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*t
 
 // ValidateToken validates an access token
 func (s *authService) ValidateToken(ctx context.Context, tokenString string) (*model.Token, error) {
-	// Validate token signature and claims
-	claims, err := utils.ValidateAccessToken(tokenString)
-	if err != nil {
-		return nil, err
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "AuthService.ValidateToken",
+			tracing.WithAttributes(
+				attribute.String("token.type", "access"),
+			),
+		)
+		defer span.End()
 	}
 
-	// Get token from repository
-	token, err := s.config.TokenRepo.GetByAccessToken(ctx, tokenString)
-	if err != nil {
-		return nil, err
+	// Validate token signature and claims span
+	var claims map[string]interface{}
+	var err error
+	if s.config.TracingManager != nil {
+		_, validateSpan := s.config.TracingManager.StartSpan(ctx, "validate_token_signature")
+		claims, err = utils.ValidateAccessToken(tokenString)
+		if err != nil {
+			validateSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token signature validation failed")
+			validateSpan.End()
+			return nil, err
+		}
+		validateSpan.End()
+	} else {
+		claims, err = utils.ValidateAccessToken(tokenString)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Check token validity
-	if !token.IsValid {
-		return nil, fmt.Errorf("token is invalid")
+	// Get token from repository span
+	var token *model.Token
+	if s.config.TracingManager != nil {
+		_, getTokenSpan := s.config.TracingManager.StartSpan(ctx, "get_token_by_access")
+		token, err = s.config.TokenRepo.GetByAccessToken(ctx, tokenString)
+		if err != nil {
+			getTokenSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token retrieval failed")
+			getTokenSpan.End()
+			return nil, err
+		}
+		getTokenSpan.SetAttribute("token.user_id", token.UserID.String())
+		getTokenSpan.End()
+	} else {
+		token, err = s.config.TokenRepo.GetByAccessToken(ctx, tokenString)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Check expiration
-	if time.Now().After(token.AccessExpiresAt) {
-		return nil, fmt.Errorf("access token has expired")
-	}
+	// Check token validity span
+	if s.config.TracingManager != nil {
+		_, validitySpan := s.config.TracingManager.StartSpan(ctx, "check_token_validity")
 
-	// Verify user ID matches token claims
-	userID, ok := claims["user_id"].(string)
-	if !ok || userID != token.UserID.String() {
-		return nil, fmt.Errorf("token is invalid")
+		if !token.IsValid {
+			validitySpan.SetStatus(codes.Error, "token is marked as invalid")
+			span.SetStatus(codes.Error, "token is invalid")
+			validitySpan.End()
+			return nil, fmt.Errorf("token is invalid")
+		}
+
+		// Check expiration
+		if time.Now().After(token.AccessExpiresAt) {
+			validitySpan.SetStatus(codes.Error, "token has expired")
+			span.SetStatus(codes.Error, "access token has expired")
+			validitySpan.SetAttribute("token.expired", true)
+			validitySpan.End()
+			return nil, fmt.Errorf("access token has expired")
+		}
+
+		// Verify user ID matches token claims
+		userID, ok := claims["user_id"].(string)
+		if !ok || userID != token.UserID.String() {
+			validitySpan.SetStatus(codes.Error, "user ID mismatch")
+			span.SetStatus(codes.Error, "token user ID validation failed")
+			validitySpan.End()
+			return nil, fmt.Errorf("token is invalid")
+		}
+
+		validitySpan.SetAttribute("token.user_id", userID)
+		validitySpan.SetAttribute("token.valid", true)
+		validitySpan.End()
+
+		if span != nil {
+			span.SetAttribute("auth.user_id", userID)
+			span.SetAttribute("token.valid", true)
+			span.SetAttribute("operation.success", true)
+		}
+	} else {
+		// Fallback validation without tracing
+		if !token.IsValid {
+			return nil, fmt.Errorf("token is invalid")
+		}
+
+		// Check expiration
+		if time.Now().After(token.AccessExpiresAt) {
+			return nil, fmt.Errorf("access token has expired")
+		}
+
+		// Verify user ID matches token claims
+		userID, ok := claims["user_id"].(string)
+		if !ok || userID != token.UserID.String() {
+			return nil, fmt.Errorf("token is invalid")
+		}
 	}
 
 	return token, nil
@@ -340,6 +511,38 @@ func (s *authService) ValidateToken(ctx context.Context, tokenString string) (*m
 
 // Logout invalidates a token
 func (s *authService) Logout(ctx context.Context, tokenString string) error {
-	// Invalidate the token
-	return s.config.TokenRepo.InvalidateToken(ctx, tokenString)
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "AuthService.Logout",
+			tracing.WithAttributes(
+				attribute.String("operation.type", "invalidate_token"),
+			),
+		)
+		defer span.End()
+	}
+
+	// Invalidate token span
+	if s.config.TracingManager != nil {
+		_, invalidateSpan := s.config.TracingManager.StartSpan(ctx, "invalidate_token")
+
+		if err := s.config.TokenRepo.InvalidateToken(ctx, tokenString); err != nil {
+			invalidateSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token invalidation failed")
+			invalidateSpan.End()
+			return err
+		}
+
+		invalidateSpan.SetAttribute("operation.success", true)
+		invalidateSpan.End()
+
+		if span != nil {
+			span.SetAttribute("operation.success", true)
+		}
+
+		return nil
+	} else {
+		// Fallback invalidation without tracing
+		return s.config.TokenRepo.InvalidateToken(ctx, tokenString)
+	}
 }
