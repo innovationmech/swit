@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
 )
@@ -131,6 +132,7 @@ type NetworkTransport interface {
 type TransportCoordinator struct {
 	transports      []NetworkTransport
 	registryManager *MultiTransportRegistry
+	tracingManager  tracing.TracingManager // Unified tracing manager for all transports
 	mu              sync.RWMutex
 }
 
@@ -148,8 +150,48 @@ func (m *TransportCoordinator) Register(transport NetworkTransport) {
 	defer m.mu.Unlock()
 
 	m.transports = append(m.transports, transport)
+	
+	// Inject tracing manager if available
+	if m.tracingManager != nil {
+		m.injectTracingManagerToTransport(transport)
+	}
+	
 	logger.Logger.Info("Transport registered",
 		zap.String("transport", transport.GetName()))
+}
+
+// SetTracingManager sets the tracing manager and distributes it to all transports
+func (m *TransportCoordinator) SetTracingManager(tracingManager tracing.TracingManager) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.tracingManager = tracingManager
+	
+	// Inject tracing manager into all existing transports
+	for _, transport := range m.transports {
+		m.injectTracingManagerToTransport(transport)
+	}
+	
+	logger.Logger.Info("Tracing manager set for transport coordinator")
+}
+
+// injectTracingManagerToTransport injects the tracing manager into a transport
+func (m *TransportCoordinator) injectTracingManagerToTransport(transport NetworkTransport) {
+	// Check if transport is HTTP type and inject tracing manager
+	if httpTransport, ok := transport.(*HTTPNetworkService); ok {
+		if httpTransport.config != nil {
+			httpTransport.config.TracingManager = m.tracingManager
+		}
+		logger.Logger.Debug("Tracing manager injected into HTTP transport")
+	}
+	
+	// Check if transport is gRPC type and inject tracing manager
+	if grpcTransport, ok := transport.(*GRPCNetworkService); ok {
+		if grpcTransport.config != nil {
+			grpcTransport.config.TracingManager = m.tracingManager
+		}
+		logger.Logger.Debug("Tracing manager injected into gRPC transport")
+	}
 }
 
 // Start starts all registered transports

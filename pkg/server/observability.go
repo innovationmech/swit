@@ -597,6 +597,30 @@ func (om *ObservabilityManager) UpdateSystemMetrics() {
 	// Update uptime
 	uptime := time.Since(om.startTime).Seconds()
 	om.prometheusCollector.SetGauge("uptime_seconds", uptime, baseLabels)
+
+	// Update tracing health status
+	om.updateTracingHealthMetrics(baseLabels)
+}
+
+// updateTracingHealthMetrics updates tracing-related health metrics
+func (om *ObservabilityManager) updateTracingHealthMetrics(baseLabels map[string]string) {
+	if om.prometheusCollector == nil {
+		return
+	}
+
+	// Check if tracing is enabled and healthy
+	tracingHealthStatus := 0.0 // 0 = disabled/unhealthy, 1 = healthy
+	if om.tracingManager != nil {
+		tracingHealthStatus = 1.0
+	}
+
+	labels := make(map[string]string)
+	for k, v := range baseLabels {
+		labels[k] = v
+	}
+	labels["component"] = "tracing"
+
+	om.prometheusCollector.SetGauge("component_health_status", tracingHealthStatus, labels)
 }
 
 // StartSystemMetricsCollection starts periodic collection of system metrics
@@ -654,6 +678,63 @@ func (om *ObservabilityManager) ShutdownTracing(ctx context.Context) error {
 // GetTracingManager returns the tracing manager instance
 func (om *ObservabilityManager) GetTracingManager() tracing.TracingManager {
 	return om.tracingManager
+}
+
+// RecordTracingMetrics records tracing-related metrics to Prometheus
+func (om *ObservabilityManager) RecordTracingMetrics() {
+	if om.tracingManager == nil || om.prometheusCollector == nil {
+		return
+	}
+
+	// Record tracing status
+	tracingEnabled := 0.0
+	if om.tracingManager != nil {
+		tracingEnabled = 1.0
+	}
+	
+	om.prometheusCollector.SetGauge("swit_tracing_enabled", tracingEnabled, map[string]string{
+		"service": om.serviceName,
+	})
+
+	// Record tracing initialization event
+	om.prometheusCollector.IncrementCounter("swit_tracing_initialization_total", map[string]string{
+		"service": om.serviceName,
+		"status":  "active",
+	})
+}
+
+// RecordSpanMetrics records span-related metrics (called by middleware/interceptors)
+func (om *ObservabilityManager) RecordSpanMetrics(operationName string, duration time.Duration, status string) {
+	if om.prometheusCollector == nil {
+		return
+	}
+
+	labels := map[string]string{
+		"service":   om.serviceName,
+		"operation": operationName,
+		"status":    status,
+	}
+
+	// Record span count
+	om.prometheusCollector.IncrementCounter("swit_tracing_spans_total", labels)
+
+	// Record span duration histogram
+	om.prometheusCollector.ObserveHistogram("swit_tracing_span_duration_seconds", duration.Seconds(), labels)
+}
+
+// RecordTracingError records tracing-related errors
+func (om *ObservabilityManager) RecordTracingError(errorType string, operation string) {
+	if om.prometheusCollector == nil {
+		return
+	}
+
+	labels := map[string]string{
+		"service":    om.serviceName,
+		"error_type": errorType,
+		"operation":  operation,
+	}
+
+	om.prometheusCollector.IncrementCounter("swit_tracing_errors_total", labels)
 }
 
 // GetServerStatus returns comprehensive server status

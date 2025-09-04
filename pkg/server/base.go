@@ -122,11 +122,15 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		if err := server.observabilityManager.InitializeTracing(ctx, &config.Tracing); err != nil {
 			logger.Logger.Warn("Failed to initialize tracing, continuing without tracing",
 				zap.Error(err))
+			// Record tracing error metric
+			server.observabilityManager.RecordTracingError("initialization_failed", "server_startup")
 		} else {
 			logger.Logger.Info("Tracing initialized successfully",
 				zap.String("service", config.Tracing.ServiceName),
 				zap.String("exporter", config.Tracing.Exporter.Type),
 				zap.Float64("sampling_rate", config.Tracing.Sampling.Rate))
+			// Record successful tracing metrics
+			server.observabilityManager.RecordTracingMetrics()
 		}
 	}
 

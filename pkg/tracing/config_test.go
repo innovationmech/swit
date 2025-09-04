@@ -22,6 +22,7 @@
 package tracing
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -442,4 +443,205 @@ func TestTracingConfigYAMLIntegration(t *testing.T) {
 
 	// Verify mapstructure tags are present (these would be used by Viper)
 	// This is a structural test to ensure the tags are correctly defined
+}
+
+func TestTracingConfig_ApplyEnvironmentOverrides(t *testing.T) {
+	// Save original environment
+	originalEnv := map[string]string{}
+	envVars := []string{
+		"SWIT_TRACING_ENABLED",
+		"SWIT_TRACING_SERVICE_NAME",
+		"SWIT_TRACING_SAMPLING_TYPE",
+		"SWIT_TRACING_SAMPLING_RATE",
+		"SWIT_TRACING_EXPORTER_TYPE",
+		"SWIT_TRACING_EXPORTER_ENDPOINT",
+		"SWIT_TRACING_JAEGER_AGENT_ENDPOINT",
+		"SWIT_TRACING_OTLP_ENDPOINT",
+		"SWIT_TRACING_RESOURCE_SERVICE_VERSION",
+		"SWIT_TRACING_RESOURCE_ENVIRONMENT",
+		"SWIT_TRACING_PROPAGATORS",
+	}
+	
+	for _, env := range envVars {
+		originalEnv[env] = os.Getenv(env)
+		os.Unsetenv(env)
+	}
+	
+	// Cleanup function
+	defer func() {
+		for _, env := range envVars {
+			if value := originalEnv[env]; value != "" {
+				os.Setenv(env, value)
+			} else {
+				os.Unsetenv(env)
+			}
+		}
+	}()
+
+	tests := []struct {
+		name     string
+		initial  *TracingConfig
+		envVars  map[string]string
+		expected *TracingConfig
+	}{
+		{
+			name: "basic overrides",
+			initial: &TracingConfig{
+				Enabled:     false,
+				ServiceName: "original-service",
+				Sampling: SamplingConfig{
+					Type: "always_off",
+					Rate: 0.0,
+				},
+				Exporter: ExporterConfig{
+					Type: "console",
+				},
+			},
+			envVars: map[string]string{
+				"SWIT_TRACING_ENABLED":       "true",
+				"SWIT_TRACING_SERVICE_NAME":  "env-service",
+				"SWIT_TRACING_SAMPLING_TYPE": "traceidratio",
+				"SWIT_TRACING_SAMPLING_RATE": "0.5",
+				"SWIT_TRACING_EXPORTER_TYPE": "jaeger",
+			},
+			expected: &TracingConfig{
+				Enabled:     true,
+				ServiceName: "env-service",
+				Sampling: SamplingConfig{
+					Type: "traceidratio",
+					Rate: 0.5,
+				},
+				Exporter: ExporterConfig{
+					Type: "jaeger",
+				},
+			},
+		},
+		{
+			name: "resource attributes",
+			initial: &TracingConfig{
+				ResourceAttributes: map[string]string{
+					"service.version": "v1.0.0",
+				},
+			},
+			envVars: map[string]string{
+				"SWIT_TRACING_RESOURCE_SERVICE_VERSION":    "v2.0.0",
+				"SWIT_TRACING_RESOURCE_ENVIRONMENT":        "production",
+				"SWIT_TRACING_RESOURCE_CUSTOM_TEAM":        "platform",
+				"SWIT_TRACING_RESOURCE_CUSTOM_COST_CENTER": "engineering",
+			},
+			expected: &TracingConfig{
+				ResourceAttributes: map[string]string{
+					"service.version":        "v2.0.0",
+					"deployment.environment": "production",
+					"team":                   "platform",
+					"cost.center":            "engineering",
+				},
+			},
+		},
+		{
+			name: "propagators",
+			initial: &TracingConfig{
+				Propagators: []string{"tracecontext"},
+			},
+			envVars: map[string]string{
+				"SWIT_TRACING_PROPAGATORS": "tracecontext,baggage,jaeger",
+			},
+			expected: &TracingConfig{
+				Propagators: []string{"tracecontext", "baggage", "jaeger"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables
+			for key, value := range tt.envVars {
+				os.Setenv(key, value)
+			}
+
+			// Apply overrides
+			config := tt.initial
+			config.ApplyEnvironmentOverrides()
+
+			// Verify results
+			if tt.expected.Enabled != false {
+				assert.Equal(t, tt.expected.Enabled, config.Enabled)
+			}
+			if tt.expected.ServiceName != "" {
+				assert.Equal(t, tt.expected.ServiceName, config.ServiceName)
+			}
+			if tt.expected.Sampling.Type != "" {
+				assert.Equal(t, tt.expected.Sampling.Type, config.Sampling.Type)
+			}
+			if tt.expected.Sampling.Rate != 0 {
+				assert.Equal(t, tt.expected.Sampling.Rate, config.Sampling.Rate)
+			}
+			if tt.expected.Exporter.Type != "" {
+				assert.Equal(t, tt.expected.Exporter.Type, config.Exporter.Type)
+			}
+			if len(tt.expected.ResourceAttributes) > 0 {
+				for key, expectedValue := range tt.expected.ResourceAttributes {
+					assert.Equal(t, expectedValue, config.ResourceAttributes[key], "Resource attribute %s", key)
+				}
+			}
+			if len(tt.expected.Propagators) > 0 {
+				assert.Equal(t, tt.expected.Propagators, config.Propagators)
+			}
+
+			// Clean up environment variables for next test
+			for key := range tt.envVars {
+				os.Unsetenv(key)
+			}
+		})
+	}
+}
+
+func TestTracingConfig_ApplyEnvironmentOverrides_InvalidValues(t *testing.T) {
+	// Save original environment
+	originalEnv := map[string]string{}
+	envVars := []string{
+		"SWIT_TRACING_ENABLED",
+		"SWIT_TRACING_SAMPLING_RATE",
+		"SWIT_TRACING_OTLP_INSECURE",
+	}
+	
+	for _, env := range envVars {
+		originalEnv[env] = os.Getenv(env)
+		os.Unsetenv(env)
+	}
+	
+	defer func() {
+		for _, env := range envVars {
+			if value := originalEnv[env]; value != "" {
+				os.Setenv(env, value)
+			} else {
+				os.Unsetenv(env)
+			}
+		}
+	}()
+
+	config := &TracingConfig{
+		Enabled: false,
+		Sampling: SamplingConfig{
+			Rate: 0.1,
+		},
+		Exporter: ExporterConfig{
+			OTLP: OTLPConfig{
+				Insecure: true,
+			},
+		},
+	}
+
+	// Set invalid environment variables
+	os.Setenv("SWIT_TRACING_ENABLED", "invalid-bool")
+	os.Setenv("SWIT_TRACING_SAMPLING_RATE", "invalid-float")
+	os.Setenv("SWIT_TRACING_OTLP_INSECURE", "invalid-bool")
+
+	// Apply overrides - should not crash and should ignore invalid values
+	config.ApplyEnvironmentOverrides()
+
+	// Verify original values are preserved
+	assert.False(t, config.Enabled)
+	assert.Equal(t, 0.1, config.Sampling.Rate)
+	assert.True(t, config.Exporter.OTLP.Insecure)
 }

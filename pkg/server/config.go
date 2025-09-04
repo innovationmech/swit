@@ -487,6 +487,9 @@ func (c *ServerConfig) SetDefaults() {
 		c.Tracing = *defaultConfig
 	}
 
+	// Apply environment variable overrides to tracing configuration
+	c.Tracing.ApplyEnvironmentOverrides()
+
 	// Server defaults
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 5 * time.Second

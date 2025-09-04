@@ -1,0 +1,97 @@
+# Production tracing configuration with Jaeger exporter
+# This configuration is suitable for production environments with Jaeger backend
+
+service_name: "production-service"
+
+# Tracing configuration for production
+tracing:
+  enabled: true
+  service_name: "production-service"
+  
+  # Production sampling - capture 1% of traces to reduce overhead
+  sampling:
+    type: "traceidratio"
+    rate: 0.01
+  
+  # Jaeger exporter configuration
+  exporter:
+    type: "jaeger"
+    endpoint: "http://jaeger-collector:14268/api/traces"
+    timeout: "30s"
+    
+    # Jaeger-specific configuration
+    jaeger:
+      collector_endpoint: "http://jaeger-collector:14268/api/traces"
+      # Optional: Use agent endpoint instead
+      # agent_endpoint: "jaeger-agent:6831"
+      
+      # Optional: Authentication for Jaeger Cloud or Enterprise
+      # username: "your-username"
+      # password: "your-password"
+      rpc_timeout: "10s"
+  
+  # Comprehensive resource attributes for production
+  resource_attributes:
+    service.version: "v2.1.0"
+    deployment.environment: "production" 
+    service.namespace: "backend"
+    service.instance.id: "${HOSTNAME}"
+    container.name: "${CONTAINER_NAME}"
+    k8s.pod.name: "${K8S_POD_NAME}"
+    k8s.namespace.name: "${K8S_NAMESPACE}"
+    k8s.node.name: "${K8S_NODE_NAME}"
+  
+  # OpenTelemetry propagators for distributed tracing
+  propagators: ["tracecontext", "baggage", "b3", "jaeger"]
+
+# Production server configuration
+http:
+  address: ":8080"
+  read_timeout: 60s
+  write_timeout: 60s
+  idle_timeout: 120s
+
+grpc:
+  address: ":50051"
+  enable_reflection: false  # Disabled in production
+  enable_health_service: true
+  max_recv_msg_size: 8388608   # 8MB
+  max_send_msg_size: 8388608   # 8MB
+  
+  # Production keepalive settings
+  keepalive:
+    max_connection_idle: 300s
+    max_connection_age: 600s
+    max_connection_age_grace: 60s
+    time: 30s
+    timeout: 5s
+
+# Service discovery for production
+discovery:
+  enabled: true
+  provider: "consul"
+  consul:
+    address: "consul:8500"
+    datacenter: "dc1"
+    
+# Security and monitoring
+middleware:
+  cors:
+    enabled: true
+    allowed_origins: ["https://app.example.com"]
+  rate_limiting:
+    enabled: true
+    
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN}"
+  environment: "production"
+  
+logging:
+  level: "warn"  # Reduce log noise in production
+  format: "json"
+  
+prometheus:
+  enabled: true
+  path: "/metrics"
+  cardinality_limit: 50000
