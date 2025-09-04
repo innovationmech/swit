@@ -23,9 +23,9 @@ test:
 # 快速开发测试 - 跳过依赖生成，直接测试
 .PHONY: test-dev
 test-dev:
-	@echo "🔥 快速开发测试 - 跳过依赖生成（开发模式）"
+	@echo "🔥 快速开发测试 - 仅运行短测（-short），跳过依赖生成"
 	@if [ -f "$(TEST_SCRIPT)" ]; then \
-		$(TEST_SCRIPT) --dev; \
+		$(TEST_SCRIPT) --advanced --type short --package all --skip-deps; \
 	else \
 		echo "❌ 测试脚本未找到: $(TEST_SCRIPT)"; \
 		exit 1; \

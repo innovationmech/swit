@@ -23,10 +23,12 @@ package db
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/innovationmech/swit/internal/switauth/config"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"sync"
 )
 
 var (
@@ -48,4 +50,14 @@ func GetDB() *gorm.DB {
 		dbConn = db
 	})
 	return dbConn
+}
+
+// SetupTracing installs tracing on the database instance
+func SetupTracing(db *gorm.DB, tracingManager tracing.TracingManager) error {
+	if tracingManager == nil {
+		return nil // Skip tracing setup if no manager provided
+	}
+
+	config := tracing.DefaultGormTracingConfig()
+	return tracing.InstallGormTracing(db, tracingManager, config)
 }

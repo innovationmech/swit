@@ -30,6 +30,7 @@ import (
 	authv1 "github.com/innovationmech/swit/internal/switauth/service/auth/v1"
 	"github.com/innovationmech/swit/internal/switauth/service/health"
 	"github.com/innovationmech/swit/pkg/discovery"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"gorm.io/gorm"
 )
 
@@ -49,6 +50,9 @@ type Dependencies struct {
 	// Service layer
 	AuthSrv   interfaces.AuthService
 	HealthSrv interfaces.HealthService
+
+	// Tracing
+	TracingManager tracing.TracingManager
 }
 
 // NewDependencies creates and initializes all service dependencies
@@ -56,8 +60,17 @@ func NewDependencies() (*Dependencies, error) {
 	// Initialize configuration
 	cfg := config.GetConfig()
 
+	// Initialize tracing manager
+	tracingManager := tracing.NewTracingManager()
+
 	// Initialize database
 	database := db.GetDB()
+
+	// Setup database tracing
+	if err := db.SetupTracing(database, tracingManager); err != nil {
+		// Don't fail if tracing setup fails - continue without tracing
+		// Note: proper logging would be added here in production
+	}
 
 	// Initialize service discovery
 	sd, err := discovery.GetServiceDiscoveryByAddress(cfg.ServiceDiscovery.Address)
@@ -68,13 +81,14 @@ func NewDependencies() (*Dependencies, error) {
 	// Initialize repository layer
 	tokenRepo := repository.NewTokenRepository(database)
 
-	// Initialize client layer
-	userClient := client.NewUserClient(sd)
+	// Initialize client layer with tracing
+	userClient := client.NewUserClientWithTracing(sd, tracingManager)
 
 	// Initialize service layer
 	authSrv, err := authv1.NewAuthSrv(
 		authv1.WithUserClient(userClient),
 		authv1.WithTokenRepository(tokenRepo),
+		authv1.WithTracingManager(tracingManager),
 	)
 	if err != nil {
 		return nil, err
@@ -83,12 +97,13 @@ func NewDependencies() (*Dependencies, error) {
 	healthSrv := health.NewHealthService()
 
 	return &Dependencies{
-		DB:         database,
-		Config:     cfg,
-		SD:         sd,
-		TokenRepo:  tokenRepo,
-		UserClient: userClient,
-		AuthSrv:    authSrv,
-		HealthSrv:  healthSrv,
+		DB:             database,
+		Config:         cfg,
+		SD:             sd,
+		TokenRepo:      tokenRepo,
+		UserClient:     userClient,
+		AuthSrv:        authSrv,
+		HealthSrv:      healthSrv,
+		TracingManager: tracingManager,
 	}, nil
 }
