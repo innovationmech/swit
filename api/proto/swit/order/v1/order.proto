@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package swit.order.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/swit/common/v1/common.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/order/v1";
+
+// OrderService handles order creation and management
+service OrderService {
+  // CreateOrder creates a new order
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/orders"
+      body: "*"
+    };
+  }
+
+  // GetOrder retrieves an order by ID
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse) {
+    option (google.api.http) = {get: "/api/v1/orders/{order_id}"};
+  }
+
+  // ListOrders retrieves orders for a customer
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse) {
+    option (google.api.http) = {get: "/api/v1/orders"};
+  }
+
+  // UpdateOrderStatus updates the status of an order
+  rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (UpdateOrderStatusResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/orders/{order_id}/status"
+      body: "*"
+    };
+  }
+}
+
+// CreateOrderRequest represents a request to create a new order
+message CreateOrderRequest {
+  // Customer ID
+  string customer_id = 1;
+  // Product ID
+  string product_id = 2;
+  // Quantity of the product
+  int32 quantity = 3;
+  // Total amount
+  double amount = 4;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 5;
+}
+
+// CreateOrderResponse represents the response to order creation
+message CreateOrderResponse {
+  // Created order
+  Order order = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// GetOrderRequest represents a request to get an order
+message GetOrderRequest {
+  // Order ID
+  string order_id = 1;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// GetOrderResponse represents the response to get order request
+message GetOrderResponse {
+  // Order details
+  Order order = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// ListOrdersRequest represents a request to list orders
+message ListOrdersRequest {
+  // Customer ID to filter orders
+  string customer_id = 1;
+  // Pagination parameters
+  swit.common.v1.PaginationRequest pagination = 2;
+  // Status filter
+  OrderStatus status = 3;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// ListOrdersResponse represents the response to list orders
+message ListOrdersResponse {
+  // List of orders
+  repeated Order orders = 1;
+  // Pagination information
+  swit.common.v1.PaginationResponse pagination = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// UpdateOrderStatusRequest represents a request to update order status
+message UpdateOrderStatusRequest {
+  // Order ID
+  string order_id = 1;
+  // New status
+  OrderStatus status = 2;
+  // Reason for status change
+  string reason = 3;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// UpdateOrderStatusResponse represents the response to status update
+message UpdateOrderStatusResponse {
+  // Updated order
+  Order order = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// Order represents an order entity
+message Order {
+  // Order ID
+  string id = 1;
+  // Customer ID
+  string customer_id = 2;
+  // Product ID
+  string product_id = 3;
+  // Quantity
+  int32 quantity = 4;
+  // Total amount
+  double amount = 5;
+  // Order status
+  OrderStatus status = 6;
+  // Payment transaction ID (if paid)
+  string payment_transaction_id = 7;
+  // Created timestamp
+  google.protobuf.Timestamp created_at = 8;
+  // Updated timestamp
+  google.protobuf.Timestamp updated_at = 9;
+  // Status history
+  repeated OrderStatusHistory status_history = 10;
+}
+
+// OrderStatus represents the possible order statuses
+enum OrderStatus {
+  // Unspecified status
+  ORDER_STATUS_UNSPECIFIED = 0;
+  // Order is pending processing
+  ORDER_STATUS_PENDING = 1;
+  // Order is being processed
+  ORDER_STATUS_PROCESSING = 2;
+  // Order has been confirmed
+  ORDER_STATUS_CONFIRMED = 3;
+  // Order has been shipped
+  ORDER_STATUS_SHIPPED = 4;
+  // Order has been delivered
+  ORDER_STATUS_DELIVERED = 5;
+  // Order has been cancelled
+  ORDER_STATUS_CANCELLED = 6;
+  // Order has failed
+  ORDER_STATUS_FAILED = 7;
+  // Order is refunded
+  ORDER_STATUS_REFUNDED = 8;
+}
+
+// OrderStatusHistory tracks the history of status changes
+message OrderStatusHistory {
+  // Previous status
+  OrderStatus from_status = 1;
+  // New status
+  OrderStatus to_status = 2;
+  // Reason for change
+  string reason = 3;
+  // Timestamp of change
+  google.protobuf.Timestamp changed_at = 4;
+  // User or system that made the change
+  string changed_by = 5;
+}
