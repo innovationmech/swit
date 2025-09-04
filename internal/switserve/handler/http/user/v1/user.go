@@ -27,9 +27,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
+
 	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/internal/switserve/model"
 	"github.com/innovationmech/swit/internal/switserve/types"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/utils"
 	"google.golang.org/grpc"
@@ -37,8 +42,9 @@ import (
 
 // UserHandler handles user-related HTTP requests
 type UserHandler struct {
-	userSrv   interfaces.UserService
-	startTime time.Time
+	userSrv        interfaces.UserService
+	startTime      time.Time
+	tracingManager tracing.TracingManager
 }
 
 // NewUserHandler creates a new user controller with dependency injection.
@@ -46,6 +52,15 @@ func NewUserHandler(userSrv interfaces.UserService) *UserHandler {
 	return &UserHandler{
 		userSrv:   userSrv,
 		startTime: time.Now(),
+	}
+}
+
+// NewUserHandlerWithTracing creates a new user controller with dependency injection and tracing.
+func NewUserHandlerWithTracing(userSrv interfaces.UserService, tracingManager tracing.TracingManager) *UserHandler {
+	return &UserHandler{
+		userSrv:        userSrv,
+		startTime:      time.Now(),
+		tracingManager: tracingManager,
 	}
 }
 
@@ -184,11 +199,39 @@ func (uc *UserHandler) DeleteUser(c *gin.Context) {
 //	@Failure		500			{object}	map[string]interface{}	"Internal server error"
 //	@Router			/internal/validate-user [post]
 func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
+	// Extract distributed tracing context from HTTP headers
+	ctx := c.Request.Context()
+	var span tracing.Span
+	
+	if uc.tracingManager != nil {
+		// Extract tracing context from incoming HTTP headers
+		tracingCtx := uc.tracingManager.ExtractHTTPHeaders(c.Request.Header)
+		if tracingCtx != nil {
+			ctx = tracingCtx
+		}
+		
+		// Start a new span for this operation
+		ctx, span = uc.tracingManager.StartSpan(ctx, "HTTP_POST /internal/validate-user",
+			tracing.WithSpanKind(oteltrace.SpanKindServer),
+			tracing.WithAttributes(
+				attribute.String("http.method", "POST"),
+				attribute.String("http.route", "/internal/validate-user"),
+				attribute.String("service.name", "swit-serve"),
+			),
+		)
+		defer span.End()
+	}
+
 	var req struct {
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		if span != nil {
+			span.SetStatus(codes.Error, "request validation failed")
+			span.SetAttribute("error.type", "validation")
+			span.RecordError(err)
+		}
 		c.JSON(http.StatusBadRequest, map[string]interface{}{
 			"status": "error",
 			"error": map[string]interface{}{
@@ -198,10 +241,19 @@ func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
 		})
 		return
 	}
+	
+	if span != nil {
+		span.SetAttribute("user.username", req.Username)
+	}
 
-	// Get user by username
-	user, err := uc.userSrv.GetUserByUsername(c.Request.Context(), req.Username)
+	// Get user by username (this will be traced by the user service)
+	user, err := uc.userSrv.GetUserByUsername(ctx, req.Username)
 	if err != nil {
+		if span != nil {
+			span.SetStatus(codes.Error, "user lookup failed")
+			span.SetAttribute("error.type", "user_not_found")
+			span.RecordError(err)
+		}
 		c.JSON(http.StatusUnauthorized, map[string]interface{}{
 			"status": "error",
 			"error": map[string]interface{}{
@@ -214,6 +266,10 @@ func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
 
 	// Verify password
 	if !utils.CheckPasswordHash(req.Password, user.PasswordHash) {
+		if span != nil {
+			span.SetStatus(codes.Error, "password verification failed")
+			span.SetAttribute("error.type", "invalid_password")
+		}
 		c.JSON(http.StatusUnauthorized, map[string]interface{}{
 			"status": "error",
 			"error": map[string]interface{}{
@@ -222,6 +278,12 @@ func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
 			},
 		})
 		return
+	}
+	
+	if span != nil {
+		span.SetAttribute("operation.success", true)
+		span.SetAttribute("user.id", user.ID.String())
+		span.SetStatus(codes.Ok, "user validation successful")
 	}
 
 	c.JSON(http.StatusOK, map[string]interface{}{

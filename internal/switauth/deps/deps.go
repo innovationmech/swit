@@ -81,8 +81,8 @@ func NewDependencies() (*Dependencies, error) {
 	// Initialize repository layer
 	tokenRepo := repository.NewTokenRepository(database)
 
-	// Initialize client layer
-	userClient := client.NewUserClient(sd)
+	// Initialize client layer with tracing
+	userClient := client.NewUserClientWithTracing(sd, tracingManager)
 
 	// Initialize service layer
 	authSrv, err := authv1.NewAuthSrv(

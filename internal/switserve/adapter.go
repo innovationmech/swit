@@ -89,9 +89,9 @@ func (s *ServiceRegistrar) RegisterServices(registry server.BusinessServiceRegis
 		return fmt.Errorf("failed to register stop HTTP handler: %w", err)
 	}
 
-	// Register user HTTP handler
+	// Register user HTTP handler with tracing
 	userHandler := &UserBusinessHTTPHandler{
-		handler: userv1.NewUserHandler(s.deps.UserSrv),
+		handler: userv1.NewUserHandlerWithTracing(s.deps.UserSrv, s.deps.TracingManager),
 	}
 	if err := registry.RegisterBusinessHTTPHandler(userHandler); err != nil {
 		return fmt.Errorf("failed to register user HTTP handler: %w", err)
