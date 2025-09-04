@@ -691,7 +691,7 @@ func (om *ObservabilityManager) RecordTracingMetrics() {
 	if om.tracingManager != nil {
 		tracingEnabled = 1.0
 	}
-	
+
 	om.prometheusCollector.SetGauge("swit_tracing_enabled", tracingEnabled, map[string]string{
 		"service": om.serviceName,
 	})

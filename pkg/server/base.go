@@ -134,6 +134,12 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		}
 	}
 
+	// Set tracing manager in transport coordinator for distribution to all transports
+	if tracingManager := server.observabilityManager.GetTracingManager(); tracingManager != nil {
+		server.transportManager.SetTracingManager(tracingManager)
+		logger.Logger.Debug("Tracing manager distributed to transport coordinator")
+	}
+
 	// Initialize transports based on configuration
 	if err := server.initializeTransports(); err != nil {
 		return nil, fmt.Errorf("failed to initialize transports: %w", err)

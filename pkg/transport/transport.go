@@ -150,12 +150,12 @@ func (m *TransportCoordinator) Register(transport NetworkTransport) {
 	defer m.mu.Unlock()
 
 	m.transports = append(m.transports, transport)
-	
+
 	// Inject tracing manager if available
 	if m.tracingManager != nil {
 		m.injectTracingManagerToTransport(transport)
 	}
-	
+
 	logger.Logger.Info("Transport registered",
 		zap.String("transport", transport.GetName()))
 }
@@ -164,15 +164,22 @@ func (m *TransportCoordinator) Register(transport NetworkTransport) {
 func (m *TransportCoordinator) SetTracingManager(tracingManager tracing.TracingManager) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.tracingManager = tracingManager
-	
+
 	// Inject tracing manager into all existing transports
 	for _, transport := range m.transports {
 		m.injectTracingManagerToTransport(transport)
 	}
-	
+
 	logger.Logger.Info("Tracing manager set for transport coordinator")
+}
+
+// GetTracingManager returns the current tracing manager
+func (m *TransportCoordinator) GetTracingManager() tracing.TracingManager {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.tracingManager
 }
 
 // injectTracingManagerToTransport injects the tracing manager into a transport
@@ -184,7 +191,7 @@ func (m *TransportCoordinator) injectTracingManagerToTransport(transport Network
 		}
 		logger.Logger.Debug("Tracing manager injected into HTTP transport")
 	}
-	
+
 	// Check if transport is gRPC type and inject tracing manager
 	if grpcTransport, ok := transport.(*GRPCNetworkService); ok {
 		if grpcTransport.config != nil {

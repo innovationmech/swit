@@ -461,12 +461,12 @@ func TestTracingConfig_ApplyEnvironmentOverrides(t *testing.T) {
 		"SWIT_TRACING_RESOURCE_ENVIRONMENT",
 		"SWIT_TRACING_PROPAGATORS",
 	}
-	
+
 	for _, env := range envVars {
 		originalEnv[env] = os.Getenv(env)
 		os.Unsetenv(env)
 	}
-	
+
 	// Cleanup function
 	defer func() {
 		for _, env := range envVars {
@@ -604,12 +604,12 @@ func TestTracingConfig_ApplyEnvironmentOverrides_InvalidValues(t *testing.T) {
 		"SWIT_TRACING_SAMPLING_RATE",
 		"SWIT_TRACING_OTLP_INSECURE",
 	}
-	
+
 	for _, env := range envVars {
 		originalEnv[env] = os.Getenv(env)
 		os.Unsetenv(env)
 	}
-	
+
 	defer func() {
 		for _, env := range envVars {
 			if value := originalEnv[env]; value != "" {
