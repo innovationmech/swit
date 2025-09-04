@@ -476,19 +476,20 @@ func (c *ServerConfig) SetDefaults() {
 		c.Prometheus.CardinalityLimit = 10000 // Default limit to prevent memory exhaustion
 	}
 
-	// Tracing defaults
-	if c.Tracing.ServiceName == "" {
-		c.Tracing.ServiceName = c.ServiceName
+	// Tracing configuration
+	if c.Tracing.Enabled {
+		// Set service name if not specified
+		if c.Tracing.ServiceName == "" {
+			c.Tracing.ServiceName = c.ServiceName
+		}
+		// Apply environment variable overrides when tracing is enabled
+		c.Tracing.ApplyEnvironmentOverrides()
+	} else if c.ServiceName != "swit-service" {
+		// For non-default service names, set the tracing service name but don't enable tracing
+		if c.Tracing.ServiceName == "" {
+			c.Tracing.ServiceName = c.ServiceName
+		}
 	}
-	if !c.Tracing.Enabled && c.Tracing.ServiceName == "" {
-		// If tracing is not explicitly configured, set up default configuration
-		defaultConfig := tracing.DefaultTracingConfig()
-		defaultConfig.ServiceName = c.ServiceName
-		c.Tracing = *defaultConfig
-	}
-
-	// Apply environment variable overrides to tracing configuration
-	c.Tracing.ApplyEnvironmentOverrides()
 
 	// Server defaults
 	if c.ShutdownTimeout == 0 {

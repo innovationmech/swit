@@ -1014,7 +1014,9 @@ func (s *ConfigCommandTestSuite) TestUtilityFunctions() {
 
 // TestCreateDependencyContainer tests dependency container creation
 func (s *ConfigCommandTestSuite) TestCreateDependencyContainer() {
+	originalWorkDir := workDir
 	workDir = s.tempDir
+	defer func() { workDir = originalWorkDir }()
 
 	container, err := createDependencyContainer()
 	assert.NoError(s.T(), err)

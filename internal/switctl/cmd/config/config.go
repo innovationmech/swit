@@ -699,11 +699,9 @@ var createDependencyContainer = func() (interfaces.DependencyContainer, error) {
 
 	// Register config manager
 	if err := container.RegisterSingleton("config_manager", func() (interface{}, error) {
-		// Get filesystem service for logger (if available)
-		var logger interfaces.Logger
-		if loggerService, err := container.GetService("logger"); err == nil {
-			logger = loggerService.(interfaces.Logger)
-		}
+		// Don't try to get logger service since it's not registered
+		// This avoids potential deadlocks in race conditions
+		var logger interfaces.Logger = nil
 
 		// Use the new hierarchical config manager
 		configManager := config.NewHierarchicalConfigManager(workDir, logger)
