@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  # Jaeger 分布式追踪后端
+  jaeger:
+    image: jaegertracing/all-in-one:1.42
+    container_name: jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector HTTP
+      - "14250:14250"  # Jaeger collector gRPC
+      - "6831:6831/udp"  # Jaeger agent Thrift compact
+      - "6832:6832/udp"  # Jaeger agent Thrift binary
+      - "5778:5778"    # Jaeger agent config
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+      - JAEGER_DISABLED=false
+      - LOG_LEVEL=info
+    networks:
+      - tracing-network
+    volumes:
+      - ./jaeger/config:/etc/jaeger/
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:16686"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 订单服务
+  order-service:
+    build: 
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    ports:
+      - "8081:8081"  # HTTP
+      - "9081:9081"  # gRPC
+    environment:
+      - SERVER_HTTP_PORT=8081
+      - SERVER_GRPC_PORT=9081
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - PAYMENT_SERVICE_URL=payment-service:9082
+      - INVENTORY_SERVICE_URL=inventory-service:9083
+      - DATABASE_DSN=./data/orders.db
+      - LOG_LEVEL=info
+      - TRACING_ENABLED=true
+      - TRACING_SAMPLING_RATE=1.0
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    networks:
+      - tracing-network
+    volumes:
+      - order-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # 支付服务
+  payment-service:
+    build:
+      context: ./services/payment-service
+      dockerfile: Dockerfile
+    container_name: payment-service
+    ports:
+      - "9082:9082"  # gRPC only
+    environment:
+      - SERVER_GRPC_PORT=9082
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
+      - TRACING_ENABLED=true
+      - TRACING_SAMPLING_RATE=1.0
+      - PAYMENT_SIMULATION_MODE=true
+      - PAYMENT_TIMEOUT=30s
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    networks:
+      - tracing-network
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:9082"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # 库存服务
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile
+    container_name: inventory-service
+    ports:
+      - "8083:8083"  # HTTP
+      - "9083:9083"  # gRPC
+    environment:
+      - SERVER_HTTP_PORT=8083
+      - SERVER_GRPC_PORT=9083
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - DATABASE_DSN=./data/inventory.db
+      - LOG_LEVEL=info
+      - TRACING_ENABLED=true
+      - TRACING_SAMPLING_RATE=1.0
+      - CACHE_ENABLED=true
+      - CACHE_TTL=5m
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    networks:
+      - tracing-network
+    volumes:
+      - inventory-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  tracing-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  order-data:
+    driver: local
+  inventory-data:
+    driver: local
