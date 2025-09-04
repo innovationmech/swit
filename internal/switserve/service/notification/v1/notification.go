@@ -28,7 +28,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"go.uber.org/zap"
 )
 
@@ -55,9 +59,10 @@ type NotificationService interface {
 type Service struct {
 	// In-memory storage for demo purposes
 	// In production, this would be replaced with a database
-	notifications map[string]*Notification
-	userNotifs    map[string][]string // userID -> []notificationID
-	mu            sync.RWMutex
+	notifications  map[string]*Notification
+	userNotifs     map[string][]string // userID -> []notificationID
+	mu             sync.RWMutex
+	tracingManager tracing.TracingManager
 }
 
 // NewService creates a new notification service implementation
@@ -68,45 +73,134 @@ func NewService() NotificationService {
 	}
 }
 
+// NewServiceWithTracing creates a new notification service implementation with tracing
+func NewServiceWithTracing(tracingManager tracing.TracingManager) NotificationService {
+	return &Service{
+		notifications:  make(map[string]*Notification),
+		userNotifs:     make(map[string][]string),
+		tracingManager: tracingManager,
+	}
+}
+
 // CreateNotification creates a new notification
 func (s *Service) CreateNotification(ctx context.Context, userID, title, content string) (*Notification, error) {
-	if userID == "" {
-		return nil, fmt.Errorf("userID cannot be empty")
-	}
-	if title == "" {
-		return nil, fmt.Errorf("title cannot be empty")
-	}
-	if content == "" {
-		return nil, fmt.Errorf("content cannot be empty")
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := time.Now().Unix()
-	notification := &Notification{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		Title:     title,
-		Content:   content,
-		IsRead:    false,
-		CreatedAt: now,
-		UpdatedAt: now,
+	// Create tracing span
+	var span tracing.Span
+	if s.tracingManager != nil {
+		ctx, span = s.tracingManager.StartSpan(ctx, "NotificationService.CreateNotification",
+			tracing.WithAttributes(
+				attribute.String("notification.user_id", userID),
+				attribute.String("notification.title", title),
+			),
+		)
+		defer span.End()
 	}
 
-	// Store notification
-	s.notifications[notification.ID] = notification
+	// Validation span
+	if s.tracingManager != nil {
+		_, validationSpan := s.tracingManager.StartSpan(ctx, "validate_notification_input")
+		if userID == "" {
+			validationSpan.SetStatus(codes.Error, "userID cannot be empty")
+			span.SetStatus(codes.Error, "validation failed")
+			validationSpan.End()
+			return nil, fmt.Errorf("userID cannot be empty")
+		}
+		if title == "" {
+			validationSpan.SetStatus(codes.Error, "title cannot be empty")
+			span.SetStatus(codes.Error, "validation failed")
+			validationSpan.End()
+			return nil, fmt.Errorf("title cannot be empty")
+		}
+		if content == "" {
+			validationSpan.SetStatus(codes.Error, "content cannot be empty")
+			span.SetStatus(codes.Error, "validation failed")
+			validationSpan.End()
+			return nil, fmt.Errorf("content cannot be empty")
+		}
+		validationSpan.End()
+	} else {
+		// Fallback validation if no tracing
+		if userID == "" {
+			return nil, fmt.Errorf("userID cannot be empty")
+		}
+		if title == "" {
+			return nil, fmt.Errorf("title cannot be empty")
+		}
+		if content == "" {
+			return nil, fmt.Errorf("content cannot be empty")
+		}
+	}
 
-	// Add to user's notification list
-	s.userNotifs[userID] = append(s.userNotifs[userID], notification.ID)
+	// Storage operation span
+	if s.tracingManager != nil {
+		_, storageSpan := s.tracingManager.StartSpan(ctx, "store_notification")
+		defer storageSpan.End()
 
-	logger.Logger.Info("Notification created",
-		zap.String("notification_id", notification.ID),
-		zap.String("user_id", userID),
-		zap.String("title", title),
-	)
+		s.mu.Lock()
+		defer s.mu.Unlock()
 
-	return notification, nil
+		now := time.Now().Unix()
+		notification := &Notification{
+			ID:        uuid.New().String(),
+			UserID:    userID,
+			Title:     title,
+			Content:   content,
+			IsRead:    false,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+
+		// Store notification
+		s.notifications[notification.ID] = notification
+
+		// Add to user's notification list
+		s.userNotifs[userID] = append(s.userNotifs[userID], notification.ID)
+
+		storageSpan.SetAttribute("notification.id", notification.ID)
+		storageSpan.SetAttribute("operation.success", true)
+
+		if span != nil {
+			span.SetAttribute("notification.id", notification.ID)
+			span.SetAttribute("operation.success", true)
+		}
+
+		logger.Logger.Info("Notification created",
+			zap.String("notification_id", notification.ID),
+			zap.String("user_id", userID),
+			zap.String("title", title),
+		)
+
+		return notification, nil
+	} else {
+		// Fallback storage without tracing
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		now := time.Now().Unix()
+		notification := &Notification{
+			ID:        uuid.New().String(),
+			UserID:    userID,
+			Title:     title,
+			Content:   content,
+			IsRead:    false,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+
+		// Store notification
+		s.notifications[notification.ID] = notification
+
+		// Add to user's notification list
+		s.userNotifs[userID] = append(s.userNotifs[userID], notification.ID)
+
+		logger.Logger.Info("Notification created",
+			zap.String("notification_id", notification.ID),
+			zap.String("user_id", userID),
+			zap.String("title", title),
+		)
+
+		return notification, nil
+	}
 }
 
 // GetNotifications retrieves notifications for a user

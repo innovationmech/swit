@@ -33,6 +33,7 @@ import (
 	"github.com/innovationmech/swit/internal/switserve/service/stop"
 	userv1 "github.com/innovationmech/swit/internal/switserve/service/user/v1"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -51,23 +52,36 @@ type Dependencies struct {
 	NotificationSrv notificationv1.NotificationService
 	HealthSrv       interfaces.HealthService
 	StopSrv         interfaces.StopService
+
+	// Tracing
+	TracingManager tracing.TracingManager
 }
 
 // NewDependencies creates and initializes all service dependencies
 func NewDependencies(shutdownFunc func()) (*Dependencies, error) {
-	// 1. Initialize infrastructure
+	// 1. Initialize tracing manager
+	tracingManager := tracing.NewTracingManager()
+
+	// 2. Initialize infrastructure
 	database := db.GetDB()
 	if database == nil {
 		logger.Logger.Error("failed to get database connection")
 		return nil, ErrDatabaseConnection
 	}
 
-	// 2. Initialize Repository layer
+	// Setup database tracing
+	if err := db.SetupTracing(database, tracingManager); err != nil {
+		logger.Logger.Error("failed to setup database tracing", zap.Error(err))
+		// Don't fail if tracing setup fails - continue without tracing
+	}
+
+	// 3. Initialize Repository layer
 	userRepo := repository.NewUserRepository(database)
 
-	// 3. Initialize Service layer with interface types
+	// 4. Initialize Service layer with interface types
 	userSrv, err := userv1.NewUserSrv(
 		userv1.WithUserRepository(userRepo),
+		userv1.WithTracingManager(tracingManager),
 	)
 	if err != nil {
 		logger.Logger.Error("failed to create user service", zap.Error(err))
@@ -76,7 +90,7 @@ func NewDependencies(shutdownFunc func()) (*Dependencies, error) {
 
 	// Initialize other services
 	greeterSrv := greeterv1.NewService()
-	notificationSrv := notificationv1.NewService()
+	notificationSrv := notificationv1.NewServiceWithTracing(tracingManager)
 	healthSrv := health.NewHealthSrv()
 	stopSrv := stop.NewService(shutdownFunc)
 
@@ -89,6 +103,7 @@ func NewDependencies(shutdownFunc func()) (*Dependencies, error) {
 		NotificationSrv: notificationSrv,
 		HealthSrv:       healthSrv,
 		StopSrv:         stopSrv,
+		TracingManager:  tracingManager,
 	}
 
 	// Validate dependencies
@@ -132,6 +147,11 @@ func (d *Dependencies) Validate() error {
 	}
 	if d.StopSrv == nil {
 		return fmt.Errorf("stop service is nil")
+	}
+
+	// Validate tracing
+	if d.TracingManager == nil {
+		return fmt.Errorf("tracing manager is nil")
 	}
 
 	return nil

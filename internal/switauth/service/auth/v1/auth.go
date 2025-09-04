@@ -27,11 +27,15 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/innovationmech/swit/internal/switauth/client"
 	"github.com/innovationmech/swit/internal/switauth/interfaces"
 	"github.com/innovationmech/swit/internal/switauth/model"
 	"github.com/innovationmech/swit/internal/switauth/repository"
 	"github.com/innovationmech/swit/internal/switauth/types"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/utils"
 )
 
@@ -42,8 +46,9 @@ type authService struct {
 
 // AuthServiceConfig auth service config
 type AuthServiceConfig struct {
-	UserClient client.UserClient
-	TokenRepo  repository.TokenRepository
+	UserClient     client.UserClient
+	TokenRepo      repository.TokenRepository
+	TracingManager tracing.TracingManager
 	// Logger      logger.Logger
 	// Cache       cache.Cache
 	// EventBus    eventbus.EventBus
@@ -64,6 +69,13 @@ func WithUserClient(userClient client.UserClient) AuthServiceOption {
 func WithTokenRepository(tokenRepo repository.TokenRepository) AuthServiceOption {
 	return func(config *AuthServiceConfig) {
 		config.TokenRepo = tokenRepo
+	}
+}
+
+// WithTracingManager set the tracing manager dependency
+func WithTracingManager(tracingManager tracing.TracingManager) AuthServiceOption {
+	return func(config *AuthServiceConfig) {
+		config.TracingManager = tracingManager
 	}
 }
 
@@ -118,26 +130,82 @@ func NewAuthSrvWithConfig(config *AuthServiceConfig) (interfaces.AuthService, er
 
 // Login authenticates a user with username and password
 func (s *authService) Login(ctx context.Context, username, password string) (*types.AuthResponse, error) {
-	// Validate user credentials
-	user, err := s.config.UserClient.ValidateUserCredentials(ctx, username, password)
-	if err != nil {
-		return nil, err
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "AuthService.Login",
+			tracing.WithAttributes(
+				attribute.String("auth.username", username),
+			),
+		)
+		defer span.End()
+	}
+
+	// Validate user credentials span (cross-service call)
+	var user *model.User
+	var err error
+	if s.config.TracingManager != nil {
+		_, credentialsSpan := s.config.TracingManager.StartSpan(ctx, "validate_user_credentials")
+		user, err = s.config.UserClient.ValidateUserCredentials(ctx, username, password)
+		if err != nil {
+			credentialsSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "credential validation failed")
+			credentialsSpan.End()
+			return nil, err
+		}
+		credentialsSpan.End()
+	} else {
+		// Fallback credential validation if no tracing
+		user, err = s.config.UserClient.ValidateUserCredentials(ctx, username, password)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if user is active
 	if !user.IsActive {
+		if span != nil {
+			span.SetStatus(codes.Error, "user account is not active")
+			span.SetAttribute("error.type", "inactive_user")
+		}
 		return nil, fmt.Errorf("user account is not active")
 	}
 
-	// Generate access and refresh tokens
-	accessToken, accessExpiresAt, err := utils.GenerateAccessToken(user.ID.String())
-	if err != nil {
-		return nil, err
-	}
+	// Generate tokens span
+	var accessToken, refreshToken string
+	var accessExpiresAt, refreshExpiresAt time.Time
+	if s.config.TracingManager != nil {
+		_, tokenSpan := s.config.TracingManager.StartSpan(ctx, "generate_tokens")
+		
+		accessToken, accessExpiresAt, err = utils.GenerateAccessToken(user.ID.String())
+		if err != nil {
+			tokenSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token generation failed")
+			tokenSpan.End()
+			return nil, err
+		}
 
-	refreshToken, refreshExpiresAt, err := utils.GenerateRefreshToken(user.ID.String())
-	if err != nil {
-		return nil, err
+		refreshToken, refreshExpiresAt, err = utils.GenerateRefreshToken(user.ID.String())
+		if err != nil {
+			tokenSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token generation failed")
+			tokenSpan.End()
+			return nil, err
+		}
+		
+		tokenSpan.SetAttribute("token.user_id", user.ID.String())
+		tokenSpan.End()
+	} else {
+		// Fallback token generation if no tracing
+		accessToken, accessExpiresAt, err = utils.GenerateAccessToken(user.ID.String())
+		if err != nil {
+			return nil, err
+		}
+
+		refreshToken, _, err = utils.GenerateRefreshToken(user.ID.String())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Create token record
@@ -150,9 +218,30 @@ func (s *authService) Login(ctx context.Context, username, password string) (*ty
 		IsValid:          true,
 	}
 
-	// Store token in repository
-	if err := s.config.TokenRepo.Create(ctx, token); err != nil {
-		return nil, err
+	// Store token in repository span
+	if s.config.TracingManager != nil {
+		_, storeSpan := s.config.TracingManager.StartSpan(ctx, "store_token")
+		
+		if err := s.config.TokenRepo.Create(ctx, token); err != nil {
+			storeSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "token storage failed")
+			storeSpan.End()
+			return nil, err
+		}
+		
+		storeSpan.SetAttribute("operation.success", true)
+		storeSpan.SetAttribute("token.user_id", user.ID.String())
+		storeSpan.End()
+	} else {
+		// Fallback token storage if no tracing
+		if err := s.config.TokenRepo.Create(ctx, token); err != nil {
+			return nil, err
+		}
+	}
+
+	if span != nil {
+		span.SetAttribute("auth.user_id", user.ID.String())
+		span.SetAttribute("operation.success", true)
 	}
 
 	return &types.AuthResponse{

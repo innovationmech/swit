@@ -35,5 +35,24 @@ server:
         allow_credentials: true
         max_age: 86400  # 24 hours
 
+# Distributed Tracing Configuration
+tracing:
+  enabled: true
+  service_name: "swit-serve"
+  sampling:
+    type: "traceidratio"
+    rate: 1.0  # Full sampling for development
+  exporter:
+    type: "jaeger"
+    endpoint: "http://localhost:14268/api/traces"
+    timeout: "10s"
+  resource_attributes:
+    environment: "development"
+    version: "v1.0.0"
+    service.namespace: "swit"
+  propagators:
+    - "tracecontext"
+    - "baggage"
+
 serviceDiscovery:
   address: "localhost:8500"

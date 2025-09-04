@@ -25,10 +25,14 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/innovationmech/swit/internal/switserve/interfaces"
 	"github.com/innovationmech/swit/internal/switserve/model"
 	"github.com/innovationmech/swit/internal/switserve/repository"
 	"github.com/innovationmech/swit/internal/switserve/types"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/utils"
 )
 
@@ -38,7 +42,8 @@ type UserSrv = interfaces.UserService
 
 // UserServiceConfig user service config
 type UserServiceConfig struct {
-	UserRepo repository.UserRepository
+	UserRepo       repository.UserRepository
+	TracingManager tracing.TracingManager
 	// Logger      logger.Logger
 	// Cache       cache.Cache
 	// EventBus    eventbus.EventBus
@@ -57,6 +62,13 @@ type userService struct {
 func WithUserRepository(repo repository.UserRepository) UserServiceOption {
 	return func(config *UserServiceConfig) {
 		config.UserRepo = repo
+	}
+}
+
+// WithTracingManager set the tracing manager dependency
+func WithTracingManager(tracingManager tracing.TracingManager) UserServiceOption {
+	return func(config *UserServiceConfig) {
+		config.TracingManager = tracingManager
 	}
 }
 
@@ -105,27 +117,81 @@ func NewUserSrvWithConfig(config *UserServiceConfig) (interfaces.UserService, er
 
 // CreateUser creates a new user
 func (s *userService) CreateUser(ctx context.Context, user *model.User) error {
-	// add validation
-	if user.Username == "" || user.Email == "" {
-		return types.ErrValidation("username and email cannot be empty")
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "UserService.CreateUser",
+			tracing.WithAttributes(
+				attribute.String("user.email", user.Email),
+				attribute.String("user.username", user.Username),
+			),
+		)
+		defer span.End()
 	}
 
-	hashedPassword, err := utils.HashPassword(user.Password)
-	if err != nil {
-		return types.ErrInternalWithCause("failed to hash password", err)
+	// Add validation span
+	if s.config.TracingManager != nil {
+		_, validationSpan := s.config.TracingManager.StartSpan(ctx, "validate_user_input")
+		if user.Username == "" || user.Email == "" {
+			validationSpan.SetStatus(codes.Error, "username and email cannot be empty")
+			span.SetStatus(codes.Error, "validation failed")
+			validationSpan.End()
+			return types.ErrValidation("username and email cannot be empty")
+		}
+		validationSpan.End()
+	} else {
+		// Fallback validation if no tracing
+		if user.Username == "" || user.Email == "" {
+			return types.ErrValidation("username and email cannot be empty")
+		}
 	}
-	user.PasswordHash = hashedPassword
-	// Clear the plain text password for security
-	user.Password = ""
 
-	// attempt to create the user directly, letting the database handle uniqueness constraints
-	err = s.config.UserRepo.CreateUser(ctx, user)
+	// Hash password span
+	if s.config.TracingManager != nil {
+		_, hashSpan := s.config.TracingManager.StartSpan(ctx, "hash_password")
+		hashedPassword, err := utils.HashPassword(user.Password)
+		if err != nil {
+			hashSpan.SetStatus(codes.Error, err.Error())
+			span.SetStatus(codes.Error, "password hashing failed")
+			hashSpan.End()
+			return types.ErrInternalWithCause("failed to hash password", err)
+		}
+		user.PasswordHash = hashedPassword
+		// Clear the plain text password for security
+		user.Password = ""
+		hashSpan.End()
+	} else {
+		// Fallback password hashing if no tracing
+		hashedPassword, err := utils.HashPassword(user.Password)
+		if err != nil {
+			return types.ErrInternalWithCause("failed to hash password", err)
+		}
+		user.PasswordHash = hashedPassword
+		user.Password = ""
+	}
+
+	// Database operation span (GORM will automatically trace this if DB tracing is enabled)
+	err := s.config.UserRepo.CreateUser(ctx, user)
 	if err != nil {
 		// check if it's a uniqueness constraint error
 		if strings.Contains(err.Error(), "Duplicate entry") {
+			if span != nil {
+				span.SetStatus(codes.Error, "duplicate email")
+				span.SetAttribute("error.type", "conflict")
+			}
 			return types.ErrConflict("this email is already in use")
 		}
+		if span != nil {
+			span.SetStatus(codes.Error, err.Error())
+			span.SetAttribute("error.type", "database")
+		}
 		return types.ErrInternalWithCause("failed to create user", err)
+	}
+
+	// Record success
+	if span != nil {
+		span.SetAttribute("user.id", user.ID.String())
+		span.SetAttribute("operation.success", true)
 	}
 
 	return nil
@@ -133,54 +199,145 @@ func (s *userService) CreateUser(ctx context.Context, user *model.User) error {
 
 // GetUserByUsername gets a user by username
 func (s *userService) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "UserService.GetUserByUsername",
+			tracing.WithAttributes(
+				attribute.String("user.username", username),
+			),
+		)
+		defer span.End()
+	}
+
 	if username == "" {
+		if span != nil {
+			span.SetStatus(codes.Error, "username cannot be empty")
+		}
 		return nil, types.ErrValidation("username cannot be empty")
 	}
 
 	user, err := s.config.UserRepo.GetUserByUsername(ctx, username)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			if span != nil {
+				span.SetStatus(codes.Error, "user not found")
+				span.SetAttribute("error.type", "not_found")
+			}
 			return nil, types.ErrNotFound("user")
+		}
+		if span != nil {
+			span.SetStatus(codes.Error, err.Error())
+			span.SetAttribute("error.type", "database")
 		}
 		return nil, types.ErrInternalWithCause("failed to get user by username", err)
 	}
 	if user == nil {
+		if span != nil {
+			span.SetStatus(codes.Error, "user not found")
+			span.SetAttribute("error.type", "not_found")
+		}
 		return nil, types.ErrNotFound("user")
 	}
+
+	if span != nil {
+		span.SetAttribute("user.id", user.ID.String())
+		span.SetAttribute("operation.success", true)
+	}
+
 	return user, nil
 }
 
 // GetUserByEmail gets a user by email
 func (s *userService) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "UserService.GetUserByEmail",
+			tracing.WithAttributes(
+				attribute.String("user.email", email),
+			),
+		)
+		defer span.End()
+	}
+
 	if email == "" {
+		if span != nil {
+			span.SetStatus(codes.Error, "email cannot be empty")
+		}
 		return nil, types.ErrValidation("email cannot be empty")
 	}
 
 	user, err := s.config.UserRepo.GetUserByEmail(ctx, email)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			if span != nil {
+				span.SetStatus(codes.Error, "user not found")
+				span.SetAttribute("error.type", "not_found")
+			}
 			return nil, types.ErrNotFound("user")
+		}
+		if span != nil {
+			span.SetStatus(codes.Error, err.Error())
+			span.SetAttribute("error.type", "database")
 		}
 		return nil, types.ErrInternalWithCause("failed to get user by email", err)
 	}
 	if user == nil {
+		if span != nil {
+			span.SetStatus(codes.Error, "user not found")
+			span.SetAttribute("error.type", "not_found")
+		}
 		return nil, types.ErrNotFound("user")
 	}
+
+	if span != nil {
+		span.SetAttribute("user.id", user.ID.String())
+		span.SetAttribute("operation.success", true)
+	}
+
 	return user, nil
 }
 
 // DeleteUser deletes a user by ID
 func (s *userService) DeleteUser(ctx context.Context, id string) error {
+	// Create tracing span
+	var span tracing.Span
+	if s.config.TracingManager != nil {
+		ctx, span = s.config.TracingManager.StartSpan(ctx, "UserService.DeleteUser",
+			tracing.WithAttributes(
+				attribute.String("user.id", id),
+			),
+		)
+		defer span.End()
+	}
+
 	if id == "" {
+		if span != nil {
+			span.SetStatus(codes.Error, "user ID cannot be empty")
+		}
 		return types.ErrValidation("user ID cannot be empty")
 	}
 
 	err := s.config.UserRepo.DeleteUser(ctx, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			if span != nil {
+				span.SetStatus(codes.Error, "user not found")
+				span.SetAttribute("error.type", "not_found")
+			}
 			return types.ErrNotFound("user")
+		}
+		if span != nil {
+			span.SetStatus(codes.Error, err.Error())
+			span.SetAttribute("error.type", "database")
 		}
 		return types.ErrInternalWithCause("failed to delete user", err)
 	}
+
+	if span != nil {
+		span.SetAttribute("operation.success", true)
+	}
+
 	return nil
 }
