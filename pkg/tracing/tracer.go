@@ -32,7 +32,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -187,7 +187,7 @@ func (tm *tracingManager) Initialize(ctx context.Context, config *TracingConfig)
 // createResource creates an OpenTelemetry resource
 func (tm *tracingManager) createResource(config *TracingConfig) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{
-		semconv.ServiceName(config.ServiceName),
+		semconv.ServiceNameKey.String(config.ServiceName),
 	}
 
 	// Add configured resource attributes
@@ -198,7 +198,7 @@ func (tm *tracingManager) createResource(config *TracingConfig) (*resource.Resou
 	return resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
-			semconv.SchemaURL,
+			"https://opentelemetry.io/schemas/1.26.0",
 			attrs...,
 		),
 	)
