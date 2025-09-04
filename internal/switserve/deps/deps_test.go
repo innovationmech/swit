@@ -156,8 +156,8 @@ func TestDependencies_StructFields(t *testing.T) {
 		deps := &Dependencies{}
 		depsType := reflect.TypeOf(deps).Elem()
 
-		// Check field count
-		expectedFieldCount := 7
+		// Check field count (includes tracing manager)
+		expectedFieldCount := 8
 		actualFieldCount := depsType.NumField()
 		assert.Equal(t, expectedFieldCount, actualFieldCount, "Dependencies struct should have %d fields", expectedFieldCount)
 
@@ -170,6 +170,7 @@ func TestDependencies_StructFields(t *testing.T) {
 			"NotificationSrv": "v1.NotificationService",
 			"HealthSrv":       "interfaces.HealthService",
 			"StopSrv":         "interfaces.StopService",
+			"TracingManager":  "tracing.TracingManager",
 		}
 
 		for fieldName, expectedType := range fields {

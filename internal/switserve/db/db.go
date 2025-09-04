@@ -63,7 +63,7 @@ func SetupTracing(db *gorm.DB, tracingManager tracing.TracingManager) error {
 	if tracingManager == nil {
 		return nil // Skip tracing setup if no manager provided
 	}
-	
+
 	config := tracing.DefaultGormTracingConfig()
 	return tracing.InstallGormTracing(db, tracingManager, config)
 }

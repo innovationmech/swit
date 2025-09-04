@@ -23,12 +23,16 @@ package v1
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
 	"github.com/innovationmech/swit/pkg/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 // MockTracingManager is a mock implementation of TracingManager for testing
@@ -51,11 +55,11 @@ func (m *MockTracingManager) SpanFromContext(ctx context.Context) tracing.Span {
 	return args.Get(0).(tracing.Span)
 }
 
-func (m *MockTracingManager) InjectHTTPHeaders(ctx context.Context, headers interface{}) {
+func (m *MockTracingManager) InjectHTTPHeaders(ctx context.Context, headers http.Header) {
 	m.Called(ctx, headers)
 }
 
-func (m *MockTracingManager) ExtractHTTPHeaders(headers interface{}) context.Context {
+func (m *MockTracingManager) ExtractHTTPHeaders(headers http.Header) context.Context {
 	args := m.Called(headers)
 	return args.Get(0).(context.Context)
 }
@@ -74,29 +78,29 @@ func (m *MockSpan) SetAttribute(key string, value interface{}) {
 	m.Called(key, value)
 }
 
-func (m *MockSpan) SetAttributes(attrs ...interface{}) {
+func (m *MockSpan) SetAttributes(attrs ...attribute.KeyValue) {
 	m.Called(attrs)
 }
 
-func (m *MockSpan) AddEvent(name string, opts ...interface{}) {
+func (m *MockSpan) AddEvent(name string, opts ...oteltrace.EventOption) {
 	m.Called(name, opts)
 }
 
-func (m *MockSpan) SetStatus(code interface{}, description string) {
+func (m *MockSpan) SetStatus(code codes.Code, description string) {
 	m.Called(code, description)
 }
 
-func (m *MockSpan) End(opts ...interface{}) {
+func (m *MockSpan) End(opts ...oteltrace.SpanEndOption) {
 	m.Called(opts)
 }
 
-func (m *MockSpan) RecordError(err error, opts ...interface{}) {
+func (m *MockSpan) RecordError(err error, opts ...oteltrace.EventOption) {
 	m.Called(err, opts)
 }
 
-func (m *MockSpan) SpanContext() interface{} {
+func (m *MockSpan) SpanContext() oteltrace.SpanContext {
 	args := m.Called()
-	return args.Get(0)
+	return args.Get(0).(oteltrace.SpanContext)
 }
 
 func TestNotificationService_CreateNotification_WithTracing(t *testing.T) {
@@ -115,12 +119,12 @@ func TestNotificationService_CreateNotification_WithTracing(t *testing.T) {
 	mockMainSpan.On("SetAttribute", mock.AnythingOfType("string"), mock.Anything).Return()
 
 	// Setup expectations for validation span
-	mockTracingManager.On("StartSpan", ctx, "validate_notification_input").
+	mockTracingManager.On("StartSpan", ctx, "validate_notification_input", mock.Anything).
 		Return(ctx, mockValidationSpan)
 	mockValidationSpan.On("End", mock.Anything).Return()
 
 	// Setup expectations for storage span
-	mockTracingManager.On("StartSpan", ctx, "store_notification").
+	mockTracingManager.On("StartSpan", ctx, "store_notification", mock.Anything).
 		Return(ctx, mockStorageSpan)
 	mockStorageSpan.On("End", mock.Anything).Return()
 	mockStorageSpan.On("SetAttribute", mock.AnythingOfType("string"), mock.Anything).Return()
@@ -174,7 +178,7 @@ func TestNotificationService_CreateNotification_ValidationError_WithTracing(t *t
 	mockMainSpan.On("SetStatus", mock.Anything, "validation failed").Return()
 
 	// Setup expectations for validation span
-	mockTracingManager.On("StartSpan", ctx, "validate_notification_input").
+	mockTracingManager.On("StartSpan", ctx, "validate_notification_input", mock.Anything).
 		Return(ctx, mockValidationSpan)
 	mockValidationSpan.On("End", mock.Anything).Return()
 	mockValidationSpan.On("SetStatus", mock.Anything, "userID cannot be empty").Return()

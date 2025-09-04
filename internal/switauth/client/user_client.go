@@ -116,7 +116,7 @@ func (c *userClient) ValidateUserCredentials(ctx context.Context, username, pass
 	}
 
 	url := fmt.Sprintf("%s/internal/validate-user", serviceURL)
-	
+
 	if span != nil {
 		span.SetAttribute("http.url", url)
 		span.SetAttribute("net.peer.name", serviceURL)

@@ -110,22 +110,22 @@ func createTestServiceDiscovery(url string, err error) *discovery.ServiceDiscove
 
 func TestUserClient_ValidateUserCredentials_WithTracing(t *testing.T) {
 	t.Skip("Skipping integration test - requires Consul setup for service discovery")
-	
+
 	// This test would verify:
 	// 1. TracingManager.StartSpan is called with correct parameters
 	// 2. HTTP headers are injected with tracing context
 	// 3. Span attributes are set correctly
 	// 4. Error handling includes span status updates
-	
+
 	// To run this test, set up:
 	// - Test Consul instance
-	// - Register test service in Consul  
+	// - Register test service in Consul
 	// - Mock HTTP server that verifies trace headers
 }
 
 func TestUserClient_ValidateUserCredentials_TracingError(t *testing.T) {
 	t.Skip("Skipping integration test - requires Consul setup for service discovery")
-	
+
 	// This test would verify error tracing:
 	// 1. Service discovery failures are traced
 	// 2. HTTP errors are traced with appropriate attributes
@@ -134,7 +134,7 @@ func TestUserClient_ValidateUserCredentials_TracingError(t *testing.T) {
 
 func TestUserClient_ValidateUserCredentials_WithoutTracing(t *testing.T) {
 	t.Skip("Skipping integration test - requires Consul setup for service discovery")
-	
+
 	// This test would verify:
 	// 1. Client works correctly without tracing manager
 	// 2. No tracing headers are injected

@@ -202,14 +202,14 @@ func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
 	// Extract distributed tracing context from HTTP headers
 	ctx := c.Request.Context()
 	var span tracing.Span
-	
+
 	if uc.tracingManager != nil {
 		// Extract tracing context from incoming HTTP headers
 		tracingCtx := uc.tracingManager.ExtractHTTPHeaders(c.Request.Header)
 		if tracingCtx != nil {
 			ctx = tracingCtx
 		}
-		
+
 		// Start a new span for this operation
 		ctx, span = uc.tracingManager.StartSpan(ctx, "HTTP_POST /internal/validate-user",
 			tracing.WithSpanKind(oteltrace.SpanKindServer),
@@ -241,7 +241,7 @@ func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if span != nil {
 		span.SetAttribute("user.username", req.Username)
 	}
@@ -279,7 +279,7 @@ func (uc *UserHandler) ValidateUserCredentials(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if span != nil {
 		span.SetAttribute("operation.success", true)
 		span.SetAttribute("user.id", user.ID.String())

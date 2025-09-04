@@ -176,7 +176,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*ty
 	var accessExpiresAt, refreshExpiresAt time.Time
 	if s.config.TracingManager != nil {
 		_, tokenSpan := s.config.TracingManager.StartSpan(ctx, "generate_tokens")
-		
+
 		accessToken, accessExpiresAt, err = utils.GenerateAccessToken(user.ID.String())
 		if err != nil {
 			tokenSpan.SetStatus(codes.Error, err.Error())
@@ -192,7 +192,7 @@ func (s *authService) Login(ctx context.Context, username, password string) (*ty
 			tokenSpan.End()
 			return nil, err
 		}
-		
+
 		tokenSpan.SetAttribute("token.user_id", user.ID.String())
 		tokenSpan.End()
 	} else {
@@ -221,14 +221,14 @@ func (s *authService) Login(ctx context.Context, username, password string) (*ty
 	// Store token in repository span
 	if s.config.TracingManager != nil {
 		_, storeSpan := s.config.TracingManager.StartSpan(ctx, "store_token")
-		
+
 		if err := s.config.TokenRepo.Create(ctx, token); err != nil {
 			storeSpan.SetStatus(codes.Error, err.Error())
 			span.SetStatus(codes.Error, "token storage failed")
 			storeSpan.End()
 			return nil, err
 		}
-		
+
 		storeSpan.SetAttribute("operation.success", true)
 		storeSpan.SetAttribute("token.user_id", user.ID.String())
 		storeSpan.End()
