@@ -29,21 +29,23 @@ import (
 
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/types"
 )
 
 // ServerConfig holds the complete configuration for a base server instance
 // It includes transport, discovery, middleware, and monitoring configuration
 type ServerConfig struct {
-	ServiceName     string           `yaml:"service_name" json:"service_name"`
-	HTTP            HTTPConfig       `yaml:"http" json:"http"`
-	GRPC            GRPCConfig       `yaml:"grpc" json:"grpc"`
-	Discovery       DiscoveryConfig  `yaml:"discovery" json:"discovery"`
-	Middleware      MiddlewareConfig `yaml:"middleware" json:"middleware"`
-	Sentry          SentryConfig     `yaml:"sentry" json:"sentry"`
-	Logging         LoggingConfig    `yaml:"logging" json:"logging"`
-	Prometheus      PrometheusConfig `yaml:"prometheus" json:"prometheus"`
-	ShutdownTimeout time.Duration    `yaml:"shutdown_timeout" json:"shutdown_timeout"`
+	ServiceName     string                `yaml:"service_name" json:"service_name"`
+	HTTP            HTTPConfig            `yaml:"http" json:"http"`
+	GRPC            GRPCConfig            `yaml:"grpc" json:"grpc"`
+	Discovery       DiscoveryConfig       `yaml:"discovery" json:"discovery"`
+	Middleware      MiddlewareConfig      `yaml:"middleware" json:"middleware"`
+	Sentry          SentryConfig          `yaml:"sentry" json:"sentry"`
+	Logging         LoggingConfig         `yaml:"logging" json:"logging"`
+	Prometheus      PrometheusConfig      `yaml:"prometheus" json:"prometheus"`
+	Tracing         tracing.TracingConfig `yaml:"tracing" json:"tracing"`
+	ShutdownTimeout time.Duration         `yaml:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
 // HTTPConfig holds HTTP transport specific configuration
@@ -474,6 +476,21 @@ func (c *ServerConfig) SetDefaults() {
 		c.Prometheus.CardinalityLimit = 10000 // Default limit to prevent memory exhaustion
 	}
 
+	// Tracing configuration
+	if c.Tracing.Enabled {
+		// Set service name if not specified
+		if c.Tracing.ServiceName == "" {
+			c.Tracing.ServiceName = c.ServiceName
+		}
+		// Apply environment variable overrides when tracing is enabled
+		c.Tracing.ApplyEnvironmentOverrides()
+	} else if c.ServiceName != "swit-service" {
+		// For non-default service names, set the tracing service name but don't enable tracing
+		if c.Tracing.ServiceName == "" {
+			c.Tracing.ServiceName = c.ServiceName
+		}
+	}
+
 	// Server defaults
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 5 * time.Second
@@ -738,6 +755,13 @@ func (c *ServerConfig) Validate() error {
 		}
 		if c.Prometheus.CardinalityLimit > 100000 {
 			return fmt.Errorf("prometheus.cardinality_limit exceeds recommended maximum of 100000")
+		}
+	}
+
+	// Validate tracing configuration
+	if c.Tracing.Enabled {
+		if err := c.Tracing.Validate(); err != nil {
+			return fmt.Errorf("tracing configuration invalid: %w", err)
 		}
 	}
 

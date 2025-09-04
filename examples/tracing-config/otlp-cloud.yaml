@@ -1,0 +1,96 @@
+# Cloud tracing configuration with OTLP exporter
+# This configuration works with cloud providers like Google Cloud Trace, AWS X-Ray via OTEL Collector
+
+service_name: "cloud-microservice"
+
+# OTLP tracing configuration for cloud environments
+tracing:
+  enabled: true
+  service_name: "cloud-microservice"
+  
+  # Adaptive sampling for cloud cost optimization
+  sampling:
+    type: "traceidratio"
+    rate: 0.05  # 5% sampling rate
+  
+  # OTLP exporter for cloud providers
+  exporter:
+    type: "otlp"
+    endpoint: "https://otlp-gateway.example.com"  # Your OTLP collector endpoint
+    timeout: "30s"
+    
+    # OTLP-specific configuration
+    otlp:
+      endpoint: "https://otlp-gateway.example.com"
+      insecure: false  # Use TLS for production
+      headers:
+        # Authentication headers for cloud providers
+        "authorization": "Bearer ${OTLP_AUTH_TOKEN}"
+        "x-api-key": "${OTLP_API_KEY}"
+      compression: "gzip"  # Compress payloads to reduce network usage
+  
+  # Cloud resource attributes
+  resource_attributes:
+    service.version: "v3.0.0"
+    deployment.environment: "staging"
+    service.namespace: "microservices"
+    service.instance.id: "${INSTANCE_ID}"
+    
+    # Cloud provider specific attributes
+    cloud.provider: "gcp"  # or "aws", "azure"
+    cloud.platform: "gcp_kubernetes_engine"
+    cloud.region: "us-central1"
+    cloud.zone: "us-central1-a"
+    
+    # Kubernetes attributes
+    k8s.cluster.name: "prod-cluster"
+    k8s.namespace.name: "${K8S_NAMESPACE}"
+    k8s.pod.name: "${K8S_POD_NAME}"
+    k8s.container.name: "${K8S_CONTAINER_NAME}"
+  
+  # Standard propagators for compatibility
+  propagators: ["tracecontext", "baggage"]
+
+# Cloud-optimized server configuration
+http:
+  address: ":8080"
+  read_timeout: 45s
+  write_timeout: 45s
+  idle_timeout: 90s
+
+grpc:
+  address: ":50051"
+  enable_reflection: false
+  enable_health_service: true
+  max_recv_msg_size: 16777216  # 16MB for cloud APIs
+  max_send_msg_size: 16777216  # 16MB for cloud APIs
+
+# Cloud service discovery
+discovery:
+  enabled: true
+  provider: "kubernetes"
+  kubernetes:
+    namespace: "${K8S_NAMESPACE}"
+    
+# Comprehensive monitoring stack
+middleware:
+  cors:
+    enabled: true
+  metrics:
+    enabled: true
+    
+sentry:
+  enabled: true
+  dsn: "${SENTRY_DSN}"
+  environment: "${DEPLOYMENT_ENVIRONMENT}"
+  release: "${GIT_SHA}"
+  
+logging:
+  level: "info"
+  format: "json"
+  structured: true
+  
+prometheus:
+  enabled: true
+  path: "/metrics"
+  cardinality_limit: 100000

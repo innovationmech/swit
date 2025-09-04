@@ -32,16 +32,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"go.uber.org/zap"
 )
 
 // HTTPTransportConfig contains configuration for HTTP transport
 type HTTPTransportConfig struct {
-	Address     string
-	Port        string
-	TestMode    bool   // Enables test-specific features
-	TestPort    string // Override port for testing
-	EnableReady bool   // Enables ready channel for testing
+	Address        string
+	Port           string
+	TestMode       bool                   // Enables test-specific features
+	TestPort       string                 // Override port for testing
+	EnableReady    bool                   // Enables ready channel for testing
+	TracingManager tracing.TracingManager // Tracing manager for automatic middleware setup
 }
 
 // HTTPNetworkService implements NetworkTransport interface for HTTP
@@ -77,6 +80,12 @@ func NewHTTPNetworkServiceWithConfig(config *HTTPTransportConfig) *HTTPNetworkSe
 		router:          gin.New(), // Use gin.New() instead of gin.Default() for more control
 		config:          config,
 		serviceRegistry: NewTransportServiceRegistry(),
+	}
+
+	// Setup tracing middleware if tracing manager is provided
+	if config.TracingManager != nil {
+		tracingMiddleware := middleware.TracingMiddleware(config.TracingManager)
+		transport.router.Use(tracingMiddleware)
 	}
 
 	if config.EnableReady {

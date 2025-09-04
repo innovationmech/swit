@@ -23,6 +23,9 @@ package tracing
 
 import (
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -213,4 +216,117 @@ func (o *OTLPConfig) Validate() error {
 		return fmt.Errorf("unsupported compression type: %s", o.Compression)
 	}
 	return nil
+}
+
+// ApplyEnvironmentOverrides applies environment variable overrides to the tracing configuration
+func (c *TracingConfig) ApplyEnvironmentOverrides() {
+	// Basic configuration
+	if enabled := os.Getenv("SWIT_TRACING_ENABLED"); enabled != "" {
+		if val, err := strconv.ParseBool(enabled); err == nil {
+			c.Enabled = val
+		}
+	}
+
+	if serviceName := os.Getenv("SWIT_TRACING_SERVICE_NAME"); serviceName != "" {
+		c.ServiceName = serviceName
+	}
+
+	// Sampling configuration
+	if samplingType := os.Getenv("SWIT_TRACING_SAMPLING_TYPE"); samplingType != "" {
+		c.Sampling.Type = samplingType
+	}
+
+	if samplingRate := os.Getenv("SWIT_TRACING_SAMPLING_RATE"); samplingRate != "" {
+		if val, err := strconv.ParseFloat(samplingRate, 64); err == nil {
+			c.Sampling.Rate = val
+		}
+	}
+
+	// Exporter configuration
+	if exporterType := os.Getenv("SWIT_TRACING_EXPORTER_TYPE"); exporterType != "" {
+		c.Exporter.Type = exporterType
+	}
+
+	if exporterEndpoint := os.Getenv("SWIT_TRACING_EXPORTER_ENDPOINT"); exporterEndpoint != "" {
+		c.Exporter.Endpoint = exporterEndpoint
+	}
+
+	if exporterTimeout := os.Getenv("SWIT_TRACING_EXPORTER_TIMEOUT"); exporterTimeout != "" {
+		c.Exporter.Timeout = exporterTimeout
+	}
+
+	// Jaeger specific configuration
+	if jaegerAgent := os.Getenv("SWIT_TRACING_JAEGER_AGENT_ENDPOINT"); jaegerAgent != "" {
+		c.Exporter.Jaeger.AgentEndpoint = jaegerAgent
+	}
+
+	if jaegerCollector := os.Getenv("SWIT_TRACING_JAEGER_COLLECTOR_ENDPOINT"); jaegerCollector != "" {
+		c.Exporter.Jaeger.CollectorEndpoint = jaegerCollector
+	}
+
+	if jaegerUsername := os.Getenv("SWIT_TRACING_JAEGER_USERNAME"); jaegerUsername != "" {
+		c.Exporter.Jaeger.Username = jaegerUsername
+	}
+
+	if jaegerPassword := os.Getenv("SWIT_TRACING_JAEGER_PASSWORD"); jaegerPassword != "" {
+		c.Exporter.Jaeger.Password = jaegerPassword
+	}
+
+	// OTLP specific configuration
+	if otlpEndpoint := os.Getenv("SWIT_TRACING_OTLP_ENDPOINT"); otlpEndpoint != "" {
+		c.Exporter.OTLP.Endpoint = otlpEndpoint
+	}
+
+	if otlpInsecure := os.Getenv("SWIT_TRACING_OTLP_INSECURE"); otlpInsecure != "" {
+		if val, err := strconv.ParseBool(otlpInsecure); err == nil {
+			c.Exporter.OTLP.Insecure = val
+		}
+	}
+
+	// Resource attributes
+	c.applyResourceAttributeOverrides()
+
+	// Propagators
+	if propagators := os.Getenv("SWIT_TRACING_PROPAGATORS"); propagators != "" {
+		c.Propagators = strings.Split(propagators, ",")
+		// Trim whitespace from each propagator
+		for i, prop := range c.Propagators {
+			c.Propagators[i] = strings.TrimSpace(prop)
+		}
+	}
+}
+
+// applyResourceAttributeOverrides applies environment variable overrides for resource attributes
+func (c *TracingConfig) applyResourceAttributeOverrides() {
+	if c.ResourceAttributes == nil {
+		c.ResourceAttributes = make(map[string]string)
+	}
+
+	// Common resource attributes
+	if version := os.Getenv("SWIT_TRACING_RESOURCE_SERVICE_VERSION"); version != "" {
+		c.ResourceAttributes["service.version"] = version
+	}
+
+	if environment := os.Getenv("SWIT_TRACING_RESOURCE_ENVIRONMENT"); environment != "" {
+		c.ResourceAttributes["deployment.environment"] = environment
+	}
+
+	if namespace := os.Getenv("SWIT_TRACING_RESOURCE_SERVICE_NAMESPACE"); namespace != "" {
+		c.ResourceAttributes["service.namespace"] = namespace
+	}
+
+	if instanceId := os.Getenv("SWIT_TRACING_RESOURCE_SERVICE_INSTANCE_ID"); instanceId != "" {
+		c.ResourceAttributes["service.instance.id"] = instanceId
+	}
+
+	// Custom resource attributes (SWIT_TRACING_RESOURCE_CUSTOM_KEY=value format)
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "SWIT_TRACING_RESOURCE_CUSTOM_") {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				key := strings.ToLower(strings.Replace(parts[0][len("SWIT_TRACING_RESOURCE_CUSTOM_"):], "_", ".", -1))
+				c.ResourceAttributes[key] = parts[1]
+			}
+		}
+	}
 }

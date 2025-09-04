@@ -110,29 +110,44 @@ func (c *Container) GetService(name string) (interface{}, error) {
 		return nil, interfaces.NewInternalError(fmt.Sprintf("service %s not found", name), nil)
 	}
 
-	// If it's a singleton and already created, return the instance
-	if registration.singleton && registration.created {
+	// If it's not a singleton, create and return a new instance each time
+	if !registration.singleton {
+		factory := registration.factory
+		c.mu.RUnlock()
+
+		instance, err := factory()
+		if err != nil {
+			return nil, interfaces.NewInternalError(fmt.Sprintf("failed to create service %s", name), err)
+		}
+		return instance, nil
+	}
+
+	// For singletons, check if already created
+	if registration.created {
 		instance := registration.instance
 		c.mu.RUnlock()
 		return instance, nil
 	}
-	c.mu.RUnlock()
 
-	// Create new instance
+	// Upgrade to write lock for singleton creation
+	c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine might have created it)
+	if registration.created {
+		return registration.instance, nil
+	}
+
+	// Create singleton instance
 	instance, err := registration.factory()
 	if err != nil {
 		return nil, interfaces.NewInternalError(fmt.Sprintf("failed to create service %s", name), err)
 	}
 
-	// For singletons, store the instance
-	if registration.singleton {
-		c.mu.Lock()
-		if !registration.created {
-			registration.instance = instance
-			registration.created = true
-		}
-		c.mu.Unlock()
-	}
+	// Store the singleton instance
+	registration.instance = instance
+	registration.created = true
 
 	return instance, nil
 }

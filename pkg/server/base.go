@@ -116,6 +116,30 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 	server.monitor.AddHook(PerformanceThresholdViolationHook)
 	server.monitor.AddHook(PerformanceMetricsCollectionHook)
 
+	// Initialize tracing if enabled
+	if config.Tracing.Enabled {
+		ctx := context.Background()
+		if err := server.observabilityManager.InitializeTracing(ctx, &config.Tracing); err != nil {
+			logger.Logger.Warn("Failed to initialize tracing, continuing without tracing",
+				zap.Error(err))
+			// Record tracing error metric
+			server.observabilityManager.RecordTracingError("initialization_failed", "server_startup")
+		} else {
+			logger.Logger.Info("Tracing initialized successfully",
+				zap.String("service", config.Tracing.ServiceName),
+				zap.String("exporter", config.Tracing.Exporter.Type),
+				zap.Float64("sampling_rate", config.Tracing.Sampling.Rate))
+			// Record successful tracing metrics
+			server.observabilityManager.RecordTracingMetrics()
+		}
+	}
+
+	// Set tracing manager in transport coordinator for distribution to all transports
+	if tracingManager := server.observabilityManager.GetTracingManager(); tracingManager != nil {
+		server.transportManager.SetTracingManager(tracingManager)
+		logger.Logger.Debug("Tracing manager distributed to transport coordinator")
+	}
+
 	// Initialize transports based on configuration
 	if err := server.initializeTransports(); err != nil {
 		return nil, fmt.Errorf("failed to initialize transports: %w", err)
@@ -152,9 +176,10 @@ func (s *BusinessServerImpl) initializeTransports() error {
 	// Initialize HTTP transport if enabled
 	if s.config.IsHTTPEnabled() {
 		httpConfig := &transport.HTTPTransportConfig{
-			Address:     s.config.GetHTTPAddress(),
-			Port:        s.config.HTTP.Port,
-			EnableReady: s.config.HTTP.EnableReady,
+			Address:        s.config.GetHTTPAddress(),
+			Port:           s.config.HTTP.Port,
+			EnableReady:    s.config.HTTP.EnableReady,
+			TracingManager: s.observabilityManager.GetTracingManager(),
 		}
 		s.httpTransport = transport.NewHTTPNetworkServiceWithConfig(httpConfig)
 		transports = append(transports, s.httpTransport)
@@ -176,6 +201,7 @@ func (s *BusinessServerImpl) initializeTransports() error {
 			MaxSendMsgSize:      s.config.GRPC.MaxSendMsgSize,
 			KeepaliveParams:     s.config.toGRPCKeepaliveParams(),
 			KeepalivePolicy:     s.config.toGRPCKeepalivePolicy(),
+			TracingManager:      s.observabilityManager.GetTracingManager(),
 		}
 
 		// Configure interceptors using middleware manager (reuse if possible)
@@ -415,6 +441,15 @@ func (s *BusinessServerImpl) Stop(ctx context.Context) error {
 
 	// Trigger performance monitoring hooks
 	s.monitor.RecordEvent("server_shutdown_success")
+
+	// Shutdown tracing system if enabled
+	if s.config.Tracing.Enabled && s.observabilityManager != nil {
+		if err := s.observabilityManager.ShutdownTracing(ctx); err != nil {
+			logger.Logger.Warn("Failed to shutdown tracing gracefully", zap.Error(err))
+		} else {
+			logger.Logger.Debug("Tracing shutdown completed successfully")
+		}
+	}
 
 	logger.Logger.Info("Base server stopped successfully",
 		zap.String("service", s.config.ServiceName),

@@ -27,8 +27,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.uber.org/zap"
 )
 
 // DefaultServiceRegistry implements the ServiceRegistry interface
@@ -58,7 +63,29 @@ func (r *DefaultServiceRegistry) RegisterBusinessHTTPHandler(handler BusinessHTT
 	}
 
 	serviceName := handler.GetServiceName()
+
+	// Create tracing span for service registration process if tracing is available
+	ctx := context.Background()
+	var tracingManager tracing.TracingManager
+	var span tracing.Span
+	if r.transportManager != nil {
+		if tm := r.transportManager.GetTracingManager(); tm != nil {
+			tracingManager = tm
+			ctx, span = tm.StartSpan(ctx, "http_service_registration")
+			span.SetAttributes(
+				attribute.String("service.name", serviceName),
+				attribute.String("service.type", "http"),
+				attribute.String("operation", "register_handler"),
+			)
+			defer span.End()
+		}
+	}
+
 	if err := r.validateServiceName(serviceName); err != nil {
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "service name validation failed")
+		}
 		return fmt.Errorf("invalid HTTP handler service name: %w", err)
 	}
 
@@ -67,7 +94,12 @@ func (r *DefaultServiceRegistry) RegisterBusinessHTTPHandler(handler BusinessHTT
 
 	// Check for duplicate service names across all service types
 	if r.isServiceNameRegistered(serviceName) {
-		return fmt.Errorf("service with name '%s' is already registered", serviceName)
+		err := fmt.Errorf("service with name '%s' is already registered", serviceName)
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "duplicate service name")
+		}
+		return err
 	}
 
 	// Create adapter to bridge server framework handler with transport layer
@@ -77,10 +109,31 @@ func (r *DefaultServiceRegistry) RegisterBusinessHTTPHandler(handler BusinessHTT
 
 	// Automatically register with transport manager
 	if err := r.transportManager.RegisterHTTPService(adapter); err != nil {
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "transport registration failed")
+		}
 		return fmt.Errorf("failed to automatically register HTTP handler '%s' with transport manager: %w", serviceName, err)
 	}
 
 	r.httpHandlers = append(r.httpHandlers, handler)
+
+	// Record successful registration
+	if span != nil {
+		span.SetStatus(codes.Ok, "service registered successfully")
+		span.SetAttributes(
+			attribute.Int("services.total", len(r.httpHandlers)),
+		)
+	}
+
+	// Record performance metrics if tracing manager is available
+	if tracingManager != nil {
+		// This would be used by observability manager to track registration performance
+		logger.Logger.Debug("HTTP service registered successfully",
+			zap.String("service", serviceName),
+			zap.Int("total_services", len(r.httpHandlers)))
+	}
+
 	return nil
 }
 
@@ -91,7 +144,29 @@ func (r *DefaultServiceRegistry) RegisterBusinessGRPCService(service BusinessGRP
 	}
 
 	serviceName := service.GetServiceName()
+
+	// Create tracing span for service registration process if tracing is available
+	ctx := context.Background()
+	var tracingManager tracing.TracingManager
+	var span tracing.Span
+	if r.transportManager != nil {
+		if tm := r.transportManager.GetTracingManager(); tm != nil {
+			tracingManager = tm
+			ctx, span = tm.StartSpan(ctx, "grpc_service_registration")
+			span.SetAttributes(
+				attribute.String("service.name", serviceName),
+				attribute.String("service.type", "grpc"),
+				attribute.String("operation", "register_service"),
+			)
+			defer span.End()
+		}
+	}
+
 	if err := r.validateServiceName(serviceName); err != nil {
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "service name validation failed")
+		}
 		return fmt.Errorf("invalid gRPC service name: %w", err)
 	}
 
@@ -100,7 +175,12 @@ func (r *DefaultServiceRegistry) RegisterBusinessGRPCService(service BusinessGRP
 
 	// Check for duplicate service names across all service types
 	if r.isServiceNameRegistered(serviceName) {
-		return fmt.Errorf("service with name '%s' is already registered", serviceName)
+		err := fmt.Errorf("service with name '%s' is already registered", serviceName)
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "duplicate service name")
+		}
+		return err
 	}
 
 	// Create adapter to bridge server framework service with transport layer
@@ -110,10 +190,30 @@ func (r *DefaultServiceRegistry) RegisterBusinessGRPCService(service BusinessGRP
 
 	// Automatically register with transport manager
 	if err := r.transportManager.RegisterGRPCService(adapter); err != nil {
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "transport registration failed")
+		}
 		return fmt.Errorf("failed to automatically register gRPC service '%s' with transport manager: %w", serviceName, err)
 	}
 
 	r.grpcServices = append(r.grpcServices, service)
+
+	// Record successful registration
+	if span != nil {
+		span.SetStatus(codes.Ok, "service registered successfully")
+		span.SetAttributes(
+			attribute.Int("services.total", len(r.grpcServices)),
+		)
+	}
+
+	// Record performance metrics if tracing manager is available
+	if tracingManager != nil {
+		logger.Logger.Debug("gRPC service registered successfully",
+			zap.String("service", serviceName),
+			zap.Int("total_services", len(r.grpcServices)))
+	}
+
 	return nil
 }
 

@@ -27,6 +27,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/innovationmech/swit/pkg/tracing"
 )
 
 func TestNewServerConfig(t *testing.T) {
@@ -209,6 +211,35 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					Labels:           make(map[string]string),
 					CardinalityLimit: 10000,
 				},
+				Tracing: tracing.TracingConfig{
+					Enabled:     false,
+					ServiceName: "",
+					Sampling: tracing.SamplingConfig{
+						Type: "",
+						Rate: 0,
+					},
+					Exporter: tracing.ExporterConfig{
+						Type:     "",
+						Endpoint: "",
+						Headers:  map[string]string(nil),
+						Timeout:  "",
+						Jaeger: tracing.JaegerConfig{
+							AgentEndpoint:     "",
+							CollectorEndpoint: "",
+							Username:          "",
+							Password:          "",
+							RPCTimeout:        "",
+						},
+						OTLP: tracing.OTLPConfig{
+							Endpoint:    "",
+							Insecure:    false,
+							Headers:     map[string]string(nil),
+							Compression: "",
+						},
+					},
+					ResourceAttributes: map[string]string(nil),
+					Propagators:        []string(nil),
+				},
 				ShutdownTimeout: 5 * time.Second,
 			},
 		},
@@ -354,6 +385,35 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					},
 					Labels:           make(map[string]string),
 					CardinalityLimit: 10000,
+				},
+				Tracing: tracing.TracingConfig{
+					Enabled:     false,
+					ServiceName: "custom-service",
+					Sampling: tracing.SamplingConfig{
+						Type: "",
+						Rate: 0,
+					},
+					Exporter: tracing.ExporterConfig{
+						Type:     "",
+						Endpoint: "",
+						Headers:  map[string]string(nil),
+						Timeout:  "",
+						Jaeger: tracing.JaegerConfig{
+							AgentEndpoint:     "",
+							CollectorEndpoint: "",
+							Username:          "",
+							Password:          "",
+							RPCTimeout:        "",
+						},
+						OTLP: tracing.OTLPConfig{
+							Endpoint:    "",
+							Insecure:    false,
+							Headers:     map[string]string(nil),
+							Compression: "",
+						},
+					},
+					ResourceAttributes: map[string]string(nil),
+					Propagators:        []string(nil),
 				},
 				ShutdownTimeout: 5 * time.Second,
 			},
