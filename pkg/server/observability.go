@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/types"
 )
 
@@ -402,6 +403,9 @@ type ObservabilityManager struct {
 	// Business metrics
 	businessMetricsManager *BusinessMetricsManager
 
+	// Tracing integration
+	tracingManager tracing.TracingManager
+
 	// System metrics tracking
 	mu            sync.RWMutex
 	lastMemStats  runtime.MemStats
@@ -628,6 +632,28 @@ func (om *ObservabilityManager) GetMetricsRegistry() *MetricsRegistry {
 // GetBusinessMetricsManager returns the business metrics manager
 func (om *ObservabilityManager) GetBusinessMetricsManager() *BusinessMetricsManager {
 	return om.businessMetricsManager
+}
+
+// InitializeTracing initializes the tracing manager with the given configuration
+func (om *ObservabilityManager) InitializeTracing(ctx context.Context, config *tracing.TracingConfig) error {
+	if om.tracingManager == nil {
+		om.tracingManager = tracing.NewTracingManager()
+	}
+
+	return om.tracingManager.Initialize(ctx, config)
+}
+
+// ShutdownTracing gracefully shuts down the tracing system
+func (om *ObservabilityManager) ShutdownTracing(ctx context.Context) error {
+	if om.tracingManager != nil {
+		return om.tracingManager.Shutdown(ctx)
+	}
+	return nil
+}
+
+// GetTracingManager returns the tracing manager instance
+func (om *ObservabilityManager) GetTracingManager() tracing.TracingManager {
+	return om.tracingManager
 }
 
 // GetServerStatus returns comprehensive server status

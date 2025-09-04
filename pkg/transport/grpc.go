@@ -36,6 +36,8 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/pkg/tracing"
 	"go.uber.org/zap"
 )
 
@@ -54,6 +56,7 @@ type GRPCTransportConfig struct {
 	KeepalivePolicy     *keepalive.EnforcementPolicy
 	UnaryInterceptors   []grpc.UnaryServerInterceptor
 	StreamInterceptors  []grpc.StreamServerInterceptor
+	TracingManager      tracing.TracingManager // Tracing manager for automatic interceptor setup
 }
 
 // DefaultGRPCConfig returns a default gRPC configuration
@@ -311,12 +314,25 @@ func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 		opts = append(opts, grpc.MaxSendMsgSize(g.config.MaxSendMsgSize))
 	}
 
-	// Add interceptors
-	if len(g.config.UnaryInterceptors) > 0 {
-		opts = append(opts, grpc.ChainUnaryInterceptor(g.config.UnaryInterceptors...))
+	// Add interceptors (including tracing interceptors if available)
+	unaryInterceptors := g.config.UnaryInterceptors
+	streamInterceptors := g.config.StreamInterceptors
+
+	// Add tracing interceptors if tracing manager is provided
+	if g.config.TracingManager != nil {
+		unaryTracingInterceptor := middleware.UnaryServerInterceptor(g.config.TracingManager)
+		streamTracingInterceptor := middleware.StreamServerInterceptor(g.config.TracingManager)
+
+		// Prepend tracing interceptors so they wrap all other interceptors
+		unaryInterceptors = append([]grpc.UnaryServerInterceptor{unaryTracingInterceptor}, unaryInterceptors...)
+		streamInterceptors = append([]grpc.StreamServerInterceptor{streamTracingInterceptor}, streamInterceptors...)
 	}
-	if len(g.config.StreamInterceptors) > 0 {
-		opts = append(opts, grpc.ChainStreamInterceptor(g.config.StreamInterceptors...))
+
+	if len(unaryInterceptors) > 0 {
+		opts = append(opts, grpc.ChainUnaryInterceptor(unaryInterceptors...))
+	}
+	if len(streamInterceptors) > 0 {
+		opts = append(opts, grpc.ChainStreamInterceptor(streamInterceptors...))
 	}
 
 	// Create server

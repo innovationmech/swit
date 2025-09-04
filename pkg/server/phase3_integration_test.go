@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -291,5 +292,248 @@ func BenchmarkPhase3_MetricsCollection(b *testing.B) {
 				_ = collector.GetMetrics()
 			}
 		})
+	})
+}
+
+// TestPhase3Integration_TracingIntegration tests the tracing system integration
+func TestPhase3Integration_TracingIntegration(t *testing.T) {
+	t.Run("tracing disabled by default", func(t *testing.T) {
+		// Create test configuration without tracing
+		config := &ServerConfig{
+			ServiceName: "test-tracing-disabled",
+			HTTP: HTTPConfig{
+				Port:         "0", // Dynamic port allocation
+				Enabled:      true,
+				TestMode:     true,
+				EnableReady:  true,
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 30 * time.Second,
+				IdleTimeout:  60 * time.Second,
+			},
+			GRPC: GRPCConfig{
+				Port:    "0",   // Dynamic port allocation
+				Enabled: false, // Disable gRPC for this test
+			},
+			Discovery: DiscoveryConfig{
+				Enabled: false, // Disable for testing
+			},
+			ShutdownTimeout: 5 * time.Second,
+		}
+
+		// Apply defaults to ensure tracing config is initialized
+		config.SetDefaults()
+
+		// Verify tracing is disabled by default
+		assert.False(t, config.Tracing.Enabled)
+		assert.Equal(t, config.ServiceName, config.Tracing.ServiceName)
+
+		// Create test service registrar
+		registrar := &Phase3TestServiceRegistrar{}
+
+		// Create server
+		server, err := NewBusinessServerCore(config, registrar, nil)
+		require.NoError(t, err)
+		require.NotNil(t, server)
+
+		// Verify observability manager is initialized
+		observabilityManager := server.GetObservabilityManager()
+		assert.NotNil(t, observabilityManager)
+
+		// Verify tracing manager is nil when disabled
+		tracingManager := observabilityManager.GetTracingManager()
+		assert.Nil(t, tracingManager)
+	})
+
+	t.Run("tracing enabled with console exporter", func(t *testing.T) {
+		// Create test configuration with tracing enabled
+		config := &ServerConfig{
+			ServiceName: "test-tracing-enabled",
+			HTTP: HTTPConfig{
+				Port:         "0", // Dynamic port allocation
+				Enabled:      true,
+				TestMode:     true,
+				EnableReady:  true,
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 30 * time.Second,
+				IdleTimeout:  60 * time.Second,
+			},
+			GRPC: GRPCConfig{
+				Port:    "0",   // Dynamic port allocation
+				Enabled: false, // Disable gRPC for this test
+			},
+			Discovery: DiscoveryConfig{
+				Enabled: false, // Disable for testing
+			},
+			Tracing: tracing.TracingConfig{
+				Enabled:     true,
+				ServiceName: "test-tracing-enabled",
+				Sampling: tracing.SamplingConfig{
+					Type: "always_on", // Always sample for testing
+				},
+				Exporter: tracing.ExporterConfig{
+					Type: "console", // Use console exporter for testing
+				},
+				ResourceAttributes: map[string]string{
+					"service.version":        "test",
+					"deployment.environment": "test",
+				},
+				Propagators: []string{"tracecontext", "baggage"},
+			},
+			ShutdownTimeout: 5 * time.Second,
+		}
+
+		// Create test service registrar
+		registrar := &Phase3TestServiceRegistrar{}
+
+		// Create server
+		server, err := NewBusinessServerCore(config, registrar, nil)
+		require.NoError(t, err)
+		require.NotNil(t, server)
+
+		// Verify observability manager is initialized
+		observabilityManager := server.GetObservabilityManager()
+		assert.NotNil(t, observabilityManager)
+
+		// Verify tracing manager is initialized when enabled
+		tracingManager := observabilityManager.GetTracingManager()
+		assert.NotNil(t, tracingManager)
+
+		// Start server to initialize tracing
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		err = server.Start(ctx)
+		require.NoError(t, err)
+
+		// Give the server a moment to initialize
+		time.Sleep(100 * time.Millisecond)
+
+		// Test creating spans with the tracing manager
+		spanCtx, span := tracingManager.StartSpan(ctx, "test-operation")
+		assert.NotNil(t, spanCtx)
+		assert.NotNil(t, span)
+
+		span.SetAttribute("test.attribute", "test-value")
+		span.AddEvent("test-event")
+		span.End()
+
+		// Test span from context retrieval
+		retrievedSpan := tracingManager.SpanFromContext(spanCtx)
+		assert.NotNil(t, retrievedSpan)
+
+		// Shutdown server
+		err = server.Shutdown()
+		assert.NoError(t, err)
+	})
+
+	t.Run("transport layer tracing integration", func(t *testing.T) {
+		// Create test configuration with both HTTP and gRPC transports enabled
+		config := &ServerConfig{
+			ServiceName: "test-transport-tracing",
+			HTTP: HTTPConfig{
+				Port:         "0", // Dynamic port allocation
+				Enabled:      true,
+				TestMode:     true,
+				EnableReady:  true,
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 30 * time.Second,
+				IdleTimeout:  60 * time.Second,
+			},
+			GRPC: GRPCConfig{
+				Port:                "0", // Dynamic port allocation
+				Enabled:             true,
+				EnableReflection:    true,
+				EnableHealthService: true,
+				TestMode:            true,
+				MaxRecvMsgSize:      4 * 1024 * 1024, // 4MB
+				MaxSendMsgSize:      4 * 1024 * 1024, // 4MB
+			},
+			Discovery: DiscoveryConfig{
+				Enabled: false, // Disable for testing
+			},
+			Tracing: tracing.TracingConfig{
+				Enabled:     true,
+				ServiceName: "test-transport-tracing",
+				Sampling: tracing.SamplingConfig{
+					Type: "always_on", // Always sample for testing
+				},
+				Exporter: tracing.ExporterConfig{
+					Type: "console", // Use console exporter for testing
+				},
+				ResourceAttributes: map[string]string{
+					"service.version":        "test",
+					"deployment.environment": "test",
+				},
+				Propagators: []string{"tracecontext", "baggage"},
+			},
+			ShutdownTimeout: 5 * time.Second,
+		}
+
+		// Create test service registrar
+		registrar := &Phase3TestServiceRegistrar{}
+
+		// Create server
+		server, err := NewBusinessServerCore(config, registrar, nil)
+		require.NoError(t, err)
+		require.NotNil(t, server)
+
+		// Start server
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		err = server.Start(ctx)
+		require.NoError(t, err)
+
+		// Give the server a moment to initialize
+		time.Sleep(100 * time.Millisecond)
+
+		// Verify HTTP and gRPC addresses are available
+		httpAddr := server.GetHTTPAddress()
+		assert.NotEmpty(t, httpAddr)
+
+		grpcAddr := server.GetGRPCAddress()
+		assert.NotEmpty(t, grpcAddr)
+
+		// Test that HTTP transport has tracing middleware (by making a request)
+		// This will be traced through the HTTP middleware
+		resp, err := http.Get(fmt.Sprintf("http://%s/health", httpAddr))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Shutdown server
+		err = server.Shutdown()
+		assert.NoError(t, err)
+	})
+
+	t.Run("tracing configuration validation", func(t *testing.T) {
+		// Test invalid tracing configuration with at least one transport enabled
+		config := &ServerConfig{
+			ServiceName: "test-invalid-tracing",
+			HTTP: HTTPConfig{
+				Enabled:      true,
+				Port:         "0",
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 30 * time.Second,
+				IdleTimeout:  60 * time.Second,
+			},
+			GRPC:      GRPCConfig{Enabled: false},
+			Discovery: DiscoveryConfig{Enabled: false},
+			Tracing: tracing.TracingConfig{
+				Enabled: true,
+				// Missing service name - should cause validation error
+				Sampling: tracing.SamplingConfig{
+					Type: "invalid_type", // Invalid sampling type
+				},
+				Exporter: tracing.ExporterConfig{
+					Type: "invalid_exporter", // Invalid exporter type
+				},
+			},
+		}
+
+		// This should fail due to invalid tracing configuration
+		_, err := NewBusinessServerCore(config, &Phase3TestServiceRegistrar{}, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "tracing configuration invalid")
 	})
 }
