@@ -51,7 +51,7 @@ jobs:
         run: |
           find examples/distributed-tracing -name "*.yml" -o -name "*.yaml" -type f | while read -r file; do
             echo "Validating $file"
-            yq eval '.' "$file" > /dev/null
+            python3 -c "import yaml, sys; yaml.safe_load(open('$file'))" || (echo "❌ Invalid YAML: $file" && exit 1)
           done
           
       - name: Validate JSON files
