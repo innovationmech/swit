@@ -60,6 +60,11 @@ func (h *OrderHTTPHandler) RegisterRoutes(router interface{}) error {
 		api.GET("/orders/:id", h.getOrder)
 		api.GET("/orders", h.listOrders)
 		api.PATCH("/orders/:id/status", h.updateOrderStatus)
+
+		// Enhanced business process endpoints
+		api.POST("/orders/resilient", h.createOrderWithCircuitBreaker)
+		api.POST("/orders/bulk", h.createBulkOrders)
+		api.GET("/orders/metrics", h.getOrderMetrics)
 	}
 
 	return nil
@@ -324,6 +329,203 @@ func (h *OrderHTTPHandler) updateOrderStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, model.UpdateOrderStatusResponse{
 		Order: order,
+	})
+}
+
+// createOrderWithCircuitBreaker handles resilient order creation with circuit breaker pattern
+func (h *OrderHTTPHandler) createOrderWithCircuitBreaker(c *gin.Context) {
+	ctx, span := tracing.StartSpan(c.Request.Context(), "handler.createOrderWithCircuitBreaker")
+	defer span.End()
+
+	start := time.Now()
+
+	var req model.CreateOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		span.SetAttributes(
+			attribute.String("http.method", "POST"),
+			attribute.String("http.route", "/api/v1/orders/resilient"),
+			attribute.String("error.type", "validation_error"),
+		)
+		tracing.SetSpanError(span, err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Add request details to span
+	span.SetAttributes(
+		attribute.String("http.method", "POST"),
+		attribute.String("http.route", "/api/v1/orders/resilient"),
+		attribute.String("order.customer_id", req.CustomerID),
+		attribute.String("order.product_id", req.ProductID),
+		attribute.String("resilience.pattern", "circuit_breaker"),
+	)
+
+	order, err := h.service.ProcessOrderWithCircuitBreaker(ctx, &req)
+	if err != nil {
+		tracing.AddEvent(span, "resilient_order.creation_failed",
+			attribute.String("error", err.Error()),
+		)
+		tracing.SetSpanError(span, err)
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to create resilient order",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Track response time
+	duration := time.Since(start)
+	span.SetAttributes(
+		attribute.Float64("http.request.duration", duration.Seconds()),
+		attribute.Int("http.status_code", http.StatusCreated),
+	)
+
+	tracing.AddEvent(span, "resilient_order.created",
+		attribute.String("order.id", order.ID),
+		attribute.String("order.status", string(order.Status)),
+	)
+	tracing.SetSpanSuccess(span)
+
+	c.JSON(http.StatusCreated, model.CreateOrderResponse{
+		Order: order,
+	})
+}
+
+// createBulkOrders handles bulk order creation for high-concurrency scenarios
+func (h *OrderHTTPHandler) createBulkOrders(c *gin.Context) {
+	ctx, span := tracing.StartSpan(c.Request.Context(), "handler.createBulkOrders")
+	defer span.End()
+
+	start := time.Now()
+
+	var requests []*model.CreateOrderRequest
+	if err := c.ShouldBindJSON(&requests); err != nil {
+		span.SetAttributes(
+			attribute.String("http.method", "POST"),
+			attribute.String("http.route", "/api/v1/orders/bulk"),
+			attribute.String("error.type", "validation_error"),
+		)
+		tracing.SetSpanError(span, err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	if len(requests) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "At least one order request is required",
+		})
+		return
+	}
+
+	// Add request details to span
+	span.SetAttributes(
+		attribute.String("http.method", "POST"),
+		attribute.String("http.route", "/api/v1/orders/bulk"),
+		attribute.Int("bulk.request_count", len(requests)),
+		attribute.String("processing.pattern", "concurrent_bulk"),
+	)
+
+	orders, errors := h.service.ProcessBulkOrders(ctx, requests)
+
+	// Count successes and failures
+	successCount := 0
+	failureCount := 0
+	for i, err := range errors {
+		if err == nil {
+			successCount++
+		} else {
+			failureCount++
+			tracing.AddEvent(span, "bulk_order.item_failed",
+				attribute.Int("item.index", i),
+				attribute.String("error", err.Error()),
+			)
+		}
+	}
+
+	// Track response time
+	duration := time.Since(start)
+	span.SetAttributes(
+		attribute.Float64("http.request.duration", duration.Seconds()),
+		attribute.Int("http.status_code", http.StatusOK),
+		attribute.Int("bulk.success_count", successCount),
+		attribute.Int("bulk.failure_count", failureCount),
+	)
+
+	tracing.AddEvent(span, "bulk_orders.processed",
+		attribute.Int("bulk.total", len(requests)),
+		attribute.Int("bulk.success", successCount),
+		attribute.Int("bulk.failure", failureCount),
+	)
+	tracing.SetSpanSuccess(span)
+
+	// Format response with successes and failures
+	type BulkOrderResult struct {
+		Index int          `json:"index"`
+		Order *model.Order `json:"order,omitempty"`
+		Error string       `json:"error,omitempty"`
+	}
+
+	results := make([]BulkOrderResult, len(requests))
+	for i := range requests {
+		results[i] = BulkOrderResult{
+			Index: i,
+			Order: orders[i],
+		}
+		if errors[i] != nil {
+			results[i].Error = errors[i].Error()
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"results":       results,
+		"total_count":   len(requests),
+		"success_count": successCount,
+		"failure_count": failureCount,
+	})
+}
+
+// getOrderMetrics handles business metrics retrieval
+func (h *OrderHTTPHandler) getOrderMetrics(c *gin.Context) {
+	ctx, span := tracing.StartSpan(c.Request.Context(), "handler.getOrderMetrics")
+	defer span.End()
+
+	timeRange := c.DefaultQuery("range", "24h")
+
+	span.SetAttributes(
+		attribute.String("http.method", "GET"),
+		attribute.String("http.route", "/api/v1/orders/metrics"),
+		attribute.String("metrics.time_range", timeRange),
+	)
+
+	metrics, err := h.service.GetOrderMetrics(ctx, timeRange)
+	if err != nil {
+		tracing.SetSpanError(span, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to get order metrics",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	tracing.AddEvent(span, "metrics.retrieved",
+		attribute.Int64("metrics.total_orders", metrics.TotalOrders),
+		attribute.Float64("metrics.success_rate", metrics.SuccessRate),
+		attribute.Float64("metrics.total_revenue", metrics.TotalRevenue),
+	)
+
+	span.SetAttributes(attribute.Int("http.status_code", http.StatusOK))
+	tracing.SetSpanSuccess(span)
+
+	c.JSON(http.StatusOK, gin.H{
+		"time_range": timeRange,
+		"metrics":    metrics,
 	})
 }
 
