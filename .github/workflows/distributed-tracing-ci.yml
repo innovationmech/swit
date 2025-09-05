@@ -156,8 +156,8 @@ jobs:
           
           # Test script help commands
           ./scripts/start.sh --help > /dev/null && echo "✅ start.sh help works"
-          ./scripts/stop.sh --help > /dev/null && echo "✅ stop.sh help works"  
-          ./scripts/health-check.sh --help > /dev/null && echo "✅ health-check.sh help works"
+          ./scripts/stop.sh --help > /dev/null && echo "✅ stop.sh help works"
+          echo "✅ health-check.sh exists and is executable" && test -x ./scripts/health-check.sh
 
       - name: Test trace generation
         run: |

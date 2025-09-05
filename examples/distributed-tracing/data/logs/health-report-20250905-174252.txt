@@ -1,0 +1,16 @@
+SWIT 分布式追踪演示环境健康检查报告
+========================================
+检查时间: 2025-09-05 17:42:52
+总体状态: UNHEALTHY
+
+Docker 容器状态:
+NAMES     STATUS    PORTS
+
+Docker 网络状态:
+NAME      DRIVER    SCOPE
+
+Docker 数据卷状态:
+VOLUME NAME   DRIVER
+
+服务端口监听状态:
+无法获取端口信息
