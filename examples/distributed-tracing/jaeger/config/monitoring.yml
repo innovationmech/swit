@@ -1,0 +1,282 @@
+# Jaeger 监控和告警配置
+# Copyright (c) 2024 SWIT Framework Authors
+
+# Prometheus 指标配置
+metrics:
+  # 指标收集端口
+  port: 14271
+  
+  # 指标命名空间
+  namespace: "jaeger"
+  
+  # 指标标签
+  labels:
+    environment: "demo"
+    cluster: "local"
+    version: "1.42"
+  
+  # 自定义指标
+  custom_metrics:
+    - name: "jaeger_spans_received_total"
+      type: "counter"
+      description: "Total number of spans received"
+      
+    - name: "jaeger_spans_stored_total" 
+      type: "counter"
+      description: "Total number of spans stored"
+      
+    - name: "jaeger_query_requests_total"
+      type: "counter"
+      description: "Total number of query requests"
+      
+    - name: "jaeger_storage_latency_seconds"
+      type: "histogram"
+      description: "Storage operation latency"
+      buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
+
+# 健康检查配置
+health:
+  # 健康检查端口
+  port: 14269
+  
+  # 检查间隔（秒）
+  check_interval: 30
+  
+  # 超时时间（秒）
+  timeout: 10
+  
+  # 检查项目
+  checks:
+    - name: "storage"
+      enabled: true
+      timeout: 5
+      
+    - name: "collector" 
+      enabled: true
+      timeout: 5
+      
+    - name: "query"
+      enabled: true
+      timeout: 5
+
+# 日志配置
+logging:
+  # 日志级别
+  level: "info"
+  
+  # 日志格式
+  format: "json"
+  
+  # 日志输出
+  output: "stdout"
+  
+  # 日志轮转
+  rotation:
+    enabled: false
+    max_size: "100MB"
+    max_files: 10
+  
+  # 采样配置
+  sampling:
+    initial: 100
+    thereafter: 100
+
+# 性能监控配置  
+performance:
+  # CPU 使用率告警阈值（百分比）
+  cpu_threshold: 80
+  
+  # 内存使用率告警阈值（百分比）
+  memory_threshold: 85
+  
+  # 磁盘使用率告警阈值（百分比）
+  disk_threshold: 90
+  
+  # 查询响应时间告警阈值（毫秒）
+  query_latency_threshold: 5000
+  
+  # Span 处理延迟告警阈值（毫秒）
+  span_processing_threshold: 1000
+
+# 存储监控配置
+storage:
+  # 内存存储监控
+  memory:
+    # 最大 span 数量告警阈值
+    max_spans_threshold: 45000  # 90% of 50000
+    
+    # 内存使用率监控
+    memory_usage_check: true
+    
+    # GC 监控
+    gc_monitoring: true
+  
+  # 磁盘存储监控（如果使用持久化存储）
+  disk:
+    enabled: false
+    # 磁盘空间告警阈值（GB）
+    free_space_threshold: 5
+    
+    # I/O 监控
+    io_monitoring: true
+
+# 告警配置
+alerts:
+  # 告警规则
+  rules:
+    - name: "high_error_rate"
+      condition: "error_rate > 0.05"  # 5%
+      duration: "5m"
+      severity: "warning"
+      description: "High error rate detected"
+      
+    - name: "high_latency"
+      condition: "p95_latency > 2s" 
+      duration: "5m"
+      severity: "warning"
+      description: "High latency detected"
+      
+    - name: "storage_full"
+      condition: "memory_usage > 0.9"
+      duration: "1m"
+      severity: "critical"
+      description: "Storage nearly full"
+      
+    - name: "collector_down"
+      condition: "collector_health == 0"
+      duration: "1m" 
+      severity: "critical"
+      description: "Collector is down"
+  
+  # 通知配置
+  notifications:
+    # 控制台输出
+    console:
+      enabled: true
+      level: "warning"
+    
+    # 日志输出
+    log:
+      enabled: true
+      level: "critical"
+    
+    # Webhook 通知（示例）
+    webhook:
+      enabled: false
+      url: "http://localhost:9093/api/v1/alerts"
+      timeout: 10
+
+# 追踪数据质量监控
+trace_quality:
+  # 不完整 trace 监控
+  incomplete_traces:
+    enabled: true
+    threshold: 0.1  # 10%
+    
+  # 缺失 span 监控
+  missing_spans:
+    enabled: true
+    threshold: 0.05  # 5%
+  
+  # 重复 span 监控
+  duplicate_spans:
+    enabled: true
+    threshold: 0.01  # 1%
+
+# API 监控配置
+api_monitoring:
+  # Query API 监控
+  query_api:
+    enabled: true
+    # 慢查询阈值（毫秒）
+    slow_query_threshold: 3000
+    # 请求率监控
+    request_rate_monitoring: true
+    
+  # Collector API 监控
+  collector_api:
+    enabled: true
+    # 批量大小监控
+    batch_size_monitoring: true
+    # 处理延迟监控
+    processing_latency_monitoring: true
+
+# 资源限制监控
+resource_limits:
+  # CPU 限制
+  cpu:
+    enabled: true
+    limit: "1000m"  # 1 CPU
+    warning_threshold: 0.8  # 80%
+    
+  # 内存限制
+  memory:
+    enabled: true
+    limit: "1Gi"
+    warning_threshold: 0.85  # 85%
+  
+  # 网络带宽监控
+  network:
+    enabled: true
+    # 入站带宽告警阈值（MB/s）
+    inbound_threshold: 100
+    # 出站带宽告警阈值（MB/s）  
+    outbound_threshold: 100
+
+# 数据保留监控
+data_retention:
+  # 数据老化监控
+  aging:
+    enabled: true
+    # 数据保留期（小时）
+    retention_period: 24
+    # 清理检查间隔（分钟）
+    cleanup_interval: 60
+  
+  # 存储压缩监控
+  compression:
+    enabled: false
+    ratio_threshold: 0.5  # 50% 压缩率
+
+# 服务发现监控
+service_discovery:
+  enabled: false
+  # Consul 监控（如果使用）
+  consul:
+    enabled: false
+    health_check_interval: 30
+  
+  # Kubernetes 监控（如果使用）
+  kubernetes:
+    enabled: false
+    namespace: "default"
+
+# 安全监控配置
+security:
+  # 访问日志
+  access_logging:
+    enabled: true
+    include_headers: false
+    include_body: false
+  
+  # 认证监控
+  auth_monitoring:
+    enabled: false
+    failed_attempts_threshold: 10
+    
+  # TLS 监控
+  tls_monitoring:
+    enabled: false
+    certificate_expiry_warning: 30  # 30天
+
+# 实验性功能监控
+experimental:
+  # 自适应采样监控
+  adaptive_sampling:
+    enabled: false
+    monitoring_interval: 300  # 5分钟
+    
+  # 流式处理监控
+  streaming:
+    enabled: false
+    buffer_monitoring: true
