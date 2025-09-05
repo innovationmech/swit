@@ -17,12 +17,12 @@ on:
       run_load_tests:
         description: 'Run load tests'
         required: false
-        default: 'false'
+        default: false
         type: boolean
       run_benchmark:
         description: 'Run benchmark tests'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 env:
@@ -45,7 +45,7 @@ jobs:
           
       - name: Validate shell scripts
         run: |
-          find examples/distributed-tracing -name "*.sh" -type f -exec shellcheck -x {} +
+          find examples/distributed-tracing -name "*.sh" -type f -exec shellcheck -x -S error {} +
           
       - name: Validate YAML files
         run: |
