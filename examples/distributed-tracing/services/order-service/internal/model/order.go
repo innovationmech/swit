@@ -177,3 +177,14 @@ func (Order) TableName() string {
 func (OrderStatusHistory) TableName() string {
 	return "order_status_history"
 }
+
+// OrderMetrics represents business metrics for orders
+type OrderMetrics struct {
+	TotalOrders       int64   `json:"total_orders"`
+	SuccessfulOrders  int64   `json:"successful_orders"`
+	FailedOrders      int64   `json:"failed_orders"`
+	PendingOrders     int64   `json:"pending_orders"`
+	SuccessRate       float64 `json:"success_rate"`
+	AverageOrderValue float64 `json:"average_order_value"`
+	TotalRevenue      float64 `json:"total_revenue"`
+}

@@ -341,6 +341,103 @@ func (r *OrderRepository) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
+// GetOrderMetrics retrieves business metrics for orders
+func (r *OrderRepository) GetOrderMetrics(ctx context.Context, timeRange string) (*model.OrderMetrics, error) {
+	ctx, span := tracing.StartSpan(ctx, "repository.GetOrderMetrics",
+		attribute.String("metrics.time_range", timeRange),
+	)
+	defer span.End()
+
+	var metrics model.OrderMetrics
+
+	// Calculate time window based on range
+	var timeFilter string
+	switch timeRange {
+	case "1h":
+		timeFilter = "created_at >= datetime('now', '-1 hour')"
+	case "24h":
+		timeFilter = "created_at >= datetime('now', '-1 day')"
+	case "7d":
+		timeFilter = "created_at >= datetime('now', '-7 days')"
+	case "30d":
+		timeFilter = "created_at >= datetime('now', '-30 days')"
+	default:
+		timeFilter = "1=1" // All time
+	}
+
+	// Get total order counts by status
+	type statusCount struct {
+		Status string `json:"status"`
+		Count  int64  `json:"count"`
+	}
+
+	var statusCounts []statusCount
+	err := r.db.WithContext(ctx).
+		Model(&model.Order{}).
+		Select("status, COUNT(*) as count").
+		Where(timeFilter).
+		Group("status").
+		Find(&statusCounts).Error
+
+	if err != nil {
+		tracing.SetSpanError(span, err)
+		return nil, fmt.Errorf("failed to get status counts: %w", err)
+	}
+
+	// Calculate metrics from status counts
+	for _, sc := range statusCounts {
+		metrics.TotalOrders += sc.Count
+		switch sc.Status {
+		case string(model.OrderStatusConfirmed), string(model.OrderStatusShipped), string(model.OrderStatusDelivered):
+			metrics.SuccessfulOrders += sc.Count
+		case string(model.OrderStatusFailed), string(model.OrderStatusCancelled):
+			metrics.FailedOrders += sc.Count
+		case string(model.OrderStatusPending), string(model.OrderStatusProcessing):
+			metrics.PendingOrders += sc.Count
+		}
+	}
+
+	// Calculate success rate
+	if metrics.TotalOrders > 0 {
+		metrics.SuccessRate = float64(metrics.SuccessfulOrders) / float64(metrics.TotalOrders) * 100
+	}
+
+	// Get average order value and total revenue from successful orders
+	type revenueData struct {
+		AverageAmount float64 `json:"average_amount"`
+		TotalRevenue  float64 `json:"total_revenue"`
+	}
+
+	var revenue revenueData
+	err = r.db.WithContext(ctx).
+		Model(&model.Order{}).
+		Select("AVG(amount) as average_amount, SUM(amount) as total_revenue").
+		Where(timeFilter+" AND status IN ?", []string{
+			string(model.OrderStatusConfirmed),
+			string(model.OrderStatusShipped),
+			string(model.OrderStatusDelivered),
+		}).
+		Find(&revenue).Error
+
+	if err != nil {
+		tracing.SetSpanError(span, err)
+		return nil, fmt.Errorf("failed to get revenue data: %w", err)
+	}
+
+	metrics.AverageOrderValue = revenue.AverageAmount
+	metrics.TotalRevenue = revenue.TotalRevenue
+
+	tracing.AddEvent(span, "metrics.calculated",
+		attribute.Int64("metrics.total_orders", metrics.TotalOrders),
+		attribute.Int64("metrics.successful_orders", metrics.SuccessfulOrders),
+		attribute.Float64("metrics.success_rate", metrics.SuccessRate),
+		attribute.Float64("metrics.total_revenue", metrics.TotalRevenue),
+	)
+	tracing.SetSpanSuccess(span)
+
+	return &metrics, nil
+}
+
 // Close closes the database connection
 func (r *OrderRepository) Close() error {
 	sqlDB, err := r.db.DB()

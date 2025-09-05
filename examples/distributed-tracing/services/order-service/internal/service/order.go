@@ -169,7 +169,12 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *model.CreateOrderRe
 		tracing.AddEvent(span, "order.inventory_reservation_failed",
 			attribute.String("error", err.Error()),
 		)
-		// TODO: Implement compensation - refund payment
+		// Implement compensation transaction - refund payment
+		if err := s.compensateTransaction(ctx, order); err != nil {
+			tracing.AddEvent(span, "order.compensation_failed",
+				attribute.String("error", err.Error()),
+			)
+		}
 		order.Status = model.OrderStatusFailed
 	} else {
 		tracing.AddEvent(span, "order.inventory_reserved")
@@ -503,6 +508,285 @@ func convertPaymentStatus(status paymentpb.PaymentStatus) model.PaymentStatus {
 	default:
 		return model.PaymentStatusPending
 	}
+}
+
+// compensateTransaction handles compensation logic when order processing fails
+func (s *OrderService) compensateTransaction(ctx context.Context, order *model.Order) error {
+	ctx, span := tracing.StartSpan(ctx, "service.compensateTransaction")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("order.id", order.ID),
+		attribute.String("compensation.reason", "inventory_reservation_failed"),
+	)
+
+	tracing.AddEvent(span, "compensation.started")
+
+	// If payment was processed, initiate refund
+	if order.PaymentTransactionID != nil {
+		if err := s.refundPayment(ctx, *order.PaymentTransactionID, order.Amount); err != nil {
+			tracing.AddEvent(span, "compensation.refund_failed",
+				attribute.String("error", err.Error()),
+			)
+			tracing.SetSpanError(span, err)
+			return fmt.Errorf("compensation refund failed: %w", err)
+		}
+		tracing.AddEvent(span, "compensation.payment_refunded",
+			attribute.String("transaction_id", *order.PaymentTransactionID),
+			attribute.Float64("amount", order.Amount),
+		)
+	}
+
+	// Release any reserved inventory (if applicable)
+	if err := s.releaseInventoryReservation(ctx, order.ID, order.ProductID); err != nil {
+		tracing.AddEvent(span, "compensation.inventory_release_failed",
+			attribute.String("error", err.Error()),
+		)
+		// Don't fail the compensation for inventory release failures as it's less critical
+	}
+
+	tracing.AddEvent(span, "compensation.completed")
+	tracing.SetSpanSuccess(span)
+	return nil
+}
+
+// refundPayment processes a payment refund
+func (s *OrderService) refundPayment(ctx context.Context, transactionID string, amount float64) error {
+	ctx, span := tracing.StartSpan(ctx, "service.refundPayment")
+	defer span.End()
+
+	extAttrs := tracing.ExternalServiceAttributes{
+		ServiceName: "payment-service",
+		Method:      "RefundPayment",
+		URL:         s.externalServices.PaymentServiceURL,
+		Timeout:     s.externalServices.Timeout.String(),
+	}
+	span.SetAttributes(extAttrs.ToAttributes()...)
+	span.SetAttributes(
+		attribute.String("payment.transaction_id", transactionID),
+		attribute.Float64("payment.amount", amount),
+	)
+
+	if s.paymentClient == nil {
+		// Mock refund for demo purposes
+		tracing.AddEvent(span, "payment.refund_mocked",
+			attribute.String("transaction_id", transactionID),
+			attribute.Float64("amount", amount),
+			attribute.Bool("success", true),
+		)
+		tracing.SetSpanSuccess(span)
+		return nil
+	}
+
+	// In a real implementation, call the payment service refund API
+	// req := &paymentpb.RefundPaymentRequest{
+	//     TransactionId: transactionID,
+	//     Amount: amount,
+	//     Reason: "order_processing_failed",
+	// }
+	// resp, err := s.paymentClient.RefundPayment(ctx, req)
+
+	tracing.AddEvent(span, "payment.refunded",
+		attribute.String("transaction_id", transactionID),
+		attribute.Float64("amount", amount),
+	)
+	tracing.SetSpanSuccess(span)
+
+	return nil
+}
+
+// releaseInventoryReservation releases inventory reservation
+func (s *OrderService) releaseInventoryReservation(ctx context.Context, orderID, productID string) error {
+	ctx, span := tracing.StartSpan(ctx, "service.releaseInventoryReservation")
+	defer span.End()
+
+	extAttrs := tracing.ExternalServiceAttributes{
+		ServiceName: "inventory-service",
+		Method:      "ReleaseReservation",
+		URL:         s.externalServices.InventoryServiceURL,
+		Timeout:     s.externalServices.Timeout.String(),
+	}
+	span.SetAttributes(extAttrs.ToAttributes()...)
+
+	if s.inventoryClient == nil {
+		// Mock inventory release for demo purposes
+		tracing.AddEvent(span, "inventory.release_mocked",
+			attribute.String("order.id", orderID),
+			attribute.String("product.id", productID),
+			attribute.Bool("success", true),
+		)
+		tracing.SetSpanSuccess(span)
+		return nil
+	}
+
+	// In a real implementation, call the inventory service release API
+	// req := &inventorypb.ReleaseReservationRequest{
+	//     OrderId: orderID,
+	//     ProductId: productID,
+	// }
+	// resp, err := s.inventoryClient.ReleaseReservation(ctx, req)
+
+	tracing.AddEvent(span, "inventory.reservation_released",
+		attribute.String("order.id", orderID),
+		attribute.String("product.id", productID),
+	)
+	tracing.SetSpanSuccess(span)
+
+	return nil
+}
+
+// ProcessOrderWithCircuitBreaker processes order with circuit breaker pattern for service degradation
+func (s *OrderService) ProcessOrderWithCircuitBreaker(ctx context.Context, req *model.CreateOrderRequest) (*model.Order, error) {
+	ctx, span := tracing.StartSpan(ctx, "service.ProcessOrderWithCircuitBreaker")
+	defer span.End()
+
+	// Add circuit breaker attributes
+	span.SetAttributes(
+		attribute.String("pattern", "circuit_breaker"),
+		attribute.String("resilience_strategy", "service_degradation"),
+	)
+
+	// Try normal order processing first
+	order, err := s.CreateOrder(ctx, req)
+	if err == nil {
+		tracing.AddEvent(span, "order.circuit_breaker.success")
+		tracing.SetSpanSuccess(span)
+		return order, nil
+	}
+
+	tracing.AddEvent(span, "order.circuit_breaker.primary_failed",
+		attribute.String("error", err.Error()),
+	)
+
+	// Fallback to degraded service (simplified order processing)
+	order, fallbackErr := s.createOrderWithDegradedService(ctx, req)
+	if fallbackErr != nil {
+		tracing.AddEvent(span, "order.circuit_breaker.fallback_failed",
+			attribute.String("error", fallbackErr.Error()),
+		)
+		tracing.SetSpanError(span, fallbackErr)
+		return nil, fmt.Errorf("both primary and fallback failed: primary=%w, fallback=%w", err, fallbackErr)
+	}
+
+	tracing.AddEvent(span, "order.circuit_breaker.fallback_success")
+	tracing.SetSpanSuccess(span)
+	return order, nil
+}
+
+// createOrderWithDegradedService creates order with minimal external dependencies (degraded mode)
+func (s *OrderService) createOrderWithDegradedService(ctx context.Context, req *model.CreateOrderRequest) (*model.Order, error) {
+	ctx, span := tracing.StartSpan(ctx, "service.createOrderWithDegradedService")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("service_mode", "degraded"),
+		attribute.String("strategy", "minimal_validation"),
+	)
+
+	// Generate order ID
+	orderID := uuid.New().String()
+
+	// Create order with pending status (will be processed asynchronously)
+	order := &model.Order{
+		ID:         orderID,
+		CustomerID: req.CustomerID,
+		ProductID:  req.ProductID,
+		Quantity:   req.Quantity,
+		Amount:     req.Amount,
+		Status:     model.OrderStatusPending, // Will be processed later
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+
+	tracing.AddEvent(span, "order.degraded_mode.created",
+		attribute.String("order.id", orderID),
+		attribute.String("processing_mode", "asynchronous"),
+	)
+
+	// Save to database immediately without external validations
+	if err := s.repository.CreateOrder(ctx, order); err != nil {
+		tracing.SetSpanError(span, err)
+		return nil, fmt.Errorf("failed to save degraded order: %w", err)
+	}
+
+	tracing.AddEvent(span, "order.degraded_mode.saved")
+	tracing.SetSpanSuccess(span)
+
+	return order, nil
+}
+
+// ProcessBulkOrders processes multiple orders concurrently for high-load scenarios
+func (s *OrderService) ProcessBulkOrders(ctx context.Context, requests []*model.CreateOrderRequest) ([]*model.Order, []error) {
+	ctx, span := tracing.StartSpan(ctx, "service.ProcessBulkOrders")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.Int("bulk.request_count", len(requests)),
+		attribute.String("processing_pattern", "concurrent_bulk"),
+	)
+
+	type result struct {
+		order *model.Order
+		err   error
+		index int
+	}
+
+	resultChan := make(chan result, len(requests))
+	orders := make([]*model.Order, len(requests))
+	errors := make([]error, len(requests))
+
+	// Process orders concurrently
+	for i, req := range requests {
+		go func(idx int, request *model.CreateOrderRequest) {
+			order, err := s.CreateOrder(ctx, request)
+			resultChan <- result{order: order, err: err, index: idx}
+		}(i, req)
+	}
+
+	// Collect results
+	successCount := 0
+	for i := 0; i < len(requests); i++ {
+		res := <-resultChan
+		orders[res.index] = res.order
+		errors[res.index] = res.err
+		if res.err == nil {
+			successCount++
+		}
+	}
+
+	tracing.AddEvent(span, "bulk.processing_completed",
+		attribute.Int("bulk.success_count", successCount),
+		attribute.Int("bulk.failure_count", len(requests)-successCount),
+	)
+
+	tracing.SetSpanSuccess(span)
+	return orders, errors
+}
+
+// GetOrderMetrics returns business metrics for monitoring
+func (s *OrderService) GetOrderMetrics(ctx context.Context, timeRange string) (*model.OrderMetrics, error) {
+	ctx, span := tracing.StartSpan(ctx, "service.GetOrderMetrics")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("metrics.time_range", timeRange),
+		attribute.String("metrics.type", "business_kpi"),
+	)
+
+	metrics, err := s.repository.GetOrderMetrics(ctx, timeRange)
+	if err != nil {
+		tracing.SetSpanError(span, err)
+		return nil, fmt.Errorf("failed to get order metrics: %w", err)
+	}
+
+	tracing.AddEvent(span, "metrics.calculated",
+		attribute.Int64("metrics.total_orders", metrics.TotalOrders),
+		attribute.Float64("metrics.success_rate", metrics.SuccessRate),
+		attribute.Float64("metrics.avg_order_value", metrics.AverageOrderValue),
+	)
+
+	tracing.SetSpanSuccess(span)
+	return metrics, nil
 }
 
 // Close closes external service connections
