@@ -590,7 +590,7 @@ $(echo "$stats" | jq -r '.service_stats[] |
         const operationData = $operation_chart_data;
         const operationCtx = document.getElementById('operationChart').getContext('2d');
         new Chart(operationCtx, {
-            type: 'horizontalBar',
+            type: 'bar',
             data: {
                 labels: operationData.map(o => o.name.length > 30 ? o.name.substring(0, 30) + '...' : o.name),
                 datasets: [{
@@ -602,6 +602,7 @@ $(echo "$stats" | jq -r '.service_stats[] |
                 }]
             },
             options: {
+                indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {

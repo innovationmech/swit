@@ -577,10 +577,28 @@ generate_traces() {
         "total_requests": $STATS_TOTAL,
         "successful_requests": $STATS_SUCCESS,
         "failed_requests": $STATS_ERROR,
-        "success_rate": $(echo "scale=4; $STATS_SUCCESS * 100 / $STATS_TOTAL" | bc),
+        "success_rate": $(
+            if [ "$STATS_TOTAL" -eq 0 ]; then
+                echo "0"
+            else
+                echo "scale=4; $STATS_SUCCESS * 100 / $STATS_TOTAL" | bc
+            fi
+        ),
         "total_duration_seconds": $total_time,
-        "average_rps": $(echo "scale=4; $STATS_TOTAL / $total_time" | bc),
-        "average_latency_ms": $((STATS_TOTAL_DURATION / STATS_TOTAL))
+        "average_rps": $(
+            if [ "$total_time" -eq 0 ]; then
+                echo "0"
+            else
+                echo "scale=4; $STATS_TOTAL / $total_time" | bc
+            fi
+        ),
+        "average_latency_ms": $(
+            if [ "$STATS_TOTAL" -eq 0 ]; then
+                echo "0"
+            else
+                echo $(($STATS_TOTAL_DURATION / $STATS_TOTAL))
+            fi
+        )
     }
 }
 EOF

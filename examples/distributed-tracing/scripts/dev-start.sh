@@ -527,9 +527,14 @@ prepare_dev_database() {
 -- Copyright (c) 2024 SWIT Framework Authors
 
 -- 创建开发用户和权限
-CREATE USER IF NOT EXISTS 'dev_user'@'%' IDENTIFIED BY 'dev_password';
-GRANT ALL PRIVILEGES ON swit_dev.* TO 'dev_user'@'%';
-FLUSH PRIVILEGES;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'dev_user') THEN
+        CREATE ROLE dev_user LOGIN PASSWORD 'dev_password';
+    END IF;
+END
+$$;
+GRANT ALL PRIVILEGES ON DATABASE swit_dev TO dev_user;
 
 -- 创建基础表结构 (示例)
 CREATE TABLE IF NOT EXISTS orders (
@@ -540,12 +545,14 @@ CREATE TABLE IF NOT EXISTS orders (
     amount DECIMAL(10,2) NOT NULL,
     status VARCHAR(50) DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    trace_id VARCHAR(100),
-    INDEX idx_customer_id (customer_id),
-    INDEX idx_status (status),
-    INDEX idx_trace_id (trace_id)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    trace_id VARCHAR(100)
 );
+
+-- 创建索引 (PostgreSQL 语法)
+CREATE INDEX IF NOT EXISTS idx_customer_id ON orders (customer_id);
+CREATE INDEX IF NOT EXISTS idx_status ON orders (status);
+CREATE INDEX IF NOT EXISTS idx_trace_id ON orders (trace_id);
 
 CREATE TABLE IF NOT EXISTS payments (
     id SERIAL PRIMARY KEY,
