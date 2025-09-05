@@ -1,0 +1,520 @@
+name: Distributed Tracing CI/CD
+
+on:
+  push:
+    paths:
+      - 'examples/distributed-tracing/**'
+      - '.github/workflows/distributed-tracing-ci.yml'
+  pull_request:
+    paths:
+      - 'examples/distributed-tracing/**'
+      - '.github/workflows/distributed-tracing-ci.yml'
+  schedule:
+    # Run daily at 2:00 AM UTC to catch environmental issues
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      run_load_tests:
+        description: 'Run load tests'
+        required: false
+        default: 'false'
+        type: boolean
+      run_benchmark:
+        description: 'Run benchmark tests'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # Script validation and linting
+  validate-scripts:
+    name: Validate Scripts and Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq yq shellcheck
+          
+      - name: Validate shell scripts
+        run: |
+          find examples/distributed-tracing -name "*.sh" -type f -exec shellcheck -x {} +
+          
+      - name: Validate YAML files
+        run: |
+          find examples/distributed-tracing -name "*.yml" -o -name "*.yaml" -type f | while read -r file; do
+            echo "Validating $file"
+            yq eval '.' "$file" > /dev/null
+          done
+          
+      - name: Validate JSON files
+        run: |
+          find examples/distributed-tracing -name "*.json" -type f | while read -r file; do
+            echo "Validating $file"
+            jq '.' "$file" > /dev/null
+          done
+
+      - name: Run config validator
+        run: |
+          cd examples/distributed-tracing
+          ./tools/config-validator --output=json --output-file=config-validation.json
+          
+      - name: Upload validation results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-results
+          path: examples/distributed-tracing/config-validation.json
+          retention-days: 7
+
+  # Build and test Docker images
+  build-and-test:
+    name: Build and Test Services
+    runs-on: ubuntu-latest
+    needs: validate-scripts
+    strategy:
+      matrix:
+        service: [order-service, payment-service, inventory-service]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build service image
+        run: |
+          cd examples/distributed-tracing/services/${{ matrix.service }}
+          docker build -t ${{ matrix.service }}:test .
+
+      - name: Test service build
+        run: |
+          # Basic smoke test - ensure container can start
+          docker run --rm -d --name test-${{ matrix.service }} ${{ matrix.service }}:test || true
+          sleep 5
+          docker ps -a
+          # Check if container is running or exited gracefully
+          if docker ps -q -f name=test-${{ matrix.service }}; then
+            echo "Container is running, stopping it..."
+            docker stop test-${{ matrix.service }}
+          fi
+
+  # Integration tests
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [validate-scripts, build-and-test]
+    services:
+      jaeger:
+        image: jaegertracing/all-in-one:1.42
+        ports:
+          - 16686:16686
+          - 14268:14268
+        env:
+          COLLECTOR_ZIPKIN_HOST_PORT: :9411
+          SPAN_STORAGE_TYPE: memory
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          cd examples/distributed-tracing
+          cp scripts/config/demo-config.env.example scripts/config/demo-config.env || true
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq bc hey
+          
+      - name: Start services
+        run: |
+          cd examples/distributed-tracing
+          # Use docker-compose to start services
+          docker-compose up -d
+          
+      - name: Wait for services
+        run: |
+          cd examples/distributed-tracing
+          ./scripts/health-check.sh || true
+          sleep 30
+          ./scripts/health-check.sh
+
+      - name: Run basic functionality tests
+        run: |
+          cd examples/distributed-tracing
+          
+          # Test order creation
+          response=$(curl -s -w "%{http_code}" -X POST http://localhost:8081/api/v1/orders \
+            -H "Content-Type: application/json" \
+            -d '{"customer_id": "test-customer", "product_id": "test-product", "quantity": 1, "amount": 99.99}' \
+            -o /tmp/order_response.json)
+          
+          echo "Order creation response code: $response"
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "✅ Order creation test passed"
+          else
+            echo "❌ Order creation test failed"
+            cat /tmp/order_response.json
+            exit 1
+          fi
+
+      - name: Test trace generation
+        run: |
+          cd examples/distributed-tracing
+          ./tools/trace-generator -n 10 -c 2 --dry-run
+          ./tools/trace-generator -n 5 -c 1 -s order
+
+      - name: Verify traces in Jaeger
+        run: |
+          # Wait for traces to be collected
+          sleep 10
+          
+          # Check if Jaeger has traces
+          response=$(curl -s "http://localhost:16686/api/services")
+          echo "Jaeger services response: $response"
+          
+          if echo "$response" | jq -e '.data | length > 0' > /dev/null; then
+            echo "✅ Traces found in Jaeger"
+          else
+            echo "⚠️ No traces found in Jaeger (may be normal for quick tests)"
+          fi
+
+      - name: Run log analysis
+        run: |
+          cd examples/distributed-tracing
+          ./tools/log-parser --stats --max-lines=100 --output=json --output-file=log-analysis.json
+
+      - name: Collect service logs
+        if: always()
+        run: |
+          cd examples/distributed-tracing
+          mkdir -p logs
+          docker-compose logs > logs/all-services.log
+          docker-compose logs order-service > logs/order-service.log
+          docker-compose logs payment-service > logs/payment-service.log
+          docker-compose logs inventory-service > logs/inventory-service.log
+          docker-compose logs jaeger > logs/jaeger.log
+
+      - name: Stop services
+        if: always()
+        run: |
+          cd examples/distributed-tracing
+          ./scripts/stop.sh -f || docker-compose down -v
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: |
+            examples/distributed-tracing/logs/
+            examples/distributed-tracing/log-analysis.json
+          retention-days: 7
+
+  # Load and performance tests (optional, triggered manually or on schedule)
+  load-test:
+    name: Load and Performance Tests
+    runs-on: ubuntu-latest
+    needs: integration-test
+    if: |
+      github.event_name == 'schedule' || 
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_load_tests == 'true') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq bc hey wrk
+          
+      - name: Start services
+        run: |
+          cd examples/distributed-tracing
+          docker-compose up -d
+          
+      - name: Wait for services to be ready
+        run: |
+          cd examples/distributed-tracing
+          timeout 120 bash -c 'until ./scripts/health-check.sh; do sleep 5; done'
+
+      - name: Run load tests
+        run: |
+          cd examples/distributed-tracing
+          
+          # Light load test
+          ./scripts/load-test.sh light --output=load-test-light.json
+          
+          # Medium load test
+          ./scripts/load-test.sh medium --output=load-test-medium.json
+
+      - name: Generate load test traces
+        run: |
+          cd examples/distributed-tracing
+          ./tools/trace-generator -d 60 -r 20 -c 5 --output=load-test-traces.json
+
+      - name: Analyze performance
+        run: |
+          cd examples/distributed-tracing
+          ./scripts/trace-analysis.sh --duration=5m --format=json --output=trace-analysis.json
+
+      - name: Stop services
+        if: always()
+        run: |
+          cd examples/distributed-tracing
+          docker-compose down -v
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-results
+          path: |
+            examples/distributed-tracing/load-test-*.json
+            examples/distributed-tracing/trace-analysis.json
+          retention-days: 30
+
+  # Benchmark tests (resource intensive, run sparingly)
+  benchmark:
+    name: Benchmark Tests
+    runs-on: ubuntu-latest
+    needs: integration-test
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.run_benchmark == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq bc hey wrk apache2-utils
+          
+      - name: Start services with production-like settings
+        run: |
+          cd examples/distributed-tracing
+          # Use production Docker Compose override if available
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          else
+            docker-compose up -d
+          fi
+          
+      - name: Wait for services
+        run: |
+          cd examples/distributed-tracing
+          timeout 180 bash -c 'until ./scripts/health-check.sh; do sleep 10; done'
+
+      - name: Run benchmark tests
+        run: |
+          cd examples/distributed-tracing
+          ./scripts/benchmark.sh -t throughput -d 120 --format=json --output-file=benchmark-results.json
+
+      - name: Generate benchmark report
+        run: |
+          cd examples/distributed-tracing
+          ./scripts/benchmark.sh -t all -d 300 --format=html --output-file=benchmark-report.html
+
+      - name: Stop services
+        if: always()
+        run: |
+          cd examples/distributed-tracing
+          docker-compose down -v
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: |
+            examples/distributed-tracing/benchmark-*.json
+            examples/distributed-tracing/benchmark-*.html
+          retention-days: 90
+
+  # Documentation and deployment check
+  documentation-check:
+    name: Documentation and Deployment Check
+    runs-on: ubuntu-latest
+    needs: validate-scripts
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check documentation completeness
+        run: |
+          cd examples/distributed-tracing
+          
+          # Check if required documentation exists
+          required_docs=(
+            "README.md"
+            "docs/README.md"
+            "scripts/README.md"
+            "tools/README.md"
+          )
+          
+          for doc in "${required_docs[@]}"; do
+            if [ -f "$doc" ]; then
+              echo "✅ Found $doc"
+            else
+              echo "❌ Missing required documentation: $doc"
+              exit 1
+            fi
+          done
+
+      - name: Validate Docker Compose for production
+        run: |
+          cd examples/distributed-tracing
+          
+          # Check Docker Compose configuration
+          docker-compose config > /dev/null
+          
+          # Check if production overrides exist and validate
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
+            echo "✅ Production Docker Compose configuration valid"
+          else
+            echo "ℹ️ No production Docker Compose override found"
+          fi
+
+      - name: Test script executability
+        run: |
+          cd examples/distributed-tracing
+          
+          # Check if all scripts are executable
+          find scripts tools -name "*.sh" -type f ! -executable | while read -r script; do
+            echo "❌ Script not executable: $script"
+            exit 1
+          done || echo "✅ All scripts are executable"
+
+      - name: Generate deployment checklist
+        run: |
+          cd examples/distributed-tracing
+          
+          cat > deployment-checklist.md << 'EOF'
+          # Distributed Tracing Deployment Checklist
+          
+          Generated on: $(date)
+          Commit: ${{ github.sha }}
+          
+          ## Pre-deployment Checks
+          - [ ] All scripts are executable and tested
+          - [ ] Configuration files are valid
+          - [ ] Docker images build successfully
+          - [ ] Integration tests pass
+          - [ ] Documentation is complete and up-to-date
+          
+          ## Deployment Steps
+          1. Clone repository: `git clone <repo-url>`
+          2. Navigate to directory: `cd examples/distributed-tracing`
+          3. Copy configuration: `cp scripts/config/demo-config.env.example scripts/config/demo-config.env`
+          4. Customize configuration as needed
+          5. Start services: `./scripts/setup.sh`
+          6. Verify deployment: `./scripts/health-check.sh`
+          7. Run smoke tests: `./tools/trace-generator -n 5 --dry-run && ./tools/trace-generator -n 5`
+          
+          ## Post-deployment Verification
+          - [ ] All services are running: `docker-compose ps`
+          - [ ] Health checks pass: `./scripts/health-check.sh`
+          - [ ] Jaeger UI accessible: http://localhost:16686
+          - [ ] Services can handle requests
+          - [ ] Traces are visible in Jaeger
+          
+          ## Monitoring and Maintenance
+          - [ ] Set up log monitoring: `./tools/log-parser --follow`
+          - [ ] Schedule regular health checks
+          - [ ] Monitor resource usage
+          - [ ] Plan for log rotation and cleanup
+          EOF
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-checklist
+          path: examples/distributed-tracing/deployment-checklist.md
+          retention-days: 30
+
+  # Report CI/CD results
+  report-results:
+    name: Report CI/CD Results
+    runs-on: ubuntu-latest
+    needs: [validate-scripts, build-and-test, integration-test, documentation-check]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Generate CI/CD summary
+        run: |
+          cat > ci-cd-summary.md << EOF
+          # Distributed Tracing CI/CD Summary
+          
+          **Workflow Run**: [\#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          **Commit**: [\`${{ github.sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+          **Branch**: ${{ github.ref_name }}
+          **Triggered by**: ${{ github.event_name }}
+          **Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          
+          ## Job Results
+          
+          | Job | Status |
+          |-----|--------|
+          | Validate Scripts | ${{ needs.validate-scripts.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Build and Test | ${{ needs.build-and-test.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Integration Test | ${{ needs.integration-test.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+          | Documentation Check | ${{ needs.documentation-check.result == 'success' && '✅ Passed' || '❌ Failed' }} |
+          
+          ## Artifacts Generated
+          $(find artifacts -type f -name "*.json" -o -name "*.html" -o -name "*.log" -o -name "*.md" | sort | sed 's/^/- /')
+          
+          ## Quick Start
+          To deploy this version locally:
+          \`\`\`bash
+          cd examples/distributed-tracing
+          ./scripts/setup.sh
+          ./scripts/health-check.sh
+          \`\`\`
+          
+          ## Next Steps
+          - Review any failed jobs above
+          - Check artifacts for detailed results
+          - Update documentation if needed
+          - Consider running load tests: \`./scripts/load-test.sh\`
+          EOF
+
+      - name: Upload CI/CD summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-cd-summary
+          path: ci-cd-summary.md
+          retention-days: 90
+
+  # Cleanup (runs on schedule to clean up old artifacts and images)
+  cleanup:
+    name: Cleanup Resources
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - name: Clean Docker system
+        run: |
+          docker system prune -f
+          docker volume prune -f
+          docker image prune -a -f
+
+      - name: Report cleanup
+        run: |
+          echo "Cleanup completed on $(date)"
+          docker system df

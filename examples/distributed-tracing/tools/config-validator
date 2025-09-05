@@ -1,0 +1,941 @@
+#!/bin/bash
+
+# 配置验证工具
+# Copyright (c) 2024 SWIT Framework Authors
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+NC='\033[0m' # No Color
+
+# 日志函数
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_header() {
+    echo -e "${PURPLE}[CONFIG-VALIDATOR]${NC} $1"
+}
+
+# 显示欢迎信息
+show_welcome() {
+    echo "======================================================================"
+    echo -e "${BLUE}🔧 SWIT 框架分布式追踪配置验证工具${NC}"
+    echo "======================================================================"
+    echo -e "${YELLOW}本工具用于验证分布式追踪系统的配置：${NC}"
+    echo "  📝 配置文件格式验证"
+    echo "  🔍 参数完整性检查"
+    echo "  ⚡ 端口占用检测"
+    echo "  🌐 服务连接测试"
+    echo "  📊 配置建议和优化"
+    echo
+}
+
+# 显示使用说明
+show_usage() {
+    echo "Usage: $0 [options] [config-files...]"
+    echo
+    echo "Options:"
+    echo "  -h, --help              显示帮助信息"
+    echo "  -f, --file=FILE         指定配置文件 (可多次使用)"
+    echo "  -t, --type=TYPE         配置类型 (默认: auto)"
+    echo "                          可选: docker-compose, env, yaml, json, all, auto"
+    echo "  -c, --check=CHECKS      指定检查项 (默认: all)"
+    echo "                          可选: syntax, completeness, connectivity, security, performance, all"
+    echo "  -o, --output=FORMAT     输出格式 (默认: text)"
+    echo "                          可选: text, json, html"
+    echo "  --fix                   自动修复可修复的问题"
+    echo "  --strict                严格模式 (任何警告都视为错误)"
+    echo "  --output-file=FILE      输出结果到文件"
+    echo "  --verbose               详细输出"
+    echo "  --quiet                 只输出错误"
+    echo
+    echo "Config Types:"
+    echo "  docker-compose    Docker Compose YAML 文件"
+    echo "  env              环境变量配置文件"
+    echo "  yaml             YAML 配置文件"
+    echo "  json             JSON 配置文件" 
+    echo "  all              检查所有支持类型"
+    echo "  auto             自动检测类型"
+    echo
+    echo "Check Types:"
+    echo "  syntax           配置文件语法检查"
+    echo "  completeness     必需参数完整性检查"
+    echo "  connectivity     服务连接性检查"
+    echo "  security         安全配置检查"
+    echo "  performance      性能配置检查"
+    echo "  all              执行所有检查"
+    echo
+    echo "Examples:"
+    echo "  $0                                    # 验证默认配置文件"
+    echo "  $0 -f docker-compose.yml             # 验证指定文件"
+    echo "  $0 -t env -c connectivity            # 验证环境配置的连接性"
+    echo "  $0 --fix --output=json               # 修复问题并输出JSON格式结果"
+    echo "  $0 -c security --strict              # 严格安全检查"
+}
+
+# 检查依赖工具
+check_dependencies() {
+    local missing_tools=()
+    local optional_missing=()
+    
+    # 基础工具
+    for tool in jq yq; do
+        if ! command -v $tool &> /dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+    
+    # 可选工具
+    for tool in yamllint shellcheck; do
+        if ! command -v $tool &> /dev/null; then
+            optional_missing+=("$tool")
+        fi
+    done
+    
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        log_error "缺少必需工具: ${missing_tools[*]}"
+        echo "安装方法："
+        echo "  macOS: brew install jq yq"
+        echo "  Ubuntu: sudo apt-get install jq && sudo snap install yq"
+        exit 1
+    fi
+    
+    if [ ${#optional_missing[@]} -gt 0 ] && [ "$VERBOSE" = "true" ]; then
+        log_warning "缺少可选工具: ${optional_missing[*]}"
+        log_info "安装这些工具可以提供更全面的验证"
+    fi
+}
+
+# 自动发现配置文件
+discover_config_files() {
+    log_header "发现配置文件"
+    
+    local config_files=()
+    
+    # Docker Compose 文件
+    for file in "$PROJECT_ROOT/docker-compose.yml" "$PROJECT_ROOT/docker-compose.yaml"; do
+        if [ -f "$file" ]; then
+            config_files+=("$file:docker-compose")
+            log_info "发现 Docker Compose 文件: $file"
+        fi
+    done
+    
+    # 环境配置文件
+    for pattern in "*.env" "*config.env" "scripts/config/*.env"; do
+        for file in $PROJECT_ROOT/$pattern; do
+            if [ -f "$file" ]; then
+                config_files+=("$file:env")
+                log_info "发现环境配置文件: $file"
+            fi
+        done
+    done
+    
+    # YAML 配置文件
+    for pattern in "*.yml" "*.yaml" "config/*.yml" "config/*.yaml" "jaeger/config/*.yml"; do
+        for file in $PROJECT_ROOT/$pattern; do
+            if [ -f "$file" ] && [[ "$file" != *"docker-compose"* ]]; then
+                config_files+=("$file:yaml")
+                log_info "发现 YAML 配置文件: $file"
+            fi
+        done
+    done
+    
+    # JSON 配置文件
+    for pattern in "*.json" "config/*.json"; do
+        for file in $PROJECT_ROOT/$pattern; do
+            if [ -f "$file" ]; then
+                config_files+=("$file:json")
+                log_info "发现 JSON 配置文件: $file"
+            fi
+        done
+    done
+    
+    if [ ${#config_files[@]} -eq 0 ]; then
+        log_warning "未发现任何配置文件"
+        return 1
+    fi
+    
+    printf '%s\n' "${config_files[@]}"
+}
+
+# 检测配置文件类型
+detect_config_type() {
+    local file="$1"
+    
+    case "${file##*.}" in
+        "yml"|"yaml")
+            if grep -q "version:" "$file" && grep -q "services:" "$file"; then
+                echo "docker-compose"
+            else
+                echo "yaml"
+            fi
+            ;;
+        "json") echo "json" ;;
+        "env") echo "env" ;;
+        *)
+            if grep -q "=" "$file" && ! grep -q "{" "$file"; then
+                echo "env"
+            else
+                echo "unknown"
+            fi
+            ;;
+    esac
+}
+
+# 验证语法
+validate_syntax() {
+    local file="$1"
+    local type="$2"
+    local errors=()
+    
+    case "$type" in
+        "docker-compose"|"yaml")
+            if command -v yamllint &> /dev/null; then
+                local yamllint_result
+                if ! yamllint_result=$(yamllint -d "{extends: default, rules: {line-length: {max: 120}}}" "$file" 2>&1); then
+                    errors+=("YAML 语法错误: $yamllint_result")
+                fi
+            else
+                # 使用 yq 进行基础语法检查
+                if ! yq eval '.' "$file" >/dev/null 2>&1; then
+                    errors+=("YAML 语法错误: 文件格式无效")
+                fi
+            fi
+            ;;
+        "json")
+            if ! jq '.' "$file" >/dev/null 2>&1; then
+                errors+=("JSON 语法错误: 文件格式无效")
+            fi
+            ;;
+        "env")
+            # 检查环境变量文件格式
+            local line_num=0
+            while IFS= read -r line; do
+                ((line_num++))
+                # 跳过空行和注释
+                if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+                    continue
+                fi
+                # 检查变量格式
+                if ! [[ "$line" =~ ^[A-Z_][A-Z0-9_]*=.* ]]; then
+                    errors+=("环境变量语法错误: 第${line_num}行格式无效: $line")
+                fi
+            done < "$file"
+            ;;
+    esac
+    
+    printf '%s\n' "${errors[@]}"
+}
+
+# 验证完整性
+validate_completeness() {
+    local file="$1"
+    local type="$2"
+    local warnings=()
+    local errors=()
+    
+    case "$type" in
+        "docker-compose")
+            # 检查必需的服务
+            local required_services=("jaeger" "order-service" "payment-service" "inventory-service")
+            for service in "${required_services[@]}"; do
+                if ! yq eval ".services | has(\"$service\")" "$file" | grep -q "true"; then
+                    warnings+=("缺少推荐服务: $service")
+                fi
+            done
+            
+            # 检查网络配置
+            if ! yq eval '.networks | length' "$file" | grep -q "[1-9]"; then
+                warnings+=("建议配置自定义网络以改善服务间通信")
+            fi
+            
+            # 检查端口配置
+            local ports_check
+            ports_check=$(yq eval '.services[].ports[]?' "$file" 2>/dev/null | grep -E "^[0-9]+:" | wc -l)
+            if [ "$ports_check" -eq 0 ]; then
+                warnings+=("未找到端口映射配置")
+            fi
+            ;;
+        "env")
+            # 检查关键环境变量
+            local required_vars=(
+                "JAEGER_UI_PORT"
+                "ORDER_SERVICE_PORT" 
+                "PAYMENT_SERVICE_PORT"
+                "INVENTORY_SERVICE_PORT"
+            )
+            
+            for var in "${required_vars[@]}"; do
+                if ! grep -q "^$var=" "$file"; then
+                    warnings+=("缺少推荐环境变量: $var")
+                fi
+            done
+            
+            # 检查端口冲突
+            local ports=($(grep -o '[0-9]\{4,5\}' "$file" | sort | uniq))
+            local seen_ports=()
+            for port in "${ports[@]}"; do
+                if [[ " ${seen_ports[*]} " =~ " ${port} " ]]; then
+                    errors+=("端口冲突: $port 被多次使用")
+                else
+                    seen_ports+=("$port")
+                fi
+            done
+            ;;
+        "yaml"|"json")
+            # 通用配置检查
+            local config_content
+            if [ "$type" = "yaml" ]; then
+                config_content=$(yq eval -o=json '.' "$file")
+            else
+                config_content=$(cat "$file")
+            fi
+            
+            # 检查 Jaeger 配置
+            if echo "$config_content" | jq -e '.jaeger' >/dev/null 2>&1; then
+                if ! echo "$config_content" | jq -e '.jaeger.endpoint' >/dev/null 2>&1; then
+                    warnings+=("Jaeger 配置缺少 endpoint")
+                fi
+            fi
+            
+            # 检查服务配置
+            if echo "$config_content" | jq -e '.services' >/dev/null 2>&1; then
+                local service_count
+                service_count=$(echo "$config_content" | jq '.services | length')
+                if [ "$service_count" -eq 0 ]; then
+                    warnings+=("服务配置为空")
+                fi
+            fi
+            ;;
+    esac
+    
+    # 输出结果
+    printf 'ERRORS:\n'
+    printf '%s\n' "${errors[@]}"
+    printf 'WARNINGS:\n'
+    printf '%s\n' "${warnings[@]}"
+}
+
+# 验证连接性
+validate_connectivity() {
+    local file="$1"
+    local type="$2"
+    local errors=()
+    local warnings=()
+    
+    # 提取端口信息
+    local ports=()
+    case "$type" in
+        "docker-compose")
+            ports=($(yq eval '.services[].ports[]?' "$file" 2>/dev/null | grep -oE '^[0-9]+' | sort -u))
+            ;;
+        "env")
+            ports=($(grep -oE '[0-9]{4,5}' "$file" | sort -u))
+            ;;
+        "yaml")
+            local yaml_content
+            yaml_content=$(yq eval -o=json '.' "$file")
+            ports=($(echo "$yaml_content" | jq -r '.. | select(type == "object") | .. | select(type == "number" and . > 1000 and . < 65536)' 2>/dev/null | sort -u))
+            ;;
+        "json")
+            ports=($(jq -r '.. | select(type == "number" and . > 1000 and . < 65536)' "$file" 2>/dev/null | sort -u))
+            ;;
+    esac
+    
+    # 检查端口占用
+    for port in "${ports[@]}"; do
+        if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+            local process_info
+            process_info=$(lsof -Pi :$port -sTCP:LISTEN | tail -n +2 | awk '{print $1}' | head -n 1)
+            warnings+=("端口 $port 已被占用 (进程: $process_info)")
+        fi
+    done
+    
+    # 检查服务可达性 (仅当服务在运行时)
+    local service_urls=(
+        "http://localhost:16686:Jaeger UI"
+        "http://localhost:8081/health:Order Service"
+        "http://localhost:8082/health:Payment Service" 
+        "http://localhost:8083/health:Inventory Service"
+    )
+    
+    for service_info in "${service_urls[@]}"; do
+        local url="${service_info%:*}"
+        local name="${service_info#*:}"
+        
+        if curl -f -s --connect-timeout 5 "$url" >/dev/null 2>&1; then
+            log_success "$name 连接正常"
+        else
+            warnings+=("$name 不可达: $url")
+        fi
+    done
+    
+    # 输出结果
+    printf 'ERRORS:\n'
+    printf '%s\n' "${errors[@]}"
+    printf 'WARNINGS:\n'
+    printf '%s\n' "${warnings[@]}"
+}
+
+# 验证安全性
+validate_security() {
+    local file="$1"
+    local type="$2"
+    local warnings=()
+    local errors=()
+    
+    case "$type" in
+        "docker-compose")
+            # 检查特权模式
+            if yq eval '.services[].privileged' "$file" 2>/dev/null | grep -q "true"; then
+                warnings+=("发现特权模式配置，存在安全风险")
+            fi
+            
+            # 检查网络模式
+            if yq eval '.services[].network_mode' "$file" 2>/dev/null | grep -q "host"; then
+                warnings+=("使用 host 网络模式可能存在安全风险")
+            fi
+            
+            # 检查卷挂载
+            local sensitive_mounts
+            sensitive_mounts=$(yq eval '.services[].volumes[]?' "$file" 2>/dev/null | grep -E '(^/:|^/etc|^/var|^/usr)')
+            if [ -n "$sensitive_mounts" ]; then
+                warnings+=("发现敏感目录挂载，请确认安全性")
+            fi
+            ;;
+        "env")
+            # 检查敏感信息
+            if grep -iE '(password|secret|key|token)' "$file" | grep -v '^#'; then
+                warnings+=("配置文件中可能包含敏感信息，建议使用环境变量或密钥管理")
+            fi
+            
+            # 检查默认密码
+            if grep -iE '(password=admin|password=root|password=123)' "$file"; then
+                errors+=("发现默认密码，存在严重安全风险")
+            fi
+            ;;
+        "yaml"|"json")
+            # 检查配置中的敏感信息
+            local content
+            if [ "$type" = "yaml" ]; then
+                content=$(yq eval -o=json '.' "$file")
+            else
+                content=$(cat "$file")
+            fi
+            
+            if echo "$content" | jq -r '.. | select(type == "string")' | grep -iE '(password|secret|key|token)'; then
+                warnings+=("配置中可能包含敏感信息")
+            fi
+            ;;
+    esac
+    
+    # 检查文件权限
+    local file_perms
+    file_perms=$(stat -c "%a" "$file" 2>/dev/null || stat -f "%Lp" "$file" 2>/dev/null)
+    if [ "${file_perms: -1}" != "0" ] && [ "${file_perms: -1}" != "4" ]; then
+        warnings+=("文件权限过于宽松 ($file_perms)，建议设置为 644")
+    fi
+    
+    # 输出结果
+    printf 'ERRORS:\n'
+    printf '%s\n' "${errors[@]}"
+    printf 'WARNINGS:\n'
+    printf '%s\n' "${warnings[@]}"
+}
+
+# 验证性能配置
+validate_performance() {
+    local file="$1"
+    local type="$2"
+    local warnings=()
+    local suggestions=()
+    
+    case "$type" in
+        "docker-compose")
+            # 检查资源限制
+            if ! yq eval '.services[] | select(has("deploy")) | .deploy.resources' "$file" 2>/dev/null | grep -q "limits"; then
+                suggestions+=("建议为服务配置资源限制以防止资源耗尽")
+            fi
+            
+            # 检查健康检查
+            if ! yq eval '.services[] | select(has("healthcheck"))' "$file" 2>/dev/null | grep -q "healthcheck"; then
+                suggestions+=("建议配置健康检查以提高服务可靠性")
+            fi
+            
+            # 检查重启策略
+            if ! yq eval '.services[].restart' "$file" 2>/dev/null | grep -q "unless-stopped"; then
+                suggestions+=("建议配置合适的重启策略")
+            fi
+            ;;
+        "env")
+            # 检查 Jaeger 采样率
+            local sampling_rate
+            sampling_rate=$(grep "SAMPLING_RATE\|JAEGER.*SAMPLE" "$file" | grep -oE '[0-9.]+' | head -n1)
+            if [ -n "$sampling_rate" ]; then
+                if [ "$(echo "$sampling_rate > 0.1" | bc 2>/dev/null || echo 0)" -eq 1 ]; then
+                    warnings+=("Jaeger 采样率较高 ($sampling_rate)，可能影响性能")
+                fi
+            fi
+            
+            # 检查缓存配置
+            if ! grep -q "CACHE\|REDIS\|MEMCACHE" "$file"; then
+                suggestions+=("考虑配置缓存以提升性能")
+            fi
+            ;;
+        "yaml"|"json")
+            local content
+            if [ "$type" = "yaml" ]; then
+                content=$(yq eval -o=json '.' "$file")
+            else
+                content=$(cat "$file")
+            fi
+            
+            # 检查连接池配置
+            if echo "$content" | jq -e '.database' >/dev/null 2>&1; then
+                if ! echo "$content" | jq -e '.database.pool' >/dev/null 2>&1; then
+                    suggestions+=("建议配置数据库连接池")
+                fi
+            fi
+            
+            # 检查超时配置
+            if ! echo "$content" | jq -e '.. | select(type == "object") | has("timeout")' >/dev/null 2>&1; then
+                suggestions+=("建议配置适当的超时时间")
+            fi
+            ;;
+    esac
+    
+    # 输出结果
+    printf 'WARNINGS:\n'
+    printf '%s\n' "${warnings[@]}"
+    printf 'SUGGESTIONS:\n'
+    printf '%s\n' "${suggestions[@]}"
+}
+
+# 自动修复问题
+auto_fix() {
+    local file="$1"
+    local type="$2"
+    local fixes=()
+    
+    if [ ! -w "$file" ]; then
+        log_error "文件不可写，无法自动修复: $file"
+        return 1
+    fi
+    
+    # 创建备份
+    local backup_file="${file}.backup.$(date +%s)"
+    cp "$file" "$backup_file"
+    fixes+=("已创建备份文件: $backup_file")
+    
+    case "$type" in
+        "env")
+            # 修复文件权限
+            if [ "$(stat -c "%a" "$file" 2>/dev/null || stat -f "%Lp" "$file" 2>/dev/null)" != "644" ]; then
+                chmod 644 "$file"
+                fixes+=("已修复文件权限为 644")
+            fi
+            
+            # 添加缺失的环境变量
+            local missing_vars=(
+                "JAEGER_UI_PORT=16686"
+                "ORDER_SERVICE_PORT=8081"
+                "PAYMENT_SERVICE_PORT=8082"
+                "INVENTORY_SERVICE_PORT=8083"
+            )
+            
+            for var in "${missing_vars[@]}"; do
+                local var_name="${var%=*}"
+                if ! grep -q "^$var_name=" "$file"; then
+                    echo "# Added by config-validator" >> "$file"
+                    echo "$var" >> "$file"
+                    fixes+=("已添加缺失的环境变量: $var_name")
+                fi
+            done
+            ;;
+        "docker-compose"|"yaml")
+            # 对于 YAML 文件的修复比较复杂，这里只做基础修复
+            if command -v yamllint &> /dev/null; then
+                # 尝试格式化 YAML
+                if yq eval '.' "$file" > "${file}.tmp" 2>/dev/null; then
+                    mv "${file}.tmp" "$file"
+                    fixes+=("已格式化 YAML 文件")
+                else
+                    rm -f "${file}.tmp"
+                fi
+            fi
+            ;;
+        "json")
+            # 格式化 JSON
+            if jq '.' "$file" > "${file}.tmp" 2>/dev/null; then
+                mv "${file}.tmp" "$file"
+                fixes+=("已格式化 JSON 文件")
+            else
+                rm -f "${file}.tmp"
+            fi
+            ;;
+    esac
+    
+    printf '%s\n' "${fixes[@]}"
+}
+
+# 验证单个文件
+validate_file() {
+    local file="$1"
+    local type="$2"
+    local checks="$3"
+    
+    if [ ! -f "$file" ]; then
+        log_error "文件不存在: $file"
+        return 1
+    fi
+    
+    # 自动检测类型
+    if [ "$type" = "auto" ]; then
+        type=$(detect_config_type "$file")
+    fi
+    
+    log_header "验证文件: $file (类型: $type)"
+    
+    local total_errors=0
+    local total_warnings=0
+    local total_suggestions=0
+    
+    # 执行指定的检查
+    IFS=',' read -ra CHECK_ARRAY <<< "$checks"
+    for check in "${CHECK_ARRAY[@]}"; do
+        check=$(echo "$check" | xargs) # 去除空格
+        
+        case "$check" in
+            "syntax"|"all")
+                if [ "$VERBOSE" = "true" ]; then
+                    log_info "执行语法检查..."
+                fi
+                local syntax_errors
+                syntax_errors=$(validate_syntax "$file" "$type")
+                if [ -n "$syntax_errors" ]; then
+                    echo "$syntax_errors"
+                    total_errors=$((total_errors + $(echo "$syntax_errors" | wc -l)))
+                fi
+                ;;
+            "completeness"|"all")
+                if [ "$VERBOSE" = "true" ]; then
+                    log_info "执行完整性检查..."
+                fi
+                local completeness_result
+                completeness_result=$(validate_completeness "$file" "$type")
+                local comp_errors=$(echo "$completeness_result" | sed -n '/^ERRORS:/,/^WARNINGS:/{//!p;}')
+                local comp_warnings=$(echo "$completeness_result" | sed -n '/^WARNINGS:/,${//!p;}')
+                
+                if [ -n "$comp_errors" ] && [ "$comp_errors" != "" ]; then
+                    echo "完整性错误:"
+                    echo "$comp_errors"
+                    total_errors=$((total_errors + $(echo "$comp_errors" | wc -l)))
+                fi
+                
+                if [ -n "$comp_warnings" ] && [ "$comp_warnings" != "" ]; then
+                    echo "完整性警告:"
+                    echo "$comp_warnings"
+                    total_warnings=$((total_warnings + $(echo "$comp_warnings" | wc -l)))
+                fi
+                ;;
+            "connectivity"|"all")
+                if [ "$VERBOSE" = "true" ]; then
+                    log_info "执行连接性检查..."
+                fi
+                local connectivity_result
+                connectivity_result=$(validate_connectivity "$file" "$type")
+                local conn_errors=$(echo "$connectivity_result" | sed -n '/^ERRORS:/,/^WARNINGS:/{//!p;}')
+                local conn_warnings=$(echo "$connectivity_result" | sed -n '/^WARNINGS:/,${//!p;}')
+                
+                if [ -n "$conn_errors" ] && [ "$conn_errors" != "" ]; then
+                    echo "连接性错误:"
+                    echo "$conn_errors"
+                    total_errors=$((total_errors + $(echo "$conn_errors" | wc -l)))
+                fi
+                
+                if [ -n "$conn_warnings" ] && [ "$conn_warnings" != "" ]; then
+                    echo "连接性警告:"
+                    echo "$conn_warnings"
+                    total_warnings=$((total_warnings + $(echo "$conn_warnings" | wc -l)))
+                fi
+                ;;
+            "security"|"all")
+                if [ "$VERBOSE" = "true" ]; then
+                    log_info "执行安全检查..."
+                fi
+                local security_result
+                security_result=$(validate_security "$file" "$type")
+                local sec_errors=$(echo "$security_result" | sed -n '/^ERRORS:/,/^WARNINGS:/{//!p;}')
+                local sec_warnings=$(echo "$security_result" | sed -n '/^WARNINGS:/,${//!p;}')
+                
+                if [ -n "$sec_errors" ] && [ "$sec_errors" != "" ]; then
+                    echo "安全错误:"
+                    echo "$sec_errors"
+                    total_errors=$((total_errors + $(echo "$sec_errors" | wc -l)))
+                fi
+                
+                if [ -n "$sec_warnings" ] && [ "$sec_warnings" != "" ]; then
+                    echo "安全警告:"
+                    echo "$sec_warnings"
+                    total_warnings=$((total_warnings + $(echo "$sec_warnings" | wc -l)))
+                fi
+                ;;
+            "performance"|"all")
+                if [ "$VERBOSE" = "true" ]; then
+                    log_info "执行性能检查..."
+                fi
+                local perf_result
+                perf_result=$(validate_performance "$file" "$type")
+                local perf_warnings=$(echo "$perf_result" | sed -n '/^WARNINGS:/,/^SUGGESTIONS:/{//!p;}')
+                local perf_suggestions=$(echo "$perf_result" | sed -n '/^SUGGESTIONS:/,${//!p;}')
+                
+                if [ -n "$perf_warnings" ] && [ "$perf_warnings" != "" ]; then
+                    echo "性能警告:"
+                    echo "$perf_warnings"
+                    total_warnings=$((total_warnings + $(echo "$perf_warnings" | wc -l)))
+                fi
+                
+                if [ -n "$perf_suggestions" ] && [ "$perf_suggestions" != "" ]; then
+                    echo "性能建议:"
+                    echo "$perf_suggestions"
+                    total_suggestions=$((total_suggestions + $(echo "$perf_suggestions" | wc -l)))
+                fi
+                ;;
+        esac
+    done
+    
+    # 自动修复
+    if [ "$AUTO_FIX" = "true" ] && [ $total_errors -gt 0 ]; then
+        log_info "尝试自动修复问题..."
+        local fixes
+        fixes=$(auto_fix "$file" "$type")
+        if [ -n "$fixes" ]; then
+            echo "自动修复:"
+            echo "$fixes"
+        fi
+    fi
+    
+    # 输出总结
+    echo
+    if [ $total_errors -eq 0 ] && [ $total_warnings -eq 0 ]; then
+        log_success "✅ 配置验证通过: $file"
+    else
+        if [ $total_errors -gt 0 ]; then
+            log_error "❌ 发现 $total_errors 个错误"
+        fi
+        if [ $total_warnings -gt 0 ]; then
+            log_warning "⚠️  发现 $total_warnings 个警告"
+        fi
+        if [ $total_suggestions -gt 0 ]; then
+            log_info "💡 $total_suggestions 个优化建议"
+        fi
+    fi
+    
+    # 严格模式下警告也视为错误
+    if [ "$STRICT_MODE" = "true" ] && [ $total_warnings -gt 0 ]; then
+        total_errors=$((total_errors + total_warnings))
+    fi
+    
+    return $total_errors
+}
+
+# 生成输出报告
+generate_report() {
+    local format="$1"
+    local results="$2"
+    
+    case "$format" in
+        "json")
+            echo "$results" | jq '.'
+            ;;
+        "html")
+            # 简单的 HTML 报告
+            cat << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>配置验证报告</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .error { color: red; }
+        .warning { color: orange; }
+        .success { color: green; }
+        .suggestion { color: blue; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🔧 配置验证报告</h1>
+    <p>生成时间: $(date)</p>
+    <pre>$results</pre>
+</body>
+</html>
+EOF
+            ;;
+        "text"|*)
+            echo "$results"
+            ;;
+    esac
+}
+
+# 主函数
+main() {
+    # 默认参数
+    CONFIG_FILES=()
+    CONFIG_TYPE="auto"
+    CHECKS="all"
+    OUTPUT_FORMAT="text"
+    OUTPUT_FILE=""
+    AUTO_FIX="false"
+    STRICT_MODE="false"
+    VERBOSE="false"
+    QUIET="false"
+    
+    # 解析命令行参数
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            -f|--file)
+                CONFIG_FILES+=("$2")
+                shift 2
+                ;;
+            --file=*)
+                CONFIG_FILES+=("${1#*=}")
+                shift
+                ;;
+            -t|--type)
+                CONFIG_TYPE="$2"
+                shift 2
+                ;;
+            --type=*)
+                CONFIG_TYPE="${1#*=}"
+                shift
+                ;;
+            -c|--check)
+                CHECKS="$2"
+                shift 2
+                ;;
+            --check=*)
+                CHECKS="${1#*=}"
+                shift
+                ;;
+            -o|--output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            --output=*)
+                OUTPUT_FORMAT="${1#*=}"
+                shift
+                ;;
+            --output-file=*)
+                OUTPUT_FILE="${1#*=}"
+                shift
+                ;;
+            --fix)
+                AUTO_FIX="true"
+                shift
+                ;;
+            --strict)
+                STRICT_MODE="true"
+                shift
+                ;;
+            --verbose)
+                VERBOSE="true"
+                shift
+                ;;
+            --quiet)
+                QUIET="true"
+                shift
+                ;;
+            *)
+                # 作为配置文件处理
+                CONFIG_FILES+=("$1")
+                shift
+                ;;
+        esac
+    done
+    
+    if [ "$QUIET" != "true" ]; then
+        show_welcome
+    fi
+    
+    check_dependencies
+    
+    # 如果没有指定文件，自动发现
+    if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
+        mapfile -t discovered_files < <(discover_config_files)
+        for file_info in "${discovered_files[@]}"; do
+            CONFIG_FILES+=("${file_info%:*}")
+        done
+    fi
+    
+    if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
+        log_error "没有找到配置文件"
+        exit 1
+    fi
+    
+    # 验证配置文件
+    local total_exit_code=0
+    local all_results=""
+    
+    for config_file in "${CONFIG_FILES[@]}"; do
+        local result_output
+        result_output=$(validate_file "$config_file" "$CONFIG_TYPE" "$CHECKS" 2>&1)
+        local exit_code=$?
+        
+        all_results="$all_results\n=== $config_file ===\n$result_output\n"
+        
+        if [ $exit_code -gt 0 ]; then
+            total_exit_code=$exit_code
+        fi
+    done
+    
+    # 输出结果
+    local final_output
+    final_output=$(generate_report "$OUTPUT_FORMAT" "$all_results")
+    
+    if [ -n "$OUTPUT_FILE" ]; then
+        echo "$final_output" > "$OUTPUT_FILE"
+        log_info "结果已保存到: $OUTPUT_FILE"
+    else
+        echo "$final_output"
+    fi
+    
+    if [ "$QUIET" != "true" ]; then
+        echo
+        if [ $total_exit_code -eq 0 ]; then
+            log_success "🎉 所有配置验证通过！"
+        else
+            log_error "❌ 配置验证失败，请修复上述问题"
+        fi
+    fi
+    
+    exit $total_exit_code
+}
+
+# 执行主函数
+main "$@"
