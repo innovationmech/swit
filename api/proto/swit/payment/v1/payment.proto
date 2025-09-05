@@ -1,0 +1,281 @@
+syntax = "proto3";
+
+package swit.payment.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/swit/common/v1/common.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/payment/v1";
+
+// PaymentService handles payment processing
+service PaymentService {
+  // ProcessPayment processes a payment
+  rpc ProcessPayment(ProcessPaymentRequest) returns (ProcessPaymentResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/payments/process"
+      body: "*"
+    };
+  }
+
+  // ValidatePayment validates payment information
+  rpc ValidatePayment(ValidatePaymentRequest) returns (ValidatePaymentResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/payments/validate"
+      body: "*"
+    };
+  }
+
+  // GetPaymentStatus retrieves payment status
+  rpc GetPaymentStatus(GetPaymentStatusRequest) returns (GetPaymentStatusResponse) {
+    option (google.api.http) = {get: "/api/v1/payments/{transaction_id}/status"};
+  }
+
+  // RefundPayment processes a refund
+  rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/payments/{transaction_id}/refund"
+      body: "*"
+    };
+  }
+}
+
+// ProcessPaymentRequest represents a request to process a payment
+message ProcessPaymentRequest {
+  // Customer ID
+  string customer_id = 1;
+  // Order ID
+  string order_id = 2;
+  // Payment amount
+  double amount = 3;
+  // Currency code (e.g., USD, EUR)
+  string currency = 4;
+  // Payment method information
+  PaymentMethod payment_method = 5;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 6;
+}
+
+// ProcessPaymentResponse represents the response to payment processing
+message ProcessPaymentResponse {
+  // Payment result
+  Payment payment = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// ValidatePaymentRequest represents a request to validate payment info
+message ValidatePaymentRequest {
+  // Customer ID
+  string customer_id = 1;
+  // Payment amount
+  double amount = 2;
+  // Currency code
+  string currency = 3;
+  // Payment method information
+  PaymentMethod payment_method = 4;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 5;
+}
+
+// ValidatePaymentResponse represents the response to payment validation
+message ValidatePaymentResponse {
+  // Validation result
+  bool is_valid = 1;
+  // Validation errors (if any)
+  repeated swit.common.v1.ErrorDetail errors = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// GetPaymentStatusRequest represents a request to get payment status
+message GetPaymentStatusRequest {
+  // Transaction ID
+  string transaction_id = 1;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// GetPaymentStatusResponse represents the response to payment status request
+message GetPaymentStatusResponse {
+  // Payment information
+  Payment payment = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// RefundPaymentRequest represents a request to refund a payment
+message RefundPaymentRequest {
+  // Transaction ID to refund
+  string transaction_id = 1;
+  // Refund amount (partial refund if less than original amount)
+  double amount = 2;
+  // Reason for refund
+  string reason = 3;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// RefundPaymentResponse represents the response to refund request
+message RefundPaymentResponse {
+  // Refund information
+  PaymentRefund refund = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// Payment represents a payment entity
+message Payment {
+  // Transaction ID
+  string transaction_id = 1;
+  // Customer ID
+  string customer_id = 2;
+  // Order ID
+  string order_id = 3;
+  // Payment amount
+  double amount = 4;
+  // Currency code
+  string currency = 5;
+  // Payment status
+  PaymentStatus status = 6;
+  // Payment method used
+  PaymentMethod payment_method = 7;
+  // Processing details
+  PaymentProcessingDetails processing_details = 8;
+  // Created timestamp
+  google.protobuf.Timestamp created_at = 9;
+  // Updated timestamp
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// PaymentMethod represents payment method information
+message PaymentMethod {
+  // Payment method type
+  PaymentMethodType type = 1;
+  // Card information (for card payments)
+  CardInfo card_info = 2;
+  // Bank account information (for bank transfers)
+  BankAccountInfo bank_account_info = 3;
+  // Digital wallet information
+  DigitalWalletInfo digital_wallet_info = 4;
+}
+
+// PaymentMethodType represents the type of payment method
+enum PaymentMethodType {
+  // Unspecified payment method
+  PAYMENT_METHOD_TYPE_UNSPECIFIED = 0;
+  // Credit card
+  PAYMENT_METHOD_TYPE_CREDIT_CARD = 1;
+  // Debit card
+  PAYMENT_METHOD_TYPE_DEBIT_CARD = 2;
+  // Bank transfer
+  PAYMENT_METHOD_TYPE_BANK_TRANSFER = 3;
+  // Digital wallet (PayPal, etc.)
+  PAYMENT_METHOD_TYPE_DIGITAL_WALLET = 4;
+  // Cash on delivery
+  PAYMENT_METHOD_TYPE_CASH_ON_DELIVERY = 5;
+}
+
+// CardInfo represents credit/debit card information
+message CardInfo {
+  // Last 4 digits of card number (for security)
+  string last_four_digits = 1;
+  // Card brand (Visa, MasterCard, etc.)
+  string brand = 2;
+  // Expiry month
+  int32 expiry_month = 3;
+  // Expiry year
+  int32 expiry_year = 4;
+  // Cardholder name
+  string cardholder_name = 5;
+}
+
+// BankAccountInfo represents bank account information
+message BankAccountInfo {
+  // Bank name
+  string bank_name = 1;
+  // Account holder name
+  string account_holder_name = 2;
+  // Last 4 digits of account number (for security)
+  string last_four_digits = 3;
+  // Routing number
+  string routing_number = 4;
+}
+
+// DigitalWalletInfo represents digital wallet information
+message DigitalWalletInfo {
+  // Wallet provider (PayPal, Apple Pay, etc.)
+  string provider = 1;
+  // Wallet account ID
+  string account_id = 2;
+}
+
+// PaymentStatus represents the possible payment statuses
+enum PaymentStatus {
+  // Unspecified status
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  // Payment is pending
+  PAYMENT_STATUS_PENDING = 1;
+  // Payment is processing
+  PAYMENT_STATUS_PROCESSING = 2;
+  // Payment completed successfully
+  PAYMENT_STATUS_COMPLETED = 3;
+  // Payment failed
+  PAYMENT_STATUS_FAILED = 4;
+  // Payment was cancelled
+  PAYMENT_STATUS_CANCELLED = 5;
+  // Payment was refunded
+  PAYMENT_STATUS_REFUNDED = 6;
+  // Partial refund issued
+  PAYMENT_STATUS_PARTIALLY_REFUNDED = 7;
+}
+
+// PaymentProcessingDetails contains processing-specific information
+message PaymentProcessingDetails {
+  // External payment processor ID
+  string processor_id = 1;
+  // Processor transaction ID
+  string processor_transaction_id = 2;
+  // Processing fee
+  double processing_fee = 3;
+  // Gateway response code
+  string gateway_response_code = 4;
+  // Gateway response message
+  string gateway_response_message = 5;
+  // Risk assessment score (0-100)
+  int32 risk_score = 6;
+}
+
+// PaymentRefund represents refund information
+message PaymentRefund {
+  // Refund ID
+  string refund_id = 1;
+  // Original transaction ID
+  string original_transaction_id = 2;
+  // Refund amount
+  double amount = 3;
+  // Currency code
+  string currency = 4;
+  // Refund reason
+  string reason = 5;
+  // Refund status
+  RefundStatus status = 6;
+  // Created timestamp
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// RefundStatus represents possible refund statuses
+enum RefundStatus {
+  // Unspecified status
+  REFUND_STATUS_UNSPECIFIED = 0;
+  // Refund is pending
+  REFUND_STATUS_PENDING = 1;
+  // Refund is processing
+  REFUND_STATUS_PROCESSING = 2;
+  // Refund completed
+  REFUND_STATUS_COMPLETED = 3;
+  // Refund failed
+  REFUND_STATUS_FAILED = 4;
+  // Refund cancelled
+  REFUND_STATUS_CANCELLED = 5;
+}

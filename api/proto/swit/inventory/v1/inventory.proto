@@ -1,0 +1,338 @@
+syntax = "proto3";
+
+package swit.inventory.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "proto/swit/common/v1/common.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/inventory/v1";
+
+// InventoryService handles inventory management
+service InventoryService {
+  // CheckInventory checks if a product is available in requested quantity
+  rpc CheckInventory(CheckInventoryRequest) returns (CheckInventoryResponse) {
+    option (google.api.http) = {get: "/api/v1/inventory/{product_id}/check"};
+  }
+
+  // GetInventory retrieves current inventory for a product
+  rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse) {
+    option (google.api.http) = {get: "/api/v1/inventory/{product_id}"};
+  }
+
+  // ReserveInventory reserves inventory for an order
+  rpc ReserveInventory(ReserveInventoryRequest) returns (ReserveInventoryResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/inventory/reserve"
+      body: "*"
+    };
+  }
+
+  // ReleaseInventory releases previously reserved inventory
+  rpc ReleaseInventory(ReleaseInventoryRequest) returns (ReleaseInventoryResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/inventory/release"
+      body: "*"
+    };
+  }
+
+  // UpdateInventory updates inventory quantities
+  rpc UpdateInventory(UpdateInventoryRequest) returns (UpdateInventoryResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/inventory/{product_id}"
+      body: "*"
+    };
+  }
+
+  // ListInventory lists inventory for multiple products
+  rpc ListInventory(ListInventoryRequest) returns (ListInventoryResponse) {
+    option (google.api.http) = {get: "/api/v1/inventory"};
+  }
+
+  // GetInventoryHistory retrieves inventory change history
+  rpc GetInventoryHistory(GetInventoryHistoryRequest) returns (GetInventoryHistoryResponse) {
+    option (google.api.http) = {get: "/api/v1/inventory/{product_id}/history"};
+  }
+}
+
+// CheckInventoryRequest represents a request to check inventory availability
+message CheckInventoryRequest {
+  // Product ID
+  string product_id = 1;
+  // Required quantity
+  int32 quantity = 2;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 3;
+}
+
+// CheckInventoryResponse represents the response to inventory check
+message CheckInventoryResponse {
+  // Whether the requested quantity is available
+  bool available = 1;
+  // Current available quantity
+  int32 available_quantity = 2;
+  // Product inventory details
+  ProductInventory inventory = 3;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 4;
+}
+
+// GetInventoryRequest represents a request to get inventory details
+message GetInventoryRequest {
+  // Product ID
+  string product_id = 1;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 2;
+}
+
+// GetInventoryResponse represents the response to get inventory
+message GetInventoryResponse {
+  // Product inventory details
+  ProductInventory inventory = 1;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 2;
+}
+
+// ReserveInventoryRequest represents a request to reserve inventory
+message ReserveInventoryRequest {
+  // Product ID
+  string product_id = 1;
+  // Quantity to reserve
+  int32 quantity = 2;
+  // Order ID for the reservation
+  string order_id = 3;
+  // Customer ID
+  string customer_id = 4;
+  // Reservation expiry time (optional)
+  google.protobuf.Timestamp expires_at = 5;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 6;
+}
+
+// ReserveInventoryResponse represents the response to inventory reservation
+message ReserveInventoryResponse {
+  // Reservation details
+  InventoryReservation reservation = 1;
+  // Updated inventory
+  ProductInventory inventory = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// ReleaseInventoryRequest represents a request to release reserved inventory
+message ReleaseInventoryRequest {
+  // Reservation ID to release
+  string reservation_id = 1;
+  // Alternative: Product ID and Order ID
+  string product_id = 2;
+  // Order ID
+  string order_id = 3;
+  // Reason for release
+  string reason = 4;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 5;
+}
+
+// ReleaseInventoryResponse represents the response to inventory release
+message ReleaseInventoryResponse {
+  // Released reservation
+  InventoryReservation released_reservation = 1;
+  // Updated inventory
+  ProductInventory inventory = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// UpdateInventoryRequest represents a request to update inventory
+message UpdateInventoryRequest {
+  // Product ID
+  string product_id = 1;
+  // Quantity change (positive for addition, negative for subtraction)
+  int32 quantity_delta = 2;
+  // Update type
+  InventoryUpdateType update_type = 3;
+  // Reference ID (order ID, receipt ID, etc.)
+  string reference_id = 4;
+  // Reason for update
+  string reason = 5;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 6;
+}
+
+// UpdateInventoryResponse represents the response to inventory update
+message UpdateInventoryResponse {
+  // Updated inventory
+  ProductInventory inventory = 1;
+  // History entry for this update
+  InventoryHistoryEntry history_entry = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// ListInventoryRequest represents a request to list inventory
+message ListInventoryRequest {
+  // Product IDs to filter (empty for all products)
+  repeated string product_ids = 1;
+  // Pagination parameters
+  swit.common.v1.PaginationRequest pagination = 2;
+  // Filter by availability
+  InventoryAvailabilityFilter availability_filter = 3;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 4;
+}
+
+// ListInventoryResponse represents the response to list inventory
+message ListInventoryResponse {
+  // List of product inventories
+  repeated ProductInventory inventories = 1;
+  // Pagination information
+  swit.common.v1.PaginationResponse pagination = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// GetInventoryHistoryRequest represents a request to get inventory history
+message GetInventoryHistoryRequest {
+  // Product ID
+  string product_id = 1;
+  // Start time for history (optional)
+  google.protobuf.Timestamp start_time = 2;
+  // End time for history (optional)
+  google.protobuf.Timestamp end_time = 3;
+  // Pagination parameters
+  swit.common.v1.PaginationRequest pagination = 4;
+  // Request metadata
+  swit.common.v1.RequestMetadata metadata = 5;
+}
+
+// GetInventoryHistoryResponse represents the response to inventory history
+message GetInventoryHistoryResponse {
+  // List of history entries
+  repeated InventoryHistoryEntry entries = 1;
+  // Pagination information
+  swit.common.v1.PaginationResponse pagination = 2;
+  // Response metadata
+  swit.common.v1.ResponseMetadata metadata = 3;
+}
+
+// ProductInventory represents inventory information for a product
+message ProductInventory {
+  // Product ID
+  string product_id = 1;
+  // Total quantity available
+  int32 total_quantity = 2;
+  // Quantity currently reserved
+  int32 reserved_quantity = 3;
+  // Available quantity (total - reserved)
+  int32 available_quantity = 4;
+  // Reorder level (minimum stock level)
+  int32 reorder_level = 5;
+  // Maximum stock level
+  int32 max_stock_level = 6;
+  // Product location/warehouse
+  string location = 7;
+  // Last updated timestamp
+  google.protobuf.Timestamp last_updated = 8;
+  // Active reservations
+  repeated InventoryReservation active_reservations = 9;
+}
+
+// InventoryReservation represents a reservation of inventory
+message InventoryReservation {
+  // Reservation ID
+  string reservation_id = 1;
+  // Product ID
+  string product_id = 2;
+  // Order ID
+  string order_id = 3;
+  // Customer ID
+  string customer_id = 4;
+  // Reserved quantity
+  int32 quantity = 5;
+  // Reservation status
+  ReservationStatus status = 6;
+  // Created timestamp
+  google.protobuf.Timestamp created_at = 7;
+  // Expiry timestamp
+  google.protobuf.Timestamp expires_at = 8;
+  // Released timestamp (if released)
+  google.protobuf.Timestamp released_at = 9;
+}
+
+// InventoryHistoryEntry represents a historical change to inventory
+message InventoryHistoryEntry {
+  // Entry ID
+  string entry_id = 1;
+  // Product ID
+  string product_id = 2;
+  // Update type
+  InventoryUpdateType update_type = 3;
+  // Quantity change
+  int32 quantity_delta = 4;
+  // Quantity before change
+  int32 quantity_before = 5;
+  // Quantity after change
+  int32 quantity_after = 6;
+  // Reference ID (order ID, receipt ID, etc.)
+  string reference_id = 7;
+  // Reason for change
+  string reason = 8;
+  // User or system that made the change
+  string changed_by = 9;
+  // Change timestamp
+  google.protobuf.Timestamp changed_at = 10;
+}
+
+// InventoryUpdateType represents the type of inventory update
+enum InventoryUpdateType {
+  // Unspecified update type
+  INVENTORY_UPDATE_TYPE_UNSPECIFIED = 0;
+  // Stock received/restocked
+  INVENTORY_UPDATE_TYPE_RESTOCK = 1;
+  // Sale/order fulfillment
+  INVENTORY_UPDATE_TYPE_SALE = 2;
+  // Return/refund
+  INVENTORY_UPDATE_TYPE_RETURN = 3;
+  // Damaged goods
+  INVENTORY_UPDATE_TYPE_DAMAGE = 4;
+  // Lost inventory
+  INVENTORY_UPDATE_TYPE_LOSS = 5;
+  // Manual adjustment
+  INVENTORY_UPDATE_TYPE_ADJUSTMENT = 6;
+  // Transfer to another location
+  INVENTORY_UPDATE_TYPE_TRANSFER = 7;
+  // Reservation
+  INVENTORY_UPDATE_TYPE_RESERVATION = 8;
+  // Reservation release
+  INVENTORY_UPDATE_TYPE_RESERVATION_RELEASE = 9;
+}
+
+// ReservationStatus represents the status of a reservation
+enum ReservationStatus {
+  // Unspecified status
+  RESERVATION_STATUS_UNSPECIFIED = 0;
+  // Reservation is active
+  RESERVATION_STATUS_ACTIVE = 1;
+  // Reservation has expired
+  RESERVATION_STATUS_EXPIRED = 2;
+  // Reservation has been fulfilled
+  RESERVATION_STATUS_FULFILLED = 3;
+  // Reservation has been cancelled
+  RESERVATION_STATUS_CANCELLED = 4;
+  // Reservation has been released
+  RESERVATION_STATUS_RELEASED = 5;
+}
+
+// InventoryAvailabilityFilter represents filters for inventory availability
+enum InventoryAvailabilityFilter {
+  // No filter (all inventory)
+  INVENTORY_AVAILABILITY_FILTER_UNSPECIFIED = 0;
+  // Only in-stock items (available_quantity > 0)
+  INVENTORY_AVAILABILITY_FILTER_IN_STOCK = 1;
+  // Only out-of-stock items (available_quantity = 0)
+  INVENTORY_AVAILABILITY_FILTER_OUT_OF_STOCK = 2;
+  // Low stock items (available_quantity <= reorder_level)
+  INVENTORY_AVAILABILITY_FILTER_LOW_STOCK = 3;
+  // Overstock items (total_quantity > max_stock_level)
+  INVENTORY_AVAILABILITY_FILTER_OVERSTOCK = 4;
+}
