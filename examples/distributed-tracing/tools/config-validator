@@ -887,10 +887,9 @@ main() {
     
     # 如果没有指定文件，自动发现
     if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
-        mapfile -t discovered_files < <(discover_config_files)
-        for file_info in "${discovered_files[@]}"; do
+        while IFS= read -r file_info; do
             CONFIG_FILES+=("${file_info%:*}")
-        done
+        done < <(discover_config_files)
     fi
     
     if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
