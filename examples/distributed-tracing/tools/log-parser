@@ -1,0 +1,844 @@
+#!/bin/bash
+
+# 日志分析工具
+# Copyright (c) 2024 SWIT Framework Authors
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# 日志函数
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_header() {
+    echo -e "${PURPLE}[LOG-PARSER]${NC} $1"
+}
+
+# 显示欢迎信息
+show_welcome() {
+    echo "======================================================================"
+    echo -e "${BLUE}📋 SWIT 框架分布式追踪日志分析工具${NC}"
+    echo "======================================================================"
+    echo -e "${YELLOW}本工具用于分析分布式追踪系统的日志：${NC}"
+    echo "  🔍 多服务日志聚合分析"
+    echo "  📊 错误模式识别和统计"
+    echo "  ⏱️  性能指标提取"
+    echo "  🎯 追踪ID关联分析"
+    echo "  📈 趋势分析和报告生成"
+    echo
+}
+
+# 显示使用说明
+show_usage() {
+    echo "Usage: $0 [options] [log-files...]"
+    echo
+    echo "Options:"
+    echo "  -h, --help                  显示帮助信息"
+    echo "  -s, --source=TYPE           日志源类型 (默认: auto)"
+    echo "                              可选: docker, file, journald, auto"
+    echo "  -f, --filter=PATTERN        日志过滤模式 (支持正则表达式)"
+    echo "  -l, --level=LEVEL           日志级别过滤 (默认: all)"
+    echo "                              可选: debug, info, warn, error, fatal, all"
+    echo "  -t, --time-range=RANGE      时间范围 (默认: 1h)"
+    echo "                              格式: 1h, 30m, 2d, '2024-01-01 12:00' '2024-01-01 18:00'"
+    echo "  --service=NAME              特定服务日志 (可多次使用)"
+    echo "  --trace-id=ID               特定追踪ID的相关日志"
+    echo "  --follow                    实时跟踪日志输出"
+    echo "  --output=FORMAT             输出格式 (默认: text)"
+    echo "                              可选: text, json, csv, html"
+    echo "  --output-file=FILE          输出到文件"
+    echo "  --analyze                   执行深度分析"
+    echo "  --stats                     显示统计信息"
+    echo "  --errors-only               只显示错误日志"
+    echo "  --performance               提取性能相关日志"
+    echo "  --highlight=PATTERN         高亮显示匹配的模式"
+    echo "  --context=N                 显示匹配行的前后N行上下文"
+    echo "  --max-lines=N               最大显示行数 (默认: 1000)"
+    echo "  --verbose                   详细输出"
+    echo "  --quiet                     静默模式"
+    echo
+    echo "Log Sources:"
+    echo "  docker        Docker 容器日志"
+    echo "  file          本地日志文件"
+    echo "  journald      系统 journald 日志"
+    echo "  auto          自动检测日志源"
+    echo
+    echo "Time Range Examples:"
+    echo "  1h, 30m, 2d                    相对时间"
+    echo "  '2024-01-01 12:00'             绝对时间点"
+    echo "  '2024-01-01' '2024-01-02'      时间区间"
+    echo
+    echo "Examples:"
+    echo "  $0                                       # 分析最近1小时的所有日志"
+    echo "  $0 --service=order-service --errors-only  # 只看订单服务的错误"
+    echo "  $0 --trace-id=abc123 --analyze           # 分析特定追踪的完整链路"
+    echo "  $0 --follow --highlight='ERROR|WARN'     # 实时跟踪并高亮错误"
+    echo "  $0 -t 2h --performance --output=json    # 2小时性能数据JSON格式"
+    echo "  $0 /var/log/app.log --stats              # 分析指定文件的统计信息"
+}
+
+# 检查依赖工具
+check_dependencies() {
+    local missing_tools=()
+    local optional_missing=()
+    
+    # 基础工具
+    for tool in jq bc; do
+        if ! command -v $tool &> /dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+    
+    # 日志相关工具
+    if ! command -v docker &> /dev/null; then
+        optional_missing+=("docker")
+    fi
+    
+    if ! command -v journalctl &> /dev/null; then
+        optional_missing+=("journalctl")
+    fi
+    
+    # 文本处理工具
+    for tool in awk sed grep; do
+        if ! command -v $tool &> /dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+    
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        log_error "缺少必需工具: ${missing_tools[*]}"
+        echo "安装方法："
+        echo "  macOS: brew install jq bc"
+        echo "  Ubuntu: sudo apt-get install jq bc"
+        exit 1
+    fi
+    
+    if [ ${#optional_missing[@]} -gt 0 ] && [ "$VERBOSE" = "true" ]; then
+        log_warning "缺少可选工具: ${optional_missing[*]}"
+        log_info "某些日志源可能不可用"
+    fi
+}
+
+# 检测日志源
+detect_log_sources() {
+    log_header "检测可用日志源"
+    
+    local sources=()
+    
+    # 检查 Docker 容器日志
+    if command -v docker &> /dev/null && docker info >/dev/null 2>&1; then
+        local container_count
+        container_count=$(docker ps --filter "name=order-service\|payment-service\|inventory-service\|jaeger" --format "{{.Names}}" | wc -l)
+        if [ "$container_count" -gt 0 ]; then
+            sources+=("docker:$container_count 个相关容器")
+            log_success "发现 Docker 容器日志 ($container_count 个容器)"
+        fi
+    fi
+    
+    # 检查本地日志文件
+    local log_files=()
+    for pattern in "/var/log/*.log" "/tmp/*.log" "$PROJECT_ROOT/logs/*.log"; do
+        for file in $pattern; do
+            if [ -f "$file" ] && [ -r "$file" ]; then
+                log_files+=("$file")
+            fi
+        done
+    done
+    
+    if [ ${#log_files[@]} -gt 0 ]; then
+        sources+=("file:${#log_files[@]} 个日志文件")
+        log_success "发现本地日志文件 (${#log_files[@]} 个文件)"
+    fi
+    
+    # 检查 journald
+    if command -v journalctl &> /dev/null; then
+        sources+=("journald:系统日志")
+        log_success "发现 systemd journal 日志"
+    fi
+    
+    if [ ${#sources[@]} -eq 0 ]; then
+        log_warning "未发现任何日志源"
+        return 1
+    fi
+    
+    printf '%s\n' "${sources[@]}"
+}
+
+# 解析时间范围
+parse_time_range() {
+    local time_input="$1"
+    local current_timestamp=$(date +%s)
+    
+    # 相对时间格式 (1h, 30m, 2d)
+    if [[ $time_input =~ ^([0-9]+)([hmsd])$ ]]; then
+        local value="${BASH_REMATCH[1]}"
+        local unit="${BASH_REMATCH[2]}"
+        local seconds=0
+        
+        case $unit in
+            s) seconds=$value ;;
+            m) seconds=$((value * 60)) ;;
+            h) seconds=$((value * 3600)) ;;
+            d) seconds=$((value * 86400)) ;;
+        esac
+        
+        local start_time=$((current_timestamp - seconds))
+        echo "$start_time $current_timestamp"
+        return 0
+    fi
+    
+    # 绝对时间格式
+    if [[ $time_input =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+        local timestamp
+        timestamp=$(date -d "$time_input" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M" "$time_input" +%s 2>/dev/null)
+        if [ $? -eq 0 ]; then
+            echo "$timestamp $current_timestamp"
+            return 0
+        fi
+    fi
+    
+    log_error "无法解析时间格式: $time_input"
+    return 1
+}
+
+# 从 Docker 获取日志
+get_docker_logs() {
+    local service="$1"
+    local since="$2"
+    local until="$3"
+    
+    local container_names
+    if [ -n "$service" ]; then
+        container_names=$(docker ps --filter "name=$service" --format "{{.Names}}" 2>/dev/null)
+    else
+        container_names=$(docker ps --filter "name=order-service\|payment-service\|inventory-service\|jaeger" --format "{{.Names}}" 2>/dev/null)
+    fi
+    
+    if [ -z "$container_names" ]; then
+        log_warning "未找到匹配的 Docker 容器"
+        return 1
+    fi
+    
+    local docker_args=""
+    if [ -n "$since" ]; then
+        docker_args="$docker_args --since $(date -d @$since '+%Y-%m-%dT%H:%M:%S')"
+    fi
+    if [ -n "$until" ]; then
+        docker_args="$docker_args --until $(date -d @$until '+%Y-%m-%dT%H:%M:%S')"
+    fi
+    
+    echo "$container_names" | while IFS= read -r container; do
+        log_info "获取容器日志: $container"
+        eval "docker logs $docker_args $container 2>&1" | sed "s/^/[$container] /"
+    done
+}
+
+# 从文件获取日志
+get_file_logs() {
+    local files="$1"
+    local since="$2"
+    local until="$3"
+    
+    if [ -z "$files" ]; then
+        # 自动发现日志文件
+        files=$(find /var/log "$PROJECT_ROOT" -name "*.log" -type f -readable 2>/dev/null | head -10)
+    fi
+    
+    if [ -z "$files" ]; then
+        log_warning "未找到日志文件"
+        return 1
+    fi
+    
+    echo "$files" | while IFS= read -r file; do
+        if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+            log_warning "无法读取文件: $file"
+            continue
+        fi
+        
+        log_info "分析日志文件: $file"
+        
+        # 简单的时间过滤 (基于行内容中的时间戳)
+        local awk_filter='1'
+        if [ -n "$since" ]; then
+            local since_date
+            since_date=$(date -d "@$since" '+%Y-%m-%d %H:%M:%S')
+            awk_filter="/$since_date/,\$0"
+        fi
+        
+        awk "$awk_filter" "$file" | sed "s/^/[$(basename "$file")] /"
+    done
+}
+
+# 从 journald 获取日志
+get_journald_logs() {
+    local service="$1"
+    local since="$2"
+    local until="$3"
+    
+    local journal_args=()
+    
+    if [ -n "$service" ]; then
+        journal_args+=("--unit=$service")
+    fi
+    
+    if [ -n "$since" ]; then
+        journal_args+=("--since=$(date -d @$since '+%Y-%m-%d %H:%M:%S')")
+    fi
+    
+    if [ -n "$until" ]; then
+        journal_args+=("--until=$(date -d @$until '+%Y-%m-%d %H:%M:%S')")
+    fi
+    
+    journalctl "${journal_args[@]}" --no-pager 2>/dev/null || {
+        log_warning "无法访问 journald 日志"
+        return 1
+    }
+}
+
+# 过滤日志级别
+filter_log_level() {
+    local level="$1"
+    
+    case "$level" in
+        "debug") grep -iE "(DEBUG|DBG)" ;;
+        "info") grep -iE "(INFO|INF)" ;;
+        "warn") grep -iE "(WARN|WARNING)" ;;
+        "error") grep -iE "(ERROR|ERR|FATAL|CRITICAL)" ;;
+        "fatal") grep -iE "(FATAL|CRITICAL)" ;;
+        "all"|*) cat ;;
+    esac
+}
+
+# 应用过滤器
+apply_filters() {
+    local logs="$1"
+    
+    # 应用级别过滤
+    if [ "$LOG_LEVEL" != "all" ]; then
+        logs=$(echo "$logs" | filter_log_level "$LOG_LEVEL")
+    fi
+    
+    # 应用模式过滤
+    if [ -n "$FILTER_PATTERN" ]; then
+        logs=$(echo "$logs" | grep -E "$FILTER_PATTERN")
+    fi
+    
+    # 只显示错误
+    if [ "$ERRORS_ONLY" = "true" ]; then
+        logs=$(echo "$logs" | filter_log_level "error")
+    fi
+    
+    # 性能相关日志
+    if [ "$PERFORMANCE" = "true" ]; then
+        logs=$(echo "$logs" | grep -iE "(duration|latency|response_time|ms|sec|slow|timeout|performance)")
+    fi
+    
+    # 追踪ID过滤
+    if [ -n "$TRACE_ID" ]; then
+        logs=$(echo "$logs" | grep -i "$TRACE_ID")
+    fi
+    
+    # 限制行数
+    if [ -n "$MAX_LINES" ] && [ "$MAX_LINES" -gt 0 ]; then
+        logs=$(echo "$logs" | head -n "$MAX_LINES")
+    fi
+    
+    echo "$logs"
+}
+
+# 高亮显示
+highlight_output() {
+    local logs="$1"
+    local pattern="$2"
+    
+    if [ -z "$pattern" ]; then
+        echo "$logs"
+        return 0
+    fi
+    
+    # 使用颜色高亮匹配的模式
+    echo "$logs" | sed -E "s/($pattern)/${RED}\1${NC}/gi"
+}
+
+# 添加上下文行
+add_context() {
+    local logs="$1"
+    local context_lines="$2"
+    
+    if [ -z "$context_lines" ] || [ "$context_lines" -eq 0 ]; then
+        echo "$logs"
+        return 0
+    fi
+    
+    # 这是一个简化的上下文实现
+    # 实际应用中需要更复杂的逻辑来处理多文件日志
+    echo "$logs"
+}
+
+# 统计分析
+analyze_logs() {
+    local logs="$1"
+    
+    log_header "日志分析统计"
+    
+    local total_lines
+    total_lines=$(echo "$logs" | wc -l)
+    
+    echo "📊 总览统计:"
+    echo "  总日志行数: $total_lines"
+    
+    # 日志级别统计
+    local debug_count info_count warn_count error_count
+    debug_count=$(echo "$logs" | grep -icE "(DEBUG|DBG)" || echo "0")
+    info_count=$(echo "$logs" | grep -icE "(INFO|INF)" || echo "0")
+    warn_count=$(echo "$logs" | grep -icE "(WARN|WARNING)" || echo "0")
+    error_count=$(echo "$logs" | grep -icE "(ERROR|ERR|FATAL|CRITICAL)" || echo "0")
+    
+    echo
+    echo "📈 日志级别分布:"
+    echo "  DEBUG: $debug_count"
+    echo "  INFO:  $info_count"
+    echo "  WARN:  $warn_count"
+    echo "  ERROR: $error_count"
+    
+    # 服务统计 
+    echo
+    echo "🏷️  服务分布:"
+    echo "$logs" | grep -oE '\[(.*?)\]' | sort | uniq -c | sort -nr | head -10 | while read count service; do
+        printf "  %-20s: %s\n" "$service" "$count"
+    done
+    
+    # 错误模式分析
+    if [ "$error_count" -gt 0 ]; then
+        echo
+        echo "❌ 常见错误模式:"
+        echo "$logs" | grep -iE "(ERROR|ERR|FATAL|CRITICAL)" | \
+            sed -E 's/.*[Ee]rror[^:]*:?[[:space:]]*(.*)/\1/' | \
+            sed -E 's/[0-9]+//g' | \
+            sort | uniq -c | sort -nr | head -5 | \
+            while read count pattern; do
+                printf "  %-50s: %s次\n" "${pattern:0:47}..." "$count"
+            done
+    fi
+    
+    # 性能指标提取
+    echo
+    echo "⏱️  性能指标:"
+    local duration_logs
+    duration_logs=$(echo "$logs" | grep -iE "(duration|latency|response_time|took|elapsed)")
+    
+    if [ -n "$duration_logs" ]; then
+        local durations
+        durations=$(echo "$duration_logs" | grep -oE '[0-9]+\.?[0-9]*\s*(ms|sec|s)' | head -20)
+        
+        if [ -n "$durations" ]; then
+            echo "  检测到的响应时间样本:"
+            echo "$durations" | head -10 | sed 's/^/    /'
+        fi
+    else
+        echo "  未检测到性能相关日志"
+    fi
+    
+    # 追踪ID分析
+    echo
+    echo "🔍 追踪ID分析:"
+    local trace_ids
+    trace_ids=$(echo "$logs" | grep -oE 'trace[_-]?id[=:]?\s*[a-fA-F0-9-]{8,}' | head -10)
+    
+    if [ -n "$trace_ids" ]; then
+        local unique_traces
+        unique_traces=$(echo "$trace_ids" | sort | uniq | wc -l)
+        echo "  检测到 $unique_traces 个不同的追踪ID"
+        echo "  样本追踪ID:"
+        echo "$trace_ids" | head -5 | sed 's/^/    /'
+    else
+        echo "  未检测到追踪ID"
+    fi
+}
+
+# 生成报告
+generate_report() {
+    local logs="$1"
+    local format="$2"
+    
+    case "$format" in
+        "json")
+            generate_json_report "$logs"
+            ;;
+        "csv")
+            generate_csv_report "$logs"
+            ;;
+        "html")
+            generate_html_report "$logs"
+            ;;
+        "text"|*)
+            echo "$logs"
+            ;;
+    esac
+}
+
+# 生成 JSON 报告
+generate_json_report() {
+    local logs="$1"
+    
+    local total_lines debug_count info_count warn_count error_count
+    total_lines=$(echo "$logs" | wc -l)
+    debug_count=$(echo "$logs" | grep -icE "(DEBUG|DBG)" || echo "0")
+    info_count=$(echo "$logs" | grep -icE "(INFO|INF)" || echo "0")
+    warn_count=$(echo "$logs" | grep -icE "(WARN|WARNING)" || echo "0")
+    error_count=$(echo "$logs" | grep -icE "(ERROR|ERR|FATAL|CRITICAL)" || echo "0")
+    
+    cat << EOF
+{
+    "generated_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+    "analysis_params": {
+        "time_range": "$TIME_RANGE",
+        "log_level": "$LOG_LEVEL",
+        "source": "$LOG_SOURCE",
+        "services": $(printf '%s\n' "${SERVICES[@]}" | jq -R . | jq -s .),
+        "trace_id": "$TRACE_ID"
+    },
+    "statistics": {
+        "total_lines": $total_lines,
+        "by_level": {
+            "debug": $debug_count,
+            "info": $info_count,
+            "warn": $warn_count,
+            "error": $error_count
+        }
+    },
+    "sample_logs": $(echo "$logs" | head -50 | jq -R . | jq -s .)
+}
+EOF
+}
+
+# 生成 CSV 报告
+generate_csv_report() {
+    local logs="$1"
+    
+    echo "timestamp,level,service,message"
+    echo "$logs" | while IFS= read -r line; do
+        # 简化的 CSV 输出，实际需要更复杂的解析
+        local timestamp="$(date)"
+        local level="INFO"
+        local service="unknown"
+        local message="$line"
+        
+        # 尝试提取信息
+        if [[ $line =~ \[([^\]]+)\] ]]; then
+            service="${BASH_REMATCH[1]}"
+        fi
+        
+        if [[ $line =~ (DEBUG|INFO|WARN|ERROR|FATAL) ]]; then
+            level="${BASH_REMATCH[1]}"
+        fi
+        
+        echo "\"$timestamp\",\"$level\",\"$service\",\"$message\""
+    done | head -1000
+}
+
+# 生成 HTML 报告
+generate_html_report() {
+    local logs="$1"
+    
+    cat << EOF
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>日志分析报告</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 20px; }
+        .log-line { margin: 2px 0; padding: 2px 5px; border-radius: 3px; }
+        .debug { color: #888; }
+        .info { color: #4a90e2; }
+        .warn { color: #f5a623; background: rgba(245, 166, 35, 0.1); }
+        .error { color: #d0021b; background: rgba(208, 2, 27, 0.1); }
+        .highlight { background: yellow; color: black; }
+        .header { color: #50e3c2; font-size: 1.2em; margin: 20px 0 10px 0; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+    <div class="header">📋 日志分析报告</div>
+    <div>生成时间: $(date)</div>
+    <div>分析范围: $TIME_RANGE</div>
+    <div class="header">日志内容:</div>
+    <pre>$(echo "$logs" | sed -E 's/(DEBUG|DBG)/<span class="debug">\1<\/span>/gi' | \
+                              sed -E 's/(INFO|INF)/<span class="info">\1<\/span>/gi' | \
+                              sed -E 's/(WARN|WARNING)/<span class="warn">\1<\/span>/gi' | \
+                              sed -E 's/(ERROR|ERR|FATAL|CRITICAL)/<span class="error">\1<\/span>/gi')</pre>
+</body>
+</html>
+EOF
+}
+
+# 主函数
+main() {
+    # 默认参数
+    LOG_SOURCE="auto"
+    FILTER_PATTERN=""
+    LOG_LEVEL="all"
+    TIME_RANGE="1h"
+    SERVICES=()
+    TRACE_ID=""
+    FOLLOW="false"
+    OUTPUT_FORMAT="text"
+    OUTPUT_FILE=""
+    ANALYZE="false"
+    STATS="false"
+    ERRORS_ONLY="false"
+    PERFORMANCE="false"
+    HIGHLIGHT_PATTERN=""
+    CONTEXT_LINES=""
+    MAX_LINES="1000"
+    VERBOSE="false"
+    QUIET="false"
+    LOG_FILES=()
+    
+    # 解析命令行参数
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            -s|--source)
+                LOG_SOURCE="$2"
+                shift 2
+                ;;
+            --source=*)
+                LOG_SOURCE="${1#*=}"
+                shift
+                ;;
+            -f|--filter)
+                FILTER_PATTERN="$2"
+                shift 2
+                ;;
+            --filter=*)
+                FILTER_PATTERN="${1#*=}"
+                shift
+                ;;
+            -l|--level)
+                LOG_LEVEL="$2"
+                shift 2
+                ;;
+            --level=*)
+                LOG_LEVEL="${1#*=}"
+                shift
+                ;;
+            -t|--time-range)
+                TIME_RANGE="$2"
+                shift 2
+                ;;
+            --time-range=*)
+                TIME_RANGE="${1#*=}"
+                shift
+                ;;
+            --service=*)
+                SERVICES+=("${1#*=}")
+                shift
+                ;;
+            --trace-id=*)
+                TRACE_ID="${1#*=}"
+                shift
+                ;;
+            --follow)
+                FOLLOW="true"
+                shift
+                ;;
+            --output=*)
+                OUTPUT_FORMAT="${1#*=}"
+                shift
+                ;;
+            --output-file=*)
+                OUTPUT_FILE="${1#*=}"
+                shift
+                ;;
+            --analyze)
+                ANALYZE="true"
+                shift
+                ;;
+            --stats)
+                STATS="true"
+                shift
+                ;;
+            --errors-only)
+                ERRORS_ONLY="true"
+                shift
+                ;;
+            --performance)
+                PERFORMANCE="true"
+                shift
+                ;;
+            --highlight=*)
+                HIGHLIGHT_PATTERN="${1#*=}"
+                shift
+                ;;
+            --context=*)
+                CONTEXT_LINES="${1#*=}"
+                shift
+                ;;
+            --max-lines=*)
+                MAX_LINES="${1#*=}"
+                shift
+                ;;
+            --verbose)
+                VERBOSE="true"
+                shift
+                ;;
+            --quiet)
+                QUIET="true"
+                shift
+                ;;
+            *)
+                # 作为日志文件处理
+                if [ -f "$1" ]; then
+                    LOG_FILES+=("$1")
+                else
+                    log_error "未知选项或文件不存在: $1"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    if [ "$QUIET" != "true" ]; then
+        show_welcome
+    fi
+    
+    check_dependencies
+    
+    # 如果设置了跟踪模式
+    if [ "$FOLLOW" = "true" ]; then
+        log_info "实时跟踪模式 (按 Ctrl+C 停止)"
+        
+        case "$LOG_SOURCE" in
+            "docker")
+                docker logs -f $(docker ps --filter "name=order-service\|payment-service\|inventory-service\|jaeger" --format "{{.Names}}" | head -1) 2>&1
+                ;;
+            *)
+                tail -f "${LOG_FILES[0]:-/var/log/syslog}" 2>/dev/null || {
+                    log_error "无法跟踪日志文件"
+                    exit 1
+                }
+                ;;
+        esac
+        exit 0
+    fi
+    
+    # 解析时间范围
+    local start_time end_time
+    if [[ "$TIME_RANGE" =~ ^[0-9]+[hmsd]$ ]]; then
+        local time_result
+        time_result=$(parse_time_range "$TIME_RANGE")
+        read start_time end_time <<< "$time_result"
+    else
+        start_time=""
+        end_time=""
+    fi
+    
+    if [ "$VERBOSE" = "true" ]; then
+        if [ -n "$start_time" ]; then
+            log_info "时间范围: $(date -d @$start_time) - $(date -d @$end_time)"
+        fi
+    fi
+    
+    # 获取日志数据
+    local all_logs=""
+    
+    if [ ${#LOG_FILES[@]} -gt 0 ]; then
+        # 使用指定的文件
+        LOG_SOURCE="file"
+        all_logs=$(get_file_logs "$(printf '%s\n' "${LOG_FILES[@]}")" "$start_time" "$end_time")
+    else
+        case "$LOG_SOURCE" in
+            "docker")
+                all_logs=$(get_docker_logs "" "$start_time" "$end_time")
+                ;;
+            "file")
+                all_logs=$(get_file_logs "" "$start_time" "$end_time")
+                ;;
+            "journald")
+                all_logs=$(get_journald_logs "" "$start_time" "$end_time")
+                ;;
+            "auto")
+                # 尝试各种日志源
+                all_logs=$(get_docker_logs "" "$start_time" "$end_time" 2>/dev/null)
+                if [ -z "$all_logs" ]; then
+                    all_logs=$(get_file_logs "" "$start_time" "$end_time" 2>/dev/null)
+                fi
+                if [ -z "$all_logs" ]; then
+                    all_logs=$(get_journald_logs "" "$start_time" "$end_time" 2>/dev/null)
+                fi
+                ;;
+        esac
+    fi
+    
+    if [ -z "$all_logs" ]; then
+        log_error "未获取到任何日志数据"
+        exit 1
+    fi
+    
+    # 应用过滤器
+    local filtered_logs
+    filtered_logs=$(apply_filters "$all_logs")
+    
+    # 添加上下文
+    filtered_logs=$(add_context "$filtered_logs" "$CONTEXT_LINES")
+    
+    # 高亮显示
+    filtered_logs=$(highlight_output "$filtered_logs" "$HIGHLIGHT_PATTERN")
+    
+    # 显示统计信息
+    if [ "$STATS" = "true" ] || [ "$ANALYZE" = "true" ]; then
+        analyze_logs "$filtered_logs"
+        echo
+    fi
+    
+    # 生成最终输出
+    local final_output
+    final_output=$(generate_report "$filtered_logs" "$OUTPUT_FORMAT")
+    
+    # 输出结果
+    if [ -n "$OUTPUT_FILE" ]; then
+        echo "$final_output" > "$OUTPUT_FILE"
+        log_info "结果已保存到: $OUTPUT_FILE"
+    else
+        echo "$final_output"
+    fi
+    
+    if [ "$QUIET" != "true" ]; then
+        local line_count
+        line_count=$(echo "$filtered_logs" | wc -l)
+        log_success "日志分析完成，共分析 $line_count 行日志"
+    fi
+}
+
+# 执行主函数
+main "$@"
