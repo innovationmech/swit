@@ -11,6 +11,7 @@ bin/
 prompt/
 .cursor/
 .claude/
+.mcp.json
 
 # Protobuf 生成文件
 api/gen/
