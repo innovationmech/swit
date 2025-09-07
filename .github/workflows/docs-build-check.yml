@@ -283,7 +283,7 @@ jobs:
       pull-requests: write
     steps:
       - name: 💬 Update PR comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const lintSuccess = '${{ needs.lint-check.outputs.lint-success }}' === 'true';
