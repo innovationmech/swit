@@ -21,9 +21,66 @@
 package messaging
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
+
+// Duration is a custom type that can unmarshal duration strings from JSON/YAML
+type Duration time.Duration
+
+// UnmarshalYAML implements yaml.Unmarshaler
+func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return err
+	}
+	parsed, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(parsed)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	parsed, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(parsed)
+	return nil
+}
+
+// MarshalYAML implements yaml.Marshaler
+func (d Duration) MarshalYAML() (interface{}, error) {
+	return time.Duration(d).String(), nil
+}
+
+// MarshalJSON implements json.Marshaler
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+// String returns the string representation
+func (d Duration) String() string {
+	return time.Duration(d).String()
+}
+
+// ToDuration converts to time.Duration
+func (d Duration) ToDuration() time.Duration {
+	return time.Duration(d)
+}
 
 // BrokerConfig defines the configuration for a message broker connection.
 type BrokerConfig struct {
@@ -556,3 +613,416 @@ const (
 	// OffsetLatest starts from the latest message
 	OffsetLatest OffsetPosition = "latest"
 )
+
+// ConfigManager provides hierarchical configuration management with validation
+type ConfigManager struct {
+	validator *ConfigValidator
+	profile   string
+	basePath  string
+}
+
+// NewConfigManager creates a new configuration manager
+func NewConfigManager(profile string) *ConfigManager {
+	validator := NewConfigValidator()
+
+	// Load built-in profiles
+	for _, profile := range GetBuiltinProfiles() {
+		validator.AddProfile(profile)
+	}
+
+	return &ConfigManager{
+		validator: validator,
+		profile:   profile,
+		basePath:  ".",
+	}
+}
+
+// SetBasePath sets the base path for configuration file searches
+func (cm *ConfigManager) SetBasePath(path string) {
+	cm.basePath = path
+}
+
+// LoadBrokerConfig loads and validates broker configuration from various sources
+func (cm *ConfigManager) LoadBrokerConfig(filename string) (*BrokerConfig, error) {
+	config := &BrokerConfig{}
+
+	// Set defaults
+	config.SetDefaults()
+
+	// Load from file if specified
+	if filename != "" {
+		if err := cm.loadFromFile(config, filename); err != nil {
+			return nil, fmt.Errorf("failed to load config from file: %w", err)
+		}
+	}
+
+	// Apply environment variable overrides
+	if err := ApplyEnvironmentOverrides(config, "MESSAGING"); err != nil {
+		return nil, fmt.Errorf("failed to apply environment overrides: %w", err)
+	}
+
+	// Validate with profile
+	ctx := ValidationContext{
+		Profile:     cm.profile,
+		Environment: make(map[string]string),
+		Strict:      false,
+	}
+
+	if err := cm.validator.ValidateWithProfile(config, cm.profile, ctx); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	}
+
+	return config, nil
+}
+
+// LoadPublisherConfig loads and validates publisher configuration
+func (cm *ConfigManager) LoadPublisherConfig(filename string) (*PublisherConfig, error) {
+	config := &PublisherConfig{}
+
+	// Set defaults
+	setPublisherDefaults(config)
+
+	// Load from file if specified
+	if filename != "" {
+		if err := cm.loadFromFile(config, filename); err != nil {
+			return nil, fmt.Errorf("failed to load publisher config from file: %w", err)
+		}
+	}
+
+	// Apply environment variable overrides
+	if err := ApplyEnvironmentOverrides(config, "MESSAGING_PUBLISHER"); err != nil {
+		return nil, fmt.Errorf("failed to apply environment overrides: %w", err)
+	}
+
+	// Validate configuration
+	if err := cm.validatePublisherConfig(config); err != nil {
+		return nil, fmt.Errorf("publisher configuration validation failed: %w", err)
+	}
+
+	return config, nil
+}
+
+// LoadSubscriberConfig loads and validates subscriber configuration
+func (cm *ConfigManager) LoadSubscriberConfig(filename string) (*SubscriberConfig, error) {
+	config := &SubscriberConfig{}
+
+	// Set defaults
+	setSubscriberDefaults(config)
+
+	// Load from file if specified
+	if filename != "" {
+		if err := cm.loadFromFile(config, filename); err != nil {
+			return nil, fmt.Errorf("failed to load subscriber config from file: %w", err)
+		}
+	}
+
+	// Apply environment variable overrides
+	if err := ApplyEnvironmentOverrides(config, "MESSAGING_SUBSCRIBER"); err != nil {
+		return nil, fmt.Errorf("failed to apply environment overrides: %w", err)
+	}
+
+	// Validate configuration
+	if err := cm.validateSubscriberConfig(config); err != nil {
+		return nil, fmt.Errorf("subscriber configuration validation failed: %w", err)
+	}
+
+	return config, nil
+}
+
+// loadFromFile loads configuration from a YAML or JSON file
+func (cm *ConfigManager) loadFromFile(config interface{}, filename string) error {
+	// Resolve file path
+	filePath := filename
+	if !filepath.IsAbs(filename) {
+		filePath = filepath.Join(cm.basePath, filename)
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("configuration file not found: %s", filePath)
+	}
+
+	// Read file
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read configuration file: %w", err)
+	}
+
+	// Determine file format and unmarshal
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, config); err != nil {
+			return fmt.Errorf("failed to unmarshal YAML configuration: %w", err)
+		}
+	case ".json":
+		if err := json.Unmarshal(data, config); err != nil {
+			return fmt.Errorf("failed to unmarshal JSON configuration: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported configuration file format: %s", ext)
+	}
+
+	return nil
+}
+
+// setPublisherDefaults sets default values for publisher configuration
+func setPublisherDefaults(config *PublisherConfig) {
+	if config.Routing.Strategy == "" {
+		config.Routing.Strategy = "round_robin"
+	}
+
+	config.Batching.Enabled = true
+	if config.Batching.MaxMessages == 0 {
+		config.Batching.MaxMessages = 100
+	}
+	if config.Batching.MaxBytes == 0 {
+		config.Batching.MaxBytes = 1048576 // 1MB
+	}
+	if config.Batching.FlushInterval == 0 {
+		config.Batching.FlushInterval = 100 * time.Millisecond
+	}
+
+	if config.Confirmation.Timeout == 0 {
+		config.Confirmation.Timeout = 5 * time.Second
+	}
+	if config.Confirmation.Retries == 0 {
+		config.Confirmation.Retries = 3
+	}
+
+	if config.Timeout.Publish == 0 {
+		config.Timeout.Publish = 30 * time.Second
+	}
+	if config.Timeout.Flush == 0 {
+		config.Timeout.Flush = 30 * time.Second
+	}
+	if config.Timeout.Close == 0 {
+		config.Timeout.Close = 30 * time.Second
+	}
+
+	config.Retry.SetDefaults()
+}
+
+// setSubscriberDefaults sets default values for subscriber configuration
+func setSubscriberDefaults(config *SubscriberConfig) {
+	if config.Type == "" {
+		config.Type = SubscriptionShared
+	}
+	if config.Concurrency == 0 {
+		config.Concurrency = 1
+	}
+	if config.PrefetchCount == 0 {
+		config.PrefetchCount = 10
+	}
+
+	if config.Processing.MaxProcessingTime == 0 {
+		config.Processing.MaxProcessingTime = 30 * time.Second
+	}
+	if config.Processing.AckMode == "" {
+		config.Processing.AckMode = AckModeAuto
+	}
+	if config.Processing.MaxInFlight == 0 {
+		config.Processing.MaxInFlight = 100
+	}
+
+	config.DeadLetter.Enabled = true
+	if config.DeadLetter.MaxRetries == 0 {
+		config.DeadLetter.MaxRetries = 3
+	}
+	if config.DeadLetter.TTL == 0 {
+		config.DeadLetter.TTL = 168 * time.Hour // 7 days
+	}
+
+	if config.Offset.Initial == "" {
+		config.Offset.Initial = OffsetLatest
+	}
+	config.Offset.AutoCommit = true
+	if config.Offset.Interval == 0 {
+		config.Offset.Interval = 5 * time.Second
+	}
+
+	config.Retry.SetDefaults()
+}
+
+// validatePublisherConfig validates publisher configuration
+func (cm *ConfigManager) validatePublisherConfig(config *PublisherConfig) error {
+	if config.Topic == "" {
+		return NewConfigError("publisher topic is required", nil)
+	}
+
+	validStrategies := []string{"round_robin", "hash", "random"}
+	strategyValid := false
+	for _, strategy := range validStrategies {
+		if config.Routing.Strategy == strategy {
+			strategyValid = true
+			break
+		}
+	}
+	if !strategyValid {
+		return NewConfigError(fmt.Sprintf("invalid routing strategy: %s, must be one of: %s",
+			config.Routing.Strategy, strings.Join(validStrategies, ", ")), nil)
+	}
+
+	if config.Batching.Enabled {
+		if config.Batching.MaxMessages <= 0 {
+			return NewConfigError("batch max_messages must be positive when batching is enabled", nil)
+		}
+		if config.Batching.MaxBytes <= 0 {
+			return NewConfigError("batch max_bytes must be positive when batching is enabled", nil)
+		}
+		if config.Batching.FlushInterval <= 0 {
+			return NewConfigError("batch flush_interval must be positive when batching is enabled", nil)
+		}
+	}
+
+	return nil
+}
+
+// validateSubscriberConfig validates subscriber configuration
+func (cm *ConfigManager) validateSubscriberConfig(config *SubscriberConfig) error {
+	if len(config.Topics) == 0 {
+		return NewConfigError("subscriber topics are required", nil)
+	}
+
+	if config.ConsumerGroup == "" {
+		return NewConfigError("subscriber consumer_group is required", nil)
+	}
+
+	validTypes := []SubscriptionType{SubscriptionShared, SubscriptionExclusive, SubscriptionFailover}
+	typeValid := false
+	for _, validType := range validTypes {
+		if config.Type == validType {
+			typeValid = true
+			break
+		}
+	}
+	if !typeValid {
+		return NewConfigError(fmt.Sprintf("invalid subscription type: %s", config.Type), nil)
+	}
+
+	if config.Concurrency <= 0 {
+		return NewConfigError("subscriber concurrency must be positive", nil)
+	}
+
+	if config.PrefetchCount <= 0 {
+		return NewConfigError("subscriber prefetch_count must be positive", nil)
+	}
+
+	return nil
+}
+
+// LoadProfilesFromFile loads configuration profiles from a file
+func (cm *ConfigManager) LoadProfilesFromFile(filename string) error {
+	return cm.validator.LoadProfilesFromFile(filename)
+}
+
+// GetValidator returns the underlying configuration validator
+func (cm *ConfigManager) GetValidator() *ConfigValidator {
+	return cm.validator
+}
+
+// MergeConfigs merges multiple configurations with the second one taking precedence
+func MergeConfigs(base, override *BrokerConfig) (*BrokerConfig, error) {
+	if base == nil {
+		return override, nil
+	}
+	if override == nil {
+		return base, nil
+	}
+
+	// Create a deep copy of the base configuration
+	result := &BrokerConfig{}
+	*result = *base
+
+	// Override with non-zero values from override config
+	if override.Type != "" {
+		result.Type = override.Type
+	}
+	if len(override.Endpoints) > 0 {
+		result.Endpoints = override.Endpoints
+	}
+	if override.Connection != (ConnectionConfig{}) {
+		result.Connection = mergeConnectionConfigs(result.Connection, override.Connection)
+	}
+	if override.Authentication != nil {
+		result.Authentication = override.Authentication
+	}
+	if override.TLS != nil {
+		result.TLS = override.TLS
+	}
+	if override.Retry != (RetryConfig{}) {
+		result.Retry = mergeRetryConfigs(result.Retry, override.Retry)
+	}
+	if override.Monitoring != (MonitoringConfig{}) {
+		result.Monitoring = mergeMonitoringConfigs(result.Monitoring, override.Monitoring)
+	}
+	if len(override.Extra) > 0 {
+		if result.Extra == nil {
+			result.Extra = make(map[string]interface{})
+		}
+		for k, v := range override.Extra {
+			result.Extra[k] = v
+		}
+	}
+
+	return result, nil
+}
+
+// mergeConnectionConfigs merges connection configurations
+func mergeConnectionConfigs(base, override ConnectionConfig) ConnectionConfig {
+	result := base
+	if override.Timeout != 0 {
+		result.Timeout = override.Timeout
+	}
+	if override.KeepAlive != 0 {
+		result.KeepAlive = override.KeepAlive
+	}
+	if override.MaxAttempts != 0 {
+		result.MaxAttempts = override.MaxAttempts
+	}
+	if override.PoolSize != 0 {
+		result.PoolSize = override.PoolSize
+	}
+	if override.IdleTimeout != 0 {
+		result.IdleTimeout = override.IdleTimeout
+	}
+	return result
+}
+
+// mergeRetryConfigs merges retry configurations
+func mergeRetryConfigs(base, override RetryConfig) RetryConfig {
+	result := base
+	if override.MaxAttempts != 0 {
+		result.MaxAttempts = override.MaxAttempts
+	}
+	if override.InitialDelay != 0 {
+		result.InitialDelay = override.InitialDelay
+	}
+	if override.MaxDelay != 0 {
+		result.MaxDelay = override.MaxDelay
+	}
+	if override.Multiplier != 0 {
+		result.Multiplier = override.Multiplier
+	}
+	if override.Jitter != 0 {
+		result.Jitter = override.Jitter
+	}
+	return result
+}
+
+// mergeMonitoringConfigs merges monitoring configurations
+func mergeMonitoringConfigs(base, override MonitoringConfig) MonitoringConfig {
+	result := base
+	if override.MetricsInterval != 0 {
+		result.MetricsInterval = override.MetricsInterval
+	}
+	if override.HealthCheckInterval != 0 {
+		result.HealthCheckInterval = override.HealthCheckInterval
+	}
+	if override.HealthCheckTimeout != 0 {
+		result.HealthCheckTimeout = override.HealthCheckTimeout
+	}
+	// Enabled is boolean, so we check if it's explicitly set
+	result.Enabled = override.Enabled
+	return result
+}
