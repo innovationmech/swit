@@ -173,6 +173,54 @@ type ConnectionConfig struct {
 	IdleTimeout time.Duration `yaml:"idle_timeout" json:"idle_timeout" default:"5m"`
 }
 
+// UnmarshalJSON implements json.Unmarshaler for ConnectionConfig
+func (c *ConnectionConfig) UnmarshalJSON(data []byte) error {
+	// Use a temporary struct with string fields for duration parsing
+	type TempConnectionConfig struct {
+		Timeout     string `json:"timeout"`
+		KeepAlive   string `json:"keep_alive"`
+		MaxAttempts int    `json:"max_attempts"`
+		PoolSize    int    `json:"pool_size"`
+		IdleTimeout string `json:"idle_timeout"`
+	}
+
+	var temp TempConnectionConfig
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	// Parse durations
+	if temp.Timeout != "" {
+		timeout, err := time.ParseDuration(temp.Timeout)
+		if err != nil {
+			return fmt.Errorf("invalid timeout duration: %w", err)
+		}
+		c.Timeout = timeout
+	}
+
+	if temp.KeepAlive != "" {
+		keepAlive, err := time.ParseDuration(temp.KeepAlive)
+		if err != nil {
+			return fmt.Errorf("invalid keep_alive duration: %w", err)
+		}
+		c.KeepAlive = keepAlive
+	}
+
+	if temp.IdleTimeout != "" {
+		idleTimeout, err := time.ParseDuration(temp.IdleTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid idle_timeout duration: %w", err)
+		}
+		c.IdleTimeout = idleTimeout
+	}
+
+	// Set other fields
+	c.MaxAttempts = temp.MaxAttempts
+	c.PoolSize = temp.PoolSize
+
+	return nil
+}
+
 // Validate validates the connection configuration.
 func (c *ConnectionConfig) Validate() error {
 	if c.Timeout <= 0 {
@@ -351,6 +399,47 @@ type RetryConfig struct {
 	Jitter float64 `yaml:"jitter" json:"jitter" default:"0.1"`
 }
 
+// UnmarshalJSON implements json.Unmarshaler for RetryConfig
+func (r *RetryConfig) UnmarshalJSON(data []byte) error {
+	// Use a temporary struct with string fields for duration parsing
+	type TempRetryConfig struct {
+		MaxAttempts  int     `json:"max_attempts"`
+		InitialDelay string  `json:"initial_delay"`
+		MaxDelay     string  `json:"max_delay"`
+		Multiplier   float64 `json:"multiplier"`
+		Jitter       float64 `json:"jitter"`
+	}
+
+	var temp TempRetryConfig
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	// Parse durations
+	if temp.InitialDelay != "" {
+		initialDelay, err := time.ParseDuration(temp.InitialDelay)
+		if err != nil {
+			return fmt.Errorf("invalid initial_delay duration: %w", err)
+		}
+		r.InitialDelay = initialDelay
+	}
+
+	if temp.MaxDelay != "" {
+		maxDelay, err := time.ParseDuration(temp.MaxDelay)
+		if err != nil {
+			return fmt.Errorf("invalid max_delay duration: %w", err)
+		}
+		r.MaxDelay = maxDelay
+	}
+
+	// Set other fields
+	r.MaxAttempts = temp.MaxAttempts
+	r.Multiplier = temp.Multiplier
+	r.Jitter = temp.Jitter
+
+	return nil
+}
+
 // Validate validates the retry configuration.
 func (c *RetryConfig) Validate() error {
 	if c.MaxAttempts < 0 {
@@ -412,6 +501,52 @@ type MonitoringConfig struct {
 
 	// HealthCheckTimeout for health check operations
 	HealthCheckTimeout time.Duration `yaml:"health_check_timeout" json:"health_check_timeout" default:"5s"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler for MonitoringConfig
+func (m *MonitoringConfig) UnmarshalJSON(data []byte) error {
+	// Use a temporary struct with string fields for duration parsing
+	type TempMonitoringConfig struct {
+		Enabled             bool   `json:"enabled"`
+		MetricsInterval     string `json:"metrics_interval"`
+		HealthCheckInterval string `json:"health_check_interval"`
+		HealthCheckTimeout  string `json:"health_check_timeout"`
+	}
+
+	var temp TempMonitoringConfig
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	// Parse durations
+	if temp.MetricsInterval != "" {
+		metricsInterval, err := time.ParseDuration(temp.MetricsInterval)
+		if err != nil {
+			return fmt.Errorf("invalid metrics_interval duration: %w", err)
+		}
+		m.MetricsInterval = metricsInterval
+	}
+
+	if temp.HealthCheckInterval != "" {
+		healthCheckInterval, err := time.ParseDuration(temp.HealthCheckInterval)
+		if err != nil {
+			return fmt.Errorf("invalid health_check_interval duration: %w", err)
+		}
+		m.HealthCheckInterval = healthCheckInterval
+	}
+
+	if temp.HealthCheckTimeout != "" {
+		healthCheckTimeout, err := time.ParseDuration(temp.HealthCheckTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid health_check_timeout duration: %w", err)
+		}
+		m.HealthCheckTimeout = healthCheckTimeout
+	}
+
+	// Set other fields
+	m.Enabled = temp.Enabled
+
+	return nil
 }
 
 // SetDefaults sets default values for the monitoring configuration.

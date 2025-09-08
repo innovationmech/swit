@@ -295,6 +295,7 @@ func (v *ConfigValidator) applyProfileValidation(config interface{}, profileName
 }
 
 // applyProfileOverrides applies configuration overrides from a profile
+// Only sets values that are currently zero/default values - does not override file values
 func (v *ConfigValidator) applyProfileOverrides(config interface{}, profile ConfigProfile, ctx ValidationContext) error {
 	configValue := reflect.ValueOf(config)
 	if configValue.Kind() == reflect.Ptr {
@@ -302,12 +303,59 @@ func (v *ConfigValidator) applyProfileOverrides(config interface{}, profile Conf
 	}
 
 	for key, value := range profile.Overrides {
-		if err := v.setConfigValue(configValue, key, value); err != nil {
-			return fmt.Errorf("failed to apply override %s: %w", key, err)
+		if err := v.setConfigValueIfDefault(configValue, key, value); err != nil {
+			return fmt.Errorf("failed to apply profile default %s: %w", key, err)
 		}
 	}
 
 	return nil
+}
+
+// setConfigValueIfDefault sets a configuration value only if the current value is zero/default
+func (v *ConfigValidator) setConfigValueIfDefault(configValue reflect.Value, key string, value interface{}) error {
+	keys := strings.Split(key, ".")
+	current := configValue
+
+	// Navigate to the target field
+	for i, k := range keys[:len(keys)-1] {
+		field := current.FieldByName(v.capitalize(k))
+		if !field.IsValid() {
+			return fmt.Errorf("field %s not found in path %s", k, strings.Join(keys[:i+1], "."))
+		}
+
+		if field.Kind() == reflect.Ptr {
+			if field.IsNil() {
+				// Create new instance if nil
+				field.Set(reflect.New(field.Type().Elem()))
+			}
+			field = field.Elem()
+		}
+		current = field
+	}
+
+	// Check if the final field exists and is settable
+	finalKey := keys[len(keys)-1]
+	field := current.FieldByName(v.capitalize(finalKey))
+	if !field.IsValid() {
+		return fmt.Errorf("field %s not found", finalKey)
+	}
+
+	if !field.CanSet() {
+		return fmt.Errorf("field %s cannot be set", finalKey)
+	}
+
+	// Only set if the field has zero/default value
+	if v.isZeroValue(field) {
+		return v.setReflectValue(field, value)
+	}
+
+	return nil
+}
+
+// isZeroValue checks if a reflect.Value is zero/default
+func (v *ConfigValidator) isZeroValue(field reflect.Value) bool {
+	zero := reflect.Zero(field.Type())
+	return field.Interface() == zero.Interface()
 }
 
 // setConfigValue sets a configuration value using dot notation
@@ -317,7 +365,7 @@ func (v *ConfigValidator) setConfigValue(configValue reflect.Value, key string, 
 
 	// Navigate to the target field
 	for i, k := range keys[:len(keys)-1] {
-		field := current.FieldByName(strings.Title(k))
+		field := current.FieldByName(v.capitalize(k))
 		if !field.IsValid() {
 			return fmt.Errorf("field %s not found in path %s", k, strings.Join(keys[:i+1], "."))
 		}
@@ -334,7 +382,7 @@ func (v *ConfigValidator) setConfigValue(configValue reflect.Value, key string, 
 
 	// Set the final value
 	finalKey := keys[len(keys)-1]
-	field := current.FieldByName(strings.Title(finalKey))
+	field := current.FieldByName(v.capitalize(finalKey))
 	if !field.IsValid() {
 		return fmt.Errorf("field %s not found", finalKey)
 	}
@@ -347,12 +395,31 @@ func (v *ConfigValidator) setConfigValue(configValue reflect.Value, key string, 
 	return v.setReflectValue(field, value)
 }
 
+// capitalize converts a field name to Go struct field format
+func (v *ConfigValidator) capitalize(name string) string {
+	if len(name) == 0 {
+		return name
+	}
+	// Convert to title case (first letter uppercase)
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
 // setReflectValue sets a reflect.Value with type conversion
 func (v *ConfigValidator) setReflectValue(field reflect.Value, value interface{}) error {
 	valueReflect := reflect.ValueOf(value)
 
 	if valueReflect.Type().ConvertibleTo(field.Type()) {
 		field.Set(valueReflect.Convert(field.Type()))
+		return nil
+	}
+
+	// Handle Duration types (both time.Duration and custom Duration)
+	if field.Type() == reflect.TypeOf(time.Duration(0)) || field.Type().String() == "messaging.Duration" {
+		if d, err := time.ParseDuration(fmt.Sprintf("%v", value)); err != nil {
+			return fmt.Errorf("cannot convert %v to duration: %w", value, err)
+		} else {
+			field.SetInt(int64(d))
+		}
 		return nil
 	}
 
@@ -367,18 +434,10 @@ func (v *ConfigValidator) setReflectValue(field reflect.Value, value interface{}
 			return fmt.Errorf("cannot convert %v to bool", value)
 		}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if field.Type() == reflect.TypeOf(time.Duration(0)) {
-			if d, err := time.ParseDuration(fmt.Sprintf("%v", value)); err != nil {
-				return fmt.Errorf("cannot convert %v to duration: %w", value, err)
-			} else {
-				field.SetInt(int64(d))
-			}
+		if i, err := strconv.ParseInt(fmt.Sprintf("%v", value), 10, 64); err != nil {
+			return fmt.Errorf("cannot convert %v to int: %w", value, err)
 		} else {
-			if i, err := strconv.ParseInt(fmt.Sprintf("%v", value), 10, 64); err != nil {
-				return fmt.Errorf("cannot convert %v to int: %w", value, err)
-			} else {
-				field.SetInt(i)
-			}
+			field.SetInt(i)
 		}
 	case reflect.Float32, reflect.Float64:
 		if f, err := strconv.ParseFloat(fmt.Sprintf("%v", value), 64); err != nil {
