@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -62,15 +63,29 @@ func validateTopicName(fl validator.FieldLevel) bool {
 		return false
 	}
 
-	// Topic name pattern: alphanumeric, dots, hyphens, underscores
-	// Cannot start or end with special characters
-	pattern := `^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$`
-	if len(topic) == 1 {
-		pattern = `^[a-zA-Z0-9]$`
+	// Topic name pattern: must start and end with alphanumeric
+	// Middle can contain alphanumeric, dots, hyphens, underscores
+	// No consecutive special characters
+	
+	// Check if starts/ends with alphanumeric
+	if !regexp.MustCompile(`^[a-zA-Z0-9]`).MatchString(topic) {
+		return false
 	}
-
-	matched, _ := regexp.MatchString(pattern, topic)
-	return matched
+	if !regexp.MustCompile(`[a-zA-Z0-9]$`).MatchString(topic) {
+		return false
+	}
+	
+	// Check for valid characters in middle
+	if !regexp.MustCompile(`^[a-zA-Z0-9._-]+$`).MatchString(topic) {
+		return false
+	}
+	
+	// Check for consecutive special characters
+	if strings.Contains(topic, "..") || strings.Contains(topic, "--") || strings.Contains(topic, "__") {
+		return false
+	}
+	
+	return true
 }
 
 // validateCorrelationID validates correlation ID format.

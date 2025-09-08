@@ -36,7 +36,7 @@ import (
 // partitions, queues, and exchanges, enabling support for various message brokers.
 type RoutingInfo struct {
 	// Topic specifies the logical destination for the message
-	Topic string `json:"topic" validate:"required,topic"`
+	Topic string `json:"topic" validate:"omitempty,topic"`
 
 	// Partition specifies the partition within the topic (for partitioned topics)
 	Partition *int32 `json:"partition,omitempty" validate:"omitempty,min=0"`
@@ -302,7 +302,8 @@ func (dpr *DefaultPartitionResolver) GetStrategyName() string {
 func (dpr *DefaultPartitionResolver) hashPartition(key string, totalPartitions int32) int32 {
 	hasher := fnv.New32a()
 	hasher.Write([]byte(key))
-	return int32(hasher.Sum32()) % totalPartitions
+	hash := hasher.Sum32()
+	return int32(hash % uint32(totalPartitions))
 }
 
 // RoutingValidator provides validation for routing information.
@@ -513,12 +514,16 @@ func (tm *TopicMatcher) Matches(topic string) []string {
 // * matches exactly one level (e.g., "user.*" matches "user.created" but not "user.profile.updated")
 // # matches one or more levels (e.g., "user.#" matches "user.created" and "user.profile.updated")
 func (tm *TopicMatcher) convertTopicPatternToRegex(pattern string) string {
-	// Escape regex special characters except * and #
+	// Replace wildcards with placeholders before escaping
+	pattern = strings.ReplaceAll(pattern, "*", "__STAR__")
+	pattern = strings.ReplaceAll(pattern, "#", "__HASH__")
+	
+	// Escape regex special characters
 	escaped := regexp.QuoteMeta(pattern)
 
-	// Replace escaped wildcards with regex equivalents
-	escaped = strings.ReplaceAll(escaped, `\*`, `[^.]+`) // * matches one level
-	escaped = strings.ReplaceAll(escaped, `\#`, `.+`)    // # matches multiple levels
+	// Replace placeholders with regex equivalents
+	escaped = strings.ReplaceAll(escaped, "__STAR__", `[^.]+`)          // * matches one level (no dots)
+	escaped = strings.ReplaceAll(escaped, "__HASH__", `[^.]+(\.[^.]+)*`) // # matches one or more levels
 
 	// Anchor the pattern to match the entire topic
 	return "^" + escaped + "$"
