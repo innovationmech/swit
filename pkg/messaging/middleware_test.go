@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -122,9 +123,15 @@ func (tmc *TestMetricsCollector) SetGauge(name string, labels map[string]string,
 }
 
 func (tmc *TestMetricsCollector) labelsToKey(labels map[string]string) string {
+	var keys []string
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	// Sort keys for deterministic output
+	sort.Strings(keys)
 	var parts []string
-	for k, v := range labels {
-		parts = append(parts, fmt.Sprintf("%s:%s", k, v))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s:%s", k, labels[k]))
 	}
 	return strings.Join(parts, ",")
 }

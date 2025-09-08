@@ -103,8 +103,11 @@ type HandlerRegistration struct {
 	// HandlerID is a unique identifier for this handler
 	HandlerID string `json:"handler_id"`
 
-	// Middleware is the middleware chain for this handler
+	// Middleware is the combined middleware chain (global + handler-specific)
 	Middleware []Middleware `json:"-"`
+
+	// HandlerSpecificMiddleware stores middleware specific to this handler
+	HandlerSpecificMiddleware []Middleware `json:"-"`
 
 	// Config contains handler-specific configuration
 	Config HandlerConfig `json:"config"`
@@ -309,13 +312,18 @@ func (s *BaseSubscriber) RegisterHandler(topic string, handler MessageHandler, m
 	handlerID := fmt.Sprintf("%s-%d", topic, time.Now().UnixNano())
 
 	registration := &HandlerRegistration{
-		Handler:      handler,
-		Topic:        topic,
-		HandlerID:    handlerID,
-		Middleware:   append(s.globalMiddleware, middleware...),
-		Config:       HandlerConfig{MaxConcurrency: 1, Timeout: 30 * time.Second, AckMode: AckModeAuto},
-		RegisteredAt: time.Now(),
+		Handler:                   handler,
+		Topic:                     topic,
+		HandlerID:                 handlerID,
+		HandlerSpecificMiddleware: append([]Middleware(nil), middleware...), // Copy to prevent external modifications
+		Config:                    HandlerConfig{MaxConcurrency: 1, Timeout: 30 * time.Second, AckMode: AckModeAuto},
+		RegisteredAt:              time.Now(),
 	}
+
+	// Build combined middleware chain
+	registration.Middleware = make([]Middleware, 0, len(s.globalMiddleware)+len(middleware))
+	registration.Middleware = append(registration.Middleware, s.globalMiddleware...)
+	registration.Middleware = append(registration.Middleware, middleware...)
 
 	if s.handlers[topic] == nil {
 		s.handlers[topic] = make([]*HandlerRegistration, 0)
@@ -376,11 +384,13 @@ func (s *BaseSubscriber) AddGlobalMiddleware(middleware ...Middleware) {
 
 	s.globalMiddleware = append(s.globalMiddleware, middleware...)
 
-	// Update existing handler registrations
+	// Rebuild middleware chain for existing handler registrations
 	for topic := range s.handlers {
 		for _, registration := range s.handlers[topic] {
-			// Prepend global middleware to handler-specific middleware
-			registration.Middleware = append(middleware, registration.Middleware...)
+			// Rebuild combined middleware chain from global + handler-specific
+			registration.Middleware = make([]Middleware, 0, len(s.globalMiddleware)+len(registration.HandlerSpecificMiddleware))
+			registration.Middleware = append(registration.Middleware, s.globalMiddleware...)
+			registration.Middleware = append(registration.Middleware, registration.HandlerSpecificMiddleware...)
 		}
 	}
 }
@@ -411,13 +421,12 @@ func (s *BaseSubscriber) GetMetrics() *SubscriberMetrics {
 	// Create a copy to prevent external modification
 	metrics := *s.metrics
 
-	// Get state metrics
+	// Get state metrics and active handlers count atomically
 	s.stateMetricsMutex.RLock()
 	stateMetrics := *s.stateMetrics
+	activeHandlers := atomic.LoadInt32(&s.activeHandlers)
+	stateMetrics.ActiveHandlers = activeHandlers
 	s.stateMetricsMutex.RUnlock()
-
-	// Update active handlers count
-	stateMetrics.ActiveHandlers = atomic.LoadInt32(&s.activeHandlers)
 
 	// Calculate average processing time if we have processing data
 	if metrics.MessagesProcessed > 0 && stateMetrics.ProcessingTime > 0 {

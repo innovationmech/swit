@@ -303,8 +303,29 @@ func (tm *TimeoutMiddleware) Wrap(next MessageHandler) MessageHandler {
 		resultCh := make(chan result, 1)
 
 		go func() {
+			defer func() {
+				// Ensure channel is always written to prevent goroutine leak
+				select {
+				case resultCh <- result{err: ctx.Err()}:
+				default:
+				}
+			}()
+
+			// Check if context is already cancelled before processing
+			select {
+			case <-timeoutCtx.Done():
+				return
+			default:
+			}
+
 			err := next.Handle(timeoutCtx, message)
-			resultCh <- result{err: err}
+
+			// Try to send result, but don't block if context is cancelled
+			select {
+			case resultCh <- result{err: err}:
+			case <-timeoutCtx.Done():
+				return
+			}
 		}()
 
 		select {
