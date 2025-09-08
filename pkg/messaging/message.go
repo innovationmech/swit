@@ -66,7 +66,7 @@ func validateTopicName(fl validator.FieldLevel) bool {
 	// Topic name pattern: must start and end with alphanumeric
 	// Middle can contain alphanumeric, dots, hyphens, underscores
 	// No consecutive special characters
-	
+
 	// Check if starts/ends with alphanumeric
 	if !regexp.MustCompile(`^[a-zA-Z0-9]`).MatchString(topic) {
 		return false
@@ -74,17 +74,17 @@ func validateTopicName(fl validator.FieldLevel) bool {
 	if !regexp.MustCompile(`[a-zA-Z0-9]$`).MatchString(topic) {
 		return false
 	}
-	
+
 	// Check for valid characters in middle
 	if !regexp.MustCompile(`^[a-zA-Z0-9._-]+$`).MatchString(topic) {
 		return false
 	}
-	
+
 	// Check for consecutive special characters
 	if strings.Contains(topic, "..") || strings.Contains(topic, "--") || strings.Contains(topic, "__") {
 		return false
 	}
-	
+
 	return true
 }
 

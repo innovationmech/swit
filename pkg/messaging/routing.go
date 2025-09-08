@@ -517,12 +517,12 @@ func (tm *TopicMatcher) convertTopicPatternToRegex(pattern string) string {
 	// Replace wildcards with placeholders before escaping
 	pattern = strings.ReplaceAll(pattern, "*", "__STAR__")
 	pattern = strings.ReplaceAll(pattern, "#", "__HASH__")
-	
+
 	// Escape regex special characters
 	escaped := regexp.QuoteMeta(pattern)
 
 	// Replace placeholders with regex equivalents
-	escaped = strings.ReplaceAll(escaped, "__STAR__", `[^.]+`)          // * matches one level (no dots)
+	escaped = strings.ReplaceAll(escaped, "__STAR__", `[^.]+`)           // * matches one level (no dots)
 	escaped = strings.ReplaceAll(escaped, "__HASH__", `[^.]+(\.[^.]+)*`) // # matches one or more levels
 
 	// Anchor the pattern to match the entire topic
