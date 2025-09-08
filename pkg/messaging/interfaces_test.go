@@ -207,21 +207,21 @@ type mockEventPublisher struct {
 
 func (m *mockEventPublisher) Publish(ctx context.Context, message *Message) error {
 	if m.closed {
-		return ErrPublisherClosedError
+		return ErrPublisherAlreadyClosed
 	}
 	return nil
 }
 
 func (m *mockEventPublisher) PublishBatch(ctx context.Context, messages []*Message) error {
 	if m.closed {
-		return ErrPublisherClosedError
+		return ErrPublisherAlreadyClosed
 	}
 	return nil
 }
 
 func (m *mockEventPublisher) PublishWithConfirm(ctx context.Context, message *Message) (*PublishConfirmation, error) {
 	if m.closed {
-		return nil, ErrPublisherClosedError
+		return nil, ErrPublisherAlreadyClosed
 	}
 	return &PublishConfirmation{
 		MessageID: message.ID,
@@ -234,7 +234,7 @@ func (m *mockEventPublisher) PublishWithConfirm(ctx context.Context, message *Me
 
 func (m *mockEventPublisher) PublishAsync(ctx context.Context, message *Message, callback PublishCallback) error {
 	if m.closed {
-		return ErrPublisherClosedError
+		return ErrPublisherAlreadyClosed
 	}
 	// Simulate async callback
 	go func() {
@@ -249,14 +249,14 @@ func (m *mockEventPublisher) PublishAsync(ctx context.Context, message *Message,
 
 func (m *mockEventPublisher) BeginTransaction(ctx context.Context) (Transaction, error) {
 	if m.closed {
-		return nil, ErrPublisherClosedError
+		return nil, ErrPublisherAlreadyClosed
 	}
 	return &mockTransaction{}, nil
 }
 
 func (m *mockEventPublisher) Flush(ctx context.Context) error {
 	if m.closed {
-		return ErrPublisherClosedError
+		return ErrPublisherAlreadyClosed
 	}
 	return nil
 }
@@ -286,14 +286,14 @@ type mockEventSubscriber struct {
 
 func (m *mockEventSubscriber) Subscribe(ctx context.Context, handler MessageHandler) error {
 	if m.closed {
-		return ErrSubscriberClosedError
+		return ErrSubscriberAlreadyClosed
 	}
 	return nil
 }
 
 func (m *mockEventSubscriber) SubscribeWithMiddleware(ctx context.Context, handler MessageHandler, middleware ...Middleware) error {
 	if m.closed {
-		return ErrSubscriberClosedError
+		return ErrSubscriberAlreadyClosed
 	}
 	return nil
 }
@@ -304,7 +304,7 @@ func (m *mockEventSubscriber) Unsubscribe(ctx context.Context) error {
 
 func (m *mockEventSubscriber) Pause(ctx context.Context) error {
 	if m.closed {
-		return ErrSubscriberClosedError
+		return ErrSubscriberAlreadyClosed
 	}
 	m.paused = true
 	return nil
@@ -312,7 +312,7 @@ func (m *mockEventSubscriber) Pause(ctx context.Context) error {
 
 func (m *mockEventSubscriber) Resume(ctx context.Context) error {
 	if m.closed {
-		return ErrSubscriberClosedError
+		return ErrSubscriberAlreadyClosed
 	}
 	m.paused = false
 	return nil
@@ -320,14 +320,14 @@ func (m *mockEventSubscriber) Resume(ctx context.Context) error {
 
 func (m *mockEventSubscriber) Seek(ctx context.Context, position SeekPosition) error {
 	if m.closed {
-		return ErrSubscriberClosedError
+		return ErrSubscriberAlreadyClosed
 	}
 	return nil
 }
 
 func (m *mockEventSubscriber) GetLag(ctx context.Context) (int64, error) {
 	if m.closed {
-		return -1, ErrSubscriberClosedError
+		return -1, ErrSubscriberAlreadyClosed
 	}
 	return 42, nil
 }
@@ -561,7 +561,7 @@ func TestEventPublisherInterface(t *testing.T) {
 
 	// Test operations after close should return error
 	err = publisher.Publish(ctx, msg)
-	if !errors.Is(err, ErrPublisherClosedError) {
+	if !errors.Is(err, ErrPublisherAlreadyClosed) {
 		t.Errorf("Expected ErrPublisherClosed after close, got: %v", err)
 	}
 }
@@ -638,7 +638,7 @@ func TestEventSubscriberInterface(t *testing.T) {
 
 	// Test operations after close should return error
 	err = subscriber.Subscribe(ctx, handler)
-	if !errors.Is(err, ErrSubscriberClosedError) {
+	if !errors.Is(err, ErrSubscriberAlreadyClosed) {
 		t.Errorf("Expected ErrSubscriberClosed after close, got: %v", err)
 	}
 }

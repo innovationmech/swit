@@ -346,22 +346,22 @@ func TestPredefinedErrors(t *testing.T) {
 		t.Error("Expected ErrBrokerNotConnected to be retryable")
 	}
 
-	// Test ErrPublisherClosedError
-	if ErrPublisherClosedError.Code != ErrPublisherClosed {
-		t.Errorf("Expected ErrPublisherClosedError to have code %v, got %v", ErrPublisherClosed, ErrPublisherClosedError.Code)
+	// Test ErrPublisherAlreadyClosed
+	if ErrPublisherAlreadyClosed.Code != ErrPublisherClosed {
+		t.Errorf("Expected ErrPublisherAlreadyClosed to have code %v, got %v", ErrPublisherClosed, ErrPublisherAlreadyClosed.Code)
 	}
 
-	if ErrPublisherClosedError.Retryable {
-		t.Error("Expected ErrPublisherClosedError to not be retryable")
+	if ErrPublisherAlreadyClosed.Retryable {
+		t.Error("Expected ErrPublisherAlreadyClosed to not be retryable")
 	}
 
-	// Test ErrSubscriberClosedError
-	if ErrSubscriberClosedError.Code != ErrSubscriberClosed {
-		t.Errorf("Expected ErrSubscriberClosedError to have code %v, got %v", ErrSubscriberClosed, ErrSubscriberClosedError.Code)
+	// Test ErrSubscriberAlreadyClosed
+	if ErrSubscriberAlreadyClosed.Code != ErrSubscriberClosed {
+		t.Errorf("Expected ErrSubscriberAlreadyClosed to have code %v, got %v", ErrSubscriberClosed, ErrSubscriberAlreadyClosed.Code)
 	}
 
-	if ErrSubscriberClosedError.Retryable {
-		t.Error("Expected ErrSubscriberClosedError to not be retryable")
+	if ErrSubscriberAlreadyClosed.Retryable {
+		t.Error("Expected ErrSubscriberAlreadyClosed to not be retryable")
 	}
 
 	// Test ErrTransactionsNotSupported

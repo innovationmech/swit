@@ -34,6 +34,12 @@ import (
 // and extensibility, enabling different broker implementations (Kafka, NATS, RabbitMQ)
 // while maintaining a consistent API.
 //
+// Context Handling:
+// All methods that accept a context.Context parameter expect a valid, non-nil context.
+// Passing a nil context will result in undefined behavior or panic. Use context.Background()
+// or context.TODO() if you need a default context. Methods will respect context cancellation
+// and timeouts, returning appropriate errors when the context is cancelled or times out.
+//
 // Example usage:
 //
 //	config := &BrokerConfig{Type: BrokerTypeKafka, Endpoints: []string{"localhost:9092"}}
@@ -184,6 +190,10 @@ type MessageBrokerFactory interface {
 // It supports various publishing patterns including synchronous, asynchronous,
 // batch, and transactional publishing. All methods are thread-safe unless
 // otherwise specified.
+//
+// Context Handling:
+// All methods expect a valid, non-nil context. Methods will respect context
+// cancellation and timeouts, returning appropriate errors when cancelled.
 type EventPublisher interface {
 	// Publish sends a single message synchronously.
 	// This method blocks until the message is accepted by the broker
@@ -276,6 +286,10 @@ type EventPublisher interface {
 // EventSubscriber defines the interface for consuming messages from the broker.
 // It supports various consumption patterns including push/pull models,
 // middleware integration, and consumer group management.
+//
+// Context Handling:
+// All methods expect a valid, non-nil context. Long-running operations like
+// Subscribe will monitor context cancellation to enable graceful shutdown.
 type EventSubscriber interface {
 	// Subscribe starts consuming messages with the given handler.
 	// This method blocks and processes messages until the context is cancelled

@@ -91,6 +91,13 @@ func (c *BrokerConfig) Validate() error {
 	return nil
 }
 
+// SetDefaults sets default values for the broker configuration.
+func (c *BrokerConfig) SetDefaults() {
+	c.Connection.SetDefaults()
+	c.Retry.SetDefaults()
+	c.Monitoring.SetDefaults()
+}
+
 // ConnectionConfig defines connection-specific settings.
 type ConnectionConfig struct {
 	// Timeout for establishing connections
@@ -132,6 +139,25 @@ func (c *ConnectionConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// SetDefaults sets default values for the connection configuration.
+func (c *ConnectionConfig) SetDefaults() {
+	if c.Timeout == 0 {
+		c.Timeout = 10 * time.Second
+	}
+	if c.KeepAlive == 0 {
+		c.KeepAlive = 30 * time.Second
+	}
+	if c.MaxAttempts == 0 {
+		c.MaxAttempts = 3
+	}
+	if c.PoolSize == 0 {
+		c.PoolSize = 10
+	}
+	if c.IdleTimeout == 0 {
+		c.IdleTimeout = 5 * time.Minute
+	}
 }
 
 // AuthType represents the authentication type.
@@ -297,6 +323,25 @@ func (c *RetryConfig) Validate() error {
 	return nil
 }
 
+// SetDefaults sets default values for the retry configuration.
+func (c *RetryConfig) SetDefaults() {
+	if c.MaxAttempts == 0 {
+		c.MaxAttempts = 3
+	}
+	if c.InitialDelay == 0 {
+		c.InitialDelay = 1 * time.Second
+	}
+	if c.MaxDelay == 0 {
+		c.MaxDelay = 30 * time.Second
+	}
+	if c.Multiplier == 0 {
+		c.Multiplier = 2.0
+	}
+	if c.Jitter == 0 {
+		c.Jitter = 0.1
+	}
+}
+
 // MonitoringConfig defines monitoring and metrics settings.
 type MonitoringConfig struct {
 	// Enabled indicates if monitoring is enabled
@@ -310,6 +355,20 @@ type MonitoringConfig struct {
 
 	// HealthCheckTimeout for health check operations
 	HealthCheckTimeout time.Duration `yaml:"health_check_timeout" json:"health_check_timeout" default:"5s"`
+}
+
+// SetDefaults sets default values for the monitoring configuration.
+func (c *MonitoringConfig) SetDefaults() {
+	c.Enabled = true
+	if c.MetricsInterval == 0 {
+		c.MetricsInterval = 30 * time.Second
+	}
+	if c.HealthCheckInterval == 0 {
+		c.HealthCheckInterval = 30 * time.Second
+	}
+	if c.HealthCheckTimeout == 0 {
+		c.HealthCheckTimeout = 5 * time.Second
+	}
 }
 
 // PublisherConfig defines publisher-specific configuration.

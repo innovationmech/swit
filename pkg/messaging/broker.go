@@ -544,16 +544,16 @@ var (
 		Timestamp: time.Now(),
 	}
 
-	// ErrPublisherClosed indicates the publisher has been closed
-	ErrPublisherClosedError = &MessagingError{
+	// ErrPublisherAlreadyClosed indicates the publisher has been closed
+	ErrPublisherAlreadyClosed = &MessagingError{
 		Code:      ErrPublisherClosed,
 		Message:   "publisher has been closed",
 		Retryable: false,
 		Timestamp: time.Now(),
 	}
 
-	// ErrSubscriberClosed indicates the subscriber has been closed
-	ErrSubscriberClosedError = &MessagingError{
+	// ErrSubscriberAlreadyClosed indicates the subscriber has been closed
+	ErrSubscriberAlreadyClosed = &MessagingError{
 		Code:      ErrSubscriberClosed,
 		Message:   "subscriber has been closed",
 		Retryable: false,

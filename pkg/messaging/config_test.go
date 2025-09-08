@@ -416,3 +416,62 @@ func TestBrokerConfigWithNestedValidation(t *testing.T) {
 		t.Errorf("Expected no error after fixing all issues, got: %v", err)
 	}
 }
+
+// TestBrokerConfigSetDefaults tests that SetDefaults applies correct default values.
+func TestBrokerConfigSetDefaults(t *testing.T) {
+	config := &BrokerConfig{
+		Type:      BrokerTypeKafka,
+		Endpoints: []string{"localhost:9092"},
+	}
+
+	// Apply defaults
+	config.SetDefaults()
+
+	// Check connection defaults
+	if config.Connection.Timeout != 10*time.Second {
+		t.Errorf("Expected default timeout to be 10s, got %v", config.Connection.Timeout)
+	}
+	if config.Connection.KeepAlive != 30*time.Second {
+		t.Errorf("Expected default keep alive to be 30s, got %v", config.Connection.KeepAlive)
+	}
+	if config.Connection.MaxAttempts != 3 {
+		t.Errorf("Expected default max attempts to be 3, got %d", config.Connection.MaxAttempts)
+	}
+	if config.Connection.PoolSize != 10 {
+		t.Errorf("Expected default pool size to be 10, got %d", config.Connection.PoolSize)
+	}
+	if config.Connection.IdleTimeout != 5*time.Minute {
+		t.Errorf("Expected default idle timeout to be 5m, got %v", config.Connection.IdleTimeout)
+	}
+
+	// Check retry defaults
+	if config.Retry.MaxAttempts != 3 {
+		t.Errorf("Expected default retry max attempts to be 3, got %d", config.Retry.MaxAttempts)
+	}
+	if config.Retry.InitialDelay != 1*time.Second {
+		t.Errorf("Expected default initial delay to be 1s, got %v", config.Retry.InitialDelay)
+	}
+	if config.Retry.MaxDelay != 30*time.Second {
+		t.Errorf("Expected default max delay to be 30s, got %v", config.Retry.MaxDelay)
+	}
+	if config.Retry.Multiplier != 2.0 {
+		t.Errorf("Expected default multiplier to be 2.0, got %f", config.Retry.Multiplier)
+	}
+	if config.Retry.Jitter != 0.1 {
+		t.Errorf("Expected default jitter to be 0.1, got %f", config.Retry.Jitter)
+	}
+
+	// Check monitoring defaults
+	if !config.Monitoring.Enabled {
+		t.Error("Expected monitoring to be enabled by default")
+	}
+	if config.Monitoring.MetricsInterval != 30*time.Second {
+		t.Errorf("Expected default metrics interval to be 30s, got %v", config.Monitoring.MetricsInterval)
+	}
+	if config.Monitoring.HealthCheckInterval != 30*time.Second {
+		t.Errorf("Expected default health check interval to be 30s, got %v", config.Monitoring.HealthCheckInterval)
+	}
+	if config.Monitoring.HealthCheckTimeout != 5*time.Second {
+		t.Errorf("Expected default health check timeout to be 5s, got %v", config.Monitoring.HealthCheckTimeout)
+	}
+}
