@@ -23,6 +23,7 @@ package messaging
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -498,9 +499,9 @@ func TestEventPublisherInterface(t *testing.T) {
 	}
 
 	// Test PublishAsync
-	callbackCalled := false
+	var callbackCalled int32
 	callback := func(confirmation *PublishConfirmation, err error) {
-		callbackCalled = true
+		atomic.StoreInt32(&callbackCalled, 1)
 		if err != nil {
 			t.Errorf("Expected no error in callback, got: %v", err)
 		}
@@ -516,7 +517,7 @@ func TestEventPublisherInterface(t *testing.T) {
 
 	// Wait for callback
 	time.Sleep(20 * time.Millisecond)
-	if !callbackCalled {
+	if atomic.LoadInt32(&callbackCalled) == 0 {
 		t.Error("Expected callback to be called")
 	}
 

@@ -23,6 +23,7 @@ package messaging
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 )
 
@@ -102,7 +103,7 @@ type BrokerCapabilities struct {
 	SupportedSerializationTypes []SerializationType `json:"supported_serialization_types"`
 
 	// Additional broker-specific capabilities as key-value pairs
-	Extended map[string]interface{} `json:"extended,omitempty"`
+	Extended map[string]any `json:"extended,omitempty"`
 }
 
 // BrokerMetrics contains broker performance and operational metrics.
@@ -141,7 +142,7 @@ type BrokerMetrics struct {
 	LastMetricsUpdate time.Time `json:"last_metrics_update"`
 
 	// Broker-specific metrics
-	Extended map[string]interface{} `json:"extended,omitempty"`
+	Extended map[string]any `json:"extended,omitempty"`
 }
 
 // GetSnapshot returns a copy of the current metrics to prevent race conditions.
@@ -154,10 +155,8 @@ func (m *BrokerMetrics) GetSnapshot() *BrokerMetrics {
 
 	// Deep copy extended map
 	if m.Extended != nil {
-		snapshot.Extended = make(map[string]interface{})
-		for k, v := range m.Extended {
-			snapshot.Extended[k] = v
-		}
+		snapshot.Extended = make(map[string]any)
+		maps.Copy(snapshot.Extended, m.Extended)
 	}
 
 	return &snapshot
@@ -203,7 +202,7 @@ type PublisherMetrics struct {
 	TransactionsAborted   int64 `json:"transactions_aborted"`
 
 	// Publisher-specific metrics
-	Extended map[string]interface{} `json:"extended,omitempty"`
+	Extended map[string]any `json:"extended,omitempty"`
 }
 
 // SubscriberMetrics contains subscriber-specific performance metrics.
@@ -246,7 +245,7 @@ type SubscriberMetrics struct {
 	LastRebalanceTime time.Time `json:"last_rebalance_time"`
 
 	// Subscriber-specific metrics
-	Extended map[string]interface{} `json:"extended,omitempty"`
+	Extended map[string]any `json:"extended,omitempty"`
 }
 
 // HealthStatus represents the health status of a broker component.
@@ -264,7 +263,7 @@ type HealthStatus struct {
 	ResponseTime time.Duration `json:"response_time"`
 
 	// Details contains component-specific health information
-	Details map[string]interface{} `json:"details,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
 
 	// Checks contains sub-component health check results
 	Checks map[string]*HealthStatus `json:"checks,omitempty"`
@@ -383,7 +382,7 @@ type MessagingError struct {
 	Retryable bool `json:"retryable"`
 
 	// Details provides additional context-specific information
-	Details map[string]interface{} `json:"details,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
 
 	// Timestamp indicates when the error occurred
 	Timestamp time.Time `json:"timestamp"`
