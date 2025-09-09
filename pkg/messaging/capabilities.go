@@ -481,7 +481,7 @@ func (bc *BrokerCapabilities) ValidateRequirements(requirements []FeatureRequire
 			result.Valid = false
 			result.Missing = append(result.Missing, req.Name)
 			result.Details[req.Name] = fmt.Sprintf("required feature not supported (required: %s, available: %s)", req.Level.String(), level.String())
-			
+
 			// Check fallbacks even for required features
 			if len(req.Fallback) > 0 {
 				availableFallbacks := make([]string, 0, len(req.Fallback))

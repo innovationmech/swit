@@ -26,8 +26,8 @@ import (
 
 func TestCapabilityLevel(t *testing.T) {
 	tests := []struct {
-		level    CapabilityLevel
-		expected string
+		level     CapabilityLevel
+		expected  string
 		supported bool
 	}{
 		{CapabilityLevelNotSupported, "not_supported", false},
@@ -129,7 +129,7 @@ func TestBrokerCapabilitiesBuilder(t *testing.T) {
 
 func TestGetCapabilityProfile(t *testing.T) {
 	tests := []struct {
-		brokerType BrokerType
+		brokerType  BrokerType
 		shouldError bool
 	}{
 		{BrokerTypeKafka, false},
@@ -142,7 +142,7 @@ func TestGetCapabilityProfile(t *testing.T) {
 	for _, test := range tests {
 		t.Run(string(test.brokerType), func(t *testing.T) {
 			capabilities, err := GetCapabilityProfile(test.brokerType)
-			
+
 			if test.shouldError {
 				if err == nil {
 					t.Error("Expected error for unknown broker type")
@@ -199,7 +199,7 @@ func TestBrokerCapabilitiesSupportsFeature(t *testing.T) {
 		SupportsTransactions: true,
 		SupportsOrdering:     false,
 		Extended: map[string]any{
-			"custom_feature": true,
+			"custom_feature":   true,
 			"disabled_feature": false,
 		},
 	}
@@ -228,10 +228,10 @@ func TestBrokerCapabilitiesSupportsFeature(t *testing.T) {
 
 func TestBrokerCapabilitiesValidateRequirements(t *testing.T) {
 	capabilities := &BrokerCapabilities{
-		SupportsTransactions:     true,
-		SupportsOrdering:         true,
-		SupportsPartitioning:     false,
-		SupportsConsumerGroups:   true,
+		SupportsTransactions:   true,
+		SupportsOrdering:       true,
+		SupportsPartitioning:   false,
+		SupportsConsumerGroups: true,
 	}
 
 	requirements := []FeatureRequirement{
@@ -303,9 +303,9 @@ func TestBrokerCapabilitiesValidateRequirements(t *testing.T) {
 
 func TestBrokerCapabilitiesClone(t *testing.T) {
 	original := &BrokerCapabilities{
-		SupportsTransactions:          true,
-		SupportedCompressionTypes:     []CompressionType{CompressionNone, CompressionGZIP},
-		SupportedSerializationTypes:   []SerializationType{SerializationJSON},
+		SupportsTransactions:        true,
+		SupportedCompressionTypes:   []CompressionType{CompressionNone, CompressionGZIP},
+		SupportedSerializationTypes: []SerializationType{SerializationJSON},
 		Extended: map[string]any{
 			"key1": "value1",
 			"key2": 42,
