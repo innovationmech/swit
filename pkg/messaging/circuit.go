@@ -539,6 +539,7 @@ type CircuitBreakerStatistics struct {
 	TotalTimeOpen     time.Duration `json:"total_time_open"`
 	TotalTimeHalfOpen time.Duration `json:"total_time_half_open"`
 	LastStateChange   time.Time     `json:"last_state_change"`
+	CreatedAt         time.Time     `json:"created_at"`
 }
 
 // circuitBreakerStatisticsTracker is the internal tracker with mutex.
@@ -551,8 +552,9 @@ type circuitBreakerStatisticsTracker struct {
 func NewCircuitBreakerStatistics(name string) *circuitBreakerStatisticsTracker {
 	return &circuitBreakerStatisticsTracker{
 		stats: CircuitBreakerStatistics{
-			Name:  name,
-			State: StateClosed,
+			Name:      name,
+			State:     StateClosed,
+			CreatedAt: time.Now(),
 		},
 	}
 }
@@ -607,17 +609,15 @@ func (cbst *circuitBreakerStatisticsTracker) GetAvailabilityPercentage() float64
 	cbst.mutex.RLock()
 	defer cbst.mutex.RUnlock()
 
-	if cbst.stats.LastStateChange.IsZero() {
-		return 100.0 // No state changes, assume fully available
-	}
-
-	totalTime := time.Since(cbst.stats.LastStateChange)
+	// Calculate total operational time from circuit breaker creation
+	totalTime := time.Since(cbst.stats.CreatedAt)
 	if totalTime == 0 {
 		return 100.0
 	}
 
+	// Calculate total time spent in Open state
 	openTime := cbst.stats.TotalTimeOpen
-	if cbst.stats.State == StateOpen {
+	if cbst.stats.State == StateOpen && !cbst.stats.LastStateChange.IsZero() {
 		openTime += time.Since(cbst.stats.LastStateChange)
 	}
 

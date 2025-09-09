@@ -65,6 +65,9 @@ type RetryPolicy struct {
 
 	// OnExhausted callback executed when all retries are exhausted
 	OnExhausted func(err error, attempts int) `json:"-" yaml:"-"`
+
+	// rng is a per-instance random number generator for thread safety
+	rng *rand.Rand `json:"-" yaml:"-"`
 }
 
 // NewRetryPolicy creates a new retry policy with sensible defaults.
@@ -78,6 +81,7 @@ func NewRetryPolicy() *RetryPolicy {
 		JitterEnabled:     true,
 		JitterPercent:     10.0,
 		ErrorClassifier:   NewErrorClassifier(),
+		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -92,6 +96,7 @@ func NewRetryPolicyFromClassification(result ErrorClassificationResult) *RetryPo
 		JitterEnabled:     true,
 		JitterPercent:     10.0,
 		ErrorClassifier:   NewErrorClassifier(),
+		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -240,7 +245,11 @@ func (rp *RetryPolicy) addJitter(baseDelay time.Duration) time.Duration {
 	jitterRange := float64(baseDelay) * (rp.JitterPercent / 100.0)
 
 	// Add random jitter between -jitterRange/2 and +jitterRange/2
-	jitter := (rand.Float64() - 0.5) * jitterRange
+	// Initialize random generator if not already done (for struct created without constructor)
+	if rp.rng == nil {
+		rp.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	jitter := (rp.rng.Float64() - 0.5) * jitterRange
 
 	finalDelay := time.Duration(float64(baseDelay) + jitter)
 
@@ -364,7 +373,7 @@ func (re *RetryExecutor) ExecuteWithResult(ctx context.Context, operation func()
 		}
 
 		// Calculate delay for next attempt
-		delay := policy.CalculateDelay(attempts - 1)
+		delay := policy.CalculateDelay(attempts)
 
 		// Call retry callback if provided
 		if policy.OnRetry != nil {

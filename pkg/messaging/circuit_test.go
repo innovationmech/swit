@@ -523,18 +523,26 @@ func TestCircuitBreakerStatistics(t *testing.T) {
 		availability := stats.GetAvailabilityPercentage()
 		assert.Equal(t, 100.0, availability) // No state changes = 100% available
 
-		// Simple test: circuit is currently open
+		// Record state change to open, then wait a bit
 		now := time.Now()
 		stats.RecordStateChange(StateClosed, StateOpen, now)
 
-		// Since circuit is currently open, availability should be 0%
-		availability = stats.GetAvailabilityPercentage()
-		assert.Equal(t, 0.0, availability) // Currently open, so 0% available
+		// Sleep briefly to accumulate some open time
+		time.Sleep(10 * time.Millisecond)
 
-		// Close the circuit - should now be 100% available
-		stats.RecordStateChange(StateOpen, StateClosed, now.Add(1*time.Second))
+		// Availability should be less than 100% due to time spent in open state
 		availability = stats.GetAvailabilityPercentage()
-		assert.Equal(t, 100.0, availability) // Currently closed, so 100% available
+		assert.Less(t, availability, 100.0)         // Should be less than 100% due to open time
+		assert.GreaterOrEqual(t, availability, 0.0) // Should be non-negative
+
+		// Close the circuit and wait to accumulate closed time
+		stats.RecordStateChange(StateOpen, StateClosed, time.Now())
+		time.Sleep(50 * time.Millisecond) // Spend more time in closed state
+
+		// Availability should improve but may not be 100% due to the open period
+		newAvailability := stats.GetAvailabilityPercentage()
+		assert.Greater(t, newAvailability, availability) // Should be higher than before
+		assert.LessOrEqual(t, newAvailability, 100.0)    // Should not exceed 100%
 	})
 }
 
