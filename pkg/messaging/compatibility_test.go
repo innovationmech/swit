@@ -291,7 +291,7 @@ func TestDefaultBrokerCompatibilityChecker_GetMigrationGuidance(t *testing.T) {
 		// Should have standard migration steps
 		expectedCategories := []string{"preparation", "infrastructure", "implementation", "validation", "deployment"}
 		categoryFound := make(map[string]bool)
-		
+
 		for _, step := range guidance.Steps {
 			categoryFound[step.Category] = true
 		}
