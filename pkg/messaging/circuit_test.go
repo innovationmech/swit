@@ -23,6 +23,7 @@ package messaging
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -334,13 +335,16 @@ func TestCircuitBreaker_CustomConditions(t *testing.T) {
 
 func TestCircuitBreaker_StateCallbacks(t *testing.T) {
 	var stateChanges []string
+	var mu sync.Mutex
 
 	config := NewCircuitBreakerConfig("test-breaker")
 	config.FailureThreshold = 2
 	config.Timeout = 10 * time.Millisecond
 	config.ErrorClassifier = nil // Disable classifier to treat all errors as failures
 	config.OnStateChange = func(name string, from, to CircuitState) {
+		mu.Lock()
 		stateChanges = append(stateChanges, string(from)+"->"+string(to))
+		mu.Unlock()
 	}
 
 	cb, err := NewCircuitBreaker(config)
@@ -355,16 +359,25 @@ func TestCircuitBreaker_StateCallbacks(t *testing.T) {
 	// Should transition to open
 	assert.Equal(t, StateOpen, cb.GetState())
 
-	time.Sleep(15 * time.Millisecond)
+	// Small delay to allow callback goroutine to complete
+	time.Sleep(20 * time.Millisecond)
 
 	// Should transition to half-open, then back to closed
 	cb.Execute(ctx, func() error { return nil })
 	cb.Execute(ctx, func() error { return nil })
 
+	// Wait for all callback goroutines to complete
+	time.Sleep(10 * time.Millisecond)
+
 	// Verify state changes were recorded
-	assert.Contains(t, stateChanges, "CLOSED->OPEN")
-	assert.Contains(t, stateChanges, "OPEN->HALF_OPEN")
-	assert.Contains(t, stateChanges, "HALF_OPEN->CLOSED")
+	mu.Lock()
+	stateChangesCopy := make([]string, len(stateChanges))
+	copy(stateChangesCopy, stateChanges)
+	mu.Unlock()
+
+	assert.Contains(t, stateChangesCopy, "CLOSED->OPEN")
+	assert.Contains(t, stateChangesCopy, "OPEN->HALF_OPEN")
+	assert.Contains(t, stateChangesCopy, "HALF_OPEN->CLOSED")
 }
 
 func TestCircuitBreaker_ContextErrors(t *testing.T) {
