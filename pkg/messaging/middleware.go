@@ -619,3 +619,184 @@ func (cm *ContextMiddleware) Wrap(next MessageHandler) MessageHandler {
 		return next.Handle(enrichedCtx, message)
 	})
 }
+
+// MiddlewareRegistry provides centralized middleware management and registration.
+type MiddlewareRegistry struct {
+	middleware map[string]Middleware
+	factories  map[string]MiddlewareFactory
+	mutex      sync.RWMutex
+}
+
+// MiddlewareFactory defines a factory function for creating middleware instances.
+type MiddlewareFactory func(config map[string]interface{}) (Middleware, error)
+
+// NewMiddlewareRegistry creates a new middleware registry with built-in middleware factories.
+func NewMiddlewareRegistry() *MiddlewareRegistry {
+	registry := &MiddlewareRegistry{
+		middleware: make(map[string]Middleware),
+		factories:  make(map[string]MiddlewareFactory),
+	}
+
+	// Register built-in middleware factories
+	registry.registerBuiltInFactories()
+
+	return registry
+}
+
+// registerBuiltInFactories registers factories for built-in middleware.
+func (mr *MiddlewareRegistry) registerBuiltInFactories() {
+	mr.factories["timeout"] = func(config map[string]interface{}) (Middleware, error) {
+		timeout := 30 * time.Second
+		if t, ok := config["timeout"]; ok {
+			if duration, ok := t.(time.Duration); ok {
+				timeout = duration
+			} else if durationStr, ok := t.(string); ok {
+				if parsed, err := time.ParseDuration(durationStr); err == nil {
+					timeout = parsed
+				}
+			}
+		}
+		return NewTimeoutMiddleware(timeout), nil
+	}
+
+	mr.factories["retry"] = func(config map[string]interface{}) (Middleware, error) {
+		retryConfig := RetryConfig{
+			MaxAttempts:  3,
+			InitialDelay: 100 * time.Millisecond,
+			MaxDelay:     5 * time.Second,
+			Multiplier:   2.0,
+			Jitter:       0.1,
+		}
+
+		if maxAttempts, ok := config["max_attempts"]; ok {
+			if attempts, ok := maxAttempts.(int); ok {
+				retryConfig.MaxAttempts = attempts
+			}
+		}
+
+		return NewRetryMiddleware(retryConfig), nil
+	}
+
+	mr.factories["recovery"] = func(config map[string]interface{}) (Middleware, error) {
+		var logger Logger
+		if loggerInterface, ok := config["logger"]; ok {
+			if l, ok := loggerInterface.(Logger); ok {
+				logger = l
+			}
+		}
+		return NewRecoveryMiddleware(logger), nil
+	}
+}
+
+// RegisterMiddleware registers a middleware instance with a name.
+func (mr *MiddlewareRegistry) RegisterMiddleware(name string, middleware Middleware) error {
+	mr.mutex.Lock()
+	defer mr.mutex.Unlock()
+
+	if _, exists := mr.middleware[name]; exists {
+		return fmt.Errorf("middleware already registered: %s", name)
+	}
+
+	mr.middleware[name] = middleware
+	return nil
+}
+
+// RegisterFactory registers a middleware factory with a name.
+func (mr *MiddlewareRegistry) RegisterFactory(name string, factory MiddlewareFactory) error {
+	mr.mutex.Lock()
+	defer mr.mutex.Unlock()
+
+	if _, exists := mr.factories[name]; exists {
+		return fmt.Errorf("middleware factory already registered: %s", name)
+	}
+
+	mr.factories[name] = factory
+	return nil
+}
+
+// GetMiddleware retrieves a registered middleware by name.
+func (mr *MiddlewareRegistry) GetMiddleware(name string) (Middleware, error) {
+	mr.mutex.RLock()
+	defer mr.mutex.RUnlock()
+
+	if middleware, exists := mr.middleware[name]; exists {
+		return middleware, nil
+	}
+
+	return nil, fmt.Errorf("middleware not found: %s", name)
+}
+
+// CreateMiddleware creates a middleware instance using a registered factory.
+func (mr *MiddlewareRegistry) CreateMiddleware(name string, config map[string]interface{}) (Middleware, error) {
+	mr.mutex.RLock()
+	factory, exists := mr.factories[name]
+	mr.mutex.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("middleware factory not found: %s", name)
+	}
+
+	return factory(config)
+}
+
+// ListMiddleware returns all registered middleware names.
+func (mr *MiddlewareRegistry) ListMiddleware() []string {
+	mr.mutex.RLock()
+	defer mr.mutex.RUnlock()
+
+	names := make([]string, 0, len(mr.middleware))
+	for name := range mr.middleware {
+		names = append(names, name)
+	}
+
+	return names
+}
+
+// ListFactories returns all registered factory names.
+func (mr *MiddlewareRegistry) ListFactories() []string {
+	mr.mutex.RLock()
+	defer mr.mutex.RUnlock()
+
+	names := make([]string, 0, len(mr.factories))
+	for name := range mr.factories {
+		names = append(names, name)
+	}
+
+	return names
+}
+
+// UnregisterMiddleware removes a middleware from the registry.
+func (mr *MiddlewareRegistry) UnregisterMiddleware(name string) bool {
+	mr.mutex.Lock()
+	defer mr.mutex.Unlock()
+
+	if _, exists := mr.middleware[name]; exists {
+		delete(mr.middleware, name)
+		return true
+	}
+
+	return false
+}
+
+// UnregisterFactory removes a factory from the registry.
+func (mr *MiddlewareRegistry) UnregisterFactory(name string) bool {
+	mr.mutex.Lock()
+	defer mr.mutex.Unlock()
+
+	if _, exists := mr.factories[name]; exists {
+		delete(mr.factories, name)
+		return true
+	}
+
+	return false
+}
+
+// ConfigurableMiddleware represents middleware that can be configured dynamically.
+type ConfigurableMiddleware interface {
+	Middleware
+	Configure(config map[string]interface{}) error
+	GetConfig() map[string]interface{}
+}
+
+// GlobalMiddlewareRegistry provides a global instance for middleware management.
+var GlobalMiddlewareRegistry = NewMiddlewareRegistry()
