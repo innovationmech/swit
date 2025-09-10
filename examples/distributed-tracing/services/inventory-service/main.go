@@ -52,7 +52,7 @@ import (
 	"github.com/innovationmech/swit/pkg/types"
 )
 
-// Simple inventory item for demo
+// InventoryItem represents a simple inventory item for demo purposes
 type InventoryItem struct {
 	ProductID         string                  `json:"product_id"`
 	TotalQuantity     int32                   `json:"total_quantity"`
@@ -62,6 +62,7 @@ type InventoryItem struct {
 	mutex             sync.RWMutex
 }
 
+// Reservation represents a product reservation for a specific order
 type Reservation struct {
 	ID         string    `json:"id"`
 	ProductID  string    `json:"product_id"`
@@ -78,6 +79,7 @@ type InventoryService struct {
 	mutex     sync.RWMutex
 }
 
+// NewInventoryService creates a new inventory service with demo data
 func NewInventoryService(name string) *InventoryService {
 	service := &InventoryService{
 		name:      name,
@@ -104,6 +106,8 @@ func NewInventoryService(name string) *InventoryService {
 }
 
 // HTTP Handler methods
+
+// RegisterRoutes registers the HTTP routes for the inventory service
 func (s *InventoryService) RegisterRoutes(router interface{}) error {
 	ginRouter, ok := router.(gin.IRouter)
 	if !ok {
@@ -120,16 +124,20 @@ func (s *InventoryService) RegisterRoutes(router interface{}) error {
 	return nil
 }
 
+// GetServiceName returns the service name for HTTP handler registration
 func (s *InventoryService) GetServiceName() string {
 	return "inventory-service-http"
 }
 
 // gRPC Service methods
+
+// InventoryGRPCService implements the gRPC inventory service interface
 type InventoryGRPCService struct {
 	inventoryService *InventoryService
 	inventorypb.UnimplementedInventoryServiceServer
 }
 
+// RegisterGRPC registers the gRPC service with the server
 func (gs *InventoryGRPCService) RegisterGRPC(server interface{}) error {
 	grpcServer, ok := server.(*grpc.Server)
 	if !ok {
@@ -139,11 +147,14 @@ func (gs *InventoryGRPCService) RegisterGRPC(server interface{}) error {
 	return nil
 }
 
+// GetServiceName returns the service name for gRPC handler registration
 func (gs *InventoryGRPCService) GetServiceName() string {
 	return "inventory-service-grpc"
 }
 
 // gRPC method implementations
+
+// CheckInventory checks if the requested quantity is available for a product
 func (gs *InventoryGRPCService) CheckInventory(ctx context.Context, req *inventorypb.CheckInventoryRequest) (*inventorypb.CheckInventoryResponse, error) {
 	tracer := otel.Tracer("inventory-service")
 	ctx, span := tracer.Start(ctx, "grpc.CheckInventory")
@@ -181,6 +192,7 @@ func (gs *InventoryGRPCService) CheckInventory(ctx context.Context, req *invento
 	}, nil
 }
 
+// ReserveInventory reserves the requested quantity for a specific order
 func (gs *InventoryGRPCService) ReserveInventory(ctx context.Context, req *inventorypb.ReserveInventoryRequest) (*inventorypb.ReserveInventoryResponse, error) {
 	tracer := otel.Tracer("inventory-service")
 	ctx, span := tracer.Start(ctx, "grpc.ReserveInventory")
