@@ -23,6 +23,7 @@ package messaging
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,207 +32,66 @@ import (
 	"go.uber.org/zap"
 )
 
-// MessagingCoordinator defines the interface for the central orchestrator of messaging operations.
-// It manages broker registration, event handler discovery, and messaging lifecycle coordination
-// following SWIT framework patterns for consistency with transport coordination.
-//
-// This interface provides:
-// - Broker registration and management
-// - Event handler registration and discovery
-// - Lifecycle management (Start/Stop) with graceful shutdown
-// - Thread-safe operations with proper synchronization
-// - Integration points for TransportCoordinator coordination
-//
-// Context Handling:
-// All methods that accept a context.Context parameter expect a valid, non-nil context.
-// Methods will respect context cancellation and timeouts, returning appropriate errors
-// when the context is cancelled or times out.
-//
-// Example usage:
-//
-//	coordinator := messaging.NewMessagingCoordinator()
-//	defer coordinator.Stop(context.Background())
-//
-//	// Register brokers
-//	kafkaBroker, _ := messaging.NewMessageBroker(&messaging.BrokerConfig{
-//		Type: messaging.BrokerTypeKafka,
-//		Endpoints: []string{"localhost:9092"},
-//	})
-//	coordinator.RegisterBroker("kafka", kafkaBroker)
-//
-//	// Register event handlers
-//	handler := &MyEventHandler{}
-//	coordinator.RegisterEventHandler(handler)
-//
-//	// Start coordinator
-//	ctx := context.Background()
-//	if err := coordinator.Start(ctx); err != nil {
-//		log.Fatal("Failed to start messaging coordinator:", err)
-//	}
+const (
+	defaultShutdownTimeout = 30 * time.Second
+)
+
+// MessagingCoordinator orchestrates brokers and event handlers.
+// It supports broker and handler registration, lifecycle management and
+// exposes metrics and health checks for the messaging layer.
 type MessagingCoordinator interface {
-	// Start initializes the messaging coordinator and starts all registered brokers.
-	// This method blocks until all brokers are successfully started or an error occurs.
-	// It follows the SWIT framework lifecycle pattern and integrates with server startup phases.
-	//
-	// The startup sequence:
-	// 1. Initialize broker connections
-	// 2. Register event handlers with brokers
-	// 3. Start message processing
-	// 4. Mark coordinator as ready
-	//
-	// Parameters:
-	//   - ctx: Context for cancellation and timeout control
-	//
-	// Returns:
-	//   - error: MessagingError if startup fails, nil on success
+	// Start connects brokers, initializes handlers and begins processing.
+	// Blocks until startup completes or an error occurs.
 	Start(ctx context.Context) error
 
-	// Stop gracefully shuts down the messaging coordinator and all registered brokers.
-	// This method ensures all in-flight messages are processed before stopping.
-	// It follows the SWIT framework graceful shutdown pattern.
-	//
-	// The shutdown sequence:
-	// 1. Stop accepting new messages
-	// 2. Wait for in-flight messages to complete (with timeout)
-	// 3. Disconnect from brokers
-	// 4. Clean up resources
-	//
-	// Parameters:
-	//   - ctx: Context for timeout control during shutdown
-	//
-	// Returns:
-	//   - error: MessagingError if shutdown fails, nil on success
+	// Stop gracefully shuts down brokers and handlers, waiting for in-flight work.
 	Stop(ctx context.Context) error
 
-	// RegisterBroker registers a message broker with the coordinator under the given name.
-	// This allows multiple brokers to be managed by a single coordinator.
-	// The broker name must be unique and follow naming conventions (alphanumeric + hyphens).
-	//
-	// Parameters:
-	//   - name: Unique name for the broker (alphanumeric + hyphens, 1-50 chars)
-	//   - broker: MessageBroker instance to register
-	//
-	// Returns:
-	//   - error: MessagingError if registration fails or name is invalid, nil on success
+	// RegisterBroker adds a broker with the given name.
 	RegisterBroker(name string, broker MessageBroker) error
 
-	// GetBroker retrieves a registered broker by name.
-	// This enables services to obtain broker instances for direct operations.
-	//
-	// Parameters:
-	//   - name: Name of the broker to retrieve
-	//
-	// Returns:
-	//   - MessageBroker: The registered broker instance, nil if not found
-	//   - error: MessagingError if broker not found, nil if found
+	// GetBroker returns a registered broker by name.
 	GetBroker(name string) (MessageBroker, error)
 
-	// GetRegisteredBrokers returns a list of all registered broker names.
-	// This is useful for introspection and debugging purposes.
-	//
-	// Returns:
-	//   - []string: List of registered broker names, empty if none registered
+	// GetRegisteredBrokers lists names of all registered brokers.
 	GetRegisteredBrokers() []string
 
-	// RegisterEventHandler registers an event handler for message processing.
-	// Handlers are automatically associated with appropriate brokers based on their
-	// configuration and routing requirements.
-	//
-	// Parameters:
-	//   - handler: EventHandler instance to register
-	//
-	// Returns:
-	//   - error: MessagingError if registration fails, nil on success
+	// RegisterEventHandler adds an event handler to the coordinator.
 	RegisterEventHandler(handler EventHandler) error
 
 	// UnregisterEventHandler removes an event handler by ID.
-	// This stops message processing for the specified handler.
-	//
-	// Parameters:
-	//   - handlerID: Unique identifier of the handler to remove
-	//
-	// Returns:
-	//   - error: MessagingError if handler not found or removal fails, nil on success
 	UnregisterEventHandler(handlerID string) error
 
-	// GetRegisteredHandlers returns a list of all registered handler IDs.
-	// This is useful for introspection and management purposes.
-	//
-	// Returns:
-	//   - []string: List of registered handler IDs, empty if none registered
+	// GetRegisteredHandlers lists IDs of all registered handlers.
 	GetRegisteredHandlers() []string
 
-	// IsStarted returns whether the coordinator has been started.
-	// This method is thread-safe and can be called concurrently.
-	//
-	// Returns:
-	//   - bool: true if started, false otherwise
+	// IsStarted reports whether the coordinator has successfully started.
 	IsStarted() bool
 
-	// GetMetrics returns current messaging coordinator metrics.
-	// Includes broker counts, handler counts, message statistics, and health status.
-	//
-	// Returns:
-	//   - *MessagingCoordinatorMetrics: Current metrics snapshot, never nil
+	// GetMetrics returns current coordinator metrics.
 	GetMetrics() *MessagingCoordinatorMetrics
 
-	// HealthCheck performs a comprehensive health check on all registered brokers and handlers.
-	// This integrates with the SWIT framework health checking system.
-	//
-	// Parameters:
-	//   - ctx: Context for timeout control
-	//
-	// Returns:
-	//   - *MessagingHealthStatus: Aggregated health status, never nil
-	//   - error: MessagingError if health check fails
+	// HealthCheck verifies brokers and handlers and returns aggregated status.
 	HealthCheck(ctx context.Context) (*MessagingHealthStatus, error)
 }
 
-// EventHandler defines the interface for event handlers that can be registered
-// with the MessagingCoordinator. This interface extends the base MessageHandler
-// with additional metadata and lifecycle management capabilities.
+// EventHandler processes messages and exposes metadata for registration.
 type EventHandler interface {
 	MessageHandler
 
-	// GetHandlerID returns a unique identifier for this handler.
-	// This ID is used for registration, deregistration, and debugging.
-	//
-	// Returns:
-	//   - string: Unique handler identifier
+	// GetHandlerID returns the handler's unique identifier.
 	GetHandlerID() string
 
-	// GetTopics returns the list of topics this handler is interested in.
-	// The coordinator uses this information to set up subscriptions.
-	//
-	// Returns:
-	//   - []string: List of topic names this handler processes
+	// GetTopics returns the topics this handler processes.
 	GetTopics() []string
 
-	// GetBrokerRequirement returns the broker name this handler requires.
-	// If empty, the handler can work with any available broker.
-	//
-	// Returns:
-	//   - string: Required broker name, empty for any broker
+	// GetBrokerRequirement returns the required broker name, or empty if any broker is acceptable.
 	GetBrokerRequirement() string
 
-	// Initialize is called when the handler is registered with the coordinator.
-	// This allows handlers to perform setup operations.
-	//
-	// Parameters:
-	//   - ctx: Context for timeout control
-	//
-	// Returns:
-	//   - error: Error if initialization fails, nil on success
+	// Initialize prepares the handler for processing.
 	Initialize(ctx context.Context) error
 
-	// Shutdown is called when the handler is being unregistered or coordinator is stopping.
-	// This allows handlers to perform cleanup operations.
-	//
-	// Parameters:
-	//   - ctx: Context for timeout control
-	//
-	// Returns:
-	//   - error: Error if shutdown fails, nil on success
+	// Shutdown releases handler resources.
 	Shutdown(ctx context.Context) error
 }
 
@@ -313,6 +173,14 @@ type messagingCoordinatorImpl struct {
 	// metrics tracks coordinator metrics
 	metrics *MessagingCoordinatorMetrics
 
+	// subscriptionCtx controls the lifecycle of handler subscriptions and is
+	// independent from Start's context. Cancelled on shutdown.
+	subscriptionCtx    context.Context
+	subscriptionCancel context.CancelFunc
+
+	// wg waits for subscription goroutines to complete
+	wg sync.WaitGroup
+
 	// mu protects concurrent access to coordinator state
 	mu sync.RWMutex
 }
@@ -337,9 +205,8 @@ func NewMessagingCoordinator() MessagingCoordinator {
 // Start implements MessagingCoordinator interface.
 func (c *messagingCoordinatorImpl) Start(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.started {
+		c.mu.Unlock()
 		return &MessagingCoordinatorError{
 			Operation: "start",
 			Err:       fmt.Errorf("coordinator already started"),
@@ -350,17 +217,26 @@ func (c *messagingCoordinatorImpl) Start(ctx context.Context) error {
 		zap.Int("broker_count", len(c.brokers)),
 		zap.Int("handler_count", len(c.handlers)))
 
+	// Use a background context so subscriptions persist beyond Start's context
+	c.subscriptionCtx, c.subscriptionCancel = context.WithCancel(context.Background())
+	c.mu.Unlock()
+
+	startedBrokers := make([]string, 0, len(c.brokers))
+	startedHandlers := make([]string, 0, len(c.handlers))
+
 	// Start all registered brokers
 	for name, broker := range c.brokers {
 		logger.Logger.Debug("Starting broker", zap.String("broker", name))
 
 		if err := broker.Connect(ctx); err != nil {
+			c.rollbackStart(ctx, startedBrokers, startedHandlers)
 			return &MessagingCoordinatorError{
 				Operation: "start",
 				Err:       fmt.Errorf("failed to start broker '%s': %w", name, err),
 			}
 		}
 
+		startedBrokers = append(startedBrokers, name)
 		logger.Logger.Info("Broker started successfully", zap.String("broker", name))
 	}
 
@@ -370,14 +246,18 @@ func (c *messagingCoordinatorImpl) Start(ctx context.Context) error {
 
 		// Initialize the handler
 		if err := handler.Initialize(ctx); err != nil {
+			c.rollbackStart(ctx, startedBrokers, startedHandlers)
 			return &MessagingCoordinatorError{
 				Operation: "start",
 				Err:       fmt.Errorf("failed to initialize handler '%s': %w", handlerID, err),
 			}
 		}
 
+		startedHandlers = append(startedHandlers, handlerID)
+
 		// Create subscription for the handler
-		if err := c.createSubscriptionForHandler(ctx, handler); err != nil {
+		if err := c.createSubscriptionForHandler(handler); err != nil {
+			c.rollbackStart(ctx, startedBrokers, startedHandlers)
 			return &MessagingCoordinatorError{
 				Operation: "start",
 				Err:       fmt.Errorf("failed to create subscription for handler '%s': %w", handlerID, err),
@@ -387,12 +267,13 @@ func (c *messagingCoordinatorImpl) Start(ctx context.Context) error {
 		logger.Logger.Info("Event handler initialized successfully", zap.String("handler_id", handlerID))
 	}
 
-	// Mark as started and update metrics
+	c.mu.Lock()
 	now := time.Now()
 	c.started = true
 	c.startedAt = &now
 	c.metrics.StartedAt = &now
 	c.updateMetrics()
+	c.mu.Unlock()
 
 	logger.Logger.Info("Messaging coordinator started successfully",
 		zap.Int("brokers", len(c.brokers)),
@@ -401,11 +282,40 @@ func (c *messagingCoordinatorImpl) Start(ctx context.Context) error {
 	return nil
 }
 
+// rollbackStart cleans up resources started before a startup failure.
+func (c *messagingCoordinatorImpl) rollbackStart(ctx context.Context, brokers, handlers []string) {
+	if c.subscriptionCancel != nil {
+		c.subscriptionCancel()
+	}
+	c.wg.Wait()
+
+	for _, handlerID := range handlers {
+		if sub, ok := c.subscribers[handlerID]; ok {
+			_ = sub.Unsubscribe(ctx)
+			_ = sub.Close()
+			delete(c.subscribers, handlerID)
+		}
+		if h, ok := c.handlers[handlerID]; ok {
+			_ = h.Shutdown(ctx)
+		}
+	}
+
+	for _, name := range brokers {
+		if b, ok := c.brokers[name]; ok {
+			_ = b.Disconnect(ctx)
+		}
+	}
+}
+
 // Stop implements MessagingCoordinator interface.
 func (c *messagingCoordinatorImpl) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.stopUnlocked(ctx)
+}
 
+// stopUnlocked performs coordinator shutdown. Caller must hold c.mu.
+func (c *messagingCoordinatorImpl) stopUnlocked(ctx context.Context) error {
 	if !c.started {
 		return nil // Already stopped
 	}
@@ -413,6 +323,11 @@ func (c *messagingCoordinatorImpl) Stop(ctx context.Context) error {
 	logger.Logger.Info("Stopping messaging coordinator")
 
 	var errors []string
+
+	if c.subscriptionCancel != nil {
+		c.subscriptionCancel()
+	}
+	c.wg.Wait()
 
 	// Stop all subscribers first (gracefully stop message processing)
 	for handlerID, subscriber := range c.subscribers {
@@ -458,6 +373,8 @@ func (c *messagingCoordinatorImpl) Stop(ctx context.Context) error {
 	// Mark as stopped
 	c.started = false
 	c.startedAt = nil
+	c.subscriptionCtx = nil
+	c.subscriptionCancel = nil
 	c.updateMetrics()
 
 	if len(errors) > 0 {
@@ -497,6 +414,13 @@ func (c *messagingCoordinatorImpl) RegisterBroker(name string, broker MessageBro
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.started {
+		return &MessagingCoordinatorError{
+			Operation: "register_broker",
+			Err:       fmt.Errorf("cannot register broker after coordinator has started"),
+		}
+	}
 
 	// Check for duplicate registration
 	if _, exists := c.brokers[name]; exists {
@@ -562,6 +486,13 @@ func (c *messagingCoordinatorImpl) RegisterEventHandler(handler EventHandler) er
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.started {
+		return &MessagingCoordinatorError{
+			Operation: "register_handler",
+			Err:       fmt.Errorf("cannot register handler after coordinator has started"),
+		}
+	}
+
 	// Check for duplicate registration
 	if _, exists := c.handlers[handlerID]; exists {
 		return &MessagingCoordinatorError{
@@ -601,7 +532,7 @@ func (c *messagingCoordinatorImpl) UnregisterEventHandler(handlerID string) erro
 
 	// Stop subscriber if running
 	if subscriber, exists := c.subscribers[handlerID]; exists {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
 		defer cancel()
 
 		if err := subscriber.Unsubscribe(ctx); err != nil {
@@ -621,7 +552,7 @@ func (c *messagingCoordinatorImpl) UnregisterEventHandler(handlerID string) erro
 
 	// Shutdown the handler
 	if c.started {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
 		defer cancel()
 
 		if err := handler.Shutdown(ctx); err != nil {
@@ -778,7 +709,7 @@ func (c *messagingCoordinatorImpl) validateHandlerRequirements(handler EventHand
 }
 
 // createSubscriptionForHandler creates a subscription for an event handler.
-func (c *messagingCoordinatorImpl) createSubscriptionForHandler(ctx context.Context, handler EventHandler) error {
+func (c *messagingCoordinatorImpl) createSubscriptionForHandler(handler EventHandler) error {
 	handlerID := handler.GetHandlerID()
 	brokerReq := handler.GetBrokerRequirement()
 	topics := handler.GetTopics()
@@ -796,11 +727,15 @@ func (c *messagingCoordinatorImpl) createSubscriptionForHandler(ctx context.Cont
 		}
 		brokerName = brokerReq
 	} else {
-		// Use first available broker (could be enhanced with load balancing)
-		for name, b := range c.brokers {
-			broker = b
-			brokerName = name
-			break
+		// Use deterministic selection of available brokers
+		names := make([]string, 0, len(c.brokers))
+		for name := range c.brokers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if len(names) > 0 {
+			brokerName = names[0]
+			broker = c.brokers[brokerName]
 		}
 		if broker == nil {
 			return fmt.Errorf("no brokers available")
@@ -808,12 +743,9 @@ func (c *messagingCoordinatorImpl) createSubscriptionForHandler(ctx context.Cont
 	}
 
 	// Create subscriber configuration
-	// Note: This is a simplified configuration - in a real implementation,
-	// you'd want more sophisticated configuration options
 	config := SubscriberConfig{
 		Topics:        topics,
 		ConsumerGroup: fmt.Sprintf("%s-group", handlerID),
-		// Add other configuration as needed
 	}
 
 	// Create subscriber
@@ -825,15 +757,23 @@ func (c *messagingCoordinatorImpl) createSubscriptionForHandler(ctx context.Cont
 	// Store subscriber for later cleanup
 	c.subscribers[handlerID] = subscriber
 
-	// Start subscription in a separate goroutine
-	// In a production system, you'd want better goroutine management
+	c.wg.Add(1)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Logger.Error("Subscription panic recovered",
+					zap.String("handler_id", handlerID),
+					zap.Any("panic", r))
+			}
+			c.wg.Done()
+		}()
+
 		logger.Logger.Info("Starting subscription for handler",
 			zap.String("handler_id", handlerID),
 			zap.String("broker", brokerName),
 			zap.Strings("topics", topics))
 
-		if err := subscriber.Subscribe(ctx, handler); err != nil {
+		if err := subscriber.Subscribe(c.subscriptionCtx, handler); err != nil {
 			logger.Logger.Error("Subscription failed",
 				zap.String("handler_id", handlerID),
 				zap.Error(err))
