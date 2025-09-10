@@ -48,8 +48,8 @@ type MessagingCoordinator interface {
 	UnregisterEventHandler(handlerID string) error
 	GetRegisteredHandlers() []string
 	IsStarted() bool
-	GetMetrics() *MessagingCoordinatorMetrics
-	HealthCheck(ctx context.Context) (*MessagingHealthStatus, error)
+	GetMetrics() any
+	HealthCheck(ctx context.Context) (any, error)
 }
 
 // MessageBroker minimal interface to avoid import cycle
@@ -61,19 +61,6 @@ type MessageBroker interface {
 // EventHandler minimal interface to avoid import cycle
 type EventHandler interface {
 	GetHandlerID() string
-}
-
-// MessagingCoordinatorMetrics minimal structure to avoid import cycle
-type MessagingCoordinatorMetrics struct {
-	BrokerCount  int `json:"broker_count"`
-	HandlerCount int `json:"handler_count"`
-}
-
-// MessagingHealthStatus minimal structure to avoid import cycle
-type MessagingHealthStatus struct {
-	Overall   string    `json:"overall"`
-	Details   string    `json:"details"`
-	Timestamp time.Time `json:"timestamp"`
 }
 
 // TransportError represents an error from a specific transport
@@ -189,12 +176,9 @@ func NewTransportCoordinator() *TransportCoordinator {
 
 // NewTransportCoordinatorWithMessaging creates a new transport coordinator with messaging enabled
 func NewTransportCoordinatorWithMessaging() *TransportCoordinator {
-	return &TransportCoordinator{
-		transports:       make([]NetworkTransport, 0),
-		registryManager:  NewMultiTransportRegistry(),
-		messagingCoord:   nil, // Will be set later to avoid import cycle
-		messagingEnabled: true,
-	}
+	tc := NewTransportCoordinator()
+	tc.EnableMessaging()
+	return tc
 }
 
 // SetMessagingCoordinator sets the messaging coordinator to avoid import cycles
@@ -270,6 +254,10 @@ func (m *TransportCoordinator) Start(ctx context.Context) error {
 	messagingCoord := m.messagingCoord
 	m.mu.RUnlock()
 
+	if messagingEnabled && messagingCoord == nil {
+		return fmt.Errorf("messaging is enabled but coordinator is not set")
+	}
+
 	// Start messaging coordinator first if enabled
 	if messagingEnabled && messagingCoord != nil {
 		logger.Logger.Info("Starting messaging coordinator")
@@ -286,7 +274,9 @@ func (m *TransportCoordinator) Start(ctx context.Context) error {
 		if err := transport.Start(ctx); err != nil {
 			// If messaging was started, stop it on transport failure
 			if messagingEnabled && messagingCoord != nil {
-				_ = messagingCoord.Stop(ctx)
+				if stopErr := messagingCoord.Stop(ctx); stopErr != nil {
+					logger.Logger.Error("Failed to stop messaging coordinator after transport start failure", zap.Error(stopErr))
+				}
 			}
 			return fmt.Errorf("failed to start %s transport: %w", transport.GetName(), err)
 		}
@@ -475,6 +465,10 @@ func (m *TransportCoordinator) RegisterMessageBroker(name string, broker Message
 		return fmt.Errorf("messaging coordinator is not initialized")
 	}
 
+	if broker == nil {
+		return fmt.Errorf("broker cannot be nil")
+	}
+
 	return m.messagingCoord.RegisterBroker(name, broker)
 }
 
@@ -511,7 +505,7 @@ func (m *TransportCoordinator) UnregisterEventHandler(handlerID string) error {
 }
 
 // GetMessagingMetrics returns messaging coordinator metrics if messaging is enabled
-func (m *TransportCoordinator) GetMessagingMetrics() *MessagingCoordinatorMetrics {
+func (m *TransportCoordinator) GetMessagingMetrics() any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -523,7 +517,7 @@ func (m *TransportCoordinator) GetMessagingMetrics() *MessagingCoordinatorMetric
 }
 
 // CheckMessagingHealth performs health check on messaging coordinator if enabled
-func (m *TransportCoordinator) CheckMessagingHealth(ctx context.Context) (*MessagingHealthStatus, error) {
+func (m *TransportCoordinator) CheckMessagingHealth(ctx context.Context) (any, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
