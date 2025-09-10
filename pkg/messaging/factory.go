@@ -147,10 +147,14 @@ func (f *messageBrokerFactoryImpl) GetSupportedBrokerTypes() []BrokerType {
 
 	// Add types from legacy factories
 	f.mu.RLock()
+	factoryKeys := make([]BrokerType, 0, len(f.factories))
 	for brokerType := range f.factories {
-		typeSet[brokerType] = true
+		factoryKeys = append(factoryKeys, brokerType)
 	}
 	f.mu.RUnlock()
+	for _, brokerType := range factoryKeys {
+		typeSet[brokerType] = true
+	}
 
 	// Convert to slice
 	types := make([]BrokerType, 0, len(typeSet))

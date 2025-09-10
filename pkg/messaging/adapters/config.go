@@ -23,6 +23,7 @@ package adapters
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/innovationmech/swit/pkg/messaging"
@@ -153,13 +154,9 @@ func (s *BrokerSelector) SelectBroker(criteria SelectionCriteria) (*SelectionRes
 	}
 
 	// Sort candidates by score (highest first)
-	for i := range candidates {
-		for j := i + 1; j < len(candidates); j++ {
-			if candidates[j].Score > candidates[i].Score {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
-		}
-	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
 
 	// Select the best candidate
 	best := candidates[0]

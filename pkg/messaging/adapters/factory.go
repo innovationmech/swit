@@ -321,15 +321,7 @@ func (r *brokerAdapterRegistryImpl) ValidateConfiguration(config *messaging.Brok
 
 	adapter, err := r.GetAdapterForBrokerType(config.Type)
 	if err != nil {
-		return &messaging.AdapterValidationResult{
-			Valid: false,
-			Errors: []messaging.AdapterValidationError{{
-				Field:    "Type",
-				Message:  fmt.Sprintf("unsupported broker type: %s", config.Type),
-				Code:     "TYPE_UNSUPPORTED",
-				Severity: messaging.AdapterValidationSeverityError,
-			}},
-		}, nil
+		return nil, err
 	}
 
 	return adapter.ValidateConfiguration(config), nil
@@ -364,26 +356,41 @@ func (r *brokerAdapterRegistryImpl) HealthCheck(ctx context.Context) (map[string
 	r.mu.RUnlock()
 
 	results := make(map[string]*messaging.HealthStatus)
-	var criticalIssues []string
+	var (
+		resultsMu      sync.Mutex
+		criticalMu     sync.Mutex
+		criticalIssues []string
+		wg             sync.WaitGroup
+	)
 
 	for name, adapter := range adapters {
-		status, err := adapter.HealthCheck(ctx)
-		if err != nil {
-			// Create error status if health check failed
-			status = &messaging.HealthStatus{
-				Status:      messaging.HealthStatusUnhealthy,
-				Message:     fmt.Sprintf("Health check failed: %v", err),
-				LastChecked: time.Now(),
-			}
-			criticalIssues = append(criticalIssues, fmt.Sprintf("adapter '%s': %v", name, err))
-		}
-		results[name] = status
+		wg.Add(1)
+		go func(name string, adapter messaging.MessageBrokerAdapter) {
+			defer wg.Done()
 
-		// Track critical issues
-		if status.Status == messaging.HealthStatusUnhealthy {
-			criticalIssues = append(criticalIssues, fmt.Sprintf("adapter '%s': %s", name, status.Message))
-		}
+			status, err := adapter.HealthCheck(ctx)
+			if err != nil {
+				status = &messaging.HealthStatus{
+					Status:      messaging.HealthStatusUnhealthy,
+					Message:     fmt.Sprintf("Health check failed: %v", err),
+					LastChecked: time.Now(),
+				}
+				criticalMu.Lock()
+				criticalIssues = append(criticalIssues, fmt.Sprintf("adapter '%s': %v", name, err))
+				criticalMu.Unlock()
+			} else if status.Status == messaging.HealthStatusUnhealthy {
+				criticalMu.Lock()
+				criticalIssues = append(criticalIssues, fmt.Sprintf("adapter '%s': %s", name, status.Message))
+				criticalMu.Unlock()
+			}
+
+			resultsMu.Lock()
+			results[name] = status
+			resultsMu.Unlock()
+		}(name, adapter)
 	}
+
+	wg.Wait()
 
 	var err error
 	if len(criticalIssues) > 0 {
