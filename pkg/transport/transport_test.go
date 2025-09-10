@@ -39,6 +39,11 @@ import (
 	"github.com/innovationmech/swit/pkg/types"
 )
 
+const (
+	testServiceVersion = "1.0.0"
+	testHealthTTL      = time.Hour
+)
+
 func init() {
 	// Initialize logger for tests
 	logger.Logger, _ = zap.NewDevelopment()
@@ -1074,13 +1079,13 @@ func (s *simpleServiceHandler) RegisterGRPC(server *grpc.Server) error { return 
 func (s *simpleServiceHandler) GetMetadata() *HandlerMetadata {
 	return &HandlerMetadata{
 		Name:        s.name,
-		Version:     "1.0.0",
+		Version:     testServiceVersion,
 		Description: "Simple test service",
 	}
 }
 func (s *simpleServiceHandler) GetHealthEndpoint() string { return "/health" }
 func (s *simpleServiceHandler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
-	return types.NewHealthStatus(types.HealthStatusHealthy, "1.0.0", time.Hour), nil
+	return types.NewHealthStatus(types.HealthStatusHealthy, testServiceVersion, testHealthTTL), nil
 }
 func (s *simpleServiceHandler) Initialize(ctx context.Context) error { return nil }
 func (s *simpleServiceHandler) Shutdown(ctx context.Context) error   { return nil }
