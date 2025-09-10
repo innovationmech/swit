@@ -24,6 +24,7 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/messaging"
@@ -88,10 +89,7 @@ func (b *BaseMessageBrokerAdapter) GetAdapterInfo() *messaging.BrokerAdapterInfo
 	// Return a copy to prevent external mutation
 	info := *b.info
 	if b.info.Extended != nil {
-		info.Extended = make(map[string]any)
-		for k, v := range b.info.Extended {
-			info.Extended[k] = v
-		}
+		info.Extended = deepCopyMap(b.info.Extended)
 	}
 	if b.info.SupportedBrokerTypes != nil {
 		info.SupportedBrokerTypes = make([]messaging.BrokerType, len(b.info.SupportedBrokerTypes))
@@ -368,4 +366,39 @@ func (b *BaseMessageBrokerAdapter) createValidationError(message string, result 
 	}
 
 	return messaging.NewConfigError(combinedMessage, nil)
+}
+
+// deepCopyMap creates a deep copy of a map[string]any to prevent external modification.
+func deepCopyMap(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = deepCopyValue(v)
+	}
+	return dst
+}
+
+// deepCopyValue recursively copies maps and slices to avoid shared references.
+func deepCopyValue(src any) any {
+	if src == nil {
+		return nil
+	}
+
+	v := reflect.ValueOf(src)
+	switch v.Kind() {
+	case reflect.Map:
+		dst := make(map[string]any)
+		for _, key := range v.MapKeys() {
+			dst[key.String()] = deepCopyValue(v.MapIndex(key).Interface())
+		}
+		return dst
+	case reflect.Slice:
+		l := v.Len()
+		dst := make([]any, l)
+		for i := 0; i < l; i++ {
+			dst[i] = deepCopyValue(v.Index(i).Interface())
+		}
+		return dst
+	default:
+		return src
+	}
 }

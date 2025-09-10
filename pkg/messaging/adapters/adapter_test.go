@@ -307,6 +307,17 @@ func TestBrokerAdapterRegistry(t *testing.T) {
 		}
 	})
 
+	t.Run("ValidateConfiguration_UnsupportedType", func(t *testing.T) {
+		config := &messaging.BrokerConfig{Type: messaging.BrokerTypeRabbitMQ}
+		result, err := registry.ValidateConfiguration(config)
+		if err == nil {
+			t.Error("Expected error for unsupported broker type")
+		}
+		if result != nil {
+			t.Error("Expected nil result for unsupported broker type")
+		}
+	})
+
 	t.Run("HealthCheck", func(t *testing.T) {
 		ctx := context.Background()
 		health, err := registry.HealthCheck(ctx)
