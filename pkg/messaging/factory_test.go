@@ -22,9 +22,13 @@
 package messaging
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNewMessageBrokerFactory tests the factory constructor.
@@ -344,4 +348,442 @@ func TestConcurrentFactoryAccess(t *testing.T) {
 	if len(types) != 2 {
 		t.Errorf("Expected 2 registered factories, got: %d", len(types))
 	}
+}
+
+// TestMessagingDependencyInjection tests the messaging dependency injection factory patterns
+func TestMessagingDependencyInjection(t *testing.T) {
+	tests := []struct {
+		name string
+		test func(t *testing.T)
+	}{
+		{"CreateMessagingCoordinatorFactory", testCreateMessagingCoordinatorFactory},
+		{"CreateBrokerFactoryWithDI", testCreateBrokerFactoryWithDI},
+		{"CreateEventHandlerFactoryWithDI", testCreateEventHandlerFactoryWithDI},
+		{"DependencyInjectedCoordinator", testDependencyInjectedCoordinator},
+		{"DependencyInjectedBroker", testDependencyInjectedBroker},
+		{"DependencyInjectedEventHandler", testDependencyInjectedEventHandler},
+		{"MessagingConfigurationProvider", testMessagingConfigurationProvider},
+		{"BrokerConfigurationProvider", testBrokerConfigurationProvider},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, test.test)
+	}
+}
+
+func testCreateMessagingCoordinatorFactory(t *testing.T) {
+	factory := CreateMessagingCoordinatorFactory()
+	require.NotNil(t, factory)
+
+	container := &mockDIContainer{}
+
+	// Test successful creation
+	coordinator, err := factory(container)
+	assert.NoError(t, err)
+	assert.NotNil(t, coordinator)
+
+	// Verify it's wrapped
+	wrapper, ok := coordinator.(*dependencyInjectedCoordinator)
+	assert.True(t, ok)
+	assert.NotNil(t, wrapper.MessagingCoordinator)
+	assert.Equal(t, container, wrapper.container)
+}
+
+func testCreateBrokerFactoryWithDI(t *testing.T) {
+	factory := CreateBrokerFactory("inmemory")
+	require.NotNil(t, factory)
+
+	container := &mockDIContainer{}
+
+	// Test with valid config
+	config := &BrokerConfig{
+		Type: BrokerTypeInMemory,
+	}
+
+	broker, err := factory(container, config)
+	if err != nil {
+		t.Skipf("Skipping test as inmemory broker not registered: %v", err)
+		return
+	}
+	assert.NotNil(t, broker)
+
+	// Verify it's wrapped
+	wrapper, ok := broker.(*dependencyInjectedBroker)
+	assert.True(t, ok)
+	assert.NotNil(t, wrapper.MessageBroker)
+	assert.Equal(t, container, wrapper.container)
+
+	// Test with invalid config type
+	broker, err = factory(container, "invalid-config")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid config type")
+	assert.Nil(t, broker)
+}
+
+func testCreateEventHandlerFactoryWithDI(t *testing.T) {
+	handlerConstructor := func(container DependencyContainerProvider) (EventHandler, error) {
+		return &mockDIEventHandler{handlerID: "test-handler"}, nil
+	}
+
+	factory := CreateEventHandlerFactory("test", handlerConstructor)
+	require.NotNil(t, factory)
+
+	container := &mockDIContainer{}
+
+	// Test successful creation
+	handler, err := factory(container)
+	assert.NoError(t, err)
+	assert.NotNil(t, handler)
+
+	// Verify it's wrapped
+	wrapper, ok := handler.(*dependencyInjectedEventHandler)
+	assert.True(t, ok)
+	assert.NotNil(t, wrapper.EventHandler)
+	assert.Equal(t, container, wrapper.container)
+	assert.Equal(t, "test-handler", wrapper.EventHandler.GetHandlerID())
+}
+
+func testDependencyInjectedCoordinator(t *testing.T) {
+	baseCoordinator := &mockDIMessagingCoordinator{}
+	container := &mockDIContainer{}
+
+	wrapper := &dependencyInjectedCoordinator{
+		MessagingCoordinator: baseCoordinator,
+		container:            container,
+	}
+
+	// Test Start
+	ctx := context.Background()
+	err := wrapper.Start(ctx)
+	assert.NoError(t, err)
+	assert.True(t, baseCoordinator.started)
+
+	// Test RegisterEventHandler with DependencyAware handler
+	dependencyAwareHandler := &mockDependencyAwareEventHandler{}
+	err = wrapper.RegisterEventHandler(dependencyAwareHandler)
+	assert.NoError(t, err)
+	assert.True(t, dependencyAwareHandler.dependenciesInjected)
+	assert.Contains(t, baseCoordinator.registeredHandlers, dependencyAwareHandler.GetHandlerID())
+
+	// Test RegisterEventHandler with regular handler
+	regularHandler := &mockDIEventHandler{handlerID: "regular"}
+	err = wrapper.RegisterEventHandler(regularHandler)
+	assert.NoError(t, err)
+	assert.Contains(t, baseCoordinator.registeredHandlers, regularHandler.GetHandlerID())
+}
+
+func testDependencyInjectedBroker(t *testing.T) {
+	baseBroker := &mockDIBroker{}
+	container := &mockDIContainer{}
+
+	wrapper := &dependencyInjectedBroker{
+		MessageBroker: baseBroker,
+		container:     container,
+	}
+
+	// Test Connect with non-DI broker
+	ctx := context.Background()
+	err := wrapper.Connect(ctx)
+	assert.NoError(t, err)
+	assert.True(t, baseBroker.connected)
+
+	// Test Connect with DI-aware broker
+	diBroker := &mockDependencyAwareBroker{}
+	wrapper2 := &dependencyInjectedBroker{
+		MessageBroker: diBroker,
+		container:     container,
+	}
+
+	err = wrapper2.Connect(ctx)
+	assert.NoError(t, err)
+	assert.True(t, diBroker.connected)
+	assert.True(t, diBroker.dependenciesInjected)
+}
+
+func testDependencyInjectedEventHandler(t *testing.T) {
+	baseHandler := &mockDIEventHandler{handlerID: "test"}
+	container := &mockDIContainer{}
+
+	wrapper := &dependencyInjectedEventHandler{
+		EventHandler: baseHandler,
+		container:    container,
+	}
+
+	// Test Initialize with non-DI handler
+	ctx := context.Background()
+	err := wrapper.Initialize(ctx)
+	assert.NoError(t, err)
+	assert.True(t, baseHandler.initialized)
+
+	// Test Initialize with DI-aware handler
+	diHandler := &mockDependencyAwareEventHandler{}
+	wrapper2 := &dependencyInjectedEventHandler{
+		EventHandler: diHandler,
+		container:    container,
+	}
+
+	err = wrapper2.Initialize(ctx)
+	assert.NoError(t, err)
+	assert.True(t, diHandler.initialized)
+	assert.True(t, diHandler.dependenciesInjected)
+}
+
+func testMessagingConfigurationProvider(t *testing.T) {
+	config := &MessagingConfig{
+		Enabled: true,
+		Brokers: map[string]*BrokerConfig{
+			"kafka": {Type: BrokerTypeKafka},
+		},
+	}
+
+	factory := CreateMessagingConfigurationProvider(config)
+	require.NotNil(t, factory)
+
+	container := &mockDIContainer{}
+
+	// Test successful creation
+	result, err := factory(container)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+
+	resultConfig, ok := result.(*MessagingConfig)
+	assert.True(t, ok)
+	assert.True(t, resultConfig.Enabled)
+	assert.Len(t, resultConfig.Brokers, 1)
+
+	// Verify it's a copy (modification shouldn't affect original)
+	resultConfig.Enabled = false
+	assert.True(t, config.Enabled) // Original should be unchanged
+
+	// Test with nil config
+	factory2 := CreateMessagingConfigurationProvider(nil)
+	result, err = factory2(container)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "messaging configuration cannot be nil")
+	assert.Nil(t, result)
+}
+
+func testBrokerConfigurationProvider(t *testing.T) {
+	configs := map[string]*BrokerConfig{
+		"kafka": {Type: BrokerTypeKafka},
+		"nats":  {Type: BrokerTypeNATS},
+	}
+
+	factory := CreateBrokerConfigurationProvider(configs)
+	require.NotNil(t, factory)
+
+	container := &mockDIContainer{}
+
+	// Test successful creation
+	result, err := factory(container)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+
+	resultConfigs, ok := result.(map[string]*BrokerConfig)
+	assert.True(t, ok)
+	assert.Len(t, resultConfigs, 2)
+	assert.NotNil(t, resultConfigs["kafka"])
+	assert.NotNil(t, resultConfigs["nats"])
+
+	// Verify it's a copy (modification shouldn't affect original)
+	resultConfigs["kafka"].Type = BrokerTypeInMemory
+	assert.Equal(t, BrokerTypeKafka, configs["kafka"].Type) // Original should be unchanged
+
+	// Test with nil configs
+	factory2 := CreateBrokerConfigurationProvider(nil)
+	result, err = factory2(container)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "broker configurations cannot be nil")
+	assert.Nil(t, result)
+}
+
+// Mock implementations for dependency injection testing
+
+type mockDIContainer struct {
+	services map[string]interface{}
+	closed   bool
+}
+
+func (m *mockDIContainer) GetService(name string) (interface{}, error) {
+	if m.services == nil {
+		m.services = make(map[string]interface{})
+	}
+
+	service, exists := m.services[name]
+	if !exists {
+		return nil, errors.New("service not found")
+	}
+
+	return service, nil
+}
+
+func (m *mockDIContainer) Close() error {
+	m.closed = true
+	return nil
+}
+
+type mockDIMessagingCoordinator struct {
+	started            bool
+	registeredHandlers map[string]EventHandler
+}
+
+func (m *mockDIMessagingCoordinator) Start(ctx context.Context) error {
+	m.started = true
+	return nil
+}
+
+func (m *mockDIMessagingCoordinator) Stop(ctx context.Context) error {
+	m.started = false
+	return nil
+}
+
+func (m *mockDIMessagingCoordinator) RegisterEventHandler(handler EventHandler) error {
+	if m.registeredHandlers == nil {
+		m.registeredHandlers = make(map[string]EventHandler)
+	}
+	m.registeredHandlers[handler.GetHandlerID()] = handler
+	return nil
+}
+
+func (m *mockDIMessagingCoordinator) UnregisterEventHandler(handlerID string) error {
+	if m.registeredHandlers != nil {
+		delete(m.registeredHandlers, handlerID)
+	}
+	return nil
+}
+
+func (m *mockDIMessagingCoordinator) GetRegisteredHandlers() []string {
+	handlers := make([]string, 0, len(m.registeredHandlers))
+	for id := range m.registeredHandlers {
+		handlers = append(handlers, id)
+	}
+	return handlers
+}
+
+func (m *mockDIMessagingCoordinator) IsStarted() bool {
+	return m.started
+}
+
+func (m *mockDIMessagingCoordinator) RegisterBroker(name string, broker MessageBroker) error {
+	return nil
+}
+
+func (m *mockDIMessagingCoordinator) GetBroker(name string) (MessageBroker, error) {
+	return nil, nil
+}
+
+func (m *mockDIMessagingCoordinator) GetRegisteredBrokers() []string {
+	return nil
+}
+
+func (m *mockDIMessagingCoordinator) GetMetrics() *MessagingCoordinatorMetrics {
+	return &MessagingCoordinatorMetrics{}
+}
+
+func (m *mockDIMessagingCoordinator) HealthCheck(ctx context.Context) (*MessagingHealthStatus, error) {
+	return &MessagingHealthStatus{Overall: "healthy"}, nil
+}
+
+type mockDIBroker struct {
+	connected bool
+}
+
+func (m *mockDIBroker) Connect(ctx context.Context) error {
+	m.connected = true
+	return nil
+}
+
+func (m *mockDIBroker) Disconnect(ctx context.Context) error {
+	m.connected = false
+	return nil
+}
+
+func (m *mockDIBroker) IsConnected() bool {
+	return m.connected
+}
+
+func (m *mockDIBroker) Close() error {
+	m.connected = false
+	return nil
+}
+
+func (m *mockDIBroker) CreatePublisher(config PublisherConfig) (EventPublisher, error) {
+	return nil, nil
+}
+
+func (m *mockDIBroker) CreateSubscriber(config SubscriberConfig) (EventSubscriber, error) {
+	return nil, nil
+}
+
+func (m *mockDIBroker) HealthCheck(ctx context.Context) (*HealthStatus, error) {
+	return &HealthStatus{Status: HealthStatusHealthy}, nil
+}
+
+func (m *mockDIBroker) GetMetrics() *BrokerMetrics {
+	return &BrokerMetrics{}
+}
+
+func (m *mockDIBroker) GetCapabilities() *BrokerCapabilities {
+	return &BrokerCapabilities{}
+}
+
+type mockDIEventHandler struct {
+	handlerID   string
+	initialized bool
+}
+
+func (m *mockDIEventHandler) GetHandlerID() string {
+	return m.handlerID
+}
+
+func (m *mockDIEventHandler) GetTopics() []string {
+	return []string{"test-topic"}
+}
+
+func (m *mockDIEventHandler) GetBrokerRequirement() string {
+	return ""
+}
+
+func (m *mockDIEventHandler) Initialize(ctx context.Context) error {
+	m.initialized = true
+	return nil
+}
+
+func (m *mockDIEventHandler) Shutdown(ctx context.Context) error {
+	m.initialized = false
+	return nil
+}
+
+func (m *mockDIEventHandler) Handle(ctx context.Context, message *Message) error {
+	return nil
+}
+
+func (m *mockDIEventHandler) OnError(ctx context.Context, message *Message, err error) ErrorAction {
+	return ErrorActionRetry
+}
+
+// DependencyAware mocks for dependency injection testing
+
+type mockDependencyAwareBroker struct {
+	mockDIBroker
+	dependenciesInjected bool
+}
+
+func (m *mockDependencyAwareBroker) InjectDependencies(container DependencyContainerProvider) error {
+	m.dependenciesInjected = true
+	return nil
+}
+
+type mockDependencyAwareEventHandler struct {
+	mockDIEventHandler
+	dependenciesInjected bool
+}
+
+func (m *mockDependencyAwareEventHandler) InjectDependencies(container DependencyContainerProvider) error {
+	m.dependenciesInjected = true
+	return nil
+}
+
+func (m *mockDependencyAwareEventHandler) GetHandlerID() string {
+	return "dependency-aware-handler"
 }

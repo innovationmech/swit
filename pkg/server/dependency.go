@@ -54,19 +54,27 @@ type DependencyMetadata struct {
 
 // SimpleBusinessDependencyContainer provides a basic implementation of BusinessDependencyContainer
 // It supports singleton and transient dependencies with lifecycle management
+// Now also implements MessagingDependencyRegistry for messaging integration
 type SimpleBusinessDependencyContainer struct {
 	mu           sync.RWMutex
 	dependencies map[string]*DependencyMetadata
 	initialized  bool
 	closed       bool
+
+	// Messaging-specific registries
+	messagingCoordinatorFactory MessagingCoordinatorFactory
+	brokerFactories             map[string]MessageBrokerFactory
+	eventHandlerFactories       map[string]EventHandlerFactory
 }
 
 // NewSimpleBusinessDependencyContainer creates a new SimpleBusinessDependencyContainer
 func NewSimpleBusinessDependencyContainer() *SimpleBusinessDependencyContainer {
 	return &SimpleBusinessDependencyContainer{
-		dependencies: make(map[string]*DependencyMetadata),
-		initialized:  false,
-		closed:       false,
+		dependencies:          make(map[string]*DependencyMetadata),
+		initialized:           false,
+		closed:                false,
+		brokerFactories:       make(map[string]MessageBrokerFactory),
+		eventHandlerFactories: make(map[string]EventHandlerFactory),
 	}
 }
 
@@ -348,6 +356,35 @@ func (c *SimpleBusinessDependencyContainer) IsClosed() bool {
 	return c.closed
 }
 
+// MessagingCoordinatorFactory defines a factory function for creating messaging coordinators
+type MessagingCoordinatorFactory func(container BusinessDependencyContainer) (interface{}, error)
+
+// MessageBrokerFactory defines a factory function for creating message brokers
+type MessageBrokerFactory func(container BusinessDependencyContainer, config interface{}) (interface{}, error)
+
+// EventHandlerFactory defines a factory function for creating event handlers with dependency injection
+type EventHandlerFactory func(container BusinessDependencyContainer) (interface{}, error)
+
+// MessagingDependencyRegistry extends BusinessDependencyRegistry with messaging-specific capabilities
+type MessagingDependencyRegistry interface {
+	BusinessDependencyRegistry
+
+	// RegisterMessagingCoordinator registers a messaging coordinator as singleton
+	RegisterMessagingCoordinator(factory MessagingCoordinatorFactory) error
+
+	// RegisterBrokerFactory registers a broker factory for a specific broker type
+	RegisterBrokerFactory(brokerType string, factory MessageBrokerFactory) error
+
+	// RegisterEventHandlerFactory registers an event handler factory
+	RegisterEventHandlerFactory(handlerID string, factory EventHandlerFactory) error
+
+	// CreateBroker creates a broker instance using registered factories
+	CreateBroker(brokerType string, config interface{}) (interface{}, error)
+
+	// GetMessagingCoordinator retrieves the registered messaging coordinator
+	GetMessagingCoordinator() (interface{}, error)
+}
+
 // BusinessDependencyContainerBuilder provides a fluent interface for building dependency containers
 type BusinessDependencyContainerBuilder struct {
 	container *SimpleBusinessDependencyContainer
@@ -393,4 +430,115 @@ func (b *BusinessDependencyContainerBuilder) AddInstance(name string, instance i
 // Build returns the built dependency container
 func (b *BusinessDependencyContainerBuilder) Build() BusinessDependencyContainer {
 	return b.container
+}
+
+// MessagingDependencyRegistry interface implementation
+
+// RegisterMessagingCoordinator registers a messaging coordinator factory as singleton
+func (c *SimpleBusinessDependencyContainer) RegisterMessagingCoordinator(factory MessagingCoordinatorFactory) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return fmt.Errorf("cannot register messaging coordinator: container is closed")
+	}
+
+	if c.messagingCoordinatorFactory != nil {
+		return fmt.Errorf("messaging coordinator factory already registered")
+	}
+
+	c.messagingCoordinatorFactory = factory
+
+	// Register as standard singleton dependency
+	return c.registerSingletonUnlocked("messaging-coordinator", func(container BusinessDependencyContainer) (interface{}, error) {
+		return factory(container)
+	})
+}
+
+// RegisterBrokerFactory registers a broker factory for a specific broker type
+func (c *SimpleBusinessDependencyContainer) RegisterBrokerFactory(brokerType string, factory MessageBrokerFactory) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return fmt.Errorf("cannot register broker factory: container is closed")
+	}
+
+	if brokerType == "" {
+		return fmt.Errorf("broker type cannot be empty")
+	}
+
+	if factory == nil {
+		return fmt.Errorf("broker factory cannot be nil")
+	}
+
+	if _, exists := c.brokerFactories[brokerType]; exists {
+		return fmt.Errorf("broker factory for type '%s' already registered", brokerType)
+	}
+
+	c.brokerFactories[brokerType] = factory
+	logger.Logger.Debug("Registered broker factory", zap.String("broker_type", brokerType))
+	return nil
+}
+
+// RegisterEventHandlerFactory registers an event handler factory
+func (c *SimpleBusinessDependencyContainer) RegisterEventHandlerFactory(handlerID string, factory EventHandlerFactory) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return fmt.Errorf("cannot register event handler factory: container is closed")
+	}
+
+	if handlerID == "" {
+		return fmt.Errorf("handler ID cannot be empty")
+	}
+
+	if factory == nil {
+		return fmt.Errorf("event handler factory cannot be nil")
+	}
+
+	if _, exists := c.eventHandlerFactories[handlerID]; exists {
+		return fmt.Errorf("event handler factory for ID '%s' already registered", handlerID)
+	}
+
+	c.eventHandlerFactories[handlerID] = factory
+	logger.Logger.Debug("Registered event handler factory", zap.String("handler_id", handlerID))
+	return nil
+}
+
+// CreateBroker creates a broker instance using registered factories
+func (c *SimpleBusinessDependencyContainer) CreateBroker(brokerType string, config interface{}) (interface{}, error) {
+	c.mu.RLock()
+	factory, exists := c.brokerFactories[brokerType]
+	c.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("no factory registered for broker type '%s'", brokerType)
+	}
+
+	return factory(c, config)
+}
+
+// GetMessagingCoordinator retrieves the registered messaging coordinator
+func (c *SimpleBusinessDependencyContainer) GetMessagingCoordinator() (interface{}, error) {
+	return c.GetService("messaging-coordinator")
+}
+
+// registerSingletonUnlocked registers a singleton dependency without locking (internal use)
+func (c *SimpleBusinessDependencyContainer) registerSingletonUnlocked(name string, factory DependencyFactory) error {
+	if _, exists := c.dependencies[name]; exists {
+		return fmt.Errorf("dependency '%s' is already registered", name)
+	}
+
+	c.dependencies[name] = &DependencyMetadata{
+		Name:        name,
+		Singleton:   true,
+		Factory:     factory,
+		Instance:    nil,
+		Initialized: false,
+	}
+
+	logger.Logger.Debug("Registered singleton dependency", zap.String("name", name))
+	return nil
 }
