@@ -404,6 +404,8 @@ func (s *InventoryService) releaseInventory(c *gin.Context) {
 }
 
 // ServiceRegistrar implementation
+
+// RegisterServices registers the inventory service's HTTP, gRPC and health check handlers
 func (s *InventoryService) RegisterServices(registry server.BusinessServiceRegistry) error {
 	// Register HTTP handler
 	if err := registry.RegisterBusinessHTTPHandler(s); err != nil {
@@ -426,24 +428,31 @@ func (s *InventoryService) RegisterServices(registry server.BusinessServiceRegis
 }
 
 // Health check implementation
+
+// InventoryHealthCheck implements health checking for the inventory service
 type InventoryHealthCheck struct {
 	serviceName string
 }
 
+// Check performs a health check on the inventory service
 func (h *InventoryHealthCheck) Check(ctx context.Context) error {
 	return nil // Always healthy for demo
 }
 
+// GetServiceName returns the service name for health check registration
 func (h *InventoryHealthCheck) GetServiceName() string {
 	return h.serviceName
 }
 
 // Dependency container
+
+// InventoryDependencyContainer provides dependency injection for the inventory service
 type InventoryDependencyContainer struct {
 	services map[string]interface{}
 	closed   bool
 }
 
+// NewInventoryDependencyContainer creates a new dependency container for the inventory service
 func NewInventoryDependencyContainer() *InventoryDependencyContainer {
 	return &InventoryDependencyContainer{
 		services: make(map[string]interface{}),
@@ -451,6 +460,7 @@ func NewInventoryDependencyContainer() *InventoryDependencyContainer {
 	}
 }
 
+// GetService retrieves a service by name from the dependency container
 func (d *InventoryDependencyContainer) GetService(name string) (interface{}, error) {
 	if d.closed {
 		return nil, fmt.Errorf("dependency container is closed")
@@ -464,11 +474,13 @@ func (d *InventoryDependencyContainer) GetService(name string) (interface{}, err
 	return service, nil
 }
 
+// Close closes the dependency container and releases resources
 func (d *InventoryDependencyContainer) Close() error {
 	d.closed = true
 	return nil
 }
 
+// AddService adds a service to the dependency container
 func (d *InventoryDependencyContainer) AddService(name string, service interface{}) {
 	d.services[name] = service
 }
