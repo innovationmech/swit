@@ -21,6 +21,7 @@
 package messaging
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -119,8 +120,8 @@ func (r *EventHandlerRegistry) ValidateHandler(handler EventHandler) error {
 	}
 
 	// Validate handler ID format (alphanumeric, hyphens, underscores only)
-	for _, r := range handlerID {
-		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && r != '-' && r != '_' {
+	for _, ch := range handlerID {
+		if !(ch >= 'a' && ch <= 'z') && !(ch >= 'A' && ch <= 'Z') && !(ch >= '0' && ch <= '9') && ch != '-' && ch != '_' {
 			return fmt.Errorf("handler ID can only contain letters, numbers, hyphens, and underscores")
 		}
 	}
@@ -169,15 +170,15 @@ func (r *EventHandlerRegistry) GetHandlerCount() int {
 func (r *EventHandlerRegistry) Clear() error {
 	handlers := r.GetRegisteredHandlers()
 
-	var errors []error
+	var errs []error
 	for _, handlerID := range handlers {
 		if err := r.UnregisterEventHandler(handlerID); err != nil {
-			errors = append(errors, err)
+			errs = append(errs, err)
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to clear some handlers: %v", errors)
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil

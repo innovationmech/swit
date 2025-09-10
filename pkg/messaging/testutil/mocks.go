@@ -51,9 +51,9 @@ func NewMockMessageBroker() *MockMessageBroker {
 		publishers:  make([]messaging.EventPublisher, 0),
 		subscribers: make([]messaging.EventSubscriber, 0),
 		metrics: &messaging.BrokerMetrics{
-			ConnectionStatus:   "connected",
-			ActivePublishers:   0,
-			ActiveSubscribers:  0,
+			ConnectionStatus:  "connected",
+			ActivePublishers:  0,
+			ActiveSubscribers: 0,
 		},
 		capabilities: &messaging.BrokerCapabilities{
 			SupportsTransactions:    false,
