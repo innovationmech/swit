@@ -82,6 +82,66 @@ type BusinessServiceRegistrar interface {
 	RegisterServices(registry BusinessServiceRegistry) error
 }
 
+// EventHandlerRegistry defines the interface for registering event handlers
+// This provides a bridge between the messaging layer and the server framework
+type EventHandlerRegistry interface {
+	// RegisterEventHandler registers an event handler for message processing
+	RegisterEventHandler(handler EventHandler) error
+	// UnregisterEventHandler removes an event handler by ID
+	UnregisterEventHandler(handlerID string) error
+	// GetRegisteredHandlers lists all registered event handler IDs
+	GetRegisteredHandlers() []string
+}
+
+// MessagingServiceRegistrar extends BusinessServiceRegistrar to support event handler registration
+// This interface follows established SWIT framework patterns for service registration
+// while adding messaging capabilities for event-driven architectures
+type MessagingServiceRegistrar interface {
+	BusinessServiceRegistrar
+
+	// RegisterEventHandlers registers event handlers with the provided registry
+	// This method allows services to register message handlers alongside
+	// their HTTP and gRPC service implementations
+	RegisterEventHandlers(registry EventHandlerRegistry) error
+
+	// GetEventHandlerMetadata returns metadata about the event handlers this service provides
+	// This enables discovery and documentation of messaging capabilities
+	GetEventHandlerMetadata() *EventHandlerMetadata
+}
+
+// EventHandler represents an event handler from the messaging package
+// This is a forward declaration to avoid circular imports.
+// The actual EventHandler interface is defined in pkg/messaging/coordinator.go
+// and extends MessageHandler with additional metadata methods.
+type EventHandler interface {
+	// GetHandlerID returns the handler's unique identifier
+	GetHandlerID() string
+	// GetTopics returns the topics this handler processes
+	GetTopics() []string
+	// GetBrokerRequirement returns the required broker name, or empty if any broker is acceptable
+	GetBrokerRequirement() string
+	// Initialize prepares the handler for processing
+	Initialize(ctx context.Context) error
+	// Shutdown releases handler resources
+	Shutdown(ctx context.Context) error
+	// Handle processes a single message (from embedded MessageHandler)
+	Handle(ctx context.Context, message interface{}) error
+	// OnError handles processing errors (from embedded MessageHandler)
+	OnError(ctx context.Context, message interface{}, err error) interface{}
+}
+
+// EventHandlerMetadata contains metadata about event handlers provided by a service
+type EventHandlerMetadata struct {
+	// HandlerCount is the number of event handlers provided
+	HandlerCount int
+	// Topics is the list of topics handled by this service
+	Topics []string
+	// BrokerRequirements lists any specific broker requirements
+	BrokerRequirements []string
+	// Description provides a human-readable description of the event handling capabilities
+	Description string
+}
+
 // BusinessServiceRegistry defines the interface for registering different types of services
 // It abstracts the underlying transport registration mechanisms
 type BusinessServiceRegistry interface {
