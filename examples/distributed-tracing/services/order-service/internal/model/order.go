@@ -46,6 +46,7 @@ type Order struct {
 type OrderStatus string
 
 const (
+	// OrderStatusPending indicates the order is pending processing
 	OrderStatusPending    OrderStatus = "pending"
 	OrderStatusProcessing OrderStatus = "processing"
 	OrderStatusConfirmed  OrderStatus = "confirmed"

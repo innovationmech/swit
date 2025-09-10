@@ -52,7 +52,7 @@ import (
 	"github.com/innovationmech/swit/pkg/types"
 )
 
-// Simple inventory item for demo
+// InventoryItem represents a simple inventory item for demo purposes
 type InventoryItem struct {
 	ProductID         string                  `json:"product_id"`
 	TotalQuantity     int32                   `json:"total_quantity"`
@@ -62,6 +62,7 @@ type InventoryItem struct {
 	mutex             sync.RWMutex
 }
 
+// Reservation represents a product reservation for a specific order
 type Reservation struct {
 	ID         string    `json:"id"`
 	ProductID  string    `json:"product_id"`
@@ -78,6 +79,7 @@ type InventoryService struct {
 	mutex     sync.RWMutex
 }
 
+// NewInventoryService creates a new inventory service with demo data
 func NewInventoryService(name string) *InventoryService {
 	service := &InventoryService{
 		name:      name,
@@ -104,6 +106,8 @@ func NewInventoryService(name string) *InventoryService {
 }
 
 // HTTP Handler methods
+
+// RegisterRoutes registers the HTTP routes for the inventory service
 func (s *InventoryService) RegisterRoutes(router interface{}) error {
 	ginRouter, ok := router.(gin.IRouter)
 	if !ok {
@@ -120,16 +124,20 @@ func (s *InventoryService) RegisterRoutes(router interface{}) error {
 	return nil
 }
 
+// GetServiceName returns the service name for HTTP handler registration
 func (s *InventoryService) GetServiceName() string {
 	return "inventory-service-http"
 }
 
 // gRPC Service methods
+
+// InventoryGRPCService implements the gRPC inventory service interface
 type InventoryGRPCService struct {
 	inventoryService *InventoryService
 	inventorypb.UnimplementedInventoryServiceServer
 }
 
+// RegisterGRPC registers the gRPC service with the server
 func (gs *InventoryGRPCService) RegisterGRPC(server interface{}) error {
 	grpcServer, ok := server.(*grpc.Server)
 	if !ok {
@@ -139,11 +147,14 @@ func (gs *InventoryGRPCService) RegisterGRPC(server interface{}) error {
 	return nil
 }
 
+// GetServiceName returns the service name for gRPC handler registration
 func (gs *InventoryGRPCService) GetServiceName() string {
 	return "inventory-service-grpc"
 }
 
 // gRPC method implementations
+
+// CheckInventory checks if the requested quantity is available for a product
 func (gs *InventoryGRPCService) CheckInventory(ctx context.Context, req *inventorypb.CheckInventoryRequest) (*inventorypb.CheckInventoryResponse, error) {
 	tracer := otel.Tracer("inventory-service")
 	ctx, span := tracer.Start(ctx, "grpc.CheckInventory")
@@ -181,6 +192,7 @@ func (gs *InventoryGRPCService) CheckInventory(ctx context.Context, req *invento
 	}, nil
 }
 
+// ReserveInventory reserves the requested quantity for a specific order
 func (gs *InventoryGRPCService) ReserveInventory(ctx context.Context, req *inventorypb.ReserveInventoryRequest) (*inventorypb.ReserveInventoryResponse, error) {
 	tracer := otel.Tracer("inventory-service")
 	ctx, span := tracer.Start(ctx, "grpc.ReserveInventory")
@@ -392,6 +404,8 @@ func (s *InventoryService) releaseInventory(c *gin.Context) {
 }
 
 // ServiceRegistrar implementation
+
+// RegisterServices registers the inventory service's HTTP, gRPC and health check handlers
 func (s *InventoryService) RegisterServices(registry server.BusinessServiceRegistry) error {
 	// Register HTTP handler
 	if err := registry.RegisterBusinessHTTPHandler(s); err != nil {
@@ -414,24 +428,31 @@ func (s *InventoryService) RegisterServices(registry server.BusinessServiceRegis
 }
 
 // Health check implementation
+
+// InventoryHealthCheck implements health checking for the inventory service
 type InventoryHealthCheck struct {
 	serviceName string
 }
 
+// Check performs a health check on the inventory service
 func (h *InventoryHealthCheck) Check(ctx context.Context) error {
 	return nil // Always healthy for demo
 }
 
+// GetServiceName returns the service name for health check registration
 func (h *InventoryHealthCheck) GetServiceName() string {
 	return h.serviceName
 }
 
 // Dependency container
+
+// InventoryDependencyContainer provides dependency injection for the inventory service
 type InventoryDependencyContainer struct {
 	services map[string]interface{}
 	closed   bool
 }
 
+// NewInventoryDependencyContainer creates a new dependency container for the inventory service
 func NewInventoryDependencyContainer() *InventoryDependencyContainer {
 	return &InventoryDependencyContainer{
 		services: make(map[string]interface{}),
@@ -439,6 +460,7 @@ func NewInventoryDependencyContainer() *InventoryDependencyContainer {
 	}
 }
 
+// GetService retrieves a service by name from the dependency container
 func (d *InventoryDependencyContainer) GetService(name string) (interface{}, error) {
 	if d.closed {
 		return nil, fmt.Errorf("dependency container is closed")
@@ -452,11 +474,13 @@ func (d *InventoryDependencyContainer) GetService(name string) (interface{}, err
 	return service, nil
 }
 
+// Close closes the dependency container and releases resources
 func (d *InventoryDependencyContainer) Close() error {
 	d.closed = true
 	return nil
 }
 
+// AddService adds a service to the dependency container
 func (d *InventoryDependencyContainer) AddService(name string, service interface{}) {
 	d.services[name] = service
 }

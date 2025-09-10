@@ -22,6 +22,7 @@
 package server
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -56,6 +57,32 @@ func TestNewServerConfig(t *testing.T) {
 	assert.False(t, config.Middleware.EnableRateLimit)
 	assert.True(t, config.Middleware.EnableLogging)
 	assert.Equal(t, 5*time.Second, config.ShutdownTimeout)
+
+	// Test Messaging defaults
+	assert.False(t, config.Messaging.Enabled)
+	assert.Equal(t, "", config.Messaging.DefaultBroker)
+	assert.NotNil(t, config.Messaging.Brokers)
+	assert.Equal(t, 30*time.Second, config.Messaging.Connection.Timeout)
+	assert.Equal(t, 30*time.Second, config.Messaging.Connection.KeepAlive)
+	assert.Equal(t, 3, config.Messaging.Connection.MaxAttempts)
+	assert.Equal(t, 5*time.Second, config.Messaging.Connection.RetryInterval)
+	assert.Equal(t, 10, config.Messaging.Connection.PoolSize)
+	assert.Equal(t, 5*time.Minute, config.Messaging.Connection.IdleTimeout)
+	assert.False(t, config.Messaging.Security.EnableEncryption)
+	assert.False(t, config.Messaging.Security.EnableAuthentication)
+	assert.False(t, config.Messaging.Security.EnableAuthorization)
+	assert.False(t, config.Messaging.Security.MessageSigning)
+	assert.Equal(t, 100, config.Messaging.Performance.BatchSize)
+	assert.Equal(t, 100*time.Millisecond, config.Messaging.Performance.BatchTimeout)
+	assert.Equal(t, 1000, config.Messaging.Performance.BufferSize)
+	assert.Equal(t, 1, config.Messaging.Performance.Concurrency)
+	assert.Equal(t, 10, config.Messaging.Performance.PrefetchCount)
+	assert.False(t, config.Messaging.Performance.CompressionEnabled)
+	assert.True(t, config.Messaging.Monitoring.Enabled)
+	assert.True(t, config.Messaging.Monitoring.MetricsEnabled)
+	assert.False(t, config.Messaging.Monitoring.TracingEnabled)
+	assert.True(t, config.Messaging.Monitoring.HealthCheckEnabled)
+	assert.Equal(t, 30*time.Second, config.Messaging.Monitoring.HealthCheckInterval)
 
 	// Test Prometheus defaults
 	assert.True(t, config.Prometheus.Enabled)
@@ -165,6 +192,40 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					EnableAuth:      false,
 					EnableRateLimit: false,
 					EnableLogging:   true,
+				},
+				Messaging: MessagingConfig{
+					Enabled:       false,
+					DefaultBroker: "",
+					Brokers:       make(map[string]BrokerConfig),
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						KeepAlive:     30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Security: MessagingSecurityConfig{
+						EnableEncryption:     false,
+						EnableAuthentication: false,
+						EnableAuthorization:  false,
+						MessageSigning:       false,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						Enabled:             true,
+						MetricsEnabled:      true,
+						TracingEnabled:      false,
+						HealthCheckEnabled:  true,
+						HealthCheckInterval: 30 * time.Second,
+					},
 				},
 				Sentry: SentryConfig{
 					Enabled:              false,
@@ -340,6 +401,40 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					EnableAuth:      false,
 					EnableRateLimit: false,
 					EnableLogging:   true,
+				},
+				Messaging: MessagingConfig{
+					Enabled:       false,
+					DefaultBroker: "",
+					Brokers:       make(map[string]BrokerConfig),
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						KeepAlive:     30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Security: MessagingSecurityConfig{
+						EnableEncryption:     false,
+						EnableAuthentication: false,
+						EnableAuthorization:  false,
+						MessageSigning:       false,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						Enabled:             true,
+						MetricsEnabled:      true,
+						TracingEnabled:      false,
+						HealthCheckEnabled:  true,
+						HealthCheckInterval: 30 * time.Second,
+					},
 				},
 				Sentry: SentryConfig{
 					Enabled:              false,
@@ -756,4 +851,299 @@ func TestServerConfig_DiscoveryEnabled(t *testing.T) {
 
 	config.Discovery.Enabled = false
 	assert.False(t, config.IsDiscoveryEnabled())
+}
+
+func TestServerConfig_MessagingValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *ServerConfig
+		wantErr string
+	}{
+		{
+			name: "messaging disabled - no validation",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Messaging:       MessagingConfig{Enabled: false},
+				ShutdownTimeout: 5 * time.Second,
+			},
+		},
+		{
+			name: "messaging enabled with no brokers",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Messaging: MessagingConfig{
+					Enabled: true,
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						HealthCheckInterval: 30 * time.Second,
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+		},
+		{
+			name: "messaging enabled with default broker not found",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Messaging: MessagingConfig{
+					Enabled:       true,
+					DefaultBroker: "nonexistent",
+					Brokers: map[string]BrokerConfig{
+						"kafka": {
+							Type:      "kafka",
+							Endpoints: []string{"localhost:9092"},
+						},
+					},
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						HealthCheckInterval: 30 * time.Second,
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+			wantErr: "messaging.default_broker 'nonexistent' not found in brokers configuration",
+		},
+		{
+			name: "invalid broker type",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Messaging: MessagingConfig{
+					Enabled:       true,
+					DefaultBroker: "invalid",
+					Brokers: map[string]BrokerConfig{
+						"invalid": {
+							Type:      "unsupported",
+							Endpoints: []string{"localhost:9092"},
+						},
+					},
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						HealthCheckInterval: 30 * time.Second,
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+			wantErr: "invalid broker type: unsupported",
+		},
+		{
+			name: "missing endpoints for kafka broker",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Messaging: MessagingConfig{
+					Enabled:       true,
+					DefaultBroker: "kafka",
+					Brokers: map[string]BrokerConfig{
+						"kafka": {
+							Type: "kafka",
+						},
+					},
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						HealthCheckInterval: 30 * time.Second,
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+			wantErr: "endpoints are required for broker type: kafka",
+		},
+		{
+			name: "valid messaging configuration",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP: HTTPConfig{
+					Port:         "8080",
+					Enabled:      true,
+					ReadTimeout:  30 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				},
+				Messaging: MessagingConfig{
+					Enabled:       true,
+					DefaultBroker: "kafka",
+					Brokers: map[string]BrokerConfig{
+						"kafka": {
+							Type:      "kafka",
+							Endpoints: []string{"localhost:9092"},
+						},
+						"inmemory": {
+							Type: "inmemory",
+						},
+					},
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						HealthCheckInterval: 30 * time.Second,
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestServerConfig_MessagingMethods(t *testing.T) {
+	config := &ServerConfig{
+		Messaging: MessagingConfig{
+			Enabled:       true,
+			DefaultBroker: "kafka",
+			Brokers: map[string]BrokerConfig{
+				"kafka": {
+					Type:      "kafka",
+					Endpoints: []string{"localhost:9092"},
+				},
+			},
+		},
+	}
+
+	assert.True(t, config.IsMessagingEnabled())
+	assert.Equal(t, "kafka", config.GetMessagingDefaultBroker())
+
+	broker, exists := config.GetMessagingBroker("kafka")
+	assert.True(t, exists)
+	assert.Equal(t, "kafka", broker.Type)
+
+	_, exists = config.GetMessagingBroker("nonexistent")
+	assert.False(t, exists)
+}
+
+func TestMessagingConfig_EnvironmentOverrides(t *testing.T) {
+	// Set environment variables
+	os.Setenv("SWIT_MESSAGING_ENABLED", "true")
+	os.Setenv("SWIT_MESSAGING_DEFAULT_BROKER", "env-broker")
+	os.Setenv("SWIT_MESSAGING_CONNECTION_TIMEOUT", "45s")
+	os.Setenv("SWIT_MESSAGING_PERFORMANCE_BATCH_SIZE", "200")
+	os.Setenv("SWIT_MESSAGING_MONITORING_HEALTH_CHECK_INTERVAL", "60s")
+
+	defer func() {
+		os.Unsetenv("SWIT_MESSAGING_ENABLED")
+		os.Unsetenv("SWIT_MESSAGING_DEFAULT_BROKER")
+		os.Unsetenv("SWIT_MESSAGING_CONNECTION_TIMEOUT")
+		os.Unsetenv("SWIT_MESSAGING_PERFORMANCE_BATCH_SIZE")
+		os.Unsetenv("SWIT_MESSAGING_MONITORING_HEALTH_CHECK_INTERVAL")
+	}()
+
+	config := &MessagingConfig{}
+	config.ApplyEnvironmentOverrides()
+
+	assert.True(t, config.Enabled)
+	assert.Equal(t, "env-broker", config.DefaultBroker)
+	assert.Equal(t, 45*time.Second, config.Connection.Timeout)
+	assert.Equal(t, 200, config.Performance.BatchSize)
+	assert.Equal(t, 60*time.Second, config.Monitoring.HealthCheckInterval)
 }
