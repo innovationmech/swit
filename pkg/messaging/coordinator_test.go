@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,11 +107,8 @@ func TestMessagingCoordinator(t *testing.T) {
 		assert.Contains(t, err.Error(), "invalid broker name")
 
 		// Test name too long
-		longName := make([]byte, 60)
-		for i := range longName {
-			longName[i] = 'a'
-		}
-		err = coordinator.RegisterBroker(string(longName), mockBroker)
+		longName := strings.Repeat("a", 60)
+		err = coordinator.RegisterBroker(longName, mockBroker)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "1-50 characters")
 	})
@@ -311,6 +309,7 @@ func TestMessagingCoordinator(t *testing.T) {
 		// Setup mocks
 		mockBroker.On("GetMetrics").Return(&BrokerMetrics{})
 		mockBroker.On("Connect", mock.Anything).Return(nil)
+		mockBroker.On("Disconnect", mock.Anything).Return(nil)
 		mockHandler.On("Initialize", mock.Anything).Return(errors.New("initialization failed"))
 
 		// Register broker and handler
