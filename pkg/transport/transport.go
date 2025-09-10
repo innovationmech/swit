@@ -37,6 +37,45 @@ import (
 	"go.uber.org/zap"
 )
 
+// MessagingCoordinator interface to avoid import cycle with messaging package
+type MessagingCoordinator interface {
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	RegisterBroker(name string, broker MessageBroker) error
+	GetBroker(name string) (MessageBroker, error)
+	GetRegisteredBrokers() []string
+	RegisterEventHandler(handler EventHandler) error
+	UnregisterEventHandler(handlerID string) error
+	GetRegisteredHandlers() []string
+	IsStarted() bool
+	GetMetrics() *MessagingCoordinatorMetrics
+	HealthCheck(ctx context.Context) (*MessagingHealthStatus, error)
+}
+
+// MessageBroker minimal interface to avoid import cycle
+type MessageBroker interface {
+	Connect(ctx context.Context) error
+	Disconnect(ctx context.Context) error
+}
+
+// EventHandler minimal interface to avoid import cycle
+type EventHandler interface {
+	GetHandlerID() string
+}
+
+// MessagingCoordinatorMetrics minimal structure to avoid import cycle
+type MessagingCoordinatorMetrics struct {
+	BrokerCount  int `json:"broker_count"`
+	HandlerCount int `json:"handler_count"`
+}
+
+// MessagingHealthStatus minimal structure to avoid import cycle
+type MessagingHealthStatus struct {
+	Overall   string    `json:"overall"`
+	Details   string    `json:"details"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // TransportError represents an error from a specific transport
 type TransportError struct {
 	TransportName string
@@ -130,18 +169,39 @@ type NetworkTransport interface {
 
 // TransportCoordinator manages multiple transport instances and their service registries
 type TransportCoordinator struct {
-	transports      []NetworkTransport
-	registryManager *MultiTransportRegistry
-	tracingManager  tracing.TracingManager // Unified tracing manager for all transports
-	mu              sync.RWMutex
+	transports       []NetworkTransport
+	registryManager  *MultiTransportRegistry
+	messagingCoord   MessagingCoordinator   // Messaging coordinator for unified messaging support
+	tracingManager   tracing.TracingManager // Unified tracing manager for all transports
+	messagingEnabled bool                   // Whether messaging is enabled for this coordinator
+	mu               sync.RWMutex
 }
 
 // NewTransportCoordinator creates a new transport coordinator
 func NewTransportCoordinator() *TransportCoordinator {
 	return &TransportCoordinator{
-		transports:      make([]NetworkTransport, 0),
-		registryManager: NewMultiTransportRegistry(),
+		transports:       make([]NetworkTransport, 0),
+		registryManager:  NewMultiTransportRegistry(),
+		messagingCoord:   nil, // Will be set later to avoid import cycle
+		messagingEnabled: false,
 	}
+}
+
+// NewTransportCoordinatorWithMessaging creates a new transport coordinator with messaging enabled
+func NewTransportCoordinatorWithMessaging() *TransportCoordinator {
+	return &TransportCoordinator{
+		transports:       make([]NetworkTransport, 0),
+		registryManager:  NewMultiTransportRegistry(),
+		messagingCoord:   nil, // Will be set later to avoid import cycle
+		messagingEnabled: true,
+	}
+}
+
+// SetMessagingCoordinator sets the messaging coordinator to avoid import cycles
+func (m *TransportCoordinator) SetMessagingCoordinator(coordinator MessagingCoordinator) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messagingCoord = coordinator
 }
 
 // Register adds transport to the coordinator
@@ -201,17 +261,33 @@ func (m *TransportCoordinator) injectTracingManagerToTransport(transport Network
 	}
 }
 
-// Start starts all registered transports
+// Start starts all registered transports and messaging coordinator if enabled
 func (m *TransportCoordinator) Start(ctx context.Context) error {
 	m.mu.RLock()
 	transports := make([]NetworkTransport, len(m.transports))
 	copy(transports, m.transports)
+	messagingEnabled := m.messagingEnabled
+	messagingCoord := m.messagingCoord
 	m.mu.RUnlock()
 
+	// Start messaging coordinator first if enabled
+	if messagingEnabled && messagingCoord != nil {
+		logger.Logger.Info("Starting messaging coordinator")
+		if err := messagingCoord.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start messaging coordinator: %w", err)
+		}
+		logger.Logger.Info("Messaging coordinator started successfully")
+	}
+
+	// Start all network transports
 	for _, transport := range transports {
 		logger.Logger.Info("Starting transport",
 			zap.String("transport", transport.GetName()))
 		if err := transport.Start(ctx); err != nil {
+			// If messaging was started, stop it on transport failure
+			if messagingEnabled && messagingCoord != nil {
+				_ = messagingCoord.Stop(ctx)
+			}
 			return fmt.Errorf("failed to start %s transport: %w", transport.GetName(), err)
 		}
 	}
@@ -220,12 +296,14 @@ func (m *TransportCoordinator) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully stops all registered transports
+// Stop gracefully stops all registered transports and messaging coordinator
 // Returns a MultiError containing all errors encountered during shutdown
 func (m *TransportCoordinator) Stop(timeout time.Duration) error {
 	m.mu.RLock()
 	transports := make([]NetworkTransport, len(m.transports))
 	copy(transports, m.transports)
+	messagingEnabled := m.messagingEnabled
+	messagingCoord := m.messagingCoord
 	m.mu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -233,6 +311,7 @@ func (m *TransportCoordinator) Stop(timeout time.Duration) error {
 
 	var stopErrors []TransportError
 
+	// Stop network transports first
 	for _, transport := range transports {
 		logger.Logger.Info("Stopping transport",
 			zap.String("transport", transport.GetName()))
@@ -249,16 +328,35 @@ func (m *TransportCoordinator) Stop(timeout time.Duration) error {
 		}
 	}
 
+	// Stop messaging coordinator last if enabled
+	if messagingEnabled && messagingCoord != nil {
+		logger.Logger.Info("Stopping messaging coordinator")
+		if err := messagingCoord.Stop(ctx); err != nil {
+			stopError := TransportError{
+				TransportName: "messaging",
+				Err:           err,
+			}
+			stopErrors = append(stopErrors, stopError)
+			logger.Logger.Error("Failed to stop messaging coordinator", zap.Error(err))
+		} else {
+			logger.Logger.Info("Messaging coordinator stopped successfully")
+		}
+	}
+
 	if len(stopErrors) > 0 {
 		multiErr := &MultiError{Errors: stopErrors}
+		totalCount := len(transports)
+		if messagingEnabled {
+			totalCount++
+		}
 		logger.Logger.Error("Transport shutdown completed with errors",
 			zap.Int("failed_count", len(stopErrors)),
-			zap.Int("total_count", len(transports)),
+			zap.Int("total_count", totalCount),
 			zap.Error(multiErr))
 		return multiErr
 	}
 
-	logger.Logger.Info("All transports stopped successfully")
+	logger.Logger.Info("All transports and messaging stopped successfully")
 	return nil
 }
 
@@ -287,6 +385,11 @@ func (m *TransportCoordinator) RegisterHTTPService(handler TransportServiceHandl
 // RegisterGRPCService registers a service handler with gRPC transport
 func (m *TransportCoordinator) RegisterGRPCService(handler TransportServiceHandler) error {
 	return m.registryManager.RegisterGRPCService(handler)
+}
+
+// RegisterMessagingService registers a service handler with messaging transport
+func (m *TransportCoordinator) RegisterMessagingService(handler TransportServiceHandler) error {
+	return m.registryManager.RegisterMessagingService(handler)
 }
 
 // RegisterHandler registers a service handler with a specific transport
@@ -327,4 +430,134 @@ func (m *TransportCoordinator) GetAllServiceMetadata() map[string][]*HandlerMeta
 // GetTotalServiceCount returns the total number of services across all transports
 func (m *TransportCoordinator) GetTotalServiceCount() int {
 	return m.registryManager.GetTotalServiceCount()
+}
+
+// === Messaging Integration Methods ===
+
+// EnableMessaging enables messaging support for this transport coordinator
+func (m *TransportCoordinator) EnableMessaging() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messagingEnabled = true
+}
+
+// DisableMessaging disables messaging support for this transport coordinator
+func (m *TransportCoordinator) DisableMessaging() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messagingEnabled = false
+}
+
+// IsMessagingEnabled returns whether messaging is enabled
+func (m *TransportCoordinator) IsMessagingEnabled() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.messagingEnabled
+}
+
+// GetMessagingCoordinator returns the messaging coordinator instance
+func (m *TransportCoordinator) GetMessagingCoordinator() MessagingCoordinator {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.messagingCoord
+}
+
+// RegisterMessageBroker registers a message broker with the messaging coordinator
+func (m *TransportCoordinator) RegisterMessageBroker(name string, broker MessageBroker) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.messagingEnabled {
+		return fmt.Errorf("messaging is not enabled for this transport coordinator")
+	}
+
+	if m.messagingCoord == nil {
+		return fmt.Errorf("messaging coordinator is not initialized")
+	}
+
+	return m.messagingCoord.RegisterBroker(name, broker)
+}
+
+// RegisterEventHandler registers an event handler with the messaging coordinator
+func (m *TransportCoordinator) RegisterEventHandler(handler EventHandler) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.messagingEnabled {
+		return fmt.Errorf("messaging is not enabled for this transport coordinator")
+	}
+
+	if m.messagingCoord == nil {
+		return fmt.Errorf("messaging coordinator is not initialized")
+	}
+
+	return m.messagingCoord.RegisterEventHandler(handler)
+}
+
+// UnregisterEventHandler removes an event handler from the messaging coordinator
+func (m *TransportCoordinator) UnregisterEventHandler(handlerID string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.messagingEnabled {
+		return fmt.Errorf("messaging is not enabled for this transport coordinator")
+	}
+
+	if m.messagingCoord == nil {
+		return fmt.Errorf("messaging coordinator is not initialized")
+	}
+
+	return m.messagingCoord.UnregisterEventHandler(handlerID)
+}
+
+// GetMessagingMetrics returns messaging coordinator metrics if messaging is enabled
+func (m *TransportCoordinator) GetMessagingMetrics() *MessagingCoordinatorMetrics {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.messagingEnabled || m.messagingCoord == nil {
+		return nil
+	}
+
+	return m.messagingCoord.GetMetrics()
+}
+
+// CheckMessagingHealth performs health check on messaging coordinator if enabled
+func (m *TransportCoordinator) CheckMessagingHealth(ctx context.Context) (*MessagingHealthStatus, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.messagingEnabled {
+		return nil, fmt.Errorf("messaging is not enabled")
+	}
+
+	if m.messagingCoord == nil {
+		return nil, fmt.Errorf("messaging coordinator is not initialized")
+	}
+
+	return m.messagingCoord.HealthCheck(ctx)
+}
+
+// GetRegisteredBrokers returns list of registered message brokers if messaging is enabled
+func (m *TransportCoordinator) GetRegisteredBrokers() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.messagingEnabled || m.messagingCoord == nil {
+		return nil
+	}
+
+	return m.messagingCoord.GetRegisteredBrokers()
+}
+
+// GetRegisteredEventHandlers returns list of registered event handlers if messaging is enabled
+func (m *TransportCoordinator) GetRegisteredEventHandlers() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if !m.messagingEnabled || m.messagingCoord == nil {
+		return nil
+	}
+
+	return m.messagingCoord.GetRegisteredHandlers()
 }

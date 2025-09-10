@@ -36,6 +36,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/types"
 )
 
 func init() {
@@ -974,3 +975,112 @@ func BenchmarkManager_GetTotalServiceCount(b *testing.B) {
 		manager.GetTotalServiceCount()
 	}
 }
+
+// TestTransportCoordinatorMessagingIntegration tests the messaging integration
+func TestTransportCoordinatorMessagingIntegration(t *testing.T) {
+	t.Run("Default coordinator has messaging disabled", func(t *testing.T) {
+		coordinator := NewTransportCoordinator()
+		assert.False(t, coordinator.IsMessagingEnabled())
+		assert.Nil(t, coordinator.GetMessagingCoordinator()) // nil until explicitly set
+	})
+
+	t.Run("Messaging coordinator can be enabled", func(t *testing.T) {
+		coordinator := NewTransportCoordinatorWithMessaging()
+		assert.True(t, coordinator.IsMessagingEnabled())
+		assert.Nil(t, coordinator.GetMessagingCoordinator()) // nil until explicitly set
+	})
+
+	t.Run("Messaging can be enabled and disabled", func(t *testing.T) {
+		coordinator := NewTransportCoordinator()
+		assert.False(t, coordinator.IsMessagingEnabled())
+
+		coordinator.EnableMessaging()
+		assert.True(t, coordinator.IsMessagingEnabled())
+
+		coordinator.DisableMessaging()
+		assert.False(t, coordinator.IsMessagingEnabled())
+	})
+
+	t.Run("Messaging operations require messaging to be enabled", func(t *testing.T) {
+		coordinator := NewTransportCoordinator()
+		assert.False(t, coordinator.IsMessagingEnabled())
+
+		// These should fail when messaging is disabled
+		err := coordinator.RegisterMessageBroker("test", nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "messaging is not enabled")
+
+		err = coordinator.RegisterEventHandler(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "messaging is not enabled")
+
+		// These should return nil/empty when messaging is disabled
+		assert.Nil(t, coordinator.GetMessagingMetrics())
+		assert.Nil(t, coordinator.GetRegisteredBrokers())
+		assert.Nil(t, coordinator.GetRegisteredEventHandlers())
+
+		_, err = coordinator.CheckMessagingHealth(context.Background())
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "messaging is not enabled")
+	})
+
+	t.Run("Registry supports messaging service registration", func(t *testing.T) {
+		registry := NewMultiTransportRegistry()
+
+		// Create a simple mock handler that implements the interface
+		handler := &simpleServiceHandler{name: "test-messaging-service"}
+
+		err := registry.RegisterMessagingService(handler)
+		assert.NoError(t, err)
+
+		// Check that messaging transport is created
+		names := registry.GetTransportNames()
+		assert.Contains(t, names, "messaging")
+
+		// Check service count
+		assert.Equal(t, 1, registry.GetTotalServiceCount())
+
+		// Check metadata
+		metadata := registry.GetAllServiceMetadata()
+		assert.Contains(t, metadata, "messaging")
+		assert.Len(t, metadata["messaging"], 1)
+		assert.Equal(t, "test-messaging-service", metadata["messaging"][0].Name)
+	})
+
+	t.Run("Transport coordinator messaging service registration", func(t *testing.T) {
+		coordinator := NewTransportCoordinator()
+		handler := &simpleServiceHandler{name: "test-messaging-service"}
+
+		// Register messaging service
+		err := coordinator.RegisterMessagingService(handler)
+		assert.NoError(t, err)
+
+		// Check that it's registered
+		assert.Equal(t, 1, coordinator.GetTotalServiceCount())
+
+		metadata := coordinator.GetAllServiceMetadata()
+		assert.Contains(t, metadata, "messaging")
+		assert.Equal(t, "test-messaging-service", metadata["messaging"][0].Name)
+	})
+}
+
+// Simple service handler for testing messaging registry
+type simpleServiceHandler struct {
+	name string
+}
+
+func (s *simpleServiceHandler) RegisterHTTP(router *gin.Engine) error  { return nil }
+func (s *simpleServiceHandler) RegisterGRPC(server *grpc.Server) error { return nil }
+func (s *simpleServiceHandler) GetMetadata() *HandlerMetadata {
+	return &HandlerMetadata{
+		Name:        s.name,
+		Version:     "1.0.0",
+		Description: "Simple test service",
+	}
+}
+func (s *simpleServiceHandler) GetHealthEndpoint() string { return "/health" }
+func (s *simpleServiceHandler) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
+	return types.NewHealthStatus(types.HealthStatusHealthy, "1.0.0", time.Hour), nil
+}
+func (s *simpleServiceHandler) Initialize(ctx context.Context) error { return nil }
+func (s *simpleServiceHandler) Shutdown(ctx context.Context) error   { return nil }

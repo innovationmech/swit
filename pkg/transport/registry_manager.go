@@ -107,6 +107,11 @@ func (srm *MultiTransportRegistry) RegisterGRPCService(handler TransportServiceH
 	return srm.RegisterHandler("grpc", handler)
 }
 
+// RegisterMessagingService registers a service handler with the messaging transport
+func (srm *MultiTransportRegistry) RegisterMessagingService(handler TransportServiceHandler) error {
+	return srm.RegisterHandler("messaging", handler)
+}
+
 // BindAllHTTPEndpoints registers HTTP routes for services in the HTTP transport registry
 func (srm *MultiTransportRegistry) BindAllHTTPEndpoints(router *gin.Engine) error {
 	srm.mu.RLock()
