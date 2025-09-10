@@ -28,13 +28,25 @@ import (
 
 // messageBrokerFactoryImpl implements the MessageBrokerFactory interface.
 // It provides a registry for different broker implementations and handles
-// their creation based on configuration.
+// their creation based on configuration. This implementation now supports
+// both legacy factory functions and the new adapter pattern.
 type messageBrokerFactoryImpl struct {
-	// factories maps broker types to their factory functions
+	// factories maps broker types to their factory functions (legacy)
 	factories map[BrokerType]func(*BrokerConfig) (MessageBroker, error)
+
+	// adapters provides access to the adapter registry for new implementations
+	adapters AdapterRegistryProvider
 
 	// mu protects concurrent access to the factories map
 	mu sync.RWMutex
+}
+
+// AdapterRegistryProvider provides access to broker adapter registry.
+// This interface allows the factory to work with different registry implementations.
+type AdapterRegistryProvider interface {
+	GetAdapterForBrokerType(brokerType BrokerType) (MessageBrokerAdapter, error)
+	GetSupportedBrokerTypes() []BrokerType
+	ValidateConfiguration(config *BrokerConfig) (*AdapterValidationResult, error)
 }
 
 // defaultFactory is the default factory instance.
@@ -90,6 +102,18 @@ func (f *messageBrokerFactoryImpl) CreateBroker(config *BrokerConfig) (MessageBr
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
+	// Try adapter registry first (new pattern)
+	if f.adapters != nil {
+		if adapter, err := f.adapters.GetAdapterForBrokerType(config.Type); err == nil {
+			broker, err := adapter.CreateBroker(config)
+			if err != nil {
+				return nil, fmt.Errorf("adapter failed to create broker: %w", err)
+			}
+			return broker, nil
+		}
+	}
+
+	// Fall back to legacy factory functions
 	f.mu.RLock()
 	factory, exists := f.factories[config.Type]
 	f.mu.RUnlock()
@@ -111,11 +135,26 @@ func (f *messageBrokerFactoryImpl) CreateBroker(config *BrokerConfig) (MessageBr
 
 // GetSupportedBrokerTypes returns a list of broker types supported by this factory.
 func (f *messageBrokerFactoryImpl) GetSupportedBrokerTypes() []BrokerType {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+	typeSet := make(map[BrokerType]bool)
 
-	types := make([]BrokerType, 0, len(f.factories))
+	// Add types from adapter registry
+	if f.adapters != nil {
+		adapterTypes := f.adapters.GetSupportedBrokerTypes()
+		for _, brokerType := range adapterTypes {
+			typeSet[brokerType] = true
+		}
+	}
+
+	// Add types from legacy factories
+	f.mu.RLock()
 	for brokerType := range f.factories {
+		typeSet[brokerType] = true
+	}
+	f.mu.RUnlock()
+
+	// Convert to slice
+	types := make([]BrokerType, 0, len(typeSet))
+	for brokerType := range typeSet {
 		types = append(types, brokerType)
 	}
 
@@ -128,7 +167,17 @@ func (f *messageBrokerFactoryImpl) ValidateConfig(config *BrokerConfig) error {
 		return NewConfigError("config cannot be nil", nil)
 	}
 
-	// Validate that the broker type is supported
+	// Try adapter registry first for more detailed validation
+	if f.adapters != nil {
+		if result, err := f.adapters.ValidateConfiguration(config); err == nil {
+			if !result.Valid {
+				return NewConfigError("adapter configuration validation failed", nil)
+			}
+			return nil // Valid according to adapter
+		}
+	}
+
+	// Fall back to legacy validation
 	f.mu.RLock()
 	_, supported := f.factories[config.Type]
 	f.mu.RUnlock()
@@ -176,4 +225,27 @@ func GetSupportedBrokerTypes() []BrokerType {
 // ValidateBrokerConfig validates a broker configuration using the default factory.
 func ValidateBrokerConfig(config *BrokerConfig) error {
 	return defaultFactory.ValidateConfig(config)
+}
+
+// SetDefaultAdapterRegistry configures the default factory to use an adapter registry.
+// This enables the factory to use the adapter pattern for broker creation.
+func SetDefaultAdapterRegistry(registry AdapterRegistryProvider) {
+	defaultFactory.mu.Lock()
+	defer defaultFactory.mu.Unlock()
+	defaultFactory.adapters = registry
+}
+
+// GetDefaultAdapterRegistry returns the adapter registry used by the default factory.
+func GetDefaultAdapterRegistry() AdapterRegistryProvider {
+	defaultFactory.mu.RLock()
+	defer defaultFactory.mu.RUnlock()
+	return defaultFactory.adapters
+}
+
+// NewMessageBrokerFactoryWithAdapters creates a factory with adapter registry support.
+func NewMessageBrokerFactoryWithAdapters(registry AdapterRegistryProvider) MessageBrokerFactory {
+	return &messageBrokerFactoryImpl{
+		factories: make(map[BrokerType]func(*BrokerConfig) (MessageBroker, error)),
+		adapters:  registry,
+	}
 }
