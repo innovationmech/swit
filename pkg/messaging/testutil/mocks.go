@@ -17,6 +17,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+//
 
 // Package testutil provides comprehensive test utilities and mock implementations
 // for the messaging system, enabling effective unit testing and integration testing
@@ -51,9 +52,9 @@ func NewMockMessageBroker() *MockMessageBroker {
 		publishers:  make([]messaging.EventPublisher, 0),
 		subscribers: make([]messaging.EventSubscriber, 0),
 		metrics: &messaging.BrokerMetrics{
-			ConnectionStatus:   "connected",
-			ActivePublishers:   0,
-			ActiveSubscribers:  0,
+			ConnectionStatus:  "connected",
+			ActivePublishers:  0,
+			ActiveSubscribers: 0,
 		},
 		capabilities: &messaging.BrokerCapabilities{
 			SupportsTransactions:    false,
