@@ -56,6 +56,9 @@ type PerformanceMetrics struct {
 	RequestCount int64 `json:"request_count"`
 	ErrorCount   int64 `json:"error_count"`
 
+	// Messaging metrics integration
+	MessagingMetrics interface{} `json:"messaging_metrics,omitempty"`
+
 	// Performance thresholds
 	MaxStartupTime  time.Duration `json:"max_startup_time"`
 	MaxShutdownTime time.Duration `json:"max_shutdown_time"`
@@ -156,6 +159,9 @@ type PerformanceSnapshot struct {
 	RequestCount int64 `json:"request_count"`
 	ErrorCount   int64 `json:"error_count"`
 
+	// Messaging metrics integration
+	MessagingMetrics interface{} `json:"messaging_metrics,omitempty"`
+
 	// Performance thresholds
 	MaxStartupTime  time.Duration `json:"max_startup_time"`
 	MaxShutdownTime time.Duration `json:"max_shutdown_time"`
@@ -171,22 +177,23 @@ func (m *PerformanceMetrics) GetSnapshot() PerformanceSnapshot {
 	defer m.mu.RUnlock()
 
 	return PerformanceSnapshot{
-		StartupTime:     m.StartupTime,
-		ShutdownTime:    m.ShutdownTime,
-		Uptime:          m.Uptime,
-		MemoryUsage:     m.MemoryUsage,
-		GoroutineCount:  m.GoroutineCount,
-		CPUUsage:        m.CPUUsage,
-		ServiceCount:    m.ServiceCount,
-		TransportCount:  m.TransportCount,
-		StartCount:      atomic.LoadInt64(&m.StartCount),
-		StopCount:       atomic.LoadInt64(&m.StopCount),
-		RequestCount:    atomic.LoadInt64(&m.RequestCount),
-		ErrorCount:      atomic.LoadInt64(&m.ErrorCount),
-		MaxStartupTime:  m.MaxStartupTime,
-		MaxShutdownTime: m.MaxShutdownTime,
-		MaxMemoryUsage:  m.MaxMemoryUsage,
-		LastUpdated:     m.LastUpdated,
+		StartupTime:      m.StartupTime,
+		ShutdownTime:     m.ShutdownTime,
+		Uptime:           m.Uptime,
+		MemoryUsage:      m.MemoryUsage,
+		GoroutineCount:   m.GoroutineCount,
+		CPUUsage:         m.CPUUsage,
+		ServiceCount:     m.ServiceCount,
+		TransportCount:   m.TransportCount,
+		StartCount:       atomic.LoadInt64(&m.StartCount),
+		StopCount:        atomic.LoadInt64(&m.StopCount),
+		RequestCount:     atomic.LoadInt64(&m.RequestCount),
+		ErrorCount:       atomic.LoadInt64(&m.ErrorCount),
+		MessagingMetrics: m.MessagingMetrics,
+		MaxStartupTime:   m.MaxStartupTime,
+		MaxShutdownTime:  m.MaxShutdownTime,
+		MaxMemoryUsage:   m.MaxMemoryUsage,
+		LastUpdated:      m.LastUpdated,
 	}
 }
 
@@ -363,6 +370,22 @@ func (pm *PerformanceMonitor) StartPeriodicCollection(ctx context.Context, inter
 	}()
 }
 
+// SetMessagingMetrics sets the messaging metrics for integration with server performance monitoring.
+func (pm *PerformanceMonitor) SetMessagingMetrics(messagingMetrics interface{}) {
+	pm.metrics.MessagingMetrics = messagingMetrics
+}
+
+// GetMessagingMetrics returns the current messaging metrics.
+func (pm *PerformanceMonitor) GetMessagingMetrics() interface{} {
+	return pm.metrics.MessagingMetrics
+}
+
+// RecordMessagingEvent records a messaging-specific performance event.
+func (pm *PerformanceMonitor) RecordMessagingEvent(event string, messagingMetrics interface{}) {
+	pm.SetMessagingMetrics(messagingMetrics)
+	pm.RecordEvent("messaging_" + event)
+}
+
 // PerformanceProfiler provides advanced profiling capabilities
 type PerformanceProfiler struct {
 	monitor *PerformanceMonitor
@@ -455,6 +478,33 @@ func PerformanceThresholdViolationHook(event string, metrics *PerformanceMetrics
 // PerformanceMetricsCollectionHook creates a hook that triggers metrics collection
 func PerformanceMetricsCollectionHook(event string, metrics *PerformanceMetrics) {
 	metrics.RecordMemoryUsage()
+}
+
+// MessagingPerformanceIntegrationHook creates a hook that integrates messaging metrics
+// with server performance monitoring
+func MessagingPerformanceIntegrationHook(event string, metrics *PerformanceMetrics) {
+	// Check if this is a messaging event
+	if len(event) > 10 && event[:10] == "messaging_" {
+		// Update memory usage when messaging events occur
+		metrics.RecordMemoryUsage()
+
+		// If messaging metrics are available, we could perform additional integration
+		if metrics.MessagingMetrics != nil {
+			// In a full implementation, you might extract specific metrics
+			// from the messaging metrics and integrate them with server metrics
+		}
+	}
+}
+
+// MessagingThresholdViolationHook creates a hook that monitors messaging-specific threshold violations
+func MessagingThresholdViolationHook(event string, metrics *PerformanceMetrics) {
+	// This hook can be extended to check messaging-specific thresholds
+	// and trigger alerts when messaging performance degrades
+	if len(event) > 10 && event[:10] == "messaging_" {
+		// Check for messaging-specific threshold violations
+		// This would integrate with the MessagingPerformanceMonitor
+		// to check messaging-specific thresholds
+	}
 }
 
 // Backward compatibility aliases
