@@ -502,3 +502,175 @@ type Transaction interface {
 	//   - string: Unique transaction identifier
 	GetID() string
 }
+
+// MessageBrokerAdapter defines the adapter interface for pluggable broker implementations.
+// This adapter pattern enables different broker implementations while maintaining
+// consistent framework integration and providing a unified abstraction layer.
+//
+// The adapter pattern separates broker-specific implementation details from the
+// core messaging framework, allowing for:
+// - Hot-swappable broker implementations
+// - Consistent configuration patterns
+// - Unified error handling and monitoring
+// - Framework-wide compatibility guarantees
+//
+// Adapters are responsible for:
+// - Translating framework requests to broker-specific operations
+// - Normalizing broker responses to framework expectations
+// - Managing broker-specific connection lifecycles
+// - Providing capability reporting for feature detection
+type MessageBrokerAdapter interface {
+	// GetAdapterInfo returns metadata about this adapter implementation.
+	// This information is used for registration, monitoring, and debugging.
+	//
+	// Returns:
+	//   - *BrokerAdapterInfo: Adapter metadata including name, version, and supported broker types
+	GetAdapterInfo() *BrokerAdapterInfo
+
+	// CreateBroker creates a broker instance from the adapter's broker type.
+	// The adapter validates the configuration and creates an appropriately configured
+	// broker instance. This method should not establish connections - that's handled
+	// by the returned MessageBroker's Connect() method.
+	//
+	// Parameters:
+	//   - config: Broker configuration with adapter-specific settings
+	//
+	// Returns:
+	//   - MessageBroker: Configured broker instance ready for connection
+	//   - error: ConfigurationError if config is invalid, AdapterError for creation failures
+	CreateBroker(config *BrokerConfig) (MessageBroker, error)
+
+	// ValidateConfiguration validates a broker configuration for this adapter.
+	// This allows early validation without creating broker instances and provides
+	// detailed error messages for configuration issues.
+	//
+	// Parameters:
+	//   - config: Configuration to validate
+	//
+	// Returns:
+	//   - *AdapterValidationResult: Validation result with errors, warnings, and suggestions
+	ValidateConfiguration(config *BrokerConfig) *AdapterValidationResult
+
+	// GetCapabilities returns the capabilities supported by this adapter.
+	// Capabilities describe what features are available and any adapter-specific
+	// limitations or extensions.
+	//
+	// Returns:
+	//   - *BrokerCapabilities: Capability information for this adapter
+	GetCapabilities() *BrokerCapabilities
+
+	// GetDefaultConfiguration returns a default configuration template for this adapter.
+	// This helps with configuration generation and provides sensible defaults
+	// for new broker setups.
+	//
+	// Returns:
+	//   - *BrokerConfig: Default configuration template with reasonable defaults
+	GetDefaultConfiguration() *BrokerConfig
+
+	// HealthCheck performs an adapter-level health check.
+	// This validates that the adapter is functioning correctly and can create
+	// broker instances. It does not check actual broker connectivity.
+	//
+	// Parameters:
+	//   - ctx: Context for timeout control
+	//
+	// Returns:
+	//   - *HealthStatus: Health status of the adapter itself
+	//   - error: AdapterError if health check fails
+	HealthCheck(ctx context.Context) (*HealthStatus, error)
+}
+
+// BrokerAdapterInfo contains metadata about a broker adapter implementation.
+type BrokerAdapterInfo struct {
+	// Name is the unique identifier for this adapter
+	Name string `json:"name"`
+
+	// Version is the adapter version for compatibility tracking
+	Version string `json:"version"`
+
+	// Description provides human-readable information about the adapter
+	Description string `json:"description"`
+
+	// SupportedBrokerTypes lists the broker types this adapter can create
+	SupportedBrokerTypes []BrokerType `json:"supported_broker_types"`
+
+	// Author identifies the adapter author/maintainer
+	Author string `json:"author,omitempty"`
+
+	// License specifies the adapter's license
+	License string `json:"license,omitempty"`
+
+	// Documentation provides links to adapter documentation
+	Documentation string `json:"documentation,omitempty"`
+
+	// Extended contains adapter-specific metadata
+	Extended map[string]any `json:"extended,omitempty"`
+}
+
+// AdapterValidationResult represents the result of adapter configuration validation.
+type AdapterValidationResult struct {
+	// Valid indicates if the configuration is valid
+	Valid bool `json:"valid"`
+
+	// Errors contains validation errors that must be fixed
+	Errors []AdapterValidationError `json:"errors,omitempty"`
+
+	// Warnings contains validation warnings that should be addressed
+	Warnings []AdapterValidationWarning `json:"warnings,omitempty"`
+
+	// Suggestions contains configuration improvement suggestions
+	Suggestions []AdapterValidationSuggestion `json:"suggestions,omitempty"`
+}
+
+// AdapterValidationError represents an adapter configuration validation error.
+type AdapterValidationError struct {
+	// Field is the configuration field that has an error
+	Field string `json:"field"`
+
+	// Message describes the validation error
+	Message string `json:"message"`
+
+	// Code identifies the specific error type
+	Code string `json:"code"`
+
+	// Severity indicates the error severity level
+	Severity AdapterValidationSeverity `json:"severity"`
+}
+
+// AdapterValidationWarning represents an adapter configuration validation warning.
+type AdapterValidationWarning struct {
+	// Field is the configuration field that has a warning
+	Field string `json:"field"`
+
+	// Message describes the validation warning
+	Message string `json:"message"`
+
+	// Code identifies the specific warning type
+	Code string `json:"code"`
+}
+
+// AdapterValidationSuggestion represents an adapter configuration improvement suggestion.
+type AdapterValidationSuggestion struct {
+	// Field is the configuration field for the suggestion
+	Field string `json:"field"`
+
+	// Message describes the suggestion
+	Message string `json:"message"`
+
+	// SuggestedValue provides a recommended value if applicable
+	SuggestedValue any `json:"suggested_value,omitempty"`
+}
+
+// AdapterValidationSeverity represents the severity level of adapter validation issues.
+type AdapterValidationSeverity string
+
+const (
+	// AdapterValidationSeverityError indicates a critical error that prevents operation
+	AdapterValidationSeverityError AdapterValidationSeverity = "error"
+
+	// AdapterValidationSeverityWarning indicates a non-critical issue that should be addressed
+	AdapterValidationSeverityWarning AdapterValidationSeverity = "warning"
+
+	// AdapterValidationSeverityInfo indicates informational feedback
+	AdapterValidationSeverityInfo AdapterValidationSeverity = "info"
+)
