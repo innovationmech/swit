@@ -23,6 +23,7 @@ package server
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -34,13 +35,14 @@ import (
 )
 
 // ServerConfig holds the complete configuration for a base server instance
-// It includes transport, discovery, middleware, and monitoring configuration
+// It includes transport, discovery, middleware, messaging, and monitoring configuration
 type ServerConfig struct {
 	ServiceName     string                `yaml:"service_name" json:"service_name"`
 	HTTP            HTTPConfig            `yaml:"http" json:"http"`
 	GRPC            GRPCConfig            `yaml:"grpc" json:"grpc"`
 	Discovery       DiscoveryConfig       `yaml:"discovery" json:"discovery"`
 	Middleware      MiddlewareConfig      `yaml:"middleware" json:"middleware"`
+	Messaging       MessagingConfig       `yaml:"messaging" json:"messaging"`
 	Sentry          SentryConfig          `yaml:"sentry" json:"sentry"`
 	Logging         LoggingConfig         `yaml:"logging" json:"logging"`
 	Prometheus      PrometheusConfig      `yaml:"prometheus" json:"prometheus"`
@@ -185,6 +187,165 @@ type MiddlewareConfig struct {
 	EnableAuth      bool `yaml:"enable_auth" json:"enable_auth"`
 	EnableRateLimit bool `yaml:"enable_rate_limit" json:"enable_rate_limit"`
 	EnableLogging   bool `yaml:"enable_logging" json:"enable_logging"`
+}
+
+// MessagingConfig holds messaging system configuration
+type MessagingConfig struct {
+	// Enabled indicates if messaging is enabled
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// DefaultBroker specifies the default broker to use
+	DefaultBroker string `yaml:"default_broker" json:"default_broker"`
+
+	// Brokers configuration map
+	Brokers map[string]BrokerConfig `yaml:"brokers" json:"brokers"`
+
+	// Connection settings
+	Connection MessagingConnectionConfig `yaml:"connection" json:"connection"`
+
+	// Security settings
+	Security MessagingSecurityConfig `yaml:"security" json:"security"`
+
+	// Performance settings
+	Performance MessagingPerformanceConfig `yaml:"performance" json:"performance"`
+
+	// Monitoring settings
+	Monitoring MessagingMonitoringConfig `yaml:"monitoring" json:"monitoring"`
+}
+
+// BrokerConfig defines configuration for a specific message broker
+type BrokerConfig struct {
+	// Type specifies the broker type (kafka, nats, rabbitmq, inmemory)
+	Type string `yaml:"type" json:"type"`
+
+	// Endpoints contains the list of broker endpoints
+	Endpoints []string `yaml:"endpoints" json:"endpoints"`
+
+	// Authentication configuration (optional)
+	Authentication *MessagingAuthConfig `yaml:"authentication,omitempty" json:"authentication,omitempty"`
+
+	// TLS configuration (optional)
+	TLS *MessagingTLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+
+	// Connection-specific settings
+	ConnectionSettings map[string]interface{} `yaml:"connection_settings,omitempty" json:"connection_settings,omitempty"`
+}
+
+// MessagingConnectionConfig defines messaging connection settings
+type MessagingConnectionConfig struct {
+	// Timeout for establishing connections
+	Timeout time.Duration `yaml:"timeout" json:"timeout"`
+
+	// KeepAlive interval for connection health checks
+	KeepAlive time.Duration `yaml:"keep_alive" json:"keep_alive"`
+
+	// MaxAttempts for connection establishment
+	MaxAttempts int `yaml:"max_attempts" json:"max_attempts"`
+
+	// RetryInterval between connection attempts
+	RetryInterval time.Duration `yaml:"retry_interval" json:"retry_interval"`
+
+	// PoolSize for connection pooling
+	PoolSize int `yaml:"pool_size" json:"pool_size"`
+
+	// IdleTimeout for idle connections
+	IdleTimeout time.Duration `yaml:"idle_timeout" json:"idle_timeout"`
+}
+
+// MessagingAuthConfig defines messaging authentication settings
+type MessagingAuthConfig struct {
+	// Type specifies the authentication type (none, sasl, oauth2, apikey)
+	Type string `yaml:"type" json:"type"`
+
+	// Username for SASL authentication
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+
+	// Password for SASL authentication
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+
+	// Token for token-based authentication
+	Token string `yaml:"token,omitempty" json:"token,omitempty"`
+
+	// APIKey for API key authentication
+	APIKey string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+
+	// Mechanism for SASL (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)
+	Mechanism string `yaml:"mechanism,omitempty" json:"mechanism,omitempty"`
+}
+
+// MessagingTLSConfig defines messaging TLS settings
+type MessagingTLSConfig struct {
+	// Enabled indicates if TLS is enabled
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// CertFile is the path to the client certificate file
+	CertFile string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
+
+	// KeyFile is the path to the client private key file
+	KeyFile string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
+
+	// CAFile is the path to the certificate authority file
+	CAFile string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
+
+	// ServerName for server name verification
+	ServerName string `yaml:"server_name,omitempty" json:"server_name,omitempty"`
+
+	// SkipVerify skips certificate verification (insecure)
+	SkipVerify bool `yaml:"skip_verify" json:"skip_verify"`
+}
+
+// MessagingSecurityConfig defines messaging security settings
+type MessagingSecurityConfig struct {
+	// EnableEncryption enables message encryption
+	EnableEncryption bool `yaml:"enable_encryption" json:"enable_encryption"`
+
+	// EnableAuthentication enables authentication checks
+	EnableAuthentication bool `yaml:"enable_authentication" json:"enable_authentication"`
+
+	// EnableAuthorization enables authorization checks
+	EnableAuthorization bool `yaml:"enable_authorization" json:"enable_authorization"`
+
+	// MessageSigning enables message signing
+	MessageSigning bool `yaml:"message_signing" json:"message_signing"`
+}
+
+// MessagingPerformanceConfig defines messaging performance settings
+type MessagingPerformanceConfig struct {
+	// BatchSize for batching messages
+	BatchSize int `yaml:"batch_size" json:"batch_size"`
+
+	// BatchTimeout for batch flushing
+	BatchTimeout time.Duration `yaml:"batch_timeout" json:"batch_timeout"`
+
+	// BufferSize for internal buffering
+	BufferSize int `yaml:"buffer_size" json:"buffer_size"`
+
+	// Concurrency level for message processing
+	Concurrency int `yaml:"concurrency" json:"concurrency"`
+
+	// PrefetchCount for message prefetching
+	PrefetchCount int `yaml:"prefetch_count" json:"prefetch_count"`
+
+	// CompressionEnabled enables message compression
+	CompressionEnabled bool `yaml:"compression_enabled" json:"compression_enabled"`
+}
+
+// MessagingMonitoringConfig defines messaging monitoring settings
+type MessagingMonitoringConfig struct {
+	// Enabled indicates if monitoring is enabled
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// MetricsEnabled enables metrics collection
+	MetricsEnabled bool `yaml:"metrics_enabled" json:"metrics_enabled"`
+
+	// TracingEnabled enables distributed tracing
+	TracingEnabled bool `yaml:"tracing_enabled" json:"tracing_enabled"`
+
+	// HealthCheckEnabled enables health checks
+	HealthCheckEnabled bool `yaml:"health_check_enabled" json:"health_check_enabled"`
+
+	// HealthCheckInterval for health check operations
+	HealthCheckInterval time.Duration `yaml:"health_check_interval" json:"health_check_interval"`
 }
 
 // SentryConfig holds Sentry error monitoring configuration
@@ -406,6 +567,69 @@ func (c *ServerConfig) SetDefaults() {
 	c.Middleware.EnableAuth = false
 	c.Middleware.EnableRateLimit = false
 	c.Middleware.EnableLogging = true
+
+	// Messaging defaults
+	c.Messaging.Enabled = false // Default to disabled for backward compatibility
+	c.Messaging.DefaultBroker = ""
+	if c.Messaging.Brokers == nil {
+		c.Messaging.Brokers = make(map[string]BrokerConfig)
+	}
+
+	// Messaging connection defaults
+	if c.Messaging.Connection.Timeout == 0 {
+		c.Messaging.Connection.Timeout = 30 * time.Second
+	}
+	if c.Messaging.Connection.KeepAlive == 0 {
+		c.Messaging.Connection.KeepAlive = 30 * time.Second
+	}
+	if c.Messaging.Connection.MaxAttempts == 0 {
+		c.Messaging.Connection.MaxAttempts = 3
+	}
+	if c.Messaging.Connection.RetryInterval == 0 {
+		c.Messaging.Connection.RetryInterval = 5 * time.Second
+	}
+	if c.Messaging.Connection.PoolSize == 0 {
+		c.Messaging.Connection.PoolSize = 10
+	}
+	if c.Messaging.Connection.IdleTimeout == 0 {
+		c.Messaging.Connection.IdleTimeout = 5 * time.Minute
+	}
+
+	// Messaging security defaults
+	c.Messaging.Security.EnableEncryption = false
+	c.Messaging.Security.EnableAuthentication = false
+	c.Messaging.Security.EnableAuthorization = false
+	c.Messaging.Security.MessageSigning = false
+
+	// Messaging performance defaults
+	if c.Messaging.Performance.BatchSize == 0 {
+		c.Messaging.Performance.BatchSize = 100
+	}
+	if c.Messaging.Performance.BatchTimeout == 0 {
+		c.Messaging.Performance.BatchTimeout = 100 * time.Millisecond
+	}
+	if c.Messaging.Performance.BufferSize == 0 {
+		c.Messaging.Performance.BufferSize = 1000
+	}
+	if c.Messaging.Performance.Concurrency == 0 {
+		c.Messaging.Performance.Concurrency = 1
+	}
+	if c.Messaging.Performance.PrefetchCount == 0 {
+		c.Messaging.Performance.PrefetchCount = 10
+	}
+	c.Messaging.Performance.CompressionEnabled = false
+
+	// Messaging monitoring defaults
+	c.Messaging.Monitoring.Enabled = true
+	c.Messaging.Monitoring.MetricsEnabled = true
+	c.Messaging.Monitoring.TracingEnabled = false
+	c.Messaging.Monitoring.HealthCheckEnabled = true
+	if c.Messaging.Monitoring.HealthCheckInterval == 0 {
+		c.Messaging.Monitoring.HealthCheckInterval = 30 * time.Second
+	}
+
+	// Apply messaging environment overrides
+	c.Messaging.ApplyEnvironmentOverrides()
 
 	// Sentry defaults
 	c.Sentry.Enabled = false
@@ -644,6 +868,67 @@ func (c *ServerConfig) Validate() error {
 		}
 		if c.Discovery.RegistrationTimeout > 5*time.Minute {
 			return fmt.Errorf("discovery.registration_timeout should not exceed 5 minutes")
+		}
+	}
+
+	// Validate messaging configuration
+	if c.Messaging.Enabled {
+		// Validate default broker is specified if messaging is enabled
+		if c.Messaging.DefaultBroker == "" && len(c.Messaging.Brokers) > 0 {
+			return fmt.Errorf("messaging.default_broker is required when brokers are configured")
+		}
+
+		// Validate default broker exists in brokers map
+		if c.Messaging.DefaultBroker != "" {
+			if _, exists := c.Messaging.Brokers[c.Messaging.DefaultBroker]; !exists {
+				return fmt.Errorf("messaging.default_broker '%s' not found in brokers configuration", c.Messaging.DefaultBroker)
+			}
+		}
+
+		// Validate broker configurations
+		for name, brokerConfig := range c.Messaging.Brokers {
+			if err := c.validateBrokerConfig(name, &brokerConfig); err != nil {
+				return fmt.Errorf("messaging.brokers.%s validation failed: %w", name, err)
+			}
+		}
+
+		// Validate connection configuration
+		if c.Messaging.Connection.Timeout <= 0 {
+			return fmt.Errorf("messaging.connection.timeout must be positive")
+		}
+		if c.Messaging.Connection.MaxAttempts <= 0 {
+			return fmt.Errorf("messaging.connection.max_attempts must be positive")
+		}
+		if c.Messaging.Connection.RetryInterval <= 0 {
+			return fmt.Errorf("messaging.connection.retry_interval must be positive")
+		}
+		if c.Messaging.Connection.PoolSize <= 0 {
+			return fmt.Errorf("messaging.connection.pool_size must be positive")
+		}
+		if c.Messaging.Connection.IdleTimeout < 0 {
+			return fmt.Errorf("messaging.connection.idle_timeout cannot be negative")
+		}
+
+		// Validate performance configuration
+		if c.Messaging.Performance.BatchSize <= 0 {
+			return fmt.Errorf("messaging.performance.batch_size must be positive")
+		}
+		if c.Messaging.Performance.BatchTimeout <= 0 {
+			return fmt.Errorf("messaging.performance.batch_timeout must be positive")
+		}
+		if c.Messaging.Performance.BufferSize <= 0 {
+			return fmt.Errorf("messaging.performance.buffer_size must be positive")
+		}
+		if c.Messaging.Performance.Concurrency <= 0 {
+			return fmt.Errorf("messaging.performance.concurrency must be positive")
+		}
+		if c.Messaging.Performance.PrefetchCount <= 0 {
+			return fmt.Errorf("messaging.performance.prefetch_count must be positive")
+		}
+
+		// Validate monitoring configuration
+		if c.Messaging.Monitoring.HealthCheckInterval <= 0 {
+			return fmt.Errorf("messaging.monitoring.health_check_interval must be positive")
 		}
 	}
 
@@ -929,4 +1214,288 @@ func (c *ServerConfig) validateCORSConfig() error {
 	}
 
 	return nil
+}
+
+// validateBrokerConfig validates a specific broker configuration
+func (c *ServerConfig) validateBrokerConfig(name string, brokerConfig *BrokerConfig) error {
+	if brokerConfig.Type == "" {
+		return fmt.Errorf("broker type is required")
+	}
+
+	// Validate broker type
+	validBrokerTypes := map[string]bool{
+		"kafka":    true,
+		"nats":     true,
+		"rabbitmq": true,
+		"inmemory": true,
+	}
+	if !validBrokerTypes[brokerConfig.Type] {
+		return fmt.Errorf("invalid broker type: %s, must be one of: kafka, nats, rabbitmq, inmemory", brokerConfig.Type)
+	}
+
+	// Validate endpoints (except for inmemory broker)
+	if brokerConfig.Type != "inmemory" {
+		if len(brokerConfig.Endpoints) == 0 {
+			return fmt.Errorf("endpoints are required for broker type: %s", brokerConfig.Type)
+		}
+
+		for i, endpoint := range brokerConfig.Endpoints {
+			if endpoint == "" {
+				return fmt.Errorf("endpoint %d cannot be empty", i)
+			}
+		}
+	}
+
+	// Validate authentication if provided
+	if brokerConfig.Authentication != nil {
+		if err := c.validateMessagingAuthConfig(brokerConfig.Authentication); err != nil {
+			return fmt.Errorf("authentication validation failed: %w", err)
+		}
+	}
+
+	// Validate TLS if provided
+	if brokerConfig.TLS != nil {
+		if err := c.validateMessagingTLSConfig(brokerConfig.TLS); err != nil {
+			return fmt.Errorf("TLS validation failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// validateMessagingAuthConfig validates messaging authentication configuration
+func (c *ServerConfig) validateMessagingAuthConfig(auth *MessagingAuthConfig) error {
+	if auth.Type == "" {
+		return fmt.Errorf("authentication type is required")
+	}
+
+	validAuthTypes := map[string]bool{
+		"none":   true,
+		"sasl":   true,
+		"oauth2": true,
+		"apikey": true,
+	}
+	if !validAuthTypes[auth.Type] {
+		return fmt.Errorf("invalid authentication type: %s, must be one of: none, sasl, oauth2, apikey", auth.Type)
+	}
+
+	switch auth.Type {
+	case "none":
+		// No additional validation needed
+	case "sasl":
+		if auth.Username == "" {
+			return fmt.Errorf("username is required for SASL authentication")
+		}
+		if auth.Password == "" {
+			return fmt.Errorf("password is required for SASL authentication")
+		}
+	case "oauth2":
+		if auth.Token == "" {
+			return fmt.Errorf("token is required for OAuth2 authentication")
+		}
+	case "apikey":
+		if auth.APIKey == "" {
+			return fmt.Errorf("api_key is required for API key authentication")
+		}
+	}
+
+	return nil
+}
+
+// validateMessagingTLSConfig validates messaging TLS configuration
+func (c *ServerConfig) validateMessagingTLSConfig(tls *MessagingTLSConfig) error {
+	if !tls.Enabled {
+		return nil
+	}
+
+	// If cert file is provided, key file must also be provided
+	if tls.CertFile != "" && tls.KeyFile == "" {
+		return fmt.Errorf("key_file is required when cert_file is specified")
+	}
+
+	if tls.KeyFile != "" && tls.CertFile == "" {
+		return fmt.Errorf("cert_file is required when key_file is specified")
+	}
+
+	return nil
+}
+
+// IsMessagingEnabled returns true if messaging is enabled
+func (c *ServerConfig) IsMessagingEnabled() bool {
+	return c.Messaging.Enabled
+}
+
+// GetMessagingDefaultBroker returns the default broker name
+func (c *ServerConfig) GetMessagingDefaultBroker() string {
+	return c.Messaging.DefaultBroker
+}
+
+// GetMessagingBroker returns the configuration for a specific broker
+func (c *ServerConfig) GetMessagingBroker(name string) (BrokerConfig, bool) {
+	broker, exists := c.Messaging.Brokers[name]
+	return broker, exists
+}
+
+// ApplyMessagingEnvironmentOverrides applies environment variable overrides to messaging configuration
+// Environment variables follow the pattern: SWIT_MESSAGING_*
+func (c *MessagingConfig) ApplyEnvironmentOverrides() {
+	if enabled := os.Getenv("SWIT_MESSAGING_ENABLED"); enabled != "" {
+		if val, err := strconv.ParseBool(enabled); err == nil {
+			c.Enabled = val
+		}
+	}
+
+	if defaultBroker := os.Getenv("SWIT_MESSAGING_DEFAULT_BROKER"); defaultBroker != "" {
+		c.DefaultBroker = defaultBroker
+	}
+
+	// Connection overrides
+	c.applyConnectionOverrides()
+
+	// Security overrides
+	c.applySecurityOverrides()
+
+	// Performance overrides
+	c.applyPerformanceOverrides()
+
+	// Monitoring overrides
+	c.applyMonitoringOverrides()
+}
+
+// applyConnectionOverrides applies connection-related environment overrides
+func (c *MessagingConfig) applyConnectionOverrides() {
+	if timeout := os.Getenv("SWIT_MESSAGING_CONNECTION_TIMEOUT"); timeout != "" {
+		if val, err := time.ParseDuration(timeout); err == nil {
+			c.Connection.Timeout = val
+		}
+	}
+
+	if keepAlive := os.Getenv("SWIT_MESSAGING_CONNECTION_KEEP_ALIVE"); keepAlive != "" {
+		if val, err := time.ParseDuration(keepAlive); err == nil {
+			c.Connection.KeepAlive = val
+		}
+	}
+
+	if maxAttempts := os.Getenv("SWIT_MESSAGING_CONNECTION_MAX_ATTEMPTS"); maxAttempts != "" {
+		if val, err := strconv.Atoi(maxAttempts); err == nil {
+			c.Connection.MaxAttempts = val
+		}
+	}
+
+	if retryInterval := os.Getenv("SWIT_MESSAGING_CONNECTION_RETRY_INTERVAL"); retryInterval != "" {
+		if val, err := time.ParseDuration(retryInterval); err == nil {
+			c.Connection.RetryInterval = val
+		}
+	}
+
+	if poolSize := os.Getenv("SWIT_MESSAGING_CONNECTION_POOL_SIZE"); poolSize != "" {
+		if val, err := strconv.Atoi(poolSize); err == nil {
+			c.Connection.PoolSize = val
+		}
+	}
+
+	if idleTimeout := os.Getenv("SWIT_MESSAGING_CONNECTION_IDLE_TIMEOUT"); idleTimeout != "" {
+		if val, err := time.ParseDuration(idleTimeout); err == nil {
+			c.Connection.IdleTimeout = val
+		}
+	}
+}
+
+// applySecurityOverrides applies security-related environment overrides
+func (c *MessagingConfig) applySecurityOverrides() {
+	if enableEncryption := os.Getenv("SWIT_MESSAGING_SECURITY_ENABLE_ENCRYPTION"); enableEncryption != "" {
+		if val, err := strconv.ParseBool(enableEncryption); err == nil {
+			c.Security.EnableEncryption = val
+		}
+	}
+
+	if enableAuth := os.Getenv("SWIT_MESSAGING_SECURITY_ENABLE_AUTHENTICATION"); enableAuth != "" {
+		if val, err := strconv.ParseBool(enableAuth); err == nil {
+			c.Security.EnableAuthentication = val
+		}
+	}
+
+	if enableAuthz := os.Getenv("SWIT_MESSAGING_SECURITY_ENABLE_AUTHORIZATION"); enableAuthz != "" {
+		if val, err := strconv.ParseBool(enableAuthz); err == nil {
+			c.Security.EnableAuthorization = val
+		}
+	}
+
+	if messageSigning := os.Getenv("SWIT_MESSAGING_SECURITY_MESSAGE_SIGNING"); messageSigning != "" {
+		if val, err := strconv.ParseBool(messageSigning); err == nil {
+			c.Security.MessageSigning = val
+		}
+	}
+}
+
+// applyPerformanceOverrides applies performance-related environment overrides
+func (c *MessagingConfig) applyPerformanceOverrides() {
+	if batchSize := os.Getenv("SWIT_MESSAGING_PERFORMANCE_BATCH_SIZE"); batchSize != "" {
+		if val, err := strconv.Atoi(batchSize); err == nil {
+			c.Performance.BatchSize = val
+		}
+	}
+
+	if batchTimeout := os.Getenv("SWIT_MESSAGING_PERFORMANCE_BATCH_TIMEOUT"); batchTimeout != "" {
+		if val, err := time.ParseDuration(batchTimeout); err == nil {
+			c.Performance.BatchTimeout = val
+		}
+	}
+
+	if bufferSize := os.Getenv("SWIT_MESSAGING_PERFORMANCE_BUFFER_SIZE"); bufferSize != "" {
+		if val, err := strconv.Atoi(bufferSize); err == nil {
+			c.Performance.BufferSize = val
+		}
+	}
+
+	if concurrency := os.Getenv("SWIT_MESSAGING_PERFORMANCE_CONCURRENCY"); concurrency != "" {
+		if val, err := strconv.Atoi(concurrency); err == nil {
+			c.Performance.Concurrency = val
+		}
+	}
+
+	if prefetchCount := os.Getenv("SWIT_MESSAGING_PERFORMANCE_PREFETCH_COUNT"); prefetchCount != "" {
+		if val, err := strconv.Atoi(prefetchCount); err == nil {
+			c.Performance.PrefetchCount = val
+		}
+	}
+
+	if compressionEnabled := os.Getenv("SWIT_MESSAGING_PERFORMANCE_COMPRESSION_ENABLED"); compressionEnabled != "" {
+		if val, err := strconv.ParseBool(compressionEnabled); err == nil {
+			c.Performance.CompressionEnabled = val
+		}
+	}
+}
+
+// applyMonitoringOverrides applies monitoring-related environment overrides
+func (c *MessagingConfig) applyMonitoringOverrides() {
+	if enabled := os.Getenv("SWIT_MESSAGING_MONITORING_ENABLED"); enabled != "" {
+		if val, err := strconv.ParseBool(enabled); err == nil {
+			c.Monitoring.Enabled = val
+		}
+	}
+
+	if metricsEnabled := os.Getenv("SWIT_MESSAGING_MONITORING_METRICS_ENABLED"); metricsEnabled != "" {
+		if val, err := strconv.ParseBool(metricsEnabled); err == nil {
+			c.Monitoring.MetricsEnabled = val
+		}
+	}
+
+	if tracingEnabled := os.Getenv("SWIT_MESSAGING_MONITORING_TRACING_ENABLED"); tracingEnabled != "" {
+		if val, err := strconv.ParseBool(tracingEnabled); err == nil {
+			c.Monitoring.TracingEnabled = val
+		}
+	}
+
+	if healthCheckEnabled := os.Getenv("SWIT_MESSAGING_MONITORING_HEALTH_CHECK_ENABLED"); healthCheckEnabled != "" {
+		if val, err := strconv.ParseBool(healthCheckEnabled); err == nil {
+			c.Monitoring.HealthCheckEnabled = val
+		}
+	}
+
+	if healthCheckInterval := os.Getenv("SWIT_MESSAGING_MONITORING_HEALTH_CHECK_INTERVAL"); healthCheckInterval != "" {
+		if val, err := time.ParseDuration(healthCheckInterval); err == nil {
+			c.Monitoring.HealthCheckInterval = val
+		}
+	}
 }

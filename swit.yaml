@@ -54,5 +54,66 @@ tracing:
     - "tracecontext"
     - "baggage"
 
+# Messaging Configuration (Event-Driven Architecture)
+messaging:
+  enabled: false  # Enable when using event-driven patterns
+  default_broker: "local"
+  
+  # Broker configurations
+  brokers:
+    local:
+      type: "inmemory"
+    
+    # Example Kafka configuration (uncomment and configure as needed)
+    # kafka:
+    #   type: "kafka"
+    #   endpoints:
+    #     - "localhost:9092"
+    #   authentication:
+    #     type: "none"
+    #   tls:
+    #     enabled: false
+    
+    # Example NATS configuration (uncomment and configure as needed)
+    # nats:
+    #   type: "nats"
+    #   endpoints:
+    #     - "nats://localhost:4222"
+    #   authentication:
+    #     type: "none"
+  
+  # Global connection settings
+  connection:
+    timeout: "30s"
+    keep_alive: "30s"
+    max_attempts: 3
+    retry_interval: "5s"
+    pool_size: 10
+    idle_timeout: "5m"
+  
+  # Security settings
+  security:
+    enable_encryption: false
+    enable_authentication: false
+    enable_authorization: false
+    message_signing: false
+  
+  # Performance tuning
+  performance:
+    batch_size: 100
+    batch_timeout: "100ms"
+    buffer_size: 1000
+    concurrency: 1
+    prefetch_count: 10
+    compression_enabled: false
+  
+  # Monitoring and observability
+  monitoring:
+    enabled: true
+    metrics_enabled: true
+    tracing_enabled: false
+    health_check_enabled: true
+    health_check_interval: "30s"
+
 serviceDiscovery:
   address: "localhost:8500"
