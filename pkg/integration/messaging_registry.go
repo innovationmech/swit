@@ -19,11 +19,12 @@
 // THE SOFTWARE.
 //
 
-package messaging
+package integration
 
 import (
 	"context"
 
+	"github.com/innovationmech/swit/pkg/messaging"
 	"github.com/innovationmech/swit/pkg/server"
 )
 

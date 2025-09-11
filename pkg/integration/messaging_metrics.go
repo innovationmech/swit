@@ -19,12 +19,13 @@
 // THE SOFTWARE.
 //
 
-package messaging
+package integration
 
 import (
 	"sync/atomic"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/messaging"
 	"github.com/innovationmech/swit/pkg/server"
 )
 

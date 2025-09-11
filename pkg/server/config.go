@@ -1119,6 +1119,11 @@ func (c *ServerConfig) IsDiscoveryEnabled() bool {
 	return c.Discovery.Enabled
 }
 
+// IsMessagingEnabled returns true if messaging system is enabled
+func (c *ServerConfig) IsMessagingEnabled() bool {
+	return c.Messaging.Enabled
+}
+
 // IsDiscoveryFailureModeFailFast returns true if discovery failure mode is fail_fast or strict
 func (c *ServerConfig) IsDiscoveryFailureModeFailFast() bool {
 	return c.Discovery.FailureMode == DiscoveryFailureModeFailFast ||
@@ -1318,11 +1323,6 @@ func (c *ServerConfig) validateMessagingTLSConfig(tls *MessagingTLSConfig) error
 	}
 
 	return nil
-}
-
-// IsMessagingEnabled returns true if messaging is enabled
-func (c *ServerConfig) IsMessagingEnabled() bool {
-	return c.Messaging.Enabled
 }
 
 // GetMessagingDefaultBroker returns the default broker name

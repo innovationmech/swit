@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/messaging"
 	"github.com/innovationmech/swit/pkg/transport"
 	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
@@ -47,6 +48,9 @@ type BusinessServerImpl struct {
 	serviceRegistrations []*ServiceRegistration
 	dependencies         BusinessDependencyContainer
 	serviceRegistrar     BusinessServiceRegistrar
+
+	// Messaging system integration
+	messagingLifecycle *MessagingLifecycleManager
 
 	// State management
 	mu      sync.RWMutex
@@ -100,11 +104,26 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		zap.String("log_level", config.Logging.Level),
 		zap.String("log_encoding", config.Logging.Encoding))
 
+	// Initialize messaging lifecycle manager if messaging is enabled
+	var messagingLifecycle *MessagingLifecycleManager
+	if config.IsMessagingEnabled() {
+		messagingStartupConfig := &MessagingStartupConfig{
+			StartupTimeout:      30 * time.Second,
+			ShutdownTimeout:     config.ShutdownTimeout,
+			NonBlocking:         false,
+			RetryAttempts:       3,
+			RetryDelay:          time.Second,
+			HealthCheckInterval: 5 * time.Second,
+		}
+		messagingLifecycle = NewMessagingLifecycleManager(messagingStartupConfig)
+	}
+
 	server := &BusinessServerImpl{
 		config:               config,
 		dependencies:         deps,
 		serviceRegistrar:     registrar,
 		transportManager:     transport.NewTransportCoordinator(),
+		messagingLifecycle:   messagingLifecycle,
 		metrics:              NewPerformanceMetrics(),
 		monitor:              NewPerformanceMonitor(),
 		sentryManager:        NewSentryManager(&config.Sentry),
@@ -289,6 +308,15 @@ func (s *BusinessServerImpl) Start(ctx context.Context) error {
 		}
 	}
 
+	// Initialize messaging system if enabled
+	if s.config.IsMessagingEnabled() && s.messagingLifecycle != nil {
+		if err := s.initializeMessagingSystem(ctx); err != nil {
+			logger.Logger.Warn("Messaging system initialization failed",
+				zap.Error(err))
+			// For now, log warning and continue - can be made configurable later
+		}
+	}
+
 	// Configure middleware for HTTP transport
 	if s.httpTransport != nil {
 		if err := s.configureHTTPMiddleware(); err != nil {
@@ -408,6 +436,13 @@ func (s *BusinessServerImpl) Stop(ctx context.Context) error {
 	if s.config.IsDiscoveryEnabled() && s.discoveryManager != nil {
 		if err := s.deregisterFromDiscovery(ctx); err != nil {
 			logger.Logger.Warn("Failed to deregister from service discovery", zap.Error(err))
+		}
+	}
+
+	// Stop messaging system if enabled
+	if s.config.IsMessagingEnabled() && s.messagingLifecycle != nil {
+		if err := s.messagingLifecycle.ShutdownSequence(ctx); err != nil {
+			logger.Logger.Warn("Failed to shutdown messaging system", zap.Error(err))
 		}
 	}
 
@@ -616,6 +651,86 @@ func (s *BusinessServerImpl) SetDiscoveryManager(manager ServiceDiscoveryManager
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.discoveryManager = manager
+}
+
+// initializeMessagingSystem initializes the messaging system during server startup
+func (s *BusinessServerImpl) initializeMessagingSystem(ctx context.Context) error {
+	logger.Logger.Info("Initializing messaging system")
+
+	// Prepare broker configurations from server config
+	brokerConfigs := make(map[string]*messaging.BrokerConfig)
+	for name, serverBrokerConfig := range s.config.Messaging.Brokers {
+		// Convert server config to messaging config
+		brokerConfig := &messaging.BrokerConfig{
+			Type:      messaging.BrokerType(serverBrokerConfig.Type),
+			Endpoints: serverBrokerConfig.Endpoints,
+		}
+
+		// Convert authentication config if present
+		if serverBrokerConfig.Authentication != nil {
+			brokerConfig.Authentication = &messaging.AuthConfig{
+				Type:      messaging.AuthType(serverBrokerConfig.Authentication.Type),
+				Username:  serverBrokerConfig.Authentication.Username,
+				Password:  serverBrokerConfig.Authentication.Password,
+				Token:     serverBrokerConfig.Authentication.Token,
+				APIKey:    serverBrokerConfig.Authentication.APIKey,
+				Mechanism: serverBrokerConfig.Authentication.Mechanism,
+			}
+		}
+
+		// Convert TLS config if present
+		if serverBrokerConfig.TLS != nil {
+			brokerConfig.TLS = &messaging.TLSConfig{
+				Enabled:    serverBrokerConfig.TLS.Enabled,
+				CertFile:   serverBrokerConfig.TLS.CertFile,
+				KeyFile:    serverBrokerConfig.TLS.KeyFile,
+				CAFile:     serverBrokerConfig.TLS.CAFile,
+				ServerName: serverBrokerConfig.TLS.ServerName,
+				SkipVerify: serverBrokerConfig.TLS.SkipVerify,
+			}
+		}
+
+		brokerConfigs[name] = brokerConfig
+	}
+
+	// Collect event handlers from the service registrar if it supports messaging
+	var eventHandlers []messaging.EventHandler
+	if messagingRegistrar, ok := s.serviceRegistrar.(MessagingServiceRegistrar); ok {
+		// Create a registry adapter to collect handlers
+		handlerRegistry := &eventHandlerRegistryAdapter{handlers: make(map[string]EventHandler)}
+		
+		if err := messagingRegistrar.RegisterEventHandlers(handlerRegistry); err != nil {
+			return fmt.Errorf("failed to register event handlers: %w", err)
+		}
+
+		// Convert server.EventHandler to messaging.EventHandler
+		for _, serverHandler := range handlerRegistry.handlers {
+			// Create a messaging event handler adapter
+			messagingHandler := &messagingEventHandlerAdapter{
+				serverHandler: serverHandler,
+			}
+			eventHandlers = append(eventHandlers, messagingHandler)
+		}
+	}
+
+	// Convert messaging.EventHandler slice to EventHandler slice
+	var serverEventHandlers []EventHandler
+	for _, handler := range eventHandlers {
+		if msgHandler, ok := handler.(*messagingEventHandlerAdapter); ok {
+			serverEventHandlers = append(serverEventHandlers, msgHandler.serverHandler)
+		}
+	}
+
+	// Start the messaging system using the lifecycle manager
+	if err := s.messagingLifecycle.StartupSequence(ctx, brokerConfigs, serverEventHandlers); err != nil {
+		return fmt.Errorf("messaging startup sequence failed: %w", err)
+	}
+
+	logger.Logger.Info("Messaging system initialized successfully",
+		zap.Int("brokers", len(brokerConfigs)),
+		zap.Int("event_handlers", len(eventHandlers)))
+
+	return nil
 }
 
 // configureHTTPMiddleware configures global middleware for HTTP transport
@@ -848,4 +963,98 @@ func (a *grpcServiceAdapter) Initialize(ctx context.Context) error {
 func (a *grpcServiceAdapter) Shutdown(ctx context.Context) error {
 	// gRPC services typically don't need shutdown logic
 	return nil
+}
+
+// eventHandlerRegistryAdapter adapts the EventHandlerRegistry interface for collecting handlers
+type eventHandlerRegistryAdapter struct {
+	handlers map[string]EventHandler
+}
+
+func (a *eventHandlerRegistryAdapter) RegisterEventHandler(handler EventHandler) error {
+	if handler == nil {
+		return fmt.Errorf("event handler cannot be nil")
+	}
+	
+	handlerID := handler.GetHandlerID()
+	if handlerID == "" {
+		return fmt.Errorf("event handler ID cannot be empty")
+	}
+	
+	if _, exists := a.handlers[handlerID]; exists {
+		return fmt.Errorf("event handler with ID '%s' already registered", handlerID)
+	}
+	
+	a.handlers[handlerID] = handler
+	return nil
+}
+
+func (a *eventHandlerRegistryAdapter) UnregisterEventHandler(handlerID string) error {
+	if _, exists := a.handlers[handlerID]; !exists {
+		return fmt.Errorf("event handler with ID '%s' not found", handlerID)
+	}
+	
+	delete(a.handlers, handlerID)
+	return nil
+}
+
+func (a *eventHandlerRegistryAdapter) GetRegisteredHandlers() []string {
+	handlerIDs := make([]string, 0, len(a.handlers))
+	for handlerID := range a.handlers {
+		handlerIDs = append(handlerIDs, handlerID)
+	}
+	return handlerIDs
+}
+
+// messagingEventHandlerAdapter adapts server.EventHandler to messaging.EventHandler
+type messagingEventHandlerAdapter struct {
+	serverHandler EventHandler
+}
+
+func (a *messagingEventHandlerAdapter) GetHandlerID() string {
+	return a.serverHandler.GetHandlerID()
+}
+
+func (a *messagingEventHandlerAdapter) GetTopics() []string {
+	return a.serverHandler.GetTopics()
+}
+
+func (a *messagingEventHandlerAdapter) GetBrokerRequirement() string {
+	return a.serverHandler.GetBrokerRequirement()
+}
+
+func (a *messagingEventHandlerAdapter) Initialize(ctx context.Context) error {
+	return a.serverHandler.Initialize(ctx)
+}
+
+func (a *messagingEventHandlerAdapter) Shutdown(ctx context.Context) error {
+	return a.serverHandler.Shutdown(ctx)
+}
+
+func (a *messagingEventHandlerAdapter) Handle(ctx context.Context, message *messaging.Message) error {
+	// Convert messaging.Message to the interface{} expected by server.EventHandler
+	return a.serverHandler.Handle(ctx, message)
+}
+
+func (a *messagingEventHandlerAdapter) OnError(ctx context.Context, message *messaging.Message, err error) messaging.ErrorAction {
+	// Convert the server handler's error action to messaging error action
+	serverAction := a.serverHandler.OnError(ctx, message, err)
+	
+	// Convert server error action to messaging error action
+	switch v := serverAction.(type) {
+	case string:
+		switch v {
+		case "retry":
+			return messaging.ErrorActionRetry
+		case "dead_letter":
+			return messaging.ErrorActionDeadLetter
+		case "discard":
+			return messaging.ErrorActionDiscard
+		case "pause":
+			return messaging.ErrorActionPause
+		default:
+			return messaging.ErrorActionRetry
+		}
+	default:
+		return messaging.ErrorActionRetry
+	}
 }
