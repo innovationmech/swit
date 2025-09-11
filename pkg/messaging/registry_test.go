@@ -148,6 +148,11 @@ func (m *mockMessagingCoordinator) HealthCheck(ctx context.Context) (*MessagingH
 	return &MessagingHealthStatus{}, nil
 }
 
+func (m *mockMessagingCoordinator) GracefulShutdown(ctx context.Context, config *ShutdownConfig) (*GracefulShutdownManager, error) {
+	manager := NewGracefulShutdownManager(m, config)
+	return manager, nil
+}
+
 func TestNewEventHandlerRegistry(t *testing.T) {
 	coordinator := newMockMessagingCoordinator()
 	registry := NewEventHandlerRegistry(coordinator)

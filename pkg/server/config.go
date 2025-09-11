@@ -211,6 +211,9 @@ type MessagingConfig struct {
 
 	// Monitoring settings
 	Monitoring MessagingMonitoringConfig `yaml:"monitoring" json:"monitoring"`
+
+	// Shutdown settings for graceful messaging shutdown
+	Shutdown MessagingShutdownConfig `yaml:"shutdown" json:"shutdown"`
 }
 
 // BrokerConfig defines configuration for a specific message broker
@@ -346,6 +349,24 @@ type MessagingMonitoringConfig struct {
 
 	// HealthCheckInterval for health check operations
 	HealthCheckInterval time.Duration `yaml:"health_check_interval" json:"health_check_interval"`
+}
+
+// MessagingShutdownConfig defines graceful shutdown settings for messaging
+type MessagingShutdownConfig struct {
+	// Timeout is the maximum time to wait for shutdown completion
+	Timeout time.Duration `yaml:"timeout" json:"timeout"`
+
+	// ForceTimeout is the maximum time before forcing termination
+	ForceTimeout time.Duration `yaml:"force_timeout" json:"force_timeout"`
+
+	// DrainTimeout is the maximum time to wait for in-flight message completion
+	DrainTimeout time.Duration `yaml:"drain_timeout" json:"drain_timeout"`
+
+	// ReportInterval is the interval for reporting shutdown status
+	ReportInterval time.Duration `yaml:"report_interval" json:"report_interval"`
+
+	// MaxInflightMessages is the maximum number of messages to track during shutdown
+	MaxInflightMessages int `yaml:"max_inflight_messages" json:"max_inflight_messages"`
 }
 
 // SentryConfig holds Sentry error monitoring configuration
