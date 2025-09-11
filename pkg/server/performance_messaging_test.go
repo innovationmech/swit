@@ -22,6 +22,7 @@
 package server
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -110,12 +111,15 @@ func TestPerformanceMonitorMessagingIntegration(t *testing.T) {
 func TestMessagingEventRecording(t *testing.T) {
 	monitor := NewPerformanceMonitor()
 
-	// Create a channel to capture events
+	// Create a mutex-protected slice to capture events
+	var eventsMu sync.Mutex
 	events := make([]string, 0)
 
-	// Add a hook to capture events
+	// Add a hook to capture events with proper synchronization
 	monitor.AddHook(func(event string, metrics *PerformanceMetrics) {
+		eventsMu.Lock()
 		events = append(events, event)
+		eventsMu.Unlock()
 	})
 
 	// Test messaging event recording
@@ -128,9 +132,11 @@ func TestMessagingEventRecording(t *testing.T) {
 	// Give hooks time to execute (they run in goroutines)
 	time.Sleep(10 * time.Millisecond)
 
-	// Verify the event was recorded
+	// Verify the event was recorded with proper synchronization
+	eventsMu.Lock()
 	assert.Len(t, events, 1)
 	assert.Equal(t, "messaging_publish_success", events[0])
+	eventsMu.Unlock()
 
 	// Verify messaging metrics were set
 	retrievedMetrics := monitor.GetMessagingMetrics()

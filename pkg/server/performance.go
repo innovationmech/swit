@@ -372,11 +372,15 @@ func (pm *PerformanceMonitor) StartPeriodicCollection(ctx context.Context, inter
 
 // SetMessagingMetrics sets the messaging metrics for integration with server performance monitoring.
 func (pm *PerformanceMonitor) SetMessagingMetrics(messagingMetrics interface{}) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	pm.metrics.MessagingMetrics = messagingMetrics
 }
 
 // GetMessagingMetrics returns the current messaging metrics.
 func (pm *PerformanceMonitor) GetMessagingMetrics() interface{} {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
 	return pm.metrics.MessagingMetrics
 }
 
