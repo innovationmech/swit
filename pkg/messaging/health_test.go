@@ -80,6 +80,9 @@ func (m *healthTestMessagingCoordinator) GetBroker(name string) (MessageBroker, 
 	if !exists {
 		return nil, errors.New("broker not found")
 	}
+	if broker == nil {
+		return nil, errors.New("broker is nil")
+	}
 	return broker, nil
 }
 
@@ -498,8 +501,9 @@ func TestMessagingSubsystemHealthChecker(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "exceeded failure threshold")
 
-		// Reset
+		// Reset coordinator error and failure counters
 		coordinator.healthError = nil
+		checker.ResetFailureCounters()
 	})
 
 	t.Run("GetHealthStatus", func(t *testing.T) {

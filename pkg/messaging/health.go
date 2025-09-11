@@ -404,6 +404,14 @@ func (h *MessagingSubsystemHealthChecker) resetFailureCounter(component string) 
 	h.counterMutex.Unlock()
 }
 
+// ResetFailureCounters resets all failure counters to zero.
+// This method is primarily used for testing purposes.
+func (h *MessagingSubsystemHealthChecker) ResetFailureCounters() {
+	for component := range h.failureCounters {
+		h.failureCounters[component] = 0
+	}
+}
+
 // MessagingSubsystemHealthStatus represents the health status of the entire messaging subsystem
 type MessagingSubsystemHealthStatus struct {
 	// Overall health status of the messaging subsystem
