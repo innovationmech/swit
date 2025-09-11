@@ -80,7 +80,7 @@ type MessagingMetrics struct {
 type MessagingPerformanceMonitor struct {
 	serverMonitor *server.PerformanceMonitor
 	metrics       *MessagingMetrics
-	coordinator   MessagingCoordinator
+	coordinator   messaging.MessagingCoordinator
 
 	// Performance thresholds for messaging
 	thresholds *MessagingPerformanceThresholds
@@ -112,7 +112,7 @@ func DefaultMessagingPerformanceThresholds() *MessagingPerformanceThresholds {
 // that integrates with the server's performance monitoring system.
 func NewMessagingPerformanceMonitor(
 	serverMonitor *server.PerformanceMonitor,
-	coordinator MessagingCoordinator,
+	coordinator messaging.MessagingCoordinator,
 ) *MessagingPerformanceMonitor {
 	return &MessagingPerformanceMonitor{
 		serverMonitor: serverMonitor,

@@ -89,8 +89,8 @@ func (m *MessagingServiceRegistrar) RegisterServices(registry server.BusinessSer
 // to provide health checking for the messaging system within the SWIT framework.
 type MessagingHealthCheck struct {
 	serviceName string
-	config      *BrokerConfig
-	broker      MessageBroker
+	config      *messaging.BrokerConfig
+	broker      messaging.MessageBroker
 }
 
 // Check performs a health check on the messaging system.
@@ -98,7 +98,7 @@ type MessagingHealthCheck struct {
 func (h *MessagingHealthCheck) Check(ctx context.Context) error {
 	// If broker is not initialized yet, try to create one for health check
 	if h.broker == nil {
-		broker, err := NewMessageBroker(h.config)
+		broker, err := messaging.NewMessageBroker(h.config)
 		if err != nil {
 			return fmt.Errorf("messaging system unavailable: failed to create broker: %w", err)
 		}
@@ -134,13 +134,13 @@ type MessagingDependencyFactory struct{}
 //
 // Returns:
 //   - server.DependencyFactory: Factory function for dependency injection
-func (f *MessagingDependencyFactory) CreateBrokerFactory(config *BrokerConfig) server.DependencyFactory {
+func (f *MessagingDependencyFactory) CreateBrokerFactory(config *messaging.BrokerConfig) server.DependencyFactory {
 	return func(container server.BusinessDependencyContainer) (interface{}, error) {
 		if config == nil {
-			return nil, NewConfigError("broker config cannot be nil for dependency factory", nil)
+			return nil, messaging.NewConfigError("broker config cannot be nil for dependency factory", nil)
 		}
 
-		broker, err := NewMessageBroker(config)
+		broker, err := messaging.NewMessageBroker(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create message broker dependency: %w", err)
 		}
@@ -158,10 +158,10 @@ func (f *MessagingDependencyFactory) CreateBrokerFactory(config *BrokerConfig) s
 //
 // Returns:
 //   - server.DependencyFactory: Factory function for dependency injection
-func (f *MessagingDependencyFactory) CreatePublisherFactory(config *PublisherConfig, brokerServiceName string) server.DependencyFactory {
+func (f *MessagingDependencyFactory) CreatePublisherFactory(config *messaging.PublisherConfig, brokerServiceName string) server.DependencyFactory {
 	return func(container server.BusinessDependencyContainer) (interface{}, error) {
 		if config == nil {
-			return nil, NewConfigError("publisher config cannot be nil for dependency factory", nil)
+			return nil, messaging.NewConfigError("publisher config cannot be nil for dependency factory", nil)
 		}
 
 		// Retrieve broker from dependency container
@@ -170,7 +170,7 @@ func (f *MessagingDependencyFactory) CreatePublisherFactory(config *PublisherCon
 			return nil, fmt.Errorf("failed to get broker dependency '%s': %w", brokerServiceName, err)
 		}
 
-		broker, ok := brokerInterface.(MessageBroker)
+		broker, ok := brokerInterface.(messaging.MessageBroker)
 		if !ok {
 			return nil, fmt.Errorf("dependency '%s' is not a MessageBroker", brokerServiceName)
 		}
@@ -193,10 +193,10 @@ func (f *MessagingDependencyFactory) CreatePublisherFactory(config *PublisherCon
 //
 // Returns:
 //   - server.DependencyFactory: Factory function for dependency injection
-func (f *MessagingDependencyFactory) CreateSubscriberFactory(config *SubscriberConfig, brokerServiceName string) server.DependencyFactory {
+func (f *MessagingDependencyFactory) CreateSubscriberFactory(config *messaging.SubscriberConfig, brokerServiceName string) server.DependencyFactory {
 	return func(container server.BusinessDependencyContainer) (interface{}, error) {
 		if config == nil {
-			return nil, NewConfigError("subscriber config cannot be nil for dependency factory", nil)
+			return nil, messaging.NewConfigError("subscriber config cannot be nil for dependency factory", nil)
 		}
 
 		// Retrieve broker from dependency container
@@ -205,7 +205,7 @@ func (f *MessagingDependencyFactory) CreateSubscriberFactory(config *SubscriberC
 			return nil, fmt.Errorf("failed to get broker dependency '%s': %w", brokerServiceName, err)
 		}
 
-		broker, ok := brokerInterface.(MessageBroker)
+		broker, ok := brokerInterface.(messaging.MessageBroker)
 		if !ok {
 			return nil, fmt.Errorf("dependency '%s' is not a MessageBroker", brokerServiceName)
 		}
@@ -256,9 +256,9 @@ func NewMessagingServiceConfigurer() *MessagingServiceConfigurer {
 //	)
 func (c *MessagingServiceConfigurer) RegisterMessagingDependencies(
 	registry server.BusinessDependencyRegistry,
-	brokerConfig *BrokerConfig,
-	publisherConfig *PublisherConfig,
-	subscriberConfig *SubscriberConfig,
+	brokerConfig *messaging.BrokerConfig,
+	publisherConfig *messaging.PublisherConfig,
+	subscriberConfig *messaging.SubscriberConfig,
 ) error {
 	// Register message broker as singleton
 	brokerFactory := c.factory.CreateBrokerFactory(brokerConfig)
@@ -287,13 +287,13 @@ func (c *MessagingServiceConfigurer) RegisterMessagingDependencies(
 
 // GetBroker retrieves the message broker from the dependency container.
 // This is a convenience method that follows SWIT framework patterns.
-func (c *MessagingServiceConfigurer) GetBroker(container server.BusinessDependencyContainer) (MessageBroker, error) {
+func (c *MessagingServiceConfigurer) GetBroker(container server.BusinessDependencyContainer) (messaging.MessageBroker, error) {
 	brokerInterface, err := container.GetService("message-broker")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get message broker: %w", err)
 	}
 
-	broker, ok := brokerInterface.(MessageBroker)
+	broker, ok := brokerInterface.(messaging.MessageBroker)
 	if !ok {
 		return nil, fmt.Errorf("dependency 'message-broker' is not a MessageBroker")
 	}
@@ -303,13 +303,13 @@ func (c *MessagingServiceConfigurer) GetBroker(container server.BusinessDependen
 
 // GetPublisher retrieves the event publisher from the dependency container.
 // This is a convenience method that follows SWIT framework patterns.
-func (c *MessagingServiceConfigurer) GetPublisher(container server.BusinessDependencyContainer) (EventPublisher, error) {
+func (c *MessagingServiceConfigurer) GetPublisher(container server.BusinessDependencyContainer) (messaging.EventPublisher, error) {
 	publisherInterface, err := container.GetService("event-publisher")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get event publisher: %w", err)
 	}
 
-	publisher, ok := publisherInterface.(EventPublisher)
+	publisher, ok := publisherInterface.(messaging.EventPublisher)
 	if !ok {
 		return nil, fmt.Errorf("dependency 'event-publisher' is not an EventPublisher")
 	}
@@ -319,13 +319,13 @@ func (c *MessagingServiceConfigurer) GetPublisher(container server.BusinessDepen
 
 // GetSubscriber retrieves the event subscriber from the dependency container.
 // This is a convenience method that follows SWIT framework patterns.
-func (c *MessagingServiceConfigurer) GetSubscriber(container server.BusinessDependencyContainer) (EventSubscriber, error) {
+func (c *MessagingServiceConfigurer) GetSubscriber(container server.BusinessDependencyContainer) (messaging.EventSubscriber, error) {
 	subscriberInterface, err := container.GetService("event-subscriber")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get event subscriber: %w", err)
 	}
 
-	subscriber, ok := subscriberInterface.(EventSubscriber)
+	subscriber, ok := subscriberInterface.(messaging.EventSubscriber)
 	if !ok {
 		return nil, fmt.Errorf("dependency 'event-subscriber' is not an EventSubscriber")
 	}

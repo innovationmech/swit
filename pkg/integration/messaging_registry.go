@@ -34,13 +34,13 @@ var _ server.EventHandlerRegistry = (*serverEventHandlerRegistryAdapter)(nil)
 // serverEventHandlerRegistryAdapter adapts the messaging EventHandlerRegistry
 // to the server.EventHandlerRegistry interface without creating import cycles.
 type serverEventHandlerRegistryAdapter struct {
-	inner *EventHandlerRegistry
+	inner *messaging.EventHandlerRegistry
 }
 
 // NewServerEventHandlerRegistryAdapter creates a server.EventHandlerRegistry backed by
 // the messaging coordinator. It validates and registers handlers via the inner registry.
-func NewServerEventHandlerRegistryAdapter(coordinator MessagingCoordinator) server.EventHandlerRegistry {
-	return &serverEventHandlerRegistryAdapter{inner: NewEventHandlerRegistry(coordinator)}
+func NewServerEventHandlerRegistryAdapter(coordinator messaging.MessagingCoordinator) server.EventHandlerRegistry {
+	return &serverEventHandlerRegistryAdapter{inner: messaging.NewEventHandlerRegistry(coordinator)}
 }
 
 // RegisterEventHandler wraps a server.EventHandler as a messaging.EventHandler and registers it.
@@ -82,16 +82,16 @@ func (h *serverToMessagingEventHandler) Shutdown(ctx context.Context) error {
 }
 
 // Handle adapts the messaging message to the server handler that accepts interface{}.
-func (h *serverToMessagingEventHandler) Handle(ctx context.Context, message *Message) error {
+func (h *serverToMessagingEventHandler) Handle(ctx context.Context, message *messaging.Message) error {
 	return h.delegate.Handle(ctx, message)
 }
 
 // OnError adapts the server handler's generic return value to a messaging ErrorAction.
 // If the return value is not an ErrorAction (or is nil), default to ErrorActionRetry.
-func (h *serverToMessagingEventHandler) OnError(ctx context.Context, message *Message, err error) ErrorAction {
+func (h *serverToMessagingEventHandler) OnError(ctx context.Context, message *messaging.Message, err error) messaging.ErrorAction {
 	v := h.delegate.OnError(ctx, message, err)
-	if act, ok := v.(ErrorAction); ok {
+	if act, ok := v.(messaging.ErrorAction); ok {
 		return act
 	}
-	return ErrorActionRetry
+	return messaging.ErrorActionRetry
 }
