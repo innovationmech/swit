@@ -30,8 +30,18 @@ import (
 )
 
 // MessagingHealthIntegrator integrates messaging health checks with the SWIT framework
+// MessagingCoordinatorMinimal defines the minimal interface required for coordinator
+type MessagingCoordinatorMinimal interface {
+	HealthCheck(ctx context.Context) (MessagingHealthStatus, error)
+}
+
+// MessagingHealthStatus represents the minimal status needed for health checks
+type MessagingHealthStatus interface {
+	GetOverall() string
+}
+
 type MessagingHealthIntegrator struct {
-	coordinator interface{} // MessagingCoordinator interface from messaging package
+	coordinator MessagingCoordinatorMinimal // MessagingCoordinator interface from messaging package
 	config      *MessagingHealthConfig
 }
 
@@ -58,7 +68,7 @@ func DefaultMessagingHealthConfig() *MessagingHealthConfig {
 }
 
 // NewMessagingHealthIntegrator creates a new messaging health integrator
-func NewMessagingHealthIntegrator(coordinator interface{}, config *MessagingHealthConfig) *MessagingHealthIntegrator {
+func NewMessagingHealthIntegrator(coordinator MessagingCoordinatorMinimal, config *MessagingHealthConfig) *MessagingHealthIntegrator {
 	if config == nil {
 		config = DefaultMessagingHealthConfig()
 	}
@@ -114,49 +124,27 @@ func (m *MessagingHealthIntegrator) IntegrateWithFramework(registry BusinessServ
 
 // MessagingCoordinatorHealthCheck implements BusinessHealthCheck for messaging coordinator
 type MessagingCoordinatorHealthCheck struct {
-	coordinator interface{}
+	coordinator MessagingCoordinatorMinimal
 	serviceName string
 }
 
 // Check implements BusinessHealthCheck interface
 func (h *MessagingCoordinatorHealthCheck) Check(ctx context.Context) error {
-	// Use reflection or type assertion to call health check
-	// This avoids circular imports by using interface{}
-	if coordinator, ok := h.coordinator.(interface {
-		HealthCheck(context.Context) (interface{}, error)
-	}); ok {
-		status, err := coordinator.HealthCheck(ctx)
-		if err != nil {
-			logger.Logger.Error("Messaging coordinator health check failed",
-				zap.String("service", h.serviceName),
-				zap.Error(err))
-			return fmt.Errorf("messaging coordinator health check failed: %w", err)
-		}
-
-		// Check if status indicates healthy state
-		if healthStatus, ok := status.(interface {
-			GetOverall() string
-		}); ok {
-			if healthStatus.GetOverall() != "healthy" {
-				return fmt.Errorf("messaging coordinator is unhealthy: %s", healthStatus.GetOverall())
-			}
-		}
-
-		// For simpler status checking, try to extract Overall field via type assertion
-		if statusMap, ok := status.(map[string]interface{}); ok {
-			if overall, exists := statusMap["overall"]; exists {
-				if overallStr, ok := overall.(string); ok && overallStr != "healthy" {
-					return fmt.Errorf("messaging coordinator status: %s", overallStr)
-				}
-			}
-		}
-
-		logger.Logger.Debug("Messaging coordinator health check passed",
-			zap.String("service", h.serviceName))
-		return nil
+	status, err := h.coordinator.HealthCheck(ctx)
+	if err != nil {
+		logger.Logger.Error("Messaging coordinator health check failed",
+			zap.String("service", h.serviceName),
+			zap.Error(err))
+		return fmt.Errorf("messaging coordinator health check failed: %w", err)
 	}
 
-	return fmt.Errorf("messaging coordinator does not support health checks")
+	if status.GetOverall() != "healthy" {
+		return fmt.Errorf("messaging coordinator is unhealthy: %s", status.GetOverall())
+	}
+
+	logger.Logger.Debug("Messaging coordinator health check passed",
+		zap.String("service", h.serviceName))
+	return nil
 }
 
 // GetServiceName implements BusinessHealthCheck interface
@@ -166,54 +154,27 @@ func (h *MessagingCoordinatorHealthCheck) GetServiceName() string {
 
 // MessagingSubsystemHealthCheck implements BusinessHealthCheck for the entire messaging subsystem
 type MessagingSubsystemHealthCheck struct {
-	coordinator interface{}
+	coordinator MessagingCoordinatorMinimal
 	serviceName string
 }
 
 // Check implements BusinessHealthCheck interface
 func (h *MessagingSubsystemHealthCheck) Check(ctx context.Context) error {
-	// First check coordinator health
-	if coordinator, ok := h.coordinator.(interface {
-		HealthCheck(context.Context) (interface{}, error)
-	}); ok {
-		status, err := coordinator.HealthCheck(ctx)
-		if err != nil {
-			logger.Logger.Error("Messaging subsystem health check failed at coordinator level",
-				zap.String("service", h.serviceName),
-				zap.Error(err))
-			return fmt.Errorf("messaging subsystem coordinator check failed: %w", err)
-		}
-
-		// Check if coordinator is healthy
-		if statusMap, ok := status.(map[string]interface{}); ok {
-			if overall, exists := statusMap["overall"]; exists {
-				if overallStr, ok := overall.(string); ok && overallStr != "healthy" {
-					return fmt.Errorf("messaging subsystem unhealthy: %s", overallStr)
-				}
-			}
-
-			// Check broker health if available
-			if brokerHealth, exists := statusMap["broker_health"]; exists {
-				if brokerMap, ok := brokerHealth.(map[string]interface{}); ok {
-					for brokerName, health := range brokerMap {
-						if healthStr, ok := health.(string); ok && healthStr != "healthy" {
-							logger.Logger.Warn("Broker unhealthy",
-								zap.String("broker", brokerName),
-								zap.String("status", healthStr))
-							// We don't fail the entire subsystem for individual broker issues
-							// but we log them for monitoring
-						}
-					}
-				}
-			}
-		}
-
-		logger.Logger.Debug("Messaging subsystem health check passed",
-			zap.String("service", h.serviceName))
-		return nil
+	status, err := h.coordinator.HealthCheck(ctx)
+	if err != nil {
+		logger.Logger.Error("Messaging subsystem health check failed at coordinator level",
+			zap.String("service", h.serviceName),
+			zap.Error(err))
+		return fmt.Errorf("messaging subsystem coordinator check failed: %w", err)
 	}
 
-	return fmt.Errorf("messaging coordinator does not support health checks")
+	if status.GetOverall() != "healthy" {
+		return fmt.Errorf("messaging subsystem unhealthy: %s", status.GetOverall())
+	}
+
+	logger.Logger.Debug("Messaging subsystem health check passed",
+		zap.String("service", h.serviceName))
+	return nil
 }
 
 // GetServiceName implements BusinessHealthCheck interface
@@ -221,18 +182,18 @@ func (h *MessagingSubsystemHealthCheck) GetServiceName() string {
 	return h.serviceName
 }
 
+// MessagingHealthStatusProvider defines interface for retrieving messaging health
+type MessagingHealthStatusProvider interface {
+	CheckMessagingHealth(ctx context.Context) (interface{}, error)
+}
+
 // GetMessagingHealthStatus retrieves detailed messaging health status from transport coordinator
-func GetMessagingHealthStatus(ctx context.Context, transportCoordinator interface{}) (interface{}, error) {
-	if coordinator, ok := transportCoordinator.(interface {
-		CheckMessagingHealth(context.Context) (interface{}, error)
-	}); ok {
-		return coordinator.CheckMessagingHealth(ctx)
-	}
-	return nil, fmt.Errorf("transport coordinator does not support messaging health checks")
+func GetMessagingHealthStatus(ctx context.Context, transportCoordinator MessagingHealthStatusProvider) (interface{}, error) {
+	return transportCoordinator.CheckMessagingHealth(ctx)
 }
 
 // IsMessagingHealthy checks if messaging subsystem is healthy
-func IsMessagingHealthy(ctx context.Context, transportCoordinator interface{}) bool {
+func IsMessagingHealthy(ctx context.Context, transportCoordinator MessagingHealthStatusProvider) bool {
 	status, err := GetMessagingHealthStatus(ctx, transportCoordinator)
 	if err != nil {
 		logger.Logger.Error("Failed to get messaging health status", zap.Error(err))
@@ -252,7 +213,7 @@ func IsMessagingHealthy(ctx context.Context, transportCoordinator interface{}) b
 }
 
 // CreateMessagingHealthIntegrationFromConfig creates messaging health integration from server config
-func CreateMessagingHealthIntegrationFromConfig(config *ServerConfig, coordinator interface{}) *MessagingHealthIntegrator {
+func CreateMessagingHealthIntegrationFromConfig(config *ServerConfig, coordinator MessagingCoordinatorMinimal) *MessagingHealthIntegrator {
 	if !config.IsMessagingEnabled() {
 		return nil
 	}
@@ -268,7 +229,7 @@ func CreateMessagingHealthIntegrationFromConfig(config *ServerConfig, coordinato
 }
 
 // RegisterMessagingHealthChecks is a convenience function to register all messaging health checks
-func RegisterMessagingHealthChecks(registry BusinessServiceRegistry, coordinator interface{}, config *MessagingHealthConfig) error {
+func RegisterMessagingHealthChecks(registry BusinessServiceRegistry, coordinator MessagingCoordinatorMinimal, config *MessagingHealthConfig) error {
 	integrator := NewMessagingHealthIntegrator(coordinator, config)
 	return integrator.IntegrateWithFramework(registry)
 }

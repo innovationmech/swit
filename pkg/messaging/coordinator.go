@@ -138,6 +138,11 @@ type MessagingHealthStatus struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// GetOverall returns the overall health status.
+func (s *MessagingHealthStatus) GetOverall() string {
+	return s.Overall
+}
+
 // MessagingCoordinatorError represents errors specific to messaging coordinator operations.
 type MessagingCoordinatorError struct {
 	Operation string
