@@ -47,10 +47,12 @@ type MonitoringService struct {
 	name string
 }
 
+// NewMonitoringService creates a new MonitoringService with the given name
 func NewMonitoringService(name string) *MonitoringService {
 	return &MonitoringService{name: name}
 }
 
+// RegisterServices registers HTTP handlers and health checks with the server registry
 func (s *MonitoringService) RegisterServices(registry server.BusinessServiceRegistry) error {
 	// Register HTTP handler with business logic
 	handler := &BusinessMetricsHandler{
@@ -146,6 +148,7 @@ func (h *BusinessMetricsHandler) initializeSampleData() {
 	h.queueSizes["data_export"] = 0
 }
 
+// RegisterRoutes registers HTTP routes for business metrics endpoints
 func (h *BusinessMetricsHandler) RegisterRoutes(router interface{}) error {
 	ginRouter, ok := router.(gin.IRouter)
 	if !ok {
@@ -176,6 +179,7 @@ func (h *BusinessMetricsHandler) RegisterRoutes(router interface{}) error {
 	return nil
 }
 
+// GetServiceName returns the service name for the metrics handler
 func (h *BusinessMetricsHandler) GetServiceName() string {
 	return h.serviceName
 }
@@ -600,10 +604,12 @@ type MonitoringHealthCheck struct {
 	serviceName string
 }
 
+// Check performs a health check for the monitoring service
 func (h *MonitoringHealthCheck) Check(ctx context.Context) error {
 	return nil
 }
 
+// GetServiceName returns the service name for the health check
 func (h *MonitoringHealthCheck) GetServiceName() string {
 	return h.serviceName
 }
