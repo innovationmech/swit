@@ -19,13 +19,14 @@
 // THE SOFTWARE.
 //
 
-package messaging
+package integration
 
 import (
 	"context"
 	"fmt"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/messaging"
 	"github.com/innovationmech/swit/pkg/server"
 )
 
@@ -33,9 +34,9 @@ import (
 // It implements the BusinessServiceRegistrar interface to enable messaging services
 // to be registered with the server's transport layer and dependency injection system.
 type MessagingServiceRegistrar struct {
-	broker    MessageBroker
-	publisher EventPublisher
-	config    *BrokerConfig
+	broker    messaging.MessageBroker
+	publisher messaging.EventPublisher
+	config    *messaging.BrokerConfig
 }
 
 // NewMessagingServiceRegistrar creates a new messaging service registrar.
@@ -47,13 +48,13 @@ type MessagingServiceRegistrar struct {
 // Returns:
 //   - *MessagingServiceRegistrar: Configured messaging service registrar
 //   - error: Configuration or initialization error
-func NewMessagingServiceRegistrar(config *BrokerConfig) (*MessagingServiceRegistrar, error) {
+func NewMessagingServiceRegistrar(config *messaging.BrokerConfig) (*MessagingServiceRegistrar, error) {
 	if config == nil {
-		return nil, NewConfigError("broker config cannot be nil", nil)
+		return nil, messaging.NewConfigError("broker config cannot be nil", nil)
 	}
 
 	// Validate configuration
-	if err := ValidateBrokerConfig(config); err != nil {
+	if err := messaging.ValidateBrokerConfig(config); err != nil {
 		return nil, fmt.Errorf("invalid broker configuration: %w", err)
 	}
 
