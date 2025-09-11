@@ -146,6 +146,11 @@ func (m *healthTestMessagingCoordinator) HealthCheck(ctx context.Context) (*Mess
 	return m.healthStatus, nil
 }
 
+func (m *healthTestMessagingCoordinator) GracefulShutdown(ctx context.Context, config *ShutdownConfig) (*GracefulShutdownManager, error) {
+	manager := NewGracefulShutdownManager(m, config)
+	return manager, nil
+}
+
 // healthTestMessageBroker implements MessageBroker for testing
 type healthTestMessageBroker struct {
 	connected    bool

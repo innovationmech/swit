@@ -684,6 +684,11 @@ func (m *mockDIMessagingCoordinator) HealthCheck(ctx context.Context) (*Messagin
 	return &MessagingHealthStatus{Overall: "healthy"}, nil
 }
 
+func (m *mockDIMessagingCoordinator) GracefulShutdown(ctx context.Context, config *ShutdownConfig) (*GracefulShutdownManager, error) {
+	manager := NewGracefulShutdownManager(m, config)
+	return manager, nil
+}
+
 type mockDIBroker struct {
 	connected bool
 }

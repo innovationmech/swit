@@ -48,6 +48,10 @@ type MessagingCoordinator interface {
 	// Stop gracefully shuts down brokers and handlers, waiting for in-flight work.
 	Stop(ctx context.Context) error
 
+	// GracefulShutdown initiates graceful shutdown with enhanced monitoring and control.
+	// This provides more sophisticated shutdown handling compared to Stop().
+	GracefulShutdown(ctx context.Context, config *ShutdownConfig) (*GracefulShutdownManager, error)
+
 	// RegisterBroker adds a broker with the given name.
 	RegisterBroker(name string, broker MessageBroker) error
 
@@ -318,6 +322,34 @@ func (c *messagingCoordinatorImpl) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.stopUnlocked(ctx)
+}
+
+// GracefulShutdown implements MessagingCoordinator interface.
+func (c *messagingCoordinatorImpl) GracefulShutdown(ctx context.Context, config *ShutdownConfig) (*GracefulShutdownManager, error) {
+	c.mu.RLock()
+	if !c.started {
+		c.mu.RUnlock()
+		return nil, &MessagingCoordinatorError{
+			Operation: "graceful_shutdown",
+			Err:       fmt.Errorf("coordinator is not started"),
+		}
+	}
+	c.mu.RUnlock()
+
+	logger.Logger.Info("Initiating graceful shutdown of messaging coordinator")
+
+	// Create graceful shutdown manager
+	shutdownManager := NewGracefulShutdownManager(c, config)
+
+	// Initiate graceful shutdown process
+	if err := shutdownManager.InitiateGracefulShutdown(ctx); err != nil {
+		return nil, &MessagingCoordinatorError{
+			Operation: "graceful_shutdown",
+			Err:       fmt.Errorf("failed to initiate graceful shutdown: %w", err),
+		}
+	}
+
+	return shutdownManager, nil
 }
 
 // stopUnlocked performs coordinator shutdown. Caller must hold c.mu.

@@ -439,10 +439,14 @@ func (s *BusinessServerImpl) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Stop messaging system if enabled
+	// Stop messaging system if enabled with graceful shutdown
 	if s.config.IsMessagingEnabled() && s.messagingLifecycle != nil {
-		if err := s.messagingLifecycle.ShutdownSequence(ctx); err != nil {
-			logger.Logger.Warn("Failed to shutdown messaging system", zap.Error(err))
+		if err := s.gracefulMessagingShutdown(ctx); err != nil {
+			logger.Logger.Warn("Failed to shutdown messaging system gracefully", zap.Error(err))
+			// Fallback to standard shutdown
+			if fallbackErr := s.messagingLifecycle.ShutdownSequence(ctx); fallbackErr != nil {
+				logger.Logger.Error("Failed to shutdown messaging system via fallback", zap.Error(fallbackErr))
+			}
 		}
 	}
 
@@ -1057,4 +1061,104 @@ func (a *messagingEventHandlerAdapter) OnError(ctx context.Context, message *mes
 	default:
 		return messaging.ErrorActionRetry
 	}
+}
+
+// gracefulMessagingShutdown performs graceful shutdown of the messaging system
+func (s *BusinessServerImpl) gracefulMessagingShutdown(ctx context.Context) error {
+	logger.Logger.Info("Initiating graceful messaging shutdown")
+
+	// Get messaging coordinator from lifecycle manager
+	coordinator := s.messagingLifecycle.GetCoordinator()
+	if coordinator == nil {
+		return fmt.Errorf("messaging coordinator not available")
+	}
+
+	// Convert server shutdown config to messaging shutdown config
+	shutdownConfig := s.convertToMessagingShutdownConfig()
+
+	// Initiate graceful shutdown
+	shutdownManager, err := coordinator.GracefulShutdown(ctx, shutdownConfig)
+	if err != nil {
+		return fmt.Errorf("failed to initiate graceful shutdown: %w", err)
+	}
+
+	// Wait for completion
+	if err := shutdownManager.WaitForCompletion(); err != nil {
+		// Log detailed shutdown status for debugging
+		status := shutdownManager.GetShutdownStatus()
+		logger.Logger.Error("Graceful messaging shutdown failed",
+			zap.String("phase", status.Phase.String()),
+			zap.Duration("elapsed", time.Since(status.StartTime)),
+			zap.Int("completed_steps", len(status.CompletedSteps)),
+			zap.Int("pending_steps", len(status.PendingSteps)),
+			zap.Int64("inflight_messages", status.InflightMessages),
+			zap.Error(err))
+		return err
+	}
+
+	logger.Logger.Info("Graceful messaging shutdown completed successfully")
+	return nil
+}
+
+// convertToMessagingShutdownConfig converts server config to messaging shutdown config
+func (s *BusinessServerImpl) convertToMessagingShutdownConfig() *messaging.ShutdownConfig {
+	// Use messaging-specific shutdown configuration if available
+	if s.config.IsMessagingEnabled() {
+		return &messaging.ShutdownConfig{
+			Timeout:             s.getMessagingShutdownTimeout(),
+			ForceTimeout:        s.getMessagingForceTimeout(),
+			DrainTimeout:        s.getMessagingDrainTimeout(),
+			ReportInterval:      s.getMessagingReportInterval(),
+			MaxInflightMessages: s.getMessagingMaxInflightMessages(),
+		}
+	}
+
+	// Fallback to default configuration based on server shutdown timeout
+	return &messaging.ShutdownConfig{
+		Timeout:             s.config.ShutdownTimeout,
+		ForceTimeout:        s.config.ShutdownTimeout + 30*time.Second,
+		DrainTimeout:        s.config.ShutdownTimeout / 2,
+		ReportInterval:      5 * time.Second,
+		MaxInflightMessages: 1000,
+	}
+}
+
+// getMessagingShutdownTimeout returns the messaging shutdown timeout
+func (s *BusinessServerImpl) getMessagingShutdownTimeout() time.Duration {
+	if s.config.Messaging.Shutdown.Timeout > 0 {
+		return s.config.Messaging.Shutdown.Timeout
+	}
+	return 30 * time.Second
+}
+
+// getMessagingForceTimeout returns the messaging force timeout
+func (s *BusinessServerImpl) getMessagingForceTimeout() time.Duration {
+	if s.config.Messaging.Shutdown.ForceTimeout > 0 {
+		return s.config.Messaging.Shutdown.ForceTimeout
+	}
+	return 60 * time.Second
+}
+
+// getMessagingDrainTimeout returns the messaging drain timeout
+func (s *BusinessServerImpl) getMessagingDrainTimeout() time.Duration {
+	if s.config.Messaging.Shutdown.DrainTimeout > 0 {
+		return s.config.Messaging.Shutdown.DrainTimeout
+	}
+	return 20 * time.Second
+}
+
+// getMessagingReportInterval returns the messaging report interval
+func (s *BusinessServerImpl) getMessagingReportInterval() time.Duration {
+	if s.config.Messaging.Shutdown.ReportInterval > 0 {
+		return s.config.Messaging.Shutdown.ReportInterval
+	}
+	return 5 * time.Second
+}
+
+// getMessagingMaxInflightMessages returns the max inflight messages setting
+func (s *BusinessServerImpl) getMessagingMaxInflightMessages() int {
+	if s.config.Messaging.Shutdown.MaxInflightMessages > 0 {
+		return s.config.Messaging.Shutdown.MaxInflightMessages
+	}
+	return 1000
 }
