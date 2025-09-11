@@ -48,6 +48,7 @@ type OrderStatus string
 const (
 	// OrderStatusPending indicates the order is pending processing
 	OrderStatusPending    OrderStatus = "pending"
+	// OrderStatusProcessing indicates the order is being processed
 	OrderStatusProcessing OrderStatus = "processing"
 	OrderStatusConfirmed  OrderStatus = "confirmed"
 	OrderStatusShipped    OrderStatus = "shipped"
@@ -147,7 +148,9 @@ type PaymentResponse struct {
 type PaymentStatus string
 
 const (
+	// PaymentStatusPending indicates payment is pending
 	PaymentStatusPending   PaymentStatus = "pending"
+	// PaymentStatusCompleted indicates payment has been completed
 	PaymentStatusCompleted PaymentStatus = "completed"
 	PaymentStatusFailed    PaymentStatus = "failed"
 	PaymentStatusCancelled PaymentStatus = "cancelled"

@@ -43,7 +43,9 @@ type Payment struct {
 type PaymentStatus string
 
 const (
+	// PaymentStatusPending indicates the payment is pending
 	PaymentStatusPending           PaymentStatus = "pending"
+	// PaymentStatusProcessing indicates the payment is being processed
 	PaymentStatusProcessing        PaymentStatus = "processing"
 	PaymentStatusCompleted         PaymentStatus = "completed"
 	PaymentStatusFailed            PaymentStatus = "failed"
@@ -80,7 +82,9 @@ type PaymentMethod struct {
 type PaymentMethodType string
 
 const (
+	// PaymentMethodTypeCreditCard indicates payment by credit card
 	PaymentMethodTypeCreditCard     PaymentMethodType = "credit_card"
+	// PaymentMethodTypeDebitCard indicates payment by debit card
 	PaymentMethodTypeDebitCard      PaymentMethodType = "debit_card"
 	PaymentMethodTypeBankTransfer   PaymentMethodType = "bank_transfer"
 	PaymentMethodTypeDigitalWallet  PaymentMethodType = "digital_wallet"
@@ -136,7 +140,9 @@ type PaymentRefund struct {
 type RefundStatus string
 
 const (
+	// RefundStatusPending indicates the refund is pending
 	RefundStatusPending    RefundStatus = "pending"
+	// RefundStatusProcessing indicates the refund is being processed
 	RefundStatusProcessing RefundStatus = "processing"
 	RefundStatusCompleted  RefundStatus = "completed"
 	RefundStatusFailed     RefundStatus = "failed"
