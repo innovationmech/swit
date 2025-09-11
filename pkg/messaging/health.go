@@ -24,6 +24,7 @@ package messaging
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/logger"
@@ -234,6 +235,7 @@ type MessagingSubsystemHealthChecker struct {
 	config          *HealthCheckConfig
 	serviceName     string
 	failureCounters map[string]int
+	counterMutex    sync.RWMutex
 }
 
 // NewMessagingSubsystemHealthChecker creates a comprehensive health checker for the messaging subsystem
@@ -254,7 +256,9 @@ func NewMessagingSubsystemHealthChecker(coordinator MessagingCoordinator, config
 // RegisterBrokerChecker adds a broker health checker to the subsystem checker
 func (h *MessagingSubsystemHealthChecker) RegisterBrokerChecker(brokerName string, checker *BrokerHealthChecker) {
 	h.brokerCheckers[brokerName] = checker
+	h.counterMutex.Lock()
 	h.failureCounters[brokerName] = 0
+	h.counterMutex.Unlock()
 }
 
 // Check implements the BusinessHealthCheck interface for subsystem health checks
@@ -294,11 +298,13 @@ func (h *MessagingSubsystemHealthChecker) Check(ctx context.Context) error {
 	}
 
 	// Check if any component exceeds failure threshold
+	h.counterMutex.RLock()
 	for component, count := range h.failureCounters {
 		if count >= h.config.FailureThreshold {
 			healthErrors = append(healthErrors, fmt.Sprintf("%s exceeded failure threshold (%d)", component, count))
 		}
 	}
+	h.counterMutex.RUnlock()
 
 	if len(healthErrors) > 0 {
 		logger.Logger.Error("Messaging subsystem health check failed",
@@ -363,12 +369,14 @@ func (h *MessagingSubsystemHealthChecker) GetHealthStatus(ctx context.Context) (
 	}
 
 	// Copy failure counters
+	h.counterMutex.RLock()
 	for component, count := range h.failureCounters {
 		status.FailureCounters[component] = count
 		if count >= h.config.FailureThreshold && status.Overall != "unhealthy" {
 			status.Overall = "unhealthy"
 		}
 	}
+	h.counterMutex.RUnlock()
 
 	// Add subsystem details
 	status.SubsystemDetails["broker_count"] = len(h.brokerCheckers)
@@ -384,12 +392,16 @@ func (h *MessagingSubsystemHealthChecker) GetHealthCheckConfig() *HealthCheckCon
 
 // incrementFailureCounter increments the failure counter for a component
 func (h *MessagingSubsystemHealthChecker) incrementFailureCounter(component string) {
+	h.counterMutex.Lock()
 	h.failureCounters[component]++
+	h.counterMutex.Unlock()
 }
 
 // resetFailureCounter resets the failure counter for a component
 func (h *MessagingSubsystemHealthChecker) resetFailureCounter(component string) {
+	h.counterMutex.Lock()
 	h.failureCounters[component] = 0
+	h.counterMutex.Unlock()
 }
 
 // MessagingSubsystemHealthStatus represents the health status of the entire messaging subsystem
