@@ -44,13 +44,18 @@ type PaymentStatus string
 
 const (
 	// PaymentStatusPending indicates the payment is pending
-	PaymentStatusPending           PaymentStatus = "pending"
+	PaymentStatusPending PaymentStatus = "pending"
 	// PaymentStatusProcessing indicates the payment is being processed
-	PaymentStatusProcessing        PaymentStatus = "processing"
-	PaymentStatusCompleted         PaymentStatus = "completed"
-	PaymentStatusFailed            PaymentStatus = "failed"
-	PaymentStatusCancelled         PaymentStatus = "cancelled"
-	PaymentStatusRefunded          PaymentStatus = "refunded"
+	PaymentStatusProcessing PaymentStatus = "processing"
+	// PaymentStatusCompleted indicates the payment has been completed successfully
+	PaymentStatusCompleted PaymentStatus = "completed"
+	// PaymentStatusFailed indicates the payment failed
+	PaymentStatusFailed PaymentStatus = "failed"
+	// PaymentStatusCancelled indicates the payment was cancelled
+	PaymentStatusCancelled PaymentStatus = "cancelled"
+	// PaymentStatusRefunded indicates the payment was refunded
+	PaymentStatusRefunded PaymentStatus = "refunded"
+	// PaymentStatusPartiallyRefunded indicates the payment was partially refunded
 	PaymentStatusPartiallyRefunded PaymentStatus = "partially_refunded"
 )
 
@@ -83,11 +88,14 @@ type PaymentMethodType string
 
 const (
 	// PaymentMethodTypeCreditCard indicates payment by credit card
-	PaymentMethodTypeCreditCard     PaymentMethodType = "credit_card"
+	PaymentMethodTypeCreditCard PaymentMethodType = "credit_card"
 	// PaymentMethodTypeDebitCard indicates payment by debit card
-	PaymentMethodTypeDebitCard      PaymentMethodType = "debit_card"
-	PaymentMethodTypeBankTransfer   PaymentMethodType = "bank_transfer"
-	PaymentMethodTypeDigitalWallet  PaymentMethodType = "digital_wallet"
+	PaymentMethodTypeDebitCard PaymentMethodType = "debit_card"
+	// PaymentMethodTypeBankTransfer indicates payment by bank transfer
+	PaymentMethodTypeBankTransfer PaymentMethodType = "bank_transfer"
+	// PaymentMethodTypeDigitalWallet indicates payment by digital wallet
+	PaymentMethodTypeDigitalWallet PaymentMethodType = "digital_wallet"
+	// PaymentMethodTypeCashOnDelivery indicates payment by cash on delivery
 	PaymentMethodTypeCashOnDelivery PaymentMethodType = "cash_on_delivery"
 )
 
@@ -141,12 +149,15 @@ type RefundStatus string
 
 const (
 	// RefundStatusPending indicates the refund is pending
-	RefundStatusPending    RefundStatus = "pending"
+	RefundStatusPending RefundStatus = "pending"
 	// RefundStatusProcessing indicates the refund is being processed
 	RefundStatusProcessing RefundStatus = "processing"
-	RefundStatusCompleted  RefundStatus = "completed"
-	RefundStatusFailed     RefundStatus = "failed"
-	RefundStatusCancelled  RefundStatus = "cancelled"
+	// RefundStatusCompleted indicates the refund has been completed successfully
+	RefundStatusCompleted RefundStatus = "completed"
+	// RefundStatusFailed indicates the refund failed
+	RefundStatusFailed RefundStatus = "failed"
+	// RefundStatusCancelled indicates the refund was cancelled
+	RefundStatusCancelled RefundStatus = "cancelled"
 )
 
 // ProcessPaymentRequest represents a request to process a payment

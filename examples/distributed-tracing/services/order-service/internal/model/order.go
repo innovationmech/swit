@@ -47,15 +47,21 @@ type OrderStatus string
 
 const (
 	// OrderStatusPending indicates the order is pending processing
-	OrderStatusPending    OrderStatus = "pending"
+	OrderStatusPending OrderStatus = "pending"
 	// OrderStatusProcessing indicates the order is being processed
 	OrderStatusProcessing OrderStatus = "processing"
-	OrderStatusConfirmed  OrderStatus = "confirmed"
-	OrderStatusShipped    OrderStatus = "shipped"
-	OrderStatusDelivered  OrderStatus = "delivered"
-	OrderStatusCancelled  OrderStatus = "cancelled"
-	OrderStatusFailed     OrderStatus = "failed"
-	OrderStatusRefunded   OrderStatus = "refunded"
+	// OrderStatusConfirmed indicates the order has been confirmed
+	OrderStatusConfirmed OrderStatus = "confirmed"
+	// OrderStatusShipped indicates the order has been shipped
+	OrderStatusShipped OrderStatus = "shipped"
+	// OrderStatusDelivered indicates the order has been delivered
+	OrderStatusDelivered OrderStatus = "delivered"
+	// OrderStatusCancelled indicates the order was cancelled
+	OrderStatusCancelled OrderStatus = "cancelled"
+	// OrderStatusFailed indicates the order failed
+	OrderStatusFailed OrderStatus = "failed"
+	// OrderStatusRefunded indicates the order was refunded
+	OrderStatusRefunded OrderStatus = "refunded"
 )
 
 // IsValidStatus checks if the status is valid
@@ -149,10 +155,12 @@ type PaymentStatus string
 
 const (
 	// PaymentStatusPending indicates payment is pending
-	PaymentStatusPending   PaymentStatus = "pending"
+	PaymentStatusPending PaymentStatus = "pending"
 	// PaymentStatusCompleted indicates payment has been completed
 	PaymentStatusCompleted PaymentStatus = "completed"
-	PaymentStatusFailed    PaymentStatus = "failed"
+	// PaymentStatusFailed indicates payment failed
+	PaymentStatusFailed PaymentStatus = "failed"
+	// PaymentStatusCancelled indicates payment was cancelled
 	PaymentStatusCancelled PaymentStatus = "cancelled"
 )
 

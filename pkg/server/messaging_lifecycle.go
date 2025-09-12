@@ -365,7 +365,7 @@ func (m *MessagingLifecycleManager) registerHandlers(ctx context.Context, handle
 		messagingHandler := &messagingEventHandlerAdapter{
 			serverHandler: handler,
 		}
-		
+
 		if err := m.coordinator.RegisterEventHandler(messagingHandler); err != nil {
 			return fmt.Errorf("failed to register handler '%s': %w", handler.GetHandlerID(), err)
 		}

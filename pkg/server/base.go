@@ -702,7 +702,7 @@ func (s *BusinessServerImpl) initializeMessagingSystem(ctx context.Context) erro
 	if messagingRegistrar, ok := s.serviceRegistrar.(MessagingServiceRegistrar); ok {
 		// Create a registry adapter to collect handlers
 		handlerRegistry := &eventHandlerRegistryAdapter{handlers: make(map[string]EventHandler)}
-		
+
 		if err := messagingRegistrar.RegisterEventHandlers(handlerRegistry); err != nil {
 			return fmt.Errorf("failed to register event handlers: %w", err)
 		}
@@ -978,16 +978,16 @@ func (a *eventHandlerRegistryAdapter) RegisterEventHandler(handler EventHandler)
 	if handler == nil {
 		return fmt.Errorf("event handler cannot be nil")
 	}
-	
+
 	handlerID := handler.GetHandlerID()
 	if handlerID == "" {
 		return fmt.Errorf("event handler ID cannot be empty")
 	}
-	
+
 	if _, exists := a.handlers[handlerID]; exists {
 		return fmt.Errorf("event handler with ID '%s' already registered", handlerID)
 	}
-	
+
 	a.handlers[handlerID] = handler
 	return nil
 }
@@ -996,7 +996,7 @@ func (a *eventHandlerRegistryAdapter) UnregisterEventHandler(handlerID string) e
 	if _, exists := a.handlers[handlerID]; !exists {
 		return fmt.Errorf("event handler with ID '%s' not found", handlerID)
 	}
-	
+
 	delete(a.handlers, handlerID)
 	return nil
 }
@@ -1042,7 +1042,7 @@ func (a *messagingEventHandlerAdapter) Handle(ctx context.Context, message *mess
 func (a *messagingEventHandlerAdapter) OnError(ctx context.Context, message *messaging.Message, err error) messaging.ErrorAction {
 	// Convert the server handler's error action to messaging error action
 	serverAction := a.serverHandler.OnError(ctx, message, err)
-	
+
 	// Convert server error action to messaging error action
 	switch v := serverAction.(type) {
 	case string:

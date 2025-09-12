@@ -152,6 +152,7 @@ func NewExampleService(name, version string) *ExampleService {
 	}
 }
 
+// RegisterHTTP registers HTTP routes with the provided router
 func (e *ExampleService) RegisterHTTP(router *gin.Engine) error {
 	// Use service-specific paths to avoid conflicts
 	servicePath := "/" + e.name
@@ -173,12 +174,14 @@ func (e *ExampleService) RegisterHTTP(router *gin.Engine) error {
 	return nil
 }
 
+// RegisterGRPC registers gRPC services with the provided server
 func (e *ExampleService) RegisterGRPC(server *grpc.Server) error {
 	// In a real implementation, you would register actual gRPC services here
 	// For this example, we'll just return nil to indicate successful registration
 	return nil
 }
 
+// GetMetadata returns metadata about the service
 func (e *ExampleService) GetMetadata() *transport.HandlerMetadata {
 	return &transport.HandlerMetadata{
 		Name:           e.name,
@@ -189,10 +192,12 @@ func (e *ExampleService) GetMetadata() *transport.HandlerMetadata {
 	}
 }
 
+// GetHealthEndpoint returns the health check endpoint for the service
 func (e *ExampleService) GetHealthEndpoint() string {
 	return "/" + e.name + "/health"
 }
 
+// IsHealthy checks if the service is healthy
 func (e *ExampleService) IsHealthy(ctx context.Context) (*types.HealthStatus, error) {
 	return &types.HealthStatus{
 		Status:    types.HealthStatusHealthy,
@@ -202,11 +207,13 @@ func (e *ExampleService) IsHealthy(ctx context.Context) (*types.HealthStatus, er
 	}, nil
 }
 
+// Initialize initializes the service
 func (e *ExampleService) Initialize(ctx context.Context) error {
 	log.Printf("Initializing %s service v%s", e.name, e.version)
 	return nil
 }
 
+// Shutdown gracefully shuts down the service
 func (e *ExampleService) Shutdown(ctx context.Context) error {
 	log.Printf("Shutting down %s service v%s", e.name, e.version)
 	return nil
