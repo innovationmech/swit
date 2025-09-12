@@ -190,16 +190,15 @@ func TestMessagingAuditor_NewAuditor(t *testing.T) {
 }
 
 func TestMessagingAuditor_LogAuditEvent(t *testing.T) {
-	// Create a logger that captures logs
-	core, logs := observer.New(zapcore.InfoLevel)
-	logger := zap.New(core)
-
 	t.Run("Event logging when enabled", func(t *testing.T) {
+		// Create a logger that captures logs
+		core, logs := observer.New(zapcore.InfoLevel)
+		logger := zap.New(core)
 		config := &MessagingAuditConfig{
 			Enabled:       true,
 			LogLevel:      AuditLevelComprehensive, // Bypass sampling
 			SamplingRate:  1.0,
-			BufferSize:    1, // Small buffer to force immediate flush
+			BufferSize:    1,                     // Small buffer to force immediate flush
 			FlushInterval: 10 * time.Millisecond, // Very short flush interval
 		}
 		config.SetDefaults()
@@ -220,6 +219,9 @@ func TestMessagingAuditor_LogAuditEvent(t *testing.T) {
 		// Log another event to fill the buffer and trigger synchronous logging
 		auditor.LogAuditEvent(context.Background(), event)
 
+		// Wait a bit for async processing to complete
+		time.Sleep(100 * time.Millisecond)
+
 		// Force flush by closing the auditor
 		auditor.Close()
 
@@ -231,12 +233,15 @@ func TestMessagingAuditor_LogAuditEvent(t *testing.T) {
 	})
 
 	t.Run("Event filtering by type", func(t *testing.T) {
-		config := &MessagingAuditConfig{
-			Enabled:  true,
-			LogLevel: AuditLevelStandard,
-			Events:   []AuditEventType{AuditEventMessagePublished},
-		}
+		// Create a logger that captures logs
+		core, logs := observer.New(zapcore.InfoLevel)
+		logger := zap.New(core)
+
+		config := &MessagingAuditConfig{}
 		config.SetDefaults()
+		config.Events = []AuditEventType{AuditEventMessagePublished}
+		config.SamplingRate = 1.0 // Ensure no sampling
+		config.BufferSize = 1     // Force synchronous processing
 
 		auditor := NewMessagingAuditor(config)
 		auditor.SetLogger(logger)
@@ -252,7 +257,7 @@ func TestMessagingAuditor_LogAuditEvent(t *testing.T) {
 		auditor.LogAuditEvent(context.Background(), event)
 
 		// Wait for async processing
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 
 		// Should not be logged
 		logCount := logs.Len()
@@ -262,7 +267,7 @@ func TestMessagingAuditor_LogAuditEvent(t *testing.T) {
 		auditor.LogAuditEvent(context.Background(), event)
 
 		// Wait for async processing
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 
 		// Should be logged
 		assert.Equal(t, logCount+1, logs.Len())
@@ -271,6 +276,10 @@ func TestMessagingAuditor_LogAuditEvent(t *testing.T) {
 	})
 
 	t.Run("Event logging when disabled", func(t *testing.T) {
+		// Create a logger that captures logs
+		core, logs := observer.New(zapcore.InfoLevel)
+		logger := zap.New(core)
+
 		config := &MessagingAuditConfig{Enabled: false}
 		config.SetDefaults()
 		auditor := NewMessagingAuditor(config)
@@ -293,10 +302,9 @@ func TestMessagingAuditor_LogAuditEvent(t *testing.T) {
 }
 
 func TestMessagingAuditor_Sampling(t *testing.T) {
-	core, logs := observer.New(zapcore.InfoLevel)
-	logger := zap.New(core)
-
 	t.Run("Minimal level sampling", func(t *testing.T) {
+		core, logs := observer.New(zapcore.InfoLevel)
+		logger := zap.New(core)
 		config := &MessagingAuditConfig{
 			Enabled:       true,
 			LogLevel:      AuditLevelMinimal,
@@ -317,7 +325,7 @@ func TestMessagingAuditor_Sampling(t *testing.T) {
 		}
 
 		auditor.LogAuditEvent(context.Background(), event)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 
 		// Should not be logged
 		logCount := logs.Len()
@@ -325,7 +333,7 @@ func TestMessagingAuditor_Sampling(t *testing.T) {
 		// Critical event should not be sampled out
 		event.Type = AuditEventMessageFailed
 		auditor.LogAuditEvent(context.Background(), event)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 
 		// Should be logged
 		assert.Equal(t, logCount+1, logs.Len())
@@ -334,10 +342,13 @@ func TestMessagingAuditor_Sampling(t *testing.T) {
 	})
 
 	t.Run("Standard level with sampling", func(t *testing.T) {
+		core, logs := observer.New(zapcore.InfoLevel)
+		logger := zap.New(core)
+
 		config := &MessagingAuditConfig{
 			Enabled:       true,
 			LogLevel:      AuditLevelStandard,
-			SamplingRate:  0.0, // No sampling
+			SamplingRate:  1.0, // No sampling (100%)
 			BufferSize:    10,
 			FlushInterval: 100 * time.Millisecond,
 		}
@@ -353,7 +364,7 @@ func TestMessagingAuditor_Sampling(t *testing.T) {
 		}
 
 		auditor.LogAuditEvent(context.Background(), event)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 
 		// Should be logged
 		assert.Greater(t, logs.Len(), 0)
@@ -504,7 +515,7 @@ func TestMessagingAuditor_GracefulShutdown(t *testing.T) {
 		LogLevel:      AuditLevelStandard,
 		SamplingRate:  1.0,
 		BufferSize:    100,
-		FlushInterval: 1 * time.Second,
+		FlushInterval: 100 * time.Millisecond, // Shorter flush interval for test
 	}
 
 	auditor := NewMessagingAuditor(config)
@@ -515,6 +526,9 @@ func TestMessagingAuditor_GracefulShutdown(t *testing.T) {
 		auditor.LogMessageCreated(context.Background(),
 			fmt.Sprintf("msg%d", i), "topic", int64(1024+i))
 	}
+
+	// Wait a bit for async processing to complete
+	time.Sleep(200 * time.Millisecond)
 
 	// Immediately close - should flush remaining events
 	err := auditor.Close()

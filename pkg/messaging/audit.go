@@ -436,9 +436,6 @@ func (a *MessagingAuditor) flushEvents(events []*AuditEvent) {
 
 // logEventSynchronously logs an event synchronously
 func (a *MessagingAuditor) logEventSynchronously(event *AuditEvent) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	// Update metrics
 	a.updateMetrics(event)
 
