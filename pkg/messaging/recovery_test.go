@@ -455,6 +455,7 @@ func TestRecoveryConfigValidation(t *testing.T) {
 				LeakDetectionInterval:   10 * time.Minute,
 				ResourceTimeout:         30 * time.Minute,
 				CircuitBreakerThreshold: 5,
+				MaxRecoveryAttempts:     3,
 			},
 			wantErr: false,
 		},

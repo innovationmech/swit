@@ -905,15 +905,15 @@ func (c *RecoveryConfig) validate() error {
 			Build()
 	}
 
-	if c.MaxRecoveryAttempts < 0 {
+	if c.MaxRecoveryAttempts <= 0 {
 		return NewError(ErrorTypeConfiguration, ErrCodeConfigValidation).
-			Message("max_recovery_attempts cannot be negative").
+			Message("max_recovery_attempts must be greater than zero").
 			Build()
 	}
 
-	if c.CircuitBreakerThreshold < 0 {
+	if c.CircuitBreakerThreshold <= 0 {
 		return NewError(ErrorTypeConfiguration, ErrCodeConfigValidation).
-			Message("circuit_breaker_threshold cannot be negative").
+			Message("circuit_breaker_threshold must be greater than zero").
 			Build()
 	}
 
