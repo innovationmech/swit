@@ -347,6 +347,51 @@ func (m *MockEventSubscriber) GetMessageCount() int64 {
 	return m.messageCount
 }
 
+// SubscribeWithMiddleware mocks subscription with middleware.
+func (m *MockEventSubscriber) SubscribeWithMiddleware(ctx context.Context, handler messaging.MessageHandler, middleware ...messaging.Middleware) error {
+	args := m.Called(ctx, handler, middleware)
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.handlers = append(m.handlers, handler)
+		m.subscribing = true
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// Pause mocks pausing message consumption.
+func (m *MockEventSubscriber) Pause(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+// Resume mocks resuming message consumption.
+func (m *MockEventSubscriber) Resume(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+// Seek mocks seeking to a specific position.
+func (m *MockEventSubscriber) Seek(ctx context.Context, position messaging.SeekPosition) error {
+	args := m.Called(ctx, position)
+	return args.Error(0)
+}
+
+// GetLag mocks getting consumer lag.
+func (m *MockEventSubscriber) GetLag(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// GetMetrics mocks getting subscriber metrics.
+func (m *MockEventSubscriber) GetMetrics() *messaging.SubscriberMetrics {
+	args := m.Called()
+	if args.Get(0) != nil {
+		return args.Get(0).(*messaging.SubscriberMetrics)
+	}
+	return &messaging.SubscriberMetrics{}
+}
+
 // MockMessageHandler provides a mock implementation of the MessageHandler interface.
 type MockMessageHandler struct {
 	mock.Mock

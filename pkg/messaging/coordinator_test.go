@@ -740,3 +740,12 @@ func (m *MockEventSubscriber) GetMetrics() *SubscriberMetrics {
 	args := m.Called()
 	return args.Get(0).(*SubscriberMetrics)
 }
+
+// NewMockEventHandler creates a new MockEventHandler with the specified parameters
+func NewMockEventHandler(id string, topics []string, broker string) *MockEventHandler {
+	return &MockEventHandler{
+		id:     id,
+		topics: topics,
+		broker: broker,
+	}
+}
