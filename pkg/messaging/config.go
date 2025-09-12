@@ -106,6 +106,9 @@ type BrokerConfig struct {
 	// Monitoring configuration
 	Monitoring MonitoringConfig `yaml:"monitoring" json:"monitoring"`
 
+	// Audit logging configuration
+	Audit *MessagingAuditConfig `yaml:"audit,omitempty" json:"audit,omitempty"`
+
 	// Broker-specific configuration
 	Extra map[string]interface{} `yaml:"extra,omitempty" json:"extra,omitempty"`
 }
@@ -146,6 +149,12 @@ func (c *BrokerConfig) Validate() error {
 		return fmt.Errorf("retry config validation failed: %w", err)
 	}
 
+	if c.Audit != nil {
+		if err := c.Audit.Validate(); err != nil {
+			return fmt.Errorf("audit config validation failed: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -154,6 +163,10 @@ func (c *BrokerConfig) SetDefaults() {
 	c.Connection.SetDefaults()
 	c.Retry.SetDefaults()
 	c.Monitoring.SetDefaults()
+
+	if c.Audit != nil {
+		c.Audit.SetDefaults()
+	}
 }
 
 // ConnectionConfig defines connection-specific settings.
