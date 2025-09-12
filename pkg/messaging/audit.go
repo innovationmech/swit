@@ -298,7 +298,9 @@ func (a *MessagingAuditor) LogAuditEvent(ctx context.Context, event *AuditEvent)
 		// Event queued successfully
 	default:
 		// Buffer full, log synchronously as fallback
+		a.mu.Lock()
 		a.logEventSynchronously(event)
+		a.mu.Unlock()
 	}
 }
 
