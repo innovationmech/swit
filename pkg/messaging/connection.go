@@ -385,6 +385,12 @@ func (cm *DefaultConnectionManager) GetStats() *ConnectionStats {
 		stats.ActiveCount = poolStats.ActiveCount
 		stats.IdleCount = poolStats.IdleCount
 		stats.WaitingCount = poolStats.WaitingCount
+		stats.MaxPoolSize = poolStats.MaxSize
+		stats.MinPoolSize = poolStats.MinSize
+		stats.ConnectionsCreated = poolStats.CreatedCount
+		stats.ConnectionsClosed = poolStats.ClosedCount
+		// Note: ConnectionsReused is tracked separately by the connection manager
+		// and should not be overwritten with poolStats.HitCount
 	}
 
 	stats.LastUpdated = time.Now()
