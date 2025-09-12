@@ -257,6 +257,7 @@ type DefaultConnectionManager struct {
 	// Background processes
 	healthCheckTicker *time.Ticker
 	maintenanceTicker *time.Ticker
+	tickerMux         sync.RWMutex
 
 	// Retry mechanism
 	retryPolicy *ConnectionRetryPolicy
@@ -466,12 +467,16 @@ func (cm *DefaultConnectionManager) Close() error {
 	close(cm.closeCh)
 
 	// Stop background timers
+	cm.tickerMux.Lock()
 	if cm.healthCheckTicker != nil {
 		cm.healthCheckTicker.Stop()
+		cm.healthCheckTicker = nil
 	}
 	if cm.maintenanceTicker != nil {
 		cm.maintenanceTicker.Stop()
+		cm.maintenanceTicker = nil
 	}
+	cm.tickerMux.Unlock()
 
 	// Close connection pool
 	if cm.pool != nil {
@@ -488,12 +493,17 @@ func (cm *DefaultConnectionManager) startHealthCheckLoop() {
 		return // Health checks disabled
 	}
 
-	cm.healthCheckTicker = time.NewTicker(cm.config.KeepAlive)
-	defer cm.healthCheckTicker.Stop()
+	ticker := time.NewTicker(cm.config.KeepAlive)
+	
+	cm.tickerMux.Lock()
+	cm.healthCheckTicker = ticker
+	cm.tickerMux.Unlock()
+	
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-cm.healthCheckTicker.C:
+		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			cm.performScheduledHealthCheck(ctx)
 			cancel()
@@ -508,12 +518,18 @@ func (cm *DefaultConnectionManager) startMaintenanceLoop() {
 	if maintenanceInterval < time.Minute {
 		maintenanceInterval = time.Minute
 	}
-	cm.maintenanceTicker = time.NewTicker(maintenanceInterval)
-	defer cm.maintenanceTicker.Stop()
+	
+	ticker := time.NewTicker(maintenanceInterval)
+	
+	cm.tickerMux.Lock()
+	cm.maintenanceTicker = ticker
+	cm.tickerMux.Unlock()
+	
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-cm.maintenanceTicker.C:
+		case <-ticker.C:
 			cm.performMaintenance()
 		case <-cm.closeCh:
 			return

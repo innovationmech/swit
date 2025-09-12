@@ -309,11 +309,12 @@ validate:
 			cancel()
 
 			if err == nil {
-				// Connection is valid, return to pool
+				// Connection is valid, try to return to pool
 				select {
 				case p.available <- conn:
-				default:
-					// Pool is full, close connection
+					// Successfully returned to pool
+				case <-time.After(time.Millisecond):
+					// Timeout - pool might be closing or full, close connection
 					conn.Close()
 					p.decrementTotalConnections()
 				}
