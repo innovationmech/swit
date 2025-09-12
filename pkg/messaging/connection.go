@@ -494,11 +494,11 @@ func (cm *DefaultConnectionManager) startHealthCheckLoop() {
 	}
 
 	ticker := time.NewTicker(cm.config.KeepAlive)
-	
+
 	cm.tickerMux.Lock()
 	cm.healthCheckTicker = ticker
 	cm.tickerMux.Unlock()
-	
+
 	defer ticker.Stop()
 
 	for {
@@ -518,13 +518,13 @@ func (cm *DefaultConnectionManager) startMaintenanceLoop() {
 	if maintenanceInterval < time.Minute {
 		maintenanceInterval = time.Minute
 	}
-	
+
 	ticker := time.NewTicker(maintenanceInterval)
-	
+
 	cm.tickerMux.Lock()
 	cm.maintenanceTicker = ticker
 	cm.tickerMux.Unlock()
-	
+
 	defer ticker.Stop()
 
 	for {

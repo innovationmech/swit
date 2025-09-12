@@ -715,12 +715,13 @@ func main() {
 	}
 }
 
-// Simple dependency container
+// SimpleDependencyContainer is a simple dependency container for managing services
 type SimpleDependencyContainer struct {
 	services map[string]interface{}
 	closed   bool
 }
 
+// GetService retrieves a service from the container by name
 func (d *SimpleDependencyContainer) GetService(name string) (interface{}, error) {
 	if d.closed {
 		return nil, fmt.Errorf("container closed")
@@ -732,6 +733,7 @@ func (d *SimpleDependencyContainer) GetService(name string) (interface{}, error)
 	return service, nil
 }
 
+// Close closes the dependency container and prevents further service access
 func (d *SimpleDependencyContainer) Close() error {
 	d.closed = true
 	return nil

@@ -62,6 +62,7 @@ type ConnectionPool struct {
 	// Pool state
 	closed           int32
 	totalConnections int32
+	availableMux     sync.Mutex // Protects access to available channel
 
 	// Statistics
 	stats    *ConnectionPoolStats
@@ -310,11 +311,24 @@ validate:
 
 			if err == nil {
 				// Connection is valid, try to return to pool
-				select {
-				case p.available <- conn:
-					// Successfully returned to pool
-				case <-time.After(time.Millisecond):
-					// Timeout - pool might be closing or full, close connection
+				// Check if pool is closed before attempting to return connection
+				if atomic.LoadInt32(&p.closed) == 0 {
+					p.availableMux.Lock()
+					select {
+					case p.available <- conn:
+						// Successfully returned to pool
+					case <-time.After(time.Millisecond):
+						// Timeout - pool might be closing or full, close connection
+						conn.Close()
+						p.decrementTotalConnections()
+					case <-ctx.Done():
+						// Context was cancelled, close connection
+						conn.Close()
+						p.decrementTotalConnections()
+					}
+					p.availableMux.Unlock()
+				} else {
+					// Pool is closing, close connection
 					conn.Close()
 					p.decrementTotalConnections()
 				}
@@ -359,10 +373,19 @@ cleanup:
 			p.decrementTotalConnections()
 		} else {
 			// Connection is not too old, return to pool
-			select {
-			case p.available <- conn:
-			default:
-				// Pool is full, close connection
+			// Check if pool is closed before attempting to return connection
+			if atomic.LoadInt32(&p.closed) == 0 {
+				p.availableMux.Lock()
+				select {
+				case p.available <- conn:
+				default:
+					// Pool is full, close connection
+					conn.Close()
+					p.decrementTotalConnections()
+				}
+				p.availableMux.Unlock()
+			} else {
+				// Pool is closing, close connection
 				conn.Close()
 				p.decrementTotalConnections()
 			}
@@ -416,10 +439,12 @@ func (p *ConnectionPool) Close() error {
 	p.cancelAllWaiters()
 
 	// Close all available connections
+	p.availableMux.Lock()
 	close(p.available)
 	for conn := range p.available {
 		conn.Close()
 	}
+	p.availableMux.Unlock()
 
 	// Close all active connections
 	p.activeMux.RLock()
