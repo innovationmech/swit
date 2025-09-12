@@ -281,12 +281,18 @@ const (
 
 	// AuthTypeAPIKey indicates API key authentication
 	AuthTypeAPIKey AuthType = "apikey"
+
+	// AuthTypeJWT indicates JWT token authentication
+	AuthTypeJWT AuthType = "jwt"
+
+	// AuthTypeCertificate indicates certificate-based authentication
+	AuthTypeCertificate AuthType = "certificate"
 )
 
 // AuthConfig defines authentication settings.
 type AuthConfig struct {
 	// Type specifies the authentication type
-	Type AuthType `yaml:"type" json:"type" validate:"required,oneof=none sasl oauth2 apikey"`
+	Type AuthType `yaml:"type" json:"type" validate:"required,oneof=none sasl oauth2 apikey jwt certificate"`
 
 	// Username for SASL authentication
 	Username string `yaml:"username,omitempty" json:"username,omitempty"`
@@ -308,6 +314,10 @@ type AuthConfig struct {
 	ClientSecret string   `yaml:"client_secret,omitempty" json:"client_secret,omitempty"`
 	TokenURL     string   `yaml:"token_url,omitempty" json:"token_url,omitempty"`
 	Scopes       []string `yaml:"scopes,omitempty" json:"scopes,omitempty"`
+
+	// Certificate authentication settings
+	CertFile string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
+	KeyFile  string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
 }
 
 // Validate validates the authentication configuration.
@@ -335,6 +345,16 @@ func (c *AuthConfig) Validate() error {
 	case AuthTypeAPIKey:
 		if c.APIKey == "" {
 			return NewConfigError("api_key is required for API key authentication", nil)
+		}
+	case AuthTypeJWT:
+		if c.Token == "" {
+			return NewConfigError("token is required for JWT authentication", nil)
+		}
+	case AuthTypeCertificate:
+		// Certificate validation would require additional certificate-specific fields
+		// This is a basic validation
+		if c.CertFile == "" && c.KeyFile == "" {
+			return NewConfigError("certificate or key file is required for certificate authentication", nil)
 		}
 	default:
 		return NewConfigError(fmt.Sprintf("unsupported auth type: %s", c.Type), nil)
