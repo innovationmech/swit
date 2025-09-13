@@ -24,6 +24,7 @@ package messaging_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -44,6 +45,24 @@ func init() {
 	logger.Logger, _ = zap.NewDevelopment()
 }
 
+// isCIEnvironment detects if we're running in a CI environment
+func isCIEnvironment() bool {
+	ciVars := []string{
+		"CI", "CONTINUOUS_INTEGRATION", "GITHUB_ACTIONS", 
+		"TRAVIS", "JENKINS_URL", "CIRCLECI", "GITLAB_CI", 
+		"AZURE_PIPELINES", "BUILDKITE",
+	}
+	for _, envVar := range ciVars {
+		if os.Getenv(envVar) != "" {
+			return true
+		}
+	}
+	if os.Getenv("SWIT_TEST_FAST") != "" {
+		return true
+	}
+	return false
+}
+
 // DependencyInjectionTestSuite tests messaging framework integration with dependency injection
 type DependencyInjectionTestSuite struct {
 	suite.Suite
@@ -51,6 +70,7 @@ type DependencyInjectionTestSuite struct {
 	coordinator      messaging.MessagingCoordinator
 	testServices     map[string]interface{}
 	cleanupFunctions []func()
+	isCI             bool
 }
 
 // BrokerTypeMock is a mock broker type for testing
@@ -79,8 +99,17 @@ func (suite *DependencyInjectionTestSuite) TearDownSuite() {
 	}
 }
 
+// getTestTimeout returns appropriate timeout based on environment
+func (suite *DependencyInjectionTestSuite) getTestTimeout(normal, ci time.Duration) time.Duration {
+	if suite.isCI {
+		return ci
+	}
+	return normal
+}
+
 // SetupTest creates a fresh container for each test
 func (suite *DependencyInjectionTestSuite) SetupTest() {
+	suite.isCI = isCIEnvironment()
 	suite.container = server.NewSimpleBusinessDependencyContainer()
 
 	// Register a mock factory for inmemory broker type for testing
@@ -115,7 +144,11 @@ func (suite *DependencyInjectionTestSuite) TestDependencyInjectionMessagingCoord
 	require.NoError(suite.T(), err, "Should register messaging coordinator factory")
 
 	// Initialize container
-	err = suite.container.Initialize(context.Background())
+	initTimeout := suite.getTestTimeout(30*time.Second, 10*time.Second)
+	initCtx, cancel := context.WithTimeout(context.Background(), initTimeout)
+	defer cancel()
+	
+	err = suite.container.Initialize(initCtx)
 	require.NoError(suite.T(), err, "Should initialize dependency container")
 
 	// Get messaging coordinator
@@ -207,8 +240,12 @@ func (suite *DependencyInjectionTestSuite) TestDependencyInjectionEventHandler()
 	})
 	require.NoError(suite.T(), err, "Should register event handler")
 
-	// Initialize container
-	err = suite.container.Initialize(context.Background())
+	// Initialize container with timeout
+	initTimeout := suite.getTestTimeout(30*time.Second, 10*time.Second)
+	initCtx, cancel := context.WithTimeout(context.Background(), initTimeout)
+	defer cancel()
+	
+	err = suite.container.Initialize(initCtx)
 	require.NoError(suite.T(), err, "Should initialize dependency container")
 
 	// Get event handler
@@ -252,7 +289,11 @@ func (suite *DependencyInjectionTestSuite) TestDependencyInjectionIntegration() 
 	require.NoError(suite.T(), err, "Should register event handler")
 
 	// Initialize container
-	err = suite.container.Initialize(context.Background())
+	initTimeout := suite.getTestTimeout(30*time.Second, 10*time.Second)
+	initCtx, cancel := context.WithTimeout(context.Background(), initTimeout)
+	defer cancel()
+	
+	err = suite.container.Initialize(initCtx)
 	require.NoError(suite.T(), err, "Should initialize dependency container")
 
 	// Get messaging coordinator and start it
@@ -337,7 +378,11 @@ func (suite *DependencyInjectionTestSuite) TestDependencyInjectionLifecycle() {
 	require.NoError(suite.T(), err, "Should register messaging coordinator factory")
 
 	// Initialize container
-	err = suite.container.Initialize(context.Background())
+	initTimeout := suite.getTestTimeout(30*time.Second, 10*time.Second)
+	initCtx, cancel := context.WithTimeout(context.Background(), initTimeout)
+	defer cancel()
+	
+	err = suite.container.Initialize(initCtx)
 	require.NoError(suite.T(), err, "Should initialize dependency container")
 
 	// Verify dependencies are initialized
@@ -443,7 +488,11 @@ func (suite *DependencyInjectionTestSuite) TestDependencyInjectionConfiguration(
 	require.NoError(suite.T(), err, "Should register broker configurations")
 
 	// Initialize container
-	err = suite.container.Initialize(context.Background())
+	initTimeout := suite.getTestTimeout(30*time.Second, 10*time.Second)
+	initCtx, cancel := context.WithTimeout(context.Background(), initTimeout)
+	defer cancel()
+	
+	err = suite.container.Initialize(initCtx)
 	require.NoError(suite.T(), err, "Should initialize dependency container")
 
 	// Get and verify messaging configuration
