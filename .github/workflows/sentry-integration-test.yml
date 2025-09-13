@@ -289,7 +289,7 @@ jobs:
     steps:
     - name: Create completion comment
       if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         script: |
           const realDsnStatus = '${{ needs.sentry-real-dsn-test.result }}' === 'success' ? '✅' : '❌';
