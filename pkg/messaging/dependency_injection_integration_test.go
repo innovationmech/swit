@@ -47,10 +47,10 @@ func init() {
 // DependencyInjectionTestSuite tests messaging framework integration with dependency injection
 type DependencyInjectionTestSuite struct {
 	suite.Suite
-	container         *server.SimpleBusinessDependencyContainer
-	coordinator       messaging.MessagingCoordinator
-	testServices      map[string]interface{}
-	cleanupFunctions  []func()
+	container        *server.SimpleBusinessDependencyContainer
+	coordinator      messaging.MessagingCoordinator
+	testServices     map[string]interface{}
+	cleanupFunctions []func()
 }
 
 // BrokerTypeMock is a mock broker type for testing
@@ -63,11 +63,11 @@ func (suite *DependencyInjectionTestSuite) SetupSuite() {
 
 	// Test services that will be injected into messaging components
 	suite.testServices = map[string]interface{}{
-		"database":       &MockDatabaseService{},
-		"cache":          &MockCacheService{},
-		"logger":         logger,
-		"config":         &MockConfigService{},
-		"metrics":        &MockMetricsService{},
+		"database": &MockDatabaseService{},
+		"cache":    &MockCacheService{},
+		"logger":   logger,
+		"config":   &MockConfigService{},
+		"metrics":  &MockMetricsService{},
 	}
 }
 
@@ -82,7 +82,7 @@ func (suite *DependencyInjectionTestSuite) TearDownSuite() {
 // SetupTest creates a fresh container for each test
 func (suite *DependencyInjectionTestSuite) SetupTest() {
 	suite.container = server.NewSimpleBusinessDependencyContainer()
-	
+
 	// Register a mock factory for inmemory broker type for testing
 	mockBroker := testutil.NewMockMessageBroker()
 	messaging.RegisterBrokerFactory(messaging.BrokerTypeInMemory, func(config *messaging.BrokerConfig) (messaging.MessageBroker, error) {
@@ -110,7 +110,7 @@ func (suite *DependencyInjectionTestSuite) TestDependencyInjectionMessagingCoord
 		diContainer := &dependencyContainerAdapter{container: container}
 		return messaging.CreateMessagingCoordinatorFactory()(diContainer)
 	}
-	
+
 	err := suite.container.RegisterMessagingCoordinator(coordinatorFactory)
 	require.NoError(suite.T(), err, "Should register messaging coordinator factory")
 
@@ -153,7 +153,7 @@ func (suite *DependencyInjectionTestSuite) TestDependencyInjectionBroker() {
 		diContainer := &dependencyContainerAdapter{container: container}
 		return messaging.CreateBrokerFactory("inmemory")(diContainer, config)
 	}
-	
+
 	err := suite.container.RegisterBrokerFactory("mock", brokerFactory)
 	require.NoError(suite.T(), err, "Should register broker factory")
 
@@ -658,7 +658,7 @@ func (h *DependencyAwareEventHandler) OnError(ctx context.Context, message *mess
 			Cause:   err,
 		}
 	}
-	
+
 	if !msgErr.Retryable {
 		return messaging.ErrorActionDeadLetter
 	}

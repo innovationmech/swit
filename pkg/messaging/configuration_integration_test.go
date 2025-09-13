@@ -52,23 +52,23 @@ func loadServerConfig(configPath string) (*server.ServerConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	
+
 	// Create server config with defaults
 	config := server.NewServerConfig()
-	
+
 	// Unmarshal YAML into the server config
 	if err := yaml.Unmarshal(data, config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
 	}
-	
+
 	// Apply environment variable overrides
 	applyEnvironmentOverrides(config)
-	
+
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
-	
+
 	return config, nil
 }
 
@@ -79,23 +79,23 @@ func loadServerConfigWithoutDefaults(configPath string) (*server.ServerConfig, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	
+
 	// Create empty server config without defaults
 	config := &server.ServerConfig{}
-	
+
 	// Unmarshal YAML into the server config
 	if err := yaml.Unmarshal(data, config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
 	}
-	
+
 	// Apply environment variable overrides
 	applyEnvironmentOverrides(config)
-	
+
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
-	
+
 	return config, nil
 }
 
@@ -104,15 +104,15 @@ func applyEnvironmentOverrides(config *server.ServerConfig) {
 	if serviceName := os.Getenv("SWIT_SERVICE_NAME"); serviceName != "" {
 		config.ServiceName = serviceName
 	}
-	
+
 	if httpPort := os.Getenv("SWIT_HTTP_PORT"); httpPort != "" {
 		config.HTTP.Port = httpPort
 	}
-	
+
 	if grpcPort := os.Getenv("SWIT_GRPC_PORT"); grpcPort != "" {
 		config.GRPC.Port = grpcPort
 	}
-	
+
 	if shutdownTimeout := os.Getenv("SWIT_SHUTDOWN_TIMEOUT"); shutdownTimeout != "" {
 		if timeout, err := time.ParseDuration(shutdownTimeout); err == nil {
 			config.ShutdownTimeout = timeout
@@ -138,7 +138,7 @@ func (suite *ConfigurationIntegrationTestSuite) SetupSuite() {
 	suite.tempDir = suite.T().TempDir()
 	suite.configFiles = make(map[string]string)
 	suite.cleanupFuncs = make([]func(), 0)
-	
+
 	// Save original environment variables
 	suite.cleanupFuncs = append(suite.cleanupFuncs, func() {
 		os.Unsetenv("SWIT_SERVICE_NAME")
@@ -171,12 +171,12 @@ func (suite *ConfigurationIntegrationTestSuite) createTestConfigFile(filename, c
 	err := os.WriteFile(filePath, []byte(content), 0644)
 	suite.Require().NoError(err)
 	suite.configFiles[filename] = filePath
-	
+
 	// Add cleanup function
 	suite.cleanupFuncs = append(suite.cleanupFuncs, func() {
 		_ = os.Remove(filePath)
 	})
-	
+
 	return filePath
 }
 
@@ -201,12 +201,12 @@ shutdown_timeout: "30s"
 `
 
 	configPath := suite.createTestConfigFile("valid-config.yaml", validConfig)
-	
+
 	// Load and validate configuration
 	config, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(config)
-	
+
 	// Verify configuration values
 	suite.Equal("test-messaging-service", config.ServiceName)
 	suite.True(config.HTTP.Enabled)
@@ -225,19 +225,19 @@ service_name: "minimal-service"
 `
 
 	configPath := suite.createTestConfigFile("minimal-config.yaml", minimalConfig)
-	
+
 	// Load and validate configuration
 	config, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(config)
-	
+
 	// Verify defaults are applied
 	suite.Equal("minimal-service", config.ServiceName)
-	suite.True(config.HTTP.Enabled) // Default should be true
-	suite.NotEmpty(config.HTTP.Port) // Default port should be set
-	suite.True(config.GRPC.Enabled) // Default should be true
-	suite.NotEmpty(config.GRPC.Port) // Default port should be set
-	suite.True(config.Discovery.Enabled) // Default should be true
+	suite.True(config.HTTP.Enabled)       // Default should be true
+	suite.NotEmpty(config.HTTP.Port)      // Default port should be set
+	suite.True(config.GRPC.Enabled)       // Default should be true
+	suite.NotEmpty(config.GRPC.Port)      // Default port should be set
+	suite.True(config.Discovery.Enabled)  // Default should be true
 	suite.NotZero(config.ShutdownTimeout) // Default timeout should be set
 }
 
@@ -251,14 +251,14 @@ http:
 `
 
 	configPath := suite.createTestConfigFile("invalid-config.yaml", invalidConfig)
-	
+
 	// Load and validate configuration - should fail
 	config, err := loadServerConfigWithoutDefaults(configPath)
 	suite.Error(err)
 	suite.Nil(config)
 	suite.Require().NotNil(err, "Error should not be nil when config validation fails")
 	suite.Contains(err.Error(), "service_name")
-	
+
 	// Test configuration with invalid HTTP port - should fail with defaults applied
 	invalidPortConfig := `
 service_name: "test-service"
@@ -268,7 +268,7 @@ http:
 `
 
 	configPath = suite.createTestConfigFile("invalid-port-config.yaml", invalidPortConfig)
-	
+
 	// Load and validate configuration - should fail due to invalid port
 	config, err = loadServerConfig(configPath)
 	suite.Error(err)
@@ -304,21 +304,21 @@ discovery:
 `
 
 	configPath := suite.createTestConfigFile("messaging-config.yaml", configWithMessaging)
-	
+
 	// Load server configuration
 	serverConfig, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(serverConfig)
-	
+
 	// Create messaging coordinator
 	coordinator := messaging.NewMessagingCoordinator()
 	suite.Require().NotNil(coordinator)
-	
+
 	// Create test broker
 	mockBroker := testutil.NewMockMessageBroker()
 	err = coordinator.RegisterBroker("test-broker", mockBroker)
 	suite.Require().NoError(err)
-	
+
 	// Test that configuration is accessible and can be used
 	suite.True(coordinator != nil)
 	suite.True(mockBroker != nil)
@@ -329,13 +329,13 @@ func (suite *ConfigurationIntegrationTestSuite) TestEnvironmentVariableOverrides
 	// Set environment variable
 	os.Setenv("SWIT_SERVICE_NAME", "env-override-service")
 	os.Setenv("SWIT_HTTP_PORT", "9999")
-	
+
 	// Cleanup environment variables
 	suite.cleanupFuncs = append(suite.cleanupFuncs, func() {
 		os.Unsetenv("SWIT_SERVICE_NAME")
 		os.Unsetenv("SWIT_HTTP_PORT")
 	})
-	
+
 	// Create configuration file
 	configContent := `
 service_name: "file-service"
@@ -350,12 +350,12 @@ discovery:
 `
 
 	configPath := suite.createTestConfigFile("env-override-config.yaml", configContent)
-	
+
 	// Load configuration - environment variables should override file values
 	config, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(config)
-	
+
 	// Verify environment variable overrides
 	suite.Equal("env-override-service", config.ServiceName)
 	suite.Equal("9999", config.HTTP.Port)
@@ -377,16 +377,16 @@ discovery:
 `
 
 	configPath := suite.createTestConfigFile("reload-config.yaml", initialConfig)
-	
+
 	// Load initial configuration
 	config, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(config)
-	
+
 	// Verify initial values
 	suite.Equal("reload-service", config.ServiceName)
 	suite.Equal("8080", config.HTTP.Port)
-	
+
 	// Update configuration file
 	updatedConfig := `
 service_name: "updated-service"
@@ -402,12 +402,12 @@ discovery:
 
 	err = os.WriteFile(configPath, []byte(updatedConfig), 0644)
 	suite.Require().NoError(err)
-	
+
 	// Reload configuration
 	reloadedConfig, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(reloadedConfig)
-	
+
 	// Verify updated values
 	suite.Equal("updated-service", reloadedConfig.ServiceName)
 	suite.Equal("9999", reloadedConfig.HTTP.Port)
@@ -463,31 +463,31 @@ shutdown_timeout: "60s"
 `
 
 	configPath := suite.createTestConfigFile("comprehensive-config.yaml", comprehensiveConfig)
-	
+
 	// Load configuration
 	config, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(config)
-	
+
 	// Create messaging coordinator and integrate with configuration
 	coordinator := messaging.NewMessagingCoordinator()
 	suite.Require().NotNil(coordinator)
-	
+
 	// Register brokers based on configuration
 	primaryBroker := testutil.NewMockMessageBroker()
 	err = coordinator.RegisterBroker("primary-broker", primaryBroker)
 	suite.Require().NoError(err)
-	
+
 	secondaryBroker := testutil.NewMockMessageBroker()
 	err = coordinator.RegisterBroker("secondary-broker", secondaryBroker)
 	suite.Require().NoError(err)
-	
+
 	// Test that configuration-driven setup works
 	suite.Equal("comprehensive-messaging-service", config.ServiceName)
 	suite.True(config.HTTP.Enabled)
 	suite.True(config.GRPC.Enabled)
 	suite.Equal(60*time.Second, config.ShutdownTimeout)
-	
+
 	// Verify messaging coordinator is properly configured
 	suite.NotNil(coordinator)
 }
@@ -500,7 +500,7 @@ func (suite *ConfigurationIntegrationTestSuite) TestConfigurationErrorHandling()
 	suite.Error(err)
 	suite.Nil(config)
 	suite.Contains(err.Error(), "no such file")
-	
+
 	// Test with invalid YAML
 	invalidYAML := `
 service_name: "invalid-yaml-service"
@@ -515,7 +515,7 @@ http:
 	suite.Error(err)
 	suite.Nil(config)
 	suite.Contains(err.Error(), "yaml")
-	
+
 	// Test with invalid port values
 	invalidPortConfig := `
 service_name: "invalid-port-service"
@@ -556,29 +556,29 @@ shutdown_timeout: "10s"
 `
 
 	configPath := suite.createTestConfigFile("server-integration-config.yaml", serverConfigContent)
-	
+
 	// Load server configuration
 	serverConfig, err := loadServerConfig(configPath)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(serverConfig)
-	
+
 	// Create test service registrar
 	registrar := &TestConfigServiceRegistrar{}
-	
+
 	// Create server with loaded configuration
 	baseServer, err := server.NewBusinessServerCore(serverConfig, registrar, nil)
 	suite.Require().NoError(err)
 	suite.Require().NotNil(baseServer)
-	
+
 	// Test server startup with loaded configuration
 	ctx := context.Background()
 	err = baseServer.Start(ctx)
 	suite.Require().NoError(err)
-	
+
 	// Verify server is running
 	suite.NotEmpty(baseServer.GetHTTPAddress())
 	suite.NotEmpty(baseServer.GetGRPCAddress())
-	
+
 	// Test server shutdown
 	err = baseServer.Shutdown()
 	suite.Require().NoError(err)

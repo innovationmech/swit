@@ -99,8 +99,8 @@ func (suite *FrameworkLifecycleTestSuite) createTestConfig() *server.ServerConfi
 	config := server.NewServerConfig()
 	config.ServiceName = "test-messaging-service"
 	config.HTTP.TestMode = true
-	config.HTTP.Port = "0" // Dynamic port allocation
-	config.GRPC.Port = "0" // Dynamic port allocation
+	config.HTTP.Port = "0"           // Dynamic port allocation
+	config.GRPC.Port = "0"           // Dynamic port allocation
 	config.Discovery.Enabled = false // Disable discovery for testing
 	config.ShutdownTimeout = 5 * time.Second
 	return config
@@ -110,7 +110,7 @@ func (suite *FrameworkLifecycleTestSuite) createTestConfig() *server.ServerConfi
 func (suite *FrameworkLifecycleTestSuite) createTestServiceRegistrar() server.BusinessServiceRegistrar {
 	return &TestMessagingServiceRegistrar{
 		messagingCoord: suite.messagingCoord,
-		testSuite:     suite,
+		testSuite:      suite,
 	}
 }
 
@@ -157,7 +157,7 @@ func (suite *FrameworkLifecycleTestSuite) TestMessagingCoordinatorLifecycle() {
 	// Verify server health
 	healthStatus := suite.baseServer.GetTransportHealth(ctx)
 	suite.NotEmpty(healthStatus)
-	
+
 	// Check that HTTP and gRPC transports are healthy
 	if httpStatus, exists := healthStatus["http"]; exists {
 		suite.NotEmpty(httpStatus)
@@ -200,7 +200,7 @@ func (suite *FrameworkLifecycleTestSuite) TestMessagingCoordinatorErrorHandling(
 	// Test startup with invalid messaging configuration - should handle gracefully
 	ctx := context.Background()
 	err = suite.baseServer.Start(ctx)
-	
+
 	// Server should still start even with messaging issues (graceful degradation)
 	suite.Require().NoError(err)
 
@@ -429,7 +429,7 @@ func (suite *FrameworkLifecycleTestSuite) TestMessagingCoordinatorHealthIntegrat
 // TestMessagingServiceRegistrar is a test implementation of BusinessServiceRegistrar
 type TestMessagingServiceRegistrar struct {
 	messagingCoord messaging.MessagingCoordinator
-	testSuite     *FrameworkLifecycleTestSuite
+	testSuite      *FrameworkLifecycleTestSuite
 }
 
 // RegisterServices registers test services with the framework
