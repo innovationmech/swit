@@ -36,7 +36,7 @@ jobs:
         id: claude
         uses: anthropics/claude-code-action@beta
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_GLM_TOKEN }}
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
@@ -44,6 +44,7 @@ jobs:
           
           # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4)
           # model: "claude-opus-4-20250514"
+          model: "glm-4.5"
           
           # Optional: Customize the trigger phrase (default: @claude)
           # trigger_phrase: "/claude"
