@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,7 @@ type IntegrationTestSuite struct {
 	testDeps    *TestDependencyContainer
 	cancelFunc  context.CancelFunc
 	serverCtx   context.Context
+	isCI        bool
 }
 
 // TestServiceRegistrar implements ServiceRegistrar for testing
@@ -273,11 +275,79 @@ func (suite *IntegrationTestSuite) SetupSuite() {
 	gin.SetMode(gin.TestMode)
 }
 
+// getTestTimeoutHelper returns appropriate timeout based on environment for standalone tests
+func getTestTimeoutHelper(normal, ci time.Duration) time.Duration {
+	if isCIEnvironment() {
+		return ci
+	}
+	return normal
+}
+
+// getTestDelayHelper returns appropriate delay based on environment for standalone tests  
+func getTestDelayHelper(normal, ci time.Duration) time.Duration {
+	if isCIEnvironment() {
+		return ci
+	}
+	return normal
+}
+
+// isCIEnvironment detects if we're running in a CI environment
+func isCIEnvironment() bool {
+	// Check common CI environment variables
+	ciVars := []string{
+		"CI",                    // Generic CI indicator
+		"CONTINUOUS_INTEGRATION", // Travis CI, others
+		"GITHUB_ACTIONS",         // GitHub Actions
+		"TRAVIS",                 // Travis CI
+		"JENKINS_URL",            // Jenkins
+		"CIRCLECI",               // CircleCI
+		"GITLAB_CI",              // GitLab CI
+		"AZURE_PIPELINES",        // Azure DevOps
+		"BUILDKITE",              // Buildkite
+	}
+
+	for _, envVar := range ciVars {
+		if os.Getenv(envVar) != "" {
+			return true
+		}
+	}
+
+	// Also check if running in test mode with limited resources
+	if os.Getenv("SWIT_TEST_FAST") != "" {
+		return true
+	}
+
+	return false
+}
+
+// getTestTimeout returns appropriate timeout based on environment
+func (suite *IntegrationTestSuite) getTestTimeout(normal, ci time.Duration) time.Duration {
+	if suite.isCI {
+		return ci
+	}
+	return normal
+}
+
+// getTestDelay returns appropriate delay based on environment
+func (suite *IntegrationTestSuite) getTestDelay(normal, ci time.Duration) time.Duration {
+	if suite.isCI {
+		return ci
+	}
+	return normal
+}
+
 // SetupTest sets up each test case
 func (suite *IntegrationTestSuite) SetupTest() {
+	// Detect CI environment
+	suite.isCI = isCIEnvironment()
+
 	// Find available ports
 	suite.httpPort = suite.findAvailablePort()
 	suite.grpcPort = suite.findAvailablePort()
+
+	// Use shorter timeouts in CI environments
+	httpTimeout := suite.getTestTimeout(30*time.Second, 10*time.Second)
+	shutdownTimeout := suite.getTestTimeout(5*time.Second, 2*time.Second)
 
 	// Create test configuration
 	suite.config = &ServerConfig{
@@ -286,9 +356,9 @@ func (suite *IntegrationTestSuite) SetupTest() {
 			Port:         suite.httpPort,
 			EnableReady:  true,
 			Enabled:      true,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  60 * time.Second,
+			ReadTimeout:  httpTimeout,
+			WriteTimeout: httpTimeout,
+			IdleTimeout:  httpTimeout * 2,
 		},
 		GRPC: GRPCConfig{
 			Port:                suite.grpcPort,
@@ -299,18 +369,18 @@ func (suite *IntegrationTestSuite) SetupTest() {
 			MaxRecvMsgSize:      4 * 1024 * 1024, // 4MB
 			MaxSendMsgSize:      4 * 1024 * 1024, // 4MB
 			KeepaliveParams: GRPCKeepaliveParams{
-				MaxConnectionIdle:     15 * time.Minute,
-				MaxConnectionAge:      30 * time.Minute,
-				MaxConnectionAgeGrace: 5 * time.Minute,
-				Time:                  5 * time.Minute,
-				Timeout:               1 * time.Minute,
+				MaxConnectionIdle:     suite.getTestTimeout(15*time.Minute, 2*time.Minute),
+				MaxConnectionAge:      suite.getTestTimeout(30*time.Minute, 3*time.Minute),
+				MaxConnectionAgeGrace: suite.getTestTimeout(5*time.Minute, 1*time.Minute),
+				Time:                  suite.getTestTimeout(5*time.Minute, 1*time.Minute),
+				Timeout:               suite.getTestTimeout(1*time.Minute, 30*time.Second),
 			},
 			KeepalivePolicy: GRPCKeepalivePolicy{
-				MinTime:             5 * time.Minute,
+				MinTime:             suite.getTestTimeout(5*time.Minute, 1*time.Minute),
 				PermitWithoutStream: false,
 			},
 		},
-		ShutdownTimeout: 5 * time.Second,
+		ShutdownTimeout: shutdownTimeout,
 		Discovery: DiscoveryConfig{
 			Enabled:     false, // Disable discovery for integration tests
 			ServiceName: "test-service",
@@ -361,7 +431,8 @@ func (suite *IntegrationTestSuite) SetupTest() {
 func (suite *IntegrationTestSuite) TearDownTest() {
 	if suite.server != nil {
 		// Stop the server
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		timeout := suite.getTestTimeout(10*time.Second, 3*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		if err := suite.server.Stop(ctx); err != nil {
@@ -435,7 +506,8 @@ func (suite *IntegrationTestSuite) TestServerStartStop() {
 	assert.Contains(suite.T(), grpcAddr, suite.grpcPort)
 
 	// Test server stop
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeout := suite.getTestTimeout(5*time.Second, 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	err = server.Stop(ctx)
@@ -456,11 +528,13 @@ func (suite *IntegrationTestSuite) TestHTTPTransportIntegration() {
 	require.NoError(suite.T(), err)
 
 	// Wait for server to be ready
-	time.Sleep(100 * time.Millisecond)
+	delay := suite.getTestDelay(100*time.Millisecond, 50*time.Millisecond)
+	time.Sleep(delay)
 
 	// Test HTTP endpoint
 	httpAddr := server.GetHTTPAddress()
-	client := &http.Client{Timeout: 5 * time.Second}
+	clientTimeout := suite.getTestTimeout(5*time.Second, 2*time.Second)
+	client := &http.Client{Timeout: clientTimeout}
 
 	// Convert IPv6 address to localhost for HTTP client
 	testAddr := httpAddr
@@ -504,7 +578,8 @@ func (suite *IntegrationTestSuite) TestGRPCTransportIntegration() {
 	require.NoError(suite.T(), err)
 
 	// Wait for server to be ready
-	time.Sleep(100 * time.Millisecond)
+	delay := suite.getTestDelay(100*time.Millisecond, 50*time.Millisecond)
+	time.Sleep(delay)
 
 	// Test gRPC connection
 	grpcAddr := server.GetGRPCAddress()
@@ -514,7 +589,8 @@ func (suite *IntegrationTestSuite) TestGRPCTransportIntegration() {
 
 	// Test health check service
 	healthClient := grpc_health_v1.NewHealthClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeout := suite.getTestTimeout(5*time.Second, 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	healthResp, err := healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
@@ -599,7 +675,8 @@ func (suite *IntegrationTestSuite) TestTransportHealth() {
 	require.NoError(suite.T(), err)
 
 	// Check transport health
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeout := suite.getTestTimeout(5*time.Second, 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	health := server.GetTransportHealth(ctx)
@@ -649,10 +726,12 @@ func (suite *IntegrationTestSuite) TestConcurrentRequests() {
 	require.NoError(suite.T(), err)
 
 	// Wait for server to be ready
-	time.Sleep(100 * time.Millisecond)
+	delay := suite.getTestDelay(100*time.Millisecond, 50*time.Millisecond)
+	time.Sleep(delay)
 
 	httpAddr := server.GetHTTPAddress()
-	client := &http.Client{Timeout: 5 * time.Second}
+	clientTimeout := suite.getTestTimeout(5*time.Second, 2*time.Second)
+	client := &http.Client{Timeout: clientTimeout}
 
 	// Make concurrent HTTP requests
 	const numRequests = 10
@@ -862,7 +941,8 @@ func TestBaseServerIntegrationWithRealTransports(t *testing.T) {
 
 	// Test HTTP transport
 	httpAddr := server.GetHTTPAddress()
-	client := &http.Client{Timeout: 5 * time.Second}
+	clientTimeout := getTestTimeoutHelper(5*time.Second, 2*time.Second)
+	client := &http.Client{Timeout: clientTimeout}
 
 	resp, err := client.Get(fmt.Sprintf("http://%s/integration", httpAddr))
 	require.NoError(t, err)
@@ -876,7 +956,8 @@ func TestBaseServerIntegrationWithRealTransports(t *testing.T) {
 	defer conn.Close()
 
 	healthClient := grpc_health_v1.NewHealthClient(conn)
-	healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	healthTimeout := getTestTimeoutHelper(5*time.Second, 2*time.Second)
+	healthCtx, healthCancel := context.WithTimeout(context.Background(), healthTimeout)
 	defer healthCancel()
 
 	healthResp, err := healthClient.Check(healthCtx, &grpc_health_v1.HealthCheckRequest{})
@@ -884,7 +965,8 @@ func TestBaseServerIntegrationWithRealTransports(t *testing.T) {
 	assert.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, healthResp.Status)
 
 	// Test graceful shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownTimeout := getTestTimeoutHelper(10*time.Second, 3*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
 	err = server.Stop(shutdownCtx)
