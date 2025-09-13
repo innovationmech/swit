@@ -177,6 +177,51 @@ func TestSecurityManager_GetMetrics(t *testing.T) {
 	assert.NotNil(t, metrics.CollectedAt)
 }
 
+func TestSecurityManager_Secure_And_VerifyAndDecrypt(t *testing.T) {
+	logger := zap.NewNop()
+	cfg := &SecurityManagerConfig{
+		DefaultPolicy: &SecurityPolicy{
+			Name:    "default",
+			Enabled: true,
+			Encryption: &EncryptionConfig{
+				Enabled:   true,
+				Algorithm: EncryptionAlgorithmA256GCM,
+			},
+			Signing: &SigningConfig{
+				Enabled:   true,
+				Algorithm: SigningAlgorithmHS256,
+			},
+			Audit: &AuditConfig{Enabled: true},
+		},
+		Logger: logger,
+	}
+	sm, err := NewSecurityManager(cfg)
+	require.NoError(t, err)
+
+	// Original message
+	orig := &Message{
+		ID:        "m-1",
+		Topic:     "secure.topic",
+		Payload:   []byte("secret-payload"),
+		Timestamp: time.Now(),
+		Headers:   map[string]string{"message_type": "evt"},
+	}
+
+	ctx := context.Background()
+	// Secure (encrypt + sign)
+	secured, err := sm.SecureMessage(ctx, orig)
+	require.NoError(t, err)
+	require.NotNil(t, secured)
+	require.NotEmpty(t, secured.SecurityMetadata.EncryptionAlgo)
+
+	// Verify + decrypt
+	restored, err := sm.VerifyAndDecrypt(ctx, secured)
+	require.NoError(t, err)
+	require.NotNil(t, restored)
+	assert.Equal(t, orig.ID, restored.ID)
+	assert.Equal(t, []byte("secret-payload"), restored.Payload)
+}
+
 func TestSecurityPolicy_Validate(t *testing.T) {
 	// Test valid policy
 	validPolicy := &SecurityPolicy{
