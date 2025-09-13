@@ -27,6 +27,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,6 +40,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/messaging"
 )
 
 // IntegrationTestSuite provides integration tests for the base server framework
@@ -906,4 +908,223 @@ func findAvailablePort(t *testing.T) string {
 
 	addr := listener.Addr().(*net.TCPAddr)
 	return fmt.Sprintf("%d", addr.Port)
+}
+
+// ===== Messaging integration tests (Issue #234) =====
+
+// inMemoryBrokerStub is a minimal in-memory broker used only for integration tests.
+type inMemoryBrokerStub struct {
+	connected          int32
+	createdSubscribers int32
+}
+
+func (b *inMemoryBrokerStub) Connect(ctx context.Context) error {
+	atomic.StoreInt32(&b.connected, 1)
+	return nil
+}
+
+func (b *inMemoryBrokerStub) Disconnect(ctx context.Context) error {
+	atomic.StoreInt32(&b.connected, 0)
+	return nil
+}
+
+func (b *inMemoryBrokerStub) Close() error { return nil }
+
+func (b *inMemoryBrokerStub) IsConnected() bool { return atomic.LoadInt32(&b.connected) == 1 }
+
+func (b *inMemoryBrokerStub) CreatePublisher(_ messaging.PublisherConfig) (messaging.EventPublisher, error) {
+	return &inMemoryPublisherStub{}, nil
+}
+
+func (b *inMemoryBrokerStub) CreateSubscriber(_ messaging.SubscriberConfig) (messaging.EventSubscriber, error) {
+	atomic.AddInt32(&b.createdSubscribers, 1)
+	return &inMemorySubscriberStub{}, nil
+}
+
+func (b *inMemoryBrokerStub) HealthCheck(ctx context.Context) (*messaging.HealthStatus, error) {
+	return &messaging.HealthStatus{Status: messaging.HealthStatusHealthy, Message: "ok", LastChecked: time.Now()}, nil
+}
+
+func (b *inMemoryBrokerStub) GetMetrics() *messaging.BrokerMetrics { return &messaging.BrokerMetrics{} }
+
+func (b *inMemoryBrokerStub) GetCapabilities() *messaging.BrokerCapabilities {
+	return &messaging.BrokerCapabilities{}
+}
+
+type inMemoryPublisherStub struct{}
+
+func (p *inMemoryPublisherStub) Publish(_ context.Context, _ *messaging.Message) error { return nil }
+func (p *inMemoryPublisherStub) PublishBatch(_ context.Context, _ []*messaging.Message) error {
+	return nil
+}
+func (p *inMemoryPublisherStub) PublishWithConfirm(_ context.Context, _ *messaging.Message) (*messaging.PublishConfirmation, error) {
+	return &messaging.PublishConfirmation{}, nil
+}
+func (p *inMemoryPublisherStub) PublishAsync(_ context.Context, _ *messaging.Message, _ messaging.PublishCallback) error {
+	return nil
+}
+func (p *inMemoryPublisherStub) BeginTransaction(_ context.Context) (messaging.Transaction, error) {
+	return nil, nil
+}
+func (p *inMemoryPublisherStub) Flush(_ context.Context) error { return nil }
+func (p *inMemoryPublisherStub) Close() error                  { return nil }
+func (p *inMemoryPublisherStub) GetMetrics() *messaging.PublisherMetrics {
+	return &messaging.PublisherMetrics{}
+}
+
+type inMemorySubscriberStub struct {
+	subscribed int32
+}
+
+func (s *inMemorySubscriberStub) Subscribe(ctx context.Context, _ messaging.MessageHandler) error {
+	atomic.StoreInt32(&s.subscribed, 1)
+	// Return immediately; coordinator manages lifecycle via context cancellation
+	return nil
+}
+func (s *inMemorySubscriberStub) SubscribeWithMiddleware(ctx context.Context, _ messaging.MessageHandler, _ ...messaging.Middleware) error {
+	return s.Subscribe(ctx, nil)
+}
+func (s *inMemorySubscriberStub) Unsubscribe(_ context.Context) error                    { return nil }
+func (s *inMemorySubscriberStub) Pause(_ context.Context) error                          { return nil }
+func (s *inMemorySubscriberStub) Resume(_ context.Context) error                         { return nil }
+func (s *inMemorySubscriberStub) Seek(_ context.Context, _ messaging.SeekPosition) error { return nil }
+func (s *inMemorySubscriberStub) GetLag(_ context.Context) (int64, error)                { return 0, nil }
+func (s *inMemorySubscriberStub) Close() error                                           { return nil }
+func (s *inMemorySubscriberStub) GetMetrics() *messaging.SubscriberMetrics {
+	return &messaging.SubscriberMetrics{}
+}
+
+// MessagingTestServiceRegistrar implements MessagingServiceRegistrar for tests
+type MessagingTestServiceRegistrar struct {
+	base     *TestServiceRegistrar
+	handlers []EventHandler
+}
+
+func NewMessagingTestServiceRegistrar() *MessagingTestServiceRegistrar {
+	return &MessagingTestServiceRegistrar{
+		base:     NewTestServiceRegistrar(),
+		handlers: make([]EventHandler, 0),
+	}
+}
+
+func (m *MessagingTestServiceRegistrar) RegisterServices(registry BusinessServiceRegistry) error {
+	return m.base.RegisterServices(registry)
+}
+
+func (m *MessagingTestServiceRegistrar) RegisterEventHandlers(registry EventHandlerRegistry) error {
+	for _, h := range m.handlers {
+		if err := registry.RegisterEventHandler(h); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *MessagingTestServiceRegistrar) GetEventHandlerMetadata() *EventHandlerMetadata {
+	meta := &EventHandlerMetadata{HandlerCount: len(m.handlers)}
+	for _, h := range m.handlers {
+		meta.Topics = append(meta.Topics, h.GetTopics()...)
+		if br := h.GetBrokerRequirement(); br != "" {
+			meta.BrokerRequirements = append(meta.BrokerRequirements, br)
+		}
+	}
+	return meta
+}
+
+func (m *MessagingTestServiceRegistrar) AddHTTPHandler(handler BusinessHTTPHandler) {
+	m.base.AddHTTPHandler(handler)
+}
+func (m *MessagingTestServiceRegistrar) AddGRPCService(service BusinessGRPCService) {
+	m.base.AddGRPCService(service)
+}
+func (m *MessagingTestServiceRegistrar) AddHealthCheck(check BusinessHealthCheck) {
+	m.base.AddHealthCheck(check)
+}
+func (m *MessagingTestServiceRegistrar) AddEventHandler(h EventHandler) {
+	m.handlers = append(m.handlers, h)
+}
+
+// TestEventHandler implements server.EventHandler for tests
+type TestEventHandler struct {
+	id     string
+	topics []string
+}
+
+func NewTestEventHandler(id string, topics []string) *TestEventHandler {
+	return &TestEventHandler{id: id, topics: topics}
+}
+func (h *TestEventHandler) GetHandlerID() string                                  { return h.id }
+func (h *TestEventHandler) GetTopics() []string                                   { return h.topics }
+func (h *TestEventHandler) GetBrokerRequirement() string                          { return "" }
+func (h *TestEventHandler) Initialize(ctx context.Context) error                  { return nil }
+func (h *TestEventHandler) Shutdown(ctx context.Context) error                    { return nil }
+func (h *TestEventHandler) Handle(ctx context.Context, message interface{}) error { return nil }
+func (h *TestEventHandler) OnError(ctx context.Context, message interface{}, err error) interface{} {
+	return "retry"
+}
+
+// Test the full lifecycle with messaging enabled using the in-memory broker stub
+func (suite *IntegrationTestSuite) TestMessagingIntegrationWithInMemoryBroker() {
+	// Register in-memory broker factory
+	var created *inMemoryBrokerStub
+	messaging.RegisterBrokerFactory(messaging.BrokerTypeInMemory, func(_ *messaging.BrokerConfig) (messaging.MessageBroker, error) {
+		created = &inMemoryBrokerStub{}
+		return created, nil
+	})
+
+	// Prepare config with messaging enabled
+	suite.config.Messaging.Enabled = true
+	suite.config.Messaging.DefaultBroker = "default"
+	suite.config.Messaging.Brokers = map[string]BrokerConfig{
+		"default": {
+			Type:      "inmemory",
+			Endpoints: []string{"local"},
+		},
+	}
+	// Minimal required messaging configuration to satisfy validation
+	suite.config.Messaging.Connection.Timeout = 30 * time.Second
+	suite.config.Messaging.Connection.KeepAlive = 30 * time.Second
+	suite.config.Messaging.Connection.MaxAttempts = 3
+	suite.config.Messaging.Connection.RetryInterval = 1 * time.Second
+	suite.config.Messaging.Connection.PoolSize = 1
+	suite.config.Messaging.Connection.IdleTimeout = 1 * time.Second
+
+	suite.config.Messaging.Performance.BatchSize = 1
+	suite.config.Messaging.Performance.BatchTimeout = 10 * time.Millisecond
+	suite.config.Messaging.Performance.BufferSize = 1
+	suite.config.Messaging.Performance.Concurrency = 1
+	suite.config.Messaging.Performance.PrefetchCount = 1
+
+	suite.config.Messaging.Monitoring.Enabled = true
+	suite.config.Messaging.Monitoring.MetricsEnabled = true
+	suite.config.Messaging.Monitoring.HealthCheckEnabled = true
+	suite.config.Messaging.Monitoring.HealthCheckInterval = 1 * time.Second
+	suite.config.Discovery.Enabled = false
+
+	// Create registrar with an event handler
+	registrar := NewMessagingTestServiceRegistrar()
+	registrar.AddHTTPHandler(NewTestHTTPHandler("msg-http")) // keep HTTP enabled
+	registrar.AddHealthCheck(NewTestHealthCheck("msg-health", true))
+	registrar.AddEventHandler(NewTestEventHandler("handler-1", []string{"test-topic"}))
+
+	server, err := NewBusinessServerCore(suite.config, registrar, suite.testDeps)
+	require.NoError(suite.T(), err)
+	suite.server = server
+
+	// Start server
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	assert.NoError(suite.T(), server.Start(ctx))
+
+	// Verify broker connected and subscriber created
+	require.NotNil(suite.T(), created)
+	assert.True(suite.T(), created.IsConnected())
+	// best-effort small wait to let async subscription happen
+	time.Sleep(50 * time.Millisecond)
+	assert.GreaterOrEqual(suite.T(), int(atomic.LoadInt32(&created.createdSubscribers)), 1)
+
+	// Stop server (includes graceful messaging shutdown path)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	assert.NoError(suite.T(), server.Stop(shutdownCtx))
 }

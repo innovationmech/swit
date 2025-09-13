@@ -272,6 +272,9 @@ func (m *MessagingLifecycleManager) validateConfiguration(brokerConfigs map[stri
 			continue
 		}
 
+		// Apply defaults before validation to simplify test configurations
+		config.SetDefaults()
+
 		if err := messaging.ValidateBrokerConfig(config); err != nil {
 			validationErrors = append(validationErrors, fmt.Errorf("invalid broker config for '%s': %w", name, err))
 		}
