@@ -18,8 +18,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 //
-// Package testingx 提供消息生命周期相关的测试工具，避免与标准库 testing 命名冲突。
-package testingx
 
 import (
 	"context"
