@@ -160,6 +160,13 @@ func GetDefaultAdapterRegistry() BrokerAdapterRegistry {
 	return defaultAdapterRegistry
 }
 
+// init wires the default adapter registry into the messaging factory so that
+// messaging.NewMessageBroker(..) can discover adapters registered here.
+func init() {
+	// Connect global adapters registry to default factory
+	messaging.SetDefaultAdapterRegistry(GetDefaultAdapterRegistry())
+}
+
 // RegisterAdapter implements BrokerAdapterRegistry interface.
 func (r *brokerAdapterRegistryImpl) RegisterAdapter(adapter messaging.MessageBrokerAdapter) error {
 	if adapter == nil {
