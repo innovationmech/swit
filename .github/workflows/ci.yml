@@ -71,7 +71,7 @@ jobs:
 
     - name: Set up Go
       if: needs.changes.outputs.code_changed == 'true'
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
@@ -114,7 +114,7 @@ jobs:
 
     - name: Set up Go
       if: needs.changes.outputs.code_changed == 'true'
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
@@ -157,7 +157,7 @@ jobs:
 
     - name: Set up Go
       if: needs.changes.outputs.code_changed == 'true'
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
         check-latest: true
