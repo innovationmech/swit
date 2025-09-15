@@ -65,34 +65,34 @@ func TestKafkaAdapter_CreateBroker_And_Lifecycle(t *testing.T) {
 }
 
 func TestKafkaBroker_CreatePublisher_UsesPool(t *testing.T) {
-    a := newAdapter()
-    cfg := &messaging.BrokerConfig{Type: messaging.BrokerTypeKafka, Endpoints: []string{"localhost:9092"}}
-    brokerAny, err := a.CreateBroker(cfg)
-    if err != nil {
-        t.Fatalf("CreateBroker failed: %v", err)
-    }
-    broker := brokerAny.(*kafkaBroker)
-    if err := broker.Connect(context.Background()); err != nil {
-        t.Fatalf("connect: %v", err)
-    }
+	a := newAdapter()
+	cfg := &messaging.BrokerConfig{Type: messaging.BrokerTypeKafka, Endpoints: []string{"localhost:9092"}}
+	brokerAny, err := a.CreateBroker(cfg)
+	if err != nil {
+		t.Fatalf("CreateBroker failed: %v", err)
+	}
+	broker := brokerAny.(*kafkaBroker)
+	if err := broker.Connect(context.Background()); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
 
-    pubCfg := messaging.PublisherConfig{Topic: "test-topic"}
-    p1, err := broker.CreatePublisher(pubCfg)
-    if err != nil {
-        t.Fatalf("CreatePublisher failed: %v", err)
-    }
-    if p1 == nil {
-        t.Fatalf("publisher is nil")
-    }
-    if broker.producerPool == nil {
-        t.Fatalf("producer pool should be initialized")
-    }
+	pubCfg := messaging.PublisherConfig{Topic: "test-topic"}
+	p1, err := broker.CreatePublisher(pubCfg)
+	if err != nil {
+		t.Fatalf("CreatePublisher failed: %v", err)
+	}
+	if p1 == nil {
+		t.Fatalf("publisher is nil")
+	}
+	if broker.producerPool == nil {
+		t.Fatalf("producer pool should be initialized")
+	}
 
-    p2, err := broker.CreatePublisher(pubCfg)
-    if err != nil {
-        t.Fatalf("CreatePublisher(2) failed: %v", err)
-    }
-    if p2 == nil {
-        t.Fatalf("publisher 2 is nil")
-    }
+	p2, err := broker.CreatePublisher(pubCfg)
+	if err != nil {
+		t.Fatalf("CreatePublisher(2) failed: %v", err)
+	}
+	if p2 == nil {
+		t.Fatalf("publisher 2 is nil")
+	}
 }

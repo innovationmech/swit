@@ -22,82 +22,79 @@
 package kafka
 
 import (
-    "context"
-    "time"
+	"context"
+	"time"
 
-    "github.com/innovationmech/swit/pkg/messaging"
+	"github.com/innovationmech/swit/pkg/messaging"
 )
 
 type kafkaPublisher struct {
-    pool   *producerPool
-    config *messaging.PublisherConfig
+	pool   *producerPool
+	config *messaging.PublisherConfig
 }
 
 func newKafkaPublisher(pool *producerPool, cfg *messaging.PublisherConfig) *kafkaPublisher {
-    cpy := *cfg
-    return &kafkaPublisher{pool: pool, config: &cpy}
+	cpy := *cfg
+	return &kafkaPublisher{pool: pool, config: &cpy}
 }
 
 func (p *kafkaPublisher) Publish(ctx context.Context, message *messaging.Message) error {
-    km := toKafkaMessage(p.config.Topic, message)
-    return p.pool.PublishSync(ctx, p.config.Topic, km, p.config)
+	km := toKafkaMessage(p.config.Topic, message)
+	return p.pool.PublishSync(ctx, p.config.Topic, km, p.config)
 }
 
 func (p *kafkaPublisher) PublishBatch(ctx context.Context, messages []*messaging.Message) error {
-    if len(messages) == 0 {
-        return nil
-    }
-    batch := make([]KafkaMessage, 0, len(messages))
-    for _, m := range messages {
-        batch = append(batch, toKafkaMessage(p.config.Topic, m))
-    }
-    return p.pool.PublishBatchSync(ctx, p.config.Topic, batch, p.config)
+	if len(messages) == 0 {
+		return nil
+	}
+	batch := make([]KafkaMessage, 0, len(messages))
+	for _, m := range messages {
+		batch = append(batch, toKafkaMessage(p.config.Topic, m))
+	}
+	return p.pool.PublishBatchSync(ctx, p.config.Topic, batch, p.config)
 }
 
 func (p *kafkaPublisher) PublishWithConfirm(ctx context.Context, message *messaging.Message) (*messaging.PublishConfirmation, error) {
-    km := toKafkaMessage(p.config.Topic, message)
-    return p.pool.PublishWithConfirm(ctx, p.config.Topic, km, p.config)
+	km := toKafkaMessage(p.config.Topic, message)
+	return p.pool.PublishWithConfirm(ctx, p.config.Topic, km, p.config)
 }
 
 func (p *kafkaPublisher) PublishAsync(ctx context.Context, message *messaging.Message, callback messaging.PublishCallback) error {
-    km := toKafkaMessage(p.config.Topic, message)
-    return p.pool.PublishAsync(ctx, p.config.Topic, km, p.config, callback)
+	km := toKafkaMessage(p.config.Topic, message)
+	return p.pool.PublishAsync(ctx, p.config.Topic, km, p.config, callback)
 }
 
 func (p *kafkaPublisher) BeginTransaction(ctx context.Context) (messaging.Transaction, error) {
-    return nil, messaging.ErrTransactionsNotSupported
+	return nil, messaging.ErrTransactionsNotSupported
 }
 
 func (p *kafkaPublisher) Flush(ctx context.Context) error { return nil }
 func (p *kafkaPublisher) Close() error                    { return nil }
 func (p *kafkaPublisher) GetMetrics() *messaging.PublisherMetrics {
-    return &messaging.PublisherMetrics{}
+	return &messaging.PublisherMetrics{}
 }
 
 func toKafkaMessage(topic string, m *messaging.Message) KafkaMessage {
-    headers := make(map[string]string, len(m.Headers)+3)
-    for k, v := range m.Headers {
-        headers[k] = v
-    }
-    // Populate minimal tracing/correlation metadata if present
-    if m.CorrelationID != "" {
-        headers["correlation_id"] = m.CorrelationID
-    }
-    if m.ReplyTo != "" {
-        headers["reply_to"] = m.ReplyTo
-    }
-    ts := m.Timestamp
-    if ts.IsZero() {
-        ts = time.Now()
-    }
-    return KafkaMessage{
-        Topic:     topic,
-        Key:       m.Key,
-        Value:     m.Payload,
-        Headers:   headers,
-        Timestamp: ts,
-    }
+	headers := make(map[string]string, len(m.Headers)+3)
+	for k, v := range m.Headers {
+		headers[k] = v
+	}
+	// Populate minimal tracing/correlation metadata if present
+	if m.CorrelationID != "" {
+		headers["correlation_id"] = m.CorrelationID
+	}
+	if m.ReplyTo != "" {
+		headers["reply_to"] = m.ReplyTo
+	}
+	ts := m.Timestamp
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	return KafkaMessage{
+		Topic:     topic,
+		Key:       m.Key,
+		Value:     m.Payload,
+		Headers:   headers,
+		Timestamp: ts,
+	}
 }
-
-
-
