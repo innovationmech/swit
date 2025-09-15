@@ -11,10 +11,10 @@ import (
 // kafkaBroker is a minimal broker that satisfies messaging.MessageBroker with
 // stubbed publisher/subscriber. Connectivity check is a no-op in this scaffold.
 type kafkaBroker struct {
-	config   *messaging.BrokerConfig
-	metrics  messaging.BrokerMetrics
-	mu       sync.RWMutex
-	started  bool
+	config  *messaging.BrokerConfig
+	metrics messaging.BrokerMetrics
+	mu      sync.RWMutex
+	started bool
 }
 
 func newKafkaBroker(cfg *messaging.BrokerConfig) *kafkaBroker {
@@ -84,5 +84,3 @@ func (b *kafkaBroker) GetCapabilities() *messaging.BrokerCapabilities {
 	caps, _ := messaging.GetCapabilityProfile(messaging.BrokerTypeKafka)
 	return caps
 }
-
-

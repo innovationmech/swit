@@ -85,5 +85,3 @@ func init() {
 	// Ensure adapter registry is connected (handled in adapters package init). Then register adapter.
 	_ = adapters.RegisterGlobalAdapter(newAdapter())
 }
-
-
