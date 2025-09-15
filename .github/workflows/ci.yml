@@ -92,6 +92,10 @@ jobs:
       if: needs.changes.outputs.code_changed == 'true'
       run: make setup-dev
 
+    - name: Generate proto code (dev)
+      if: needs.changes.outputs.code_changed == 'true'
+      run: make proto-dev
+
     - name: Run code quality checks (PR fast)
       if: needs.changes.outputs.code_changed == 'true' && github.event_name == 'pull_request'
       run: make quality-dev
@@ -125,6 +129,10 @@ jobs:
         key: ${{ runner.os }}-go-build-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-build-${{ env.GO_VERSION }}-
+
+    - name: Generate proto code (dev)
+      if: needs.changes.outputs.code_changed == 'true'
+      run: make proto-dev
 
     # 使用快速测试模式，跳过依赖生成
     - name: Run tests
