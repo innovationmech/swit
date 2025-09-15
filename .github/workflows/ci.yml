@@ -24,9 +24,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.filter.outputs.code }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+    - name: Filter paths
+      id: filter
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          code:
+            - 'go.mod'
+            - 'go.sum'
+            - '**/*.go'
+            - 'api/**'
+            - 'cmd/**'
+            - 'internal/**'
+            - 'pkg/**'
+            - 'examples/**'
+            - 'scripts/**'
+            - '!docs/**'
+            - '!.github/workflows/docs-*.yml'
+
   setup:
     name: Setup & Code Quality
     runs-on: ubuntu-latest
+    needs: changes
     # CI 运行条件：
     # - PR 事件：始终运行 CI，无法跳过
     # - push 事件：仅当没有 [skip ci] 标记时运行
@@ -36,142 +65,119 @@ jobs:
         !github.event.head_commit ||
         !contains(github.event.head_commit.message, '[skip ci]')
       ))
-    outputs:
-      cache-hit: ${{ steps.cache.outputs.cache-hit }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      if: needs.changes.outputs.code_changed == 'true'
+      uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true
+        cache: true
+        cache-dependency-path: '**/go.sum'
 
-    - name: Cache Go modules
-      id: cache
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
-    - name: Install dependencies
-      run: go mod download
-
-    - name: Install Proto tools
-      run: make proto-setup
-
-    - name: Install Swagger tools
-      run: make swagger-setup
-
-    - name: Install quality tools
-      run: make quality-setup
-
-    - name: Run code quality checks
-      run: make quality
-
-    # 缓存生成的代码和工具
-    - name: Cache generated code and tools
+    - name: Restore tool cache
       uses: actions/cache@v4
       with:
         path: |
-          api/gen/
-          docs/
           ~/.local/bin/
           ~/go/bin/
-        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'buf.yaml', 'buf.gen.yaml', 'Makefile') }}
+        key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile', 'scripts/**', 'go.mod') }}
         restore-keys: |
-          ${{ runner.os }}-generated-
+          ${{ runner.os }}-go-tools-
+
+    - name: Install dev tools
+      if: needs.changes.outputs.code_changed == 'true'
+      run: make setup-dev
+
+    - name: Generate proto code (dev)
+      if: needs.changes.outputs.code_changed == 'true'
+      run: make proto-dev
+
+    - name: Run code quality checks (PR fast)
+      if: needs.changes.outputs.code_changed == 'true' && github.event_name == 'pull_request'
+      run: make quality-dev
+
+    - name: Run code quality checks (push full)
+      if: needs.changes.outputs.code_changed == 'true' && github.event_name == 'push'
+      run: make quality
 
   test:
     name: Tests
     runs-on: ubuntu-latest
-    needs: setup
+    needs: changes
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      if: needs.changes.outputs.code_changed == 'true'
+      uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true
+        cache: true
+        cache-dependency-path: '**/go.sum'
 
-    - name: Restore Go modules cache
+    - name: Restore build cache
+      if: needs.changes.outputs.code_changed == 'true'
       uses: actions/cache@v4
       with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        path: ~/.cache/go-build
+        key: ${{ runner.os }}-go-build-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          ${{ runner.os }}-go-
+          ${{ runner.os }}-go-build-${{ env.GO_VERSION }}-
 
-    - name: Restore generated code cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          api/gen/
-          docs/
-          ~/.local/bin/
-          ~/go/bin/
-        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'buf.yaml', 'buf.gen.yaml', 'Makefile') }}
-        restore-keys: |
-          ${{ runner.os }}-generated-
-
-    - name: Install dependencies (if cache miss)
-      if: needs.setup.outputs.cache-hit != 'true'
-      run: go mod download
+    - name: Generate proto code (dev)
+      if: needs.changes.outputs.code_changed == 'true'
+      run: make proto-dev
 
     # 使用快速测试模式，跳过依赖生成
     - name: Run tests
+      if: needs.changes.outputs.code_changed == 'true' && github.event_name == 'pull_request'
       run: make test-dev
 
     - name: Run tests with race detection
+      if: github.event_name == 'push' && needs.changes.outputs.code_changed == 'true'
       run: make test-advanced TYPE=race
+
+    - name: Skip tests (no code changes)
+      if: needs.changes.outputs.code_changed != 'true'
+      run: echo "No code changes detected. Skipping tests."
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [setup, test]
+    needs: changes
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      if: needs.changes.outputs.code_changed == 'true'
+      uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true
+        cache: true
+        cache-dependency-path: '**/go.sum'
 
-    - name: Restore Go modules cache
+    - name: Restore build cache
+      if: needs.changes.outputs.code_changed == 'true'
       uses: actions/cache@v4
       with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        path: ~/.cache/go-build
+        key: ${{ runner.os }}-go-build-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          ${{ runner.os }}-go-
-
-    - name: Restore generated code cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          api/gen/
-          docs/
-          ~/.local/bin/
-          ~/go/bin/
-        key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'buf.yaml', 'buf.gen.yaml', 'Makefile') }}
-        restore-keys: |
-          ${{ runner.os }}-generated-
-
-    - name: Install dependencies (if cache miss)
-      if: needs.setup.outputs.cache-hit != 'true'
-      run: go mod download
+          ${{ runner.os }}-go-build-${{ env.GO_VERSION }}-
 
     # 使用快速构建模式，跳过质量检查
     - name: Build binaries
+      if: github.event_name == 'push' && needs.changes.outputs.code_changed == 'true'
       run: make build-dev
 
-    # - name: Upload build artifacts
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: binaries
-    #     path: _output/
-
+    - name: Skip build (PR or no code changes)
+      if: github.event_name != 'push' || needs.changes.outputs.code_changed != 'true'
+      run: echo "Skipping build for PR or non-code changes."
