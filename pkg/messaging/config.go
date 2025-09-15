@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+    "runtime"
 	"strings"
 	"time"
 
@@ -625,6 +626,14 @@ type PublisherConfig struct {
 
 	// Timeout settings
 	Timeout TimeoutConfig `yaml:"timeout" json:"timeout"`
+
+	// Workers controls the number of parallel workers in the producer pool
+	// for high-throughput publishing. Defaults to the number of CPUs.
+	Workers int `yaml:"workers" json:"workers"`
+
+	// QueueSize controls the internal queue capacity for asynchronous
+	// publishing and back-pressure. Defaults to 10000.
+	QueueSize int `yaml:"queue_size" json:"queue_size"`
 }
 
 // RoutingConfig defines message routing settings.
@@ -970,6 +979,14 @@ func setPublisherDefaults(config *PublisherConfig) {
 	}
 
 	config.Retry.SetDefaults()
+
+	// Defaults for producer pool
+	if config.Workers == 0 {
+		config.Workers = runtime.NumCPU()
+	}
+	if config.QueueSize == 0 {
+		config.QueueSize = 10000
+	}
 }
 
 // setSubscriberDefaults sets default values for subscriber configuration
@@ -1042,6 +1059,13 @@ func (cm *ConfigManager) validatePublisherConfig(config *PublisherConfig) error 
 		if config.Batching.FlushInterval <= 0 {
 			return NewConfigError("batch flush_interval must be positive when batching is enabled", nil)
 		}
+	}
+
+	if config.Workers <= 0 {
+		return NewConfigError("publisher workers must be positive", nil)
+	}
+	if config.QueueSize <= 0 {
+		return NewConfigError("publisher queue_size must be positive", nil)
 	}
 
 	return nil

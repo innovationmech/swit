@@ -36,6 +36,9 @@ type kafkaBroker struct {
 	metrics messaging.BrokerMetrics
 	mu      sync.RWMutex
 	started bool
+
+	// producerPool provides high-throughput publishing shared across topic publishers
+	producerPool *producerPool
 }
 
 func newKafkaBroker(cfg *messaging.BrokerConfig) *kafkaBroker {
@@ -62,6 +65,10 @@ func (b *kafkaBroker) Disconnect(ctx context.Context) error {
 	}
 	b.started = false
 	b.metrics.ConnectionStatus = "disconnected"
+	if b.producerPool != nil {
+		b.producerPool.Close()
+		b.producerPool = nil
+	}
 	return nil
 }
 
@@ -76,7 +83,26 @@ func (b *kafkaBroker) IsConnected() bool {
 }
 
 func (b *kafkaBroker) CreatePublisher(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
-	return &stubPublisher{}, nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.started {
+		return nil, messaging.ErrBrokerNotConnected
+	}
+	if config.Topic == "" {
+		return nil, messaging.NewConfigError("publisher topic is required", nil)
+	}
+
+	// Lazy-init producer pool
+	if b.producerPool == nil {
+		pool, err := newProducerPool(b.config, &config)
+		if err != nil {
+			return nil, err
+		}
+		b.producerPool = pool
+	}
+
+	return newKafkaPublisher(b.producerPool, &config), nil
 }
 
 func (b *kafkaBroker) CreateSubscriber(config messaging.SubscriberConfig) (messaging.EventSubscriber, error) {
