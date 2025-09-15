@@ -570,6 +570,10 @@ func (gsm *GracefulShutdownManager) handleForceShutdown() {
 
 		gsm.statusMu.Lock()
 		gsm.status.Phase = ShutdownPhaseForcedTermination
+		// Record an error to ensure WaitForCompletion surfaces forced termination
+		if gsm.status.Error == nil {
+			gsm.status.Error = fmt.Errorf("shutdown was forcefully terminated due to timeout")
+		}
 		gsm.statusMu.Unlock()
 
 		// Cancel the shutdown context to force termination
