@@ -106,7 +106,24 @@ func (b *kafkaBroker) CreatePublisher(config messaging.PublisherConfig) (messagi
 }
 
 func (b *kafkaBroker) CreateSubscriber(config messaging.SubscriberConfig) (messaging.EventSubscriber, error) {
-	return &stubSubscriber{}, nil
+	b.mu.RLock()
+	started := b.started
+	b.mu.RUnlock()
+	if !started {
+		return nil, messaging.ErrBrokerNotConnected
+	}
+	if len(config.Topics) == 0 {
+		return nil, messaging.NewConfigError("subscriber topics are required", nil)
+	}
+	if config.ConsumerGroup == "" {
+		return nil, messaging.NewConfigError("subscriber consumer_group is required", nil)
+	}
+
+	sub, err := newKafkaSubscriber(b.config, &config)
+	if err != nil {
+		return nil, err
+	}
+	return sub, nil
 }
 
 func (b *kafkaBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus, error) {
