@@ -189,16 +189,41 @@ add_copyright() {
     
     log_info "添加版权声明到: $file"
     
-    # 创建临时文件
-    local temp_file=$(mktemp)
+    # 生成版权头到临时文件
+    local temp_copyright=$(mktemp)
+    awk '{if($0=="") print "//"; else print "// " $0}' "$BOILERPLATE_FILE" > "$temp_copyright"
+    echo "" >> "$temp_copyright"
     
-    # 添加版权声明
-    awk '{if($0=="") print "//"; else print "// " $0}' "$BOILERPLATE_FILE" > "$temp_file"
-    echo "" >> "$temp_file"
-    cat "$file" >> "$temp_file"
+    # 如果文件顶部存在构建标签（//go:build 或 // +build），保持其在最顶部
+    # 将版权头插入在构建标签块之后，否则直接头插
+    if grep -qE '^(//go:build|// \+build)' "$file" 2>/dev/null; then
+        local temp_output=$(mktemp)
+        awk -v hdrfile="$temp_copyright" '
+            BEGIN { inbuild=1; inserted=0 }
+            # 顶部连续的构建标签
+            NR==1 { }
+            inbuild==1 && (/^\/\/go:build/ || /^\/\/ \+build/) { print; next }
+            # 构建标签后的空行（必须保留）
+            inbuild==1 && /^\s*$/ { print; inbuild=0; 
+                while ((getline line < hdrfile) > 0) print line; close(hdrfile);
+                inserted=1; next }
+            # 一旦遇到非构建标签的第一行，先插入版权头再打印此行
+            inbuild==1 {
+                inbuild=0;
+                while ((getline line < hdrfile) > 0) print line; close(hdrfile);
+                inserted=1; print $0; next
+            }
+            { print }
+        ' "$file" > "$temp_output"
+        mv "$temp_output" "$file"
+    else
+        # 无构建标签：直接头插
+        local temp_file=$(mktemp)
+        cat "$temp_copyright" "$file" > "$temp_file"
+        mv "$temp_file" "$file"
+    fi
     
-    # 替换原文件
-    mv "$temp_file" "$file"
+    rm -f "$temp_copyright"
 }
 
 # 函数：更新版权声明
@@ -212,22 +237,41 @@ update_copyright() {
     
     log_info "更新版权声明: $file"
     
-    # 创建临时文件
-    local temp_copyright=$(mktemp)
-    local temp_content=$(mktemp)
-    
     # 生成新的版权声明
+    local temp_copyright=$(mktemp)
     awk '{if($0=="") print "//"; else print "// " $0}' "$BOILERPLATE_FILE" > "$temp_copyright"
     echo "" >> "$temp_copyright"
     
-    # 提取文件内容（去除旧的版权声明）
-    awk '/^\/\/ Copyright/{found=1} found && /^$/{found=0; next} !found' "$file" > "$temp_content"
+    # 在原位置替换旧版权块，保护 package 声明不被删除
+    local temp_output=$(mktemp)
+    awk -v hdrfile="$temp_copyright" '
+        BEGIN { skipping=0; inserted=0 }
+        # 开始检测到版权块
+        /^\s*\/\/ Copyright/ && inserted==0 {
+            skipping=1; next
+        }
+        # 仍在版权块中（跳过所有 // 注释行 和 空行）
+        skipping==1 && (/^\s*\/\// || /^\s*$/) { next }
+        # 版权块后的第一行：先输出新版权，再输出当前行
+        skipping==1 {
+            skipping=0; inserted=1;
+            while ((getline line < hdrfile) > 0) print line
+            close(hdrfile)
+            print $0
+            next
+        }
+        { print }
+    ' "$file" > "$temp_output"
     
-    # 合并新版权声明和文件内容
-    cat "$temp_copyright" "$temp_content" > "$file"
+    if grep -q "^// Copyright" "$file" 2>/dev/null; then
+        mv "$temp_output" "$file"
+    else
+        # 未找到旧版权块：按添加逻辑插入（照顾构建标签）
+        rm -f "$temp_output"
+        add_copyright "$file"
+    fi
     
-    # 清理临时文件
-    rm -f "$temp_copyright" "$temp_content"
+    rm -f "$temp_copyright"
 }
 
 # 函数：标准版权管理（检查+自动修复）
