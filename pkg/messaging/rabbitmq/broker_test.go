@@ -44,7 +44,7 @@ func TestRabbitBrokerLifecycle(t *testing.T) {
 	var dials int
 	broker.pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
 		dials++
-		return newMockConnection(func() *mockChannel { return newMockChannel() }), nil
+		return newMockConnection(func() amqpChannel { return newMockChannel() }), nil
 	}
 
 	ctx := context.Background()
@@ -69,22 +69,31 @@ func TestRabbitBrokerLifecycle(t *testing.T) {
 	require.Equal(t, messaging.HealthStatusDegraded, health.Status)
 }
 
-func TestRabbitBrokerCreatePublisherStub(t *testing.T) {
+func TestRabbitBrokerCreatePublisher(t *testing.T) {
 	base := &messaging.BrokerConfig{
 		Type:      messaging.BrokerTypeRabbitMQ,
 		Endpoints: []string{"amqp://localhost:5672"},
 	}
+	base.Connection.PoolSize = 1
+
 	broker := newRabbitBroker(base, DefaultConfig())
 
 	_, err := broker.CreatePublisher(messaging.PublisherConfig{})
-	require.Error(t, err)
-	msgErr, ok := err.(*messaging.MessagingError)
-	require.True(t, ok)
-	require.Equal(t, messaging.ErrNotImplemented, msgErr.Code)
+	require.ErrorIs(t, err, messaging.ErrBrokerNotConnected)
 
+	broker.pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
+		return newMockConnection(func() amqpChannel { return newMockChannel() }), nil
+	}
+	require.NoError(t, broker.Connect(context.Background()))
+
+	publisher, err := broker.CreatePublisher(messaging.PublisherConfig{Topic: "orders"})
+	require.NoError(t, err)
+	require.NotNil(t, publisher)
+
+	// Subscriber creation remains unimplemented.
 	_, err = broker.CreateSubscriber(messaging.SubscriberConfig{})
 	require.Error(t, err)
-	msgErr, ok = err.(*messaging.MessagingError)
+	msgErr, ok := err.(*messaging.MessagingError)
 	require.True(t, ok)
 	require.Equal(t, messaging.ErrNotImplemented, msgErr.Code)
 }
@@ -101,7 +110,7 @@ func TestRabbitBrokerReconnectOnConnect(t *testing.T) {
 
 	connections := []*mockConnection{}
 	broker.pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
-		mc := newMockConnection(func() *mockChannel { return newMockChannel() })
+		mc := newMockConnection(func() amqpChannel { return newMockChannel() })
 		connections = append(connections, mc)
 		return mc, nil
 	}

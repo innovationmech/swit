@@ -42,7 +42,7 @@ func TestConnectionPoolAcquireRelease(t *testing.T) {
 	pool := newConnectionPool(base, rabbitCfg)
 
 	pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
-		return newMockConnection(func() *mockChannel {
+		return newMockConnection(func() amqpChannel {
 			return newMockChannel()
 		}), nil
 	}
@@ -87,7 +87,7 @@ func TestConnectionPoolChannelExhaustion(t *testing.T) {
 
 	pool := newConnectionPool(base, rabbitCfg)
 	pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
-		return newMockConnection(func() *mockChannel { return newMockChannel() }), nil
+		return newMockConnection(func() amqpChannel { return newMockChannel() }), nil
 	}
 
 	ctx := context.Background()
@@ -124,7 +124,7 @@ func TestConnectionPoolReconnect(t *testing.T) {
 
 	var connections []*mockConnection
 	pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
-		mc := newMockConnection(func() *mockChannel { return newMockChannel() })
+		mc := newMockConnection(func() amqpChannel { return newMockChannel() })
 		connections = append(connections, mc)
 		return mc, nil
 	}

@@ -112,13 +112,17 @@ func (b *rabbitBroker) IsConnected() bool {
 }
 
 func (b *rabbitBroker) CreatePublisher(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
-	_ = config
-	return nil, &messaging.MessagingError{
-		Code:      messaging.ErrNotImplemented,
-		Message:   "rabbitmq publisher not implemented",
-		Retryable: false,
-		Timestamp: time.Now(),
+	if !b.IsConnected() {
+		return nil, messaging.ErrBrokerNotConnected
 	}
+
+	config.Retry.SetDefaults()
+	if err := config.Retry.Validate(); err != nil {
+		return nil, err
+	}
+
+	publisher := newRabbitPublisher(b.pool, config)
+	return publisher, nil
 }
 
 func (b *rabbitBroker) CreateSubscriber(config messaging.SubscriberConfig) (messaging.EventSubscriber, error) {

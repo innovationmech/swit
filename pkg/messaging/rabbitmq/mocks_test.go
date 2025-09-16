@@ -29,14 +29,15 @@ import (
 )
 
 type mockConnection struct {
-	mu       sync.Mutex
-	closed   bool
-	notify   chan *amqp.Error
-	channels []*mockChannel
-	factory  func() *mockChannel
+	mu           sync.Mutex
+	closed       bool
+	notify       chan *amqp.Error
+	channels     []amqpChannel
+	channelQueue []amqpChannel
+	factory      func() amqpChannel
 }
 
-func newMockConnection(factory func() *mockChannel) *mockConnection {
+func newMockConnection(factory func() amqpChannel) *mockConnection {
 	return &mockConnection{factory: factory}
 }
 
@@ -48,9 +49,24 @@ func (m *mockConnection) Channel() (amqpChannel, error) {
 		return nil, fmt.Errorf("connection closed")
 	}
 
-	channel := m.factory()
+	var channel amqpChannel
+	if len(m.channelQueue) > 0 {
+		channel = m.channelQueue[0]
+		m.channelQueue = m.channelQueue[1:]
+	} else if m.factory != nil {
+		channel = m.factory()
+	} else {
+		return nil, fmt.Errorf("no channel available")
+	}
+
 	m.channels = append(m.channels, channel)
 	return channel, nil
+}
+
+func (m *mockConnection) enqueueChannel(channel amqpChannel) {
+	m.mu.Lock()
+	m.channelQueue = append(m.channelQueue, channel)
+	m.mu.Unlock()
 }
 
 func (m *mockConnection) Close() error {
@@ -108,15 +124,30 @@ type qosCall struct {
 	global bool
 }
 
+type publishCall struct {
+	exchange   string
+	routingKey string
+	mandatory  bool
+	immediate  bool
+	message    amqp.Publishing
+}
+
 type mockChannel struct {
-	mu       sync.Mutex
-	closed   bool
-	notify   chan *amqp.Error
-	qosCalls []qosCall
+	mu               sync.Mutex
+	closed           bool
+	notify           chan *amqp.Error
+	qosCalls         []qosCall
+	confirmEnabled   bool
+	confirmErr       error
+	notifyPublish    chan amqp.Confirmation
+	publishCalls     []publishCall
+	publishErrors    []error
+	confirmResponses []amqp.Confirmation
+	autoConfirm      bool
 }
 
 func newMockChannel() *mockChannel {
-	return &mockChannel{}
+	return &mockChannel{autoConfirm: true}
 }
 
 func (m *mockChannel) Close() error {
@@ -142,6 +173,54 @@ func (m *mockChannel) Qos(prefetchCount, prefetchSize int, global bool) error {
 	return nil
 }
 
+func (m *mockChannel) Confirm(noWait bool) error {
+	m.mu.Lock()
+	m.confirmEnabled = true
+	err := m.confirmErr
+	m.mu.Unlock()
+	return err
+}
+
+func (m *mockChannel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return fmt.Errorf("channel closed")
+	}
+	call := publishCall{exchange: exchange, routingKey: key, mandatory: mandatory, immediate: immediate, message: msg}
+	m.publishCalls = append(m.publishCalls, call)
+	callIndex := len(m.publishCalls)
+	var err error
+	if len(m.publishErrors) > 0 {
+		err = m.publishErrors[0]
+		m.publishErrors = m.publishErrors[1:]
+	}
+	notify := m.notifyPublish
+	confirmEnabled := m.confirmEnabled
+	autoConfirm := m.autoConfirm
+	var confirm *amqp.Confirmation
+	if len(m.confirmResponses) > 0 {
+		c := m.confirmResponses[0]
+		m.confirmResponses = m.confirmResponses[1:]
+		confirm = &c
+	}
+	m.mu.Unlock()
+
+	if err != nil {
+		return err
+	}
+
+	if confirmEnabled && notify != nil {
+		if confirm != nil {
+			notify <- *confirm
+		} else if autoConfirm {
+			notify <- amqp.Confirmation{DeliveryTag: uint64(callIndex), Ack: true}
+		}
+	}
+
+	return nil
+}
+
 func (m *mockChannel) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error {
 	m.mu.Lock()
 	if m.closed {
@@ -152,23 +231,43 @@ func (m *mockChannel) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error {
 	return receiver
 }
 
+func (m *mockChannel) NotifyPublish(receiver chan amqp.Confirmation) chan amqp.Confirmation {
+	m.mu.Lock()
+	if m.closed {
+		close(receiver)
+		m.mu.Unlock()
+		return receiver
+	}
+	m.notifyPublish = receiver
+	m.mu.Unlock()
+	return receiver
+}
+
 func (m *mockChannel) triggerClose() {
 	m.mu.Lock()
 	if m.closed {
 		notify := m.notify
+		notifyPublish := m.notifyPublish
 		m.mu.Unlock()
 		if notify != nil {
 			close(notify)
 		}
+		if notifyPublish != nil {
+			close(notifyPublish)
+		}
 		return
 	}
 	notify := m.notify
+	notifyPublish := m.notifyPublish
 	m.closed = true
 	m.mu.Unlock()
 
 	if notify != nil {
 		notify <- &amqp.Error{Code: 541, Reason: "channel closed"}
 		close(notify)
+	}
+	if notifyPublish != nil {
+		close(notifyPublish)
 	}
 }
 
@@ -180,4 +279,26 @@ func (m *mockChannel) lastQoS() *qosCall {
 	}
 	call := m.qosCalls[len(m.qosCalls)-1]
 	return &call
+}
+
+func (m *mockChannel) lastPublish() *publishCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.publishCalls) == 0 {
+		return nil
+	}
+	call := m.publishCalls[len(m.publishCalls)-1]
+	return &call
+}
+
+func (m *mockChannel) queuePublishError(err error) {
+	m.mu.Lock()
+	m.publishErrors = append(m.publishErrors, err)
+	m.mu.Unlock()
+}
+
+func (m *mockChannel) queueConfirmation(confirm amqp.Confirmation) {
+	m.mu.Lock()
+	m.confirmResponses = append(m.confirmResponses, confirm)
+	m.mu.Unlock()
 }

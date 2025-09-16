@@ -44,7 +44,10 @@ type amqpConnection interface {
 type amqpChannel interface {
 	Close() error
 	Qos(prefetchCount, prefetchSize int, global bool) error
+	Confirm(noWait bool) error
+	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 	NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
+	NotifyPublish(receiver chan amqp.Confirmation) chan amqp.Confirmation
 }
 
 type connectionPool struct {
@@ -248,8 +251,20 @@ func (r *realChannel) Qos(prefetchCount, prefetchSize int, global bool) error {
 	return r.ch.Qos(prefetchCount, prefetchSize, global)
 }
 
+func (r *realChannel) Confirm(noWait bool) error {
+	return r.ch.Confirm(noWait)
+}
+
+func (r *realChannel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+	return r.ch.Publish(exchange, key, mandatory, immediate, msg)
+}
+
 func (r *realChannel) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error {
 	return r.ch.NotifyClose(receiver)
+}
+
+func (r *realChannel) NotifyPublish(receiver chan amqp.Confirmation) chan amqp.Confirmation {
+	return r.ch.NotifyPublish(receiver)
 }
 
 type pooledConnection struct {
