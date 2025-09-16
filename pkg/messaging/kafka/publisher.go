@@ -39,6 +39,7 @@ type kafkaPublisher struct {
 	config      *messaging.PublisherConfig
 	partitioner PartitionStrategy
 	producerID  string
+	serde       *schemaSerDe
 
 	metricsMu sync.RWMutex
 	metrics   messaging.PublisherMetrics
@@ -48,17 +49,26 @@ type kafkaPublisher struct {
 	txCounter uint64
 }
 
-func newKafkaPublisher(pool *producerPool, cfg *messaging.PublisherConfig) (*kafkaPublisher, error) {
+func newKafkaPublisher(pool *producerPool, cfg *messaging.PublisherConfig, registries *schemaRegistryManager) (*kafkaPublisher, error) {
 	cpy := *cfg
 	partitioner, err := strategyFromConfig(&cpy)
 	if err != nil {
 		return nil, err
+	}
+
+	var serde *schemaSerDe
+	if cfg.Serialization != nil && cfg.Serialization.SchemaRegistry != nil {
+		serde, err = newSchemaSerDe(cfg.Serialization, registries)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &kafkaPublisher{
 		pool:        pool,
 		config:      &cpy,
 		partitioner: partitioner,
 		producerID:  uuid.NewString(),
+		serde:       serde,
 		metrics: messaging.PublisherMetrics{
 			ConnectionStatus: "active",
 		},
@@ -66,7 +76,11 @@ func newKafkaPublisher(pool *producerPool, cfg *messaging.PublisherConfig) (*kaf
 }
 
 func (p *kafkaPublisher) Publish(ctx context.Context, message *messaging.Message) error {
-	km := p.toKafkaMessage(message)
+	prepared, err := p.prepareMessage(ctx, message)
+	if err != nil {
+		return err
+	}
+	km := p.toKafkaMessage(prepared)
 	return p.pool.PublishSync(ctx, p.config.Topic, km, p.config)
 }
 
@@ -76,18 +90,30 @@ func (p *kafkaPublisher) PublishBatch(ctx context.Context, messages []*messaging
 	}
 	batch := make([]KafkaMessage, 0, len(messages))
 	for _, m := range messages {
-		batch = append(batch, p.toKafkaMessage(m))
+		prepared, err := p.prepareMessage(ctx, m)
+		if err != nil {
+			return err
+		}
+		batch = append(batch, p.toKafkaMessage(prepared))
 	}
 	return p.pool.PublishBatchSync(ctx, p.config.Topic, batch, p.config)
 }
 
 func (p *kafkaPublisher) PublishWithConfirm(ctx context.Context, message *messaging.Message) (*messaging.PublishConfirmation, error) {
-	km := p.toKafkaMessage(message)
+	prepared, err := p.prepareMessage(ctx, message)
+	if err != nil {
+		return nil, err
+	}
+	km := p.toKafkaMessage(prepared)
 	return p.pool.PublishWithConfirm(ctx, p.config.Topic, km, p.config)
 }
 
 func (p *kafkaPublisher) PublishAsync(ctx context.Context, message *messaging.Message, callback messaging.PublishCallback) error {
-	km := p.toKafkaMessage(message)
+	prepared, err := p.prepareMessage(ctx, message)
+	if err != nil {
+		return err
+	}
+	km := p.toKafkaMessage(prepared)
 	return p.pool.PublishAsync(ctx, p.config.Topic, km, p.config, callback)
 }
 
@@ -97,6 +123,13 @@ func (p *kafkaPublisher) toKafkaMessage(message *messaging.Message) KafkaMessage
 		p.partitioner.Assign(message, &km)
 	}
 	return km
+}
+
+func (p *kafkaPublisher) prepareMessage(ctx context.Context, message *messaging.Message) (*messaging.Message, error) {
+	if p.serde == nil {
+		return message, nil
+	}
+	return p.serde.Encode(ctx, message)
 }
 
 func (p *kafkaPublisher) BeginTransaction(ctx context.Context) (messaging.Transaction, error) {
@@ -221,8 +254,12 @@ func (tx *kafkaTransaction) Publish(ctx context.Context, message *messaging.Mess
 	if message == nil {
 		return messaging.NewTransactionError("message cannot be nil", nil)
 	}
+	prepared, err := tx.publisher.prepareMessage(ctx, message)
+	if err != nil {
+		return err
+	}
 	// Convert to Kafka message and stamp transactional metadata for idempotency
-	km := tx.publisher.toKafkaMessage(message)
+	km := tx.publisher.toKafkaMessage(prepared)
 	ensureHeaders(&km)
 	km.Headers[transactionIDHeader] = tx.id
 	km.Headers[transactionProducerHdr] = tx.publisher.producerID

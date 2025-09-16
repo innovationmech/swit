@@ -191,7 +191,7 @@ func TestKafkaPublisher_HashPartitioningConsistentKey(t *testing.T) {
 	}
 	defer pool.Close()
 
-	publisher, err := newKafkaPublisher(pool, pubCfg)
+	publisher, err := newKafkaPublisher(pool, pubCfg, newSchemaRegistryManager())
 	if err != nil {
 		t.Fatalf("newKafkaPublisher error: %v", err)
 	}

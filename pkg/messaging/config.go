@@ -606,6 +606,9 @@ type PublisherConfig struct {
 	// Routing configuration
 	Routing RoutingConfig `yaml:"routing" json:"routing"`
 
+	// Serialization controls payload encoding and schema registry integration.
+	Serialization *SerializationOptions `yaml:"serialization,omitempty" json:"serialization,omitempty"`
+
 	// Batching configuration
 	Batching BatchingConfig `yaml:"batching" json:"batching"`
 
@@ -691,6 +694,9 @@ type SubscriberConfig struct {
 
 	// ConsumerGroup name
 	ConsumerGroup string `yaml:"consumer_group" json:"consumer_group" validate:"required"`
+
+	// Serialization configures how payloads should be decoded and validated.
+	Serialization *SerializationOptions `yaml:"serialization,omitempty" json:"serialization,omitempty"`
 
 	// Subscription type (shared, exclusive, failover)
 	Type SubscriptionType `yaml:"type" json:"type" default:"shared"`
@@ -1068,6 +1074,12 @@ func (cm *ConfigManager) validatePublisherConfig(config *PublisherConfig) error 
 		return NewConfigError("publisher queue_size must be positive", nil)
 	}
 
+	if config.Serialization != nil {
+		if err := config.Serialization.Validate(); err != nil {
+			return fmt.Errorf("serialization config validation failed: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1079,6 +1091,12 @@ func (cm *ConfigManager) validateSubscriberConfig(config *SubscriberConfig) erro
 
 	if config.ConsumerGroup == "" {
 		return NewConfigError("subscriber consumer_group is required", nil)
+	}
+
+	if config.Serialization != nil {
+		if err := config.Serialization.Validate(); err != nil {
+			return fmt.Errorf("serialization config validation failed: %w", err)
+		}
 	}
 
 	validTypes := []SubscriptionType{SubscriptionShared, SubscriptionExclusive, SubscriptionFailover}

@@ -78,6 +78,7 @@ type kafkaSubscriber struct {
 	config    *messaging.SubscriberConfig
 
 	readers map[string]kafkaReader // topic -> reader
+	serde   *schemaSerDe
 
 	handler    messaging.MessageHandler
 	middleware []messaging.Middleware
@@ -94,12 +95,21 @@ type kafkaSubscriber struct {
 	lastRebalance atomic.Value // time.Time
 }
 
-func newKafkaSubscriber(brokerCfg *messaging.BrokerConfig, cfg *messaging.SubscriberConfig) (*kafkaSubscriber, error) {
+func newKafkaSubscriber(brokerCfg *messaging.BrokerConfig, cfg *messaging.SubscriberConfig, registries *schemaRegistryManager) (*kafkaSubscriber, error) {
 	cpy := *cfg
+	var serde *schemaSerDe
+	var err error
+	if cfg.Serialization != nil && cfg.Serialization.SchemaRegistry != nil {
+		serde, err = newSchemaSerDe(cfg.Serialization, registries)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &kafkaSubscriber{
 		brokerCfg: brokerCfg,
 		config:    &cpy,
 		readers:   make(map[string]kafkaReader, len(cfg.Topics)),
+		serde:     serde,
 		metrics:   messaging.SubscriberMetrics{},
 	}, nil
 }
@@ -214,6 +224,15 @@ func (s *kafkaSubscriber) consumeLoop(r kafkaReader) {
 
 			start := time.Now()
 			msg := s.toMessage(rec)
+			decoded, decodeErr := s.prepareIncomingMessage(s.ctx, msg)
+			if decodeErr != nil {
+				s.recordFailure(decodeErr)
+				s.handler.OnError(s.ctx, msg, decodeErr)
+				return
+			}
+			if decoded != nil {
+				msg = decoded
+			}
 
 			// Processing timeout per config
 			procTimeout := s.config.Processing.MaxProcessingTime
@@ -276,6 +295,21 @@ func (s *kafkaSubscriber) toMessage(rec kafkaRecord) *messaging.Message {
 			"offset":    rec.Offset,
 		},
 	}
+}
+
+func (s *kafkaSubscriber) prepareIncomingMessage(ctx context.Context, message *messaging.Message) (*messaging.Message, error) {
+	if s.serde == nil {
+		return message, nil
+	}
+	return s.serde.Decode(ctx, message)
+}
+
+func (s *kafkaSubscriber) recordFailure(_ error) {
+	s.metricsMu.Lock()
+	s.metrics.MessagesConsumed++
+	s.metrics.MessagesFailed++
+	s.metrics.LastActivity = time.Now()
+	s.metricsMu.Unlock()
 }
 
 func (s *kafkaSubscriber) makeMessageID(rec kafkaRecord) string {

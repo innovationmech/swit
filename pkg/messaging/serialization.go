@@ -25,7 +25,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"sync"
+	"time"
 )
 
 // SerializationFormat represents the type of serialization format.
@@ -139,6 +141,37 @@ type SerializationOptions struct {
 	Timeout string `json:"timeout,omitempty" validate:"omitempty,duration"`
 }
 
+// Validate ensures serialization options are well-formed before use.
+func (o *SerializationOptions) Validate() error {
+	if o == nil {
+		return nil
+	}
+
+	switch o.Format {
+	case FormatJSON, FormatAvro, FormatProtobuf:
+	default:
+		return fmt.Errorf("unsupported serialization format: %s", o.Format)
+	}
+
+	if o.MaxSize < 0 {
+		return fmt.Errorf("max_size must be non-negative")
+	}
+
+	if o.Timeout != "" {
+		if _, err := time.ParseDuration(o.Timeout); err != nil {
+			return fmt.Errorf("invalid timeout duration: %w", err)
+		}
+	}
+
+	if o.SchemaRegistry != nil {
+		if err := o.SchemaRegistry.Validate(); err != nil {
+			return fmt.Errorf("schema registry config invalid: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // SchemaRegistryConfig provides configuration for schema registry integration.
 type SchemaRegistryConfig struct {
 	// URL is the schema registry endpoint URL.
@@ -155,6 +188,36 @@ type SchemaRegistryConfig struct {
 
 	// CacheSize specifies the maximum number of schemas to cache.
 	CacheSize int `json:"cache_size,omitempty" validate:"min=0"`
+}
+
+// Validate checks schema registry configuration for completeness and consistency.
+func (c *SchemaRegistryConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+
+	if c.URL == "" {
+		return fmt.Errorf("schema registry url is required")
+	}
+	if _, err := url.Parse(c.URL); err != nil {
+		return fmt.Errorf("invalid schema registry url: %w", err)
+	}
+
+	if c.Subject == "" {
+		return fmt.Errorf("schema registry subject is required")
+	}
+
+	if c.CacheSize < 0 {
+		return fmt.Errorf("schema registry cache size must be non-negative")
+	}
+
+	if c.Authentication != nil {
+		if err := c.Authentication.Validate(); err != nil {
+			return fmt.Errorf("authentication config invalid: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // SchemaRegistryAuth provides authentication credentials for schema registry.
@@ -176,6 +239,32 @@ type SchemaRegistryAuth struct {
 
 	// Headers provides custom authentication headers.
 	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// Validate ensures the authentication configuration is complete for the selected type.
+func (a *SchemaRegistryAuth) Validate() error {
+	if a == nil {
+		return nil
+	}
+
+	switch a.Type {
+	case "basic":
+		if a.Username == "" || a.Password == "" {
+			return fmt.Errorf("basic auth requires username and password")
+		}
+	case "bearer":
+		if a.Token == "" {
+			return fmt.Errorf("bearer auth requires a token")
+		}
+	case "api-key":
+		if a.APIKey == "" {
+			return fmt.Errorf("api-key auth requires an api_key value")
+		}
+	default:
+		return fmt.Errorf("unsupported authentication type: %s", a.Type)
+	}
+
+	return nil
 }
 
 // SerializationRegistry provides a pluggable registry for message serializers.
@@ -516,6 +605,16 @@ type SerializationError struct {
 	Format  SerializationFormat `json:"format,omitempty"`
 	Message string              `json:"message"`
 	Cause   error               `json:"-"`
+}
+
+// NewSerializationError creates a serialization error without format context.
+func NewSerializationError(message string, cause error) *SerializationError {
+	return &SerializationError{Message: message, Cause: cause}
+}
+
+// NewSerializationErrorWithFormat creates a serialization error for a specific format.
+func NewSerializationErrorWithFormat(format SerializationFormat, message string, cause error) *SerializationError {
+	return &SerializationError{Format: format, Message: message, Cause: cause}
 }
 
 // Error implements the error interface.
