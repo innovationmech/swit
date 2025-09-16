@@ -39,10 +39,12 @@ type kafkaBroker struct {
 
 	// producerPool provides high-throughput publishing shared across topic publishers
 	producerPool *producerPool
+
+	registries *schemaRegistryManager
 }
 
 func newKafkaBroker(cfg *messaging.BrokerConfig) *kafkaBroker {
-	return &kafkaBroker{config: cfg}
+	return &kafkaBroker{config: cfg, registries: newSchemaRegistryManager()}
 }
 
 func (b *kafkaBroker) Connect(ctx context.Context) error {
@@ -102,7 +104,7 @@ func (b *kafkaBroker) CreatePublisher(config messaging.PublisherConfig) (messagi
 		b.producerPool = pool
 	}
 
-	pub, err := newKafkaPublisher(b.producerPool, &config)
+	pub, err := newKafkaPublisher(b.producerPool, &config, b.registries)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +125,7 @@ func (b *kafkaBroker) CreateSubscriber(config messaging.SubscriberConfig) (messa
 		return nil, messaging.NewConfigError("subscriber consumer_group is required", nil)
 	}
 
-	sub, err := newKafkaSubscriber(b.config, &config)
+	sub, err := newKafkaSubscriber(b.config, &config, b.registries)
 	if err != nil {
 		return nil, err
 	}

@@ -73,7 +73,7 @@ func TestKafkaSubscriber_Subscribe_And_Commit(t *testing.T) {
 
 	cfg := &messaging.BrokerConfig{Type: messaging.BrokerTypeKafka, Endpoints: []string{"localhost:9092"}}
 	subCfg := &messaging.SubscriberConfig{Topics: []string{"orders"}, ConsumerGroup: "cg"}
-	sub, err := newKafkaSubscriber(cfg, subCfg)
+	sub, err := newKafkaSubscriber(cfg, subCfg, newSchemaRegistryManager())
 	if err != nil {
 		t.Fatalf("newKafkaSubscriber: %v", err)
 	}

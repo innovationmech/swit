@@ -54,7 +54,7 @@ func TestKafkaPublisherBeginTransaction_NotSupported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating producer pool: %v", err)
 	}
-	publisher, err := newKafkaPublisher(pool, pubCfg)
+	publisher, err := newKafkaPublisher(pool, pubCfg, newSchemaRegistryManager())
 	if err != nil {
 		t.Fatalf("unexpected error creating publisher: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestKafkaPublisherTransactionCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating producer pool: %v", err)
 	}
-	publisher, err := newKafkaPublisher(pool, pubCfg)
+	publisher, err := newKafkaPublisher(pool, pubCfg, newSchemaRegistryManager())
 	if err != nil {
 		t.Fatalf("unexpected error creating publisher: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestKafkaPublisherTransactionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating producer pool: %v", err)
 	}
-	publisher, err := newKafkaPublisher(pool, pubCfg)
+	publisher, err := newKafkaPublisher(pool, pubCfg, newSchemaRegistryManager())
 	if err != nil {
 		t.Fatalf("unexpected error creating publisher: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestKafkaPublisherTransactionConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating producer pool: %v", err)
 	}
-	publisher, err := newKafkaPublisher(pool, pubCfg)
+	publisher, err := newKafkaPublisher(pool, pubCfg, newSchemaRegistryManager())
 	if err != nil {
 		t.Fatalf("unexpected error creating publisher: %v", err)
 	}
