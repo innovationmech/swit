@@ -48,6 +48,9 @@ type amqpChannel interface {
 	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 	NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
 	NotifyPublish(receiver chan amqp.Confirmation) chan amqp.Confirmation
+	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
+	Ack(tag uint64, multiple bool) error
+	Nack(tag uint64, multiple, requeue bool) error
 }
 
 type connectionPool struct {
@@ -265,6 +268,18 @@ func (r *realChannel) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error {
 
 func (r *realChannel) NotifyPublish(receiver chan amqp.Confirmation) chan amqp.Confirmation {
 	return r.ch.NotifyPublish(receiver)
+}
+
+func (r *realChannel) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error) {
+	return r.ch.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+}
+
+func (r *realChannel) Ack(tag uint64, multiple bool) error {
+	return r.ch.Ack(tag, multiple)
+}
+
+func (r *realChannel) Nack(tag uint64, multiple, requeue bool) error {
+	return r.ch.Nack(tag, multiple, requeue)
 }
 
 type pooledConnection struct {

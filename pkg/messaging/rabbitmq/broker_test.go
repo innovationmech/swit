@@ -93,9 +93,11 @@ func TestRabbitBrokerCreatePublisher(t *testing.T) {
 	// Subscriber creation remains unimplemented.
 	_, err = broker.CreateSubscriber(messaging.SubscriberConfig{})
 	require.Error(t, err)
-	msgErr, ok := err.(*messaging.MessagingError)
-	require.True(t, ok)
-	require.Equal(t, messaging.ErrNotImplemented, msgErr.Code)
+	// Missing topics and consumer group should be config errors now
+	_, err = broker.CreateSubscriber(messaging.SubscriberConfig{Topics: []string{"orders"}})
+	require.Error(t, err)
+	_, err = broker.CreateSubscriber(messaging.SubscriberConfig{Topics: []string{"orders"}, ConsumerGroup: "cg"})
+	require.NoError(t, err)
 }
 
 func TestRabbitBrokerReconnectOnConnect(t *testing.T) {
