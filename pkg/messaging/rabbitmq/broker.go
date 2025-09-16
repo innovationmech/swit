@@ -126,13 +126,25 @@ func (b *rabbitBroker) CreatePublisher(config messaging.PublisherConfig) (messag
 }
 
 func (b *rabbitBroker) CreateSubscriber(config messaging.SubscriberConfig) (messaging.EventSubscriber, error) {
-	_ = config
-	return nil, &messaging.MessagingError{
-		Code:      messaging.ErrNotImplemented,
-		Message:   "rabbitmq subscriber not implemented",
-		Retryable: false,
-		Timestamp: time.Now(),
+	b.mu.RLock()
+	started := b.started
+	b.mu.RUnlock()
+	if !started {
+		return nil, messaging.ErrBrokerNotConnected
 	}
+
+	if len(config.Topics) == 0 {
+		return nil, messaging.NewConfigError("subscriber topics (queues) are required", nil)
+	}
+	if config.ConsumerGroup == "" {
+		return nil, messaging.NewConfigError("subscriber consumer_group is required", nil)
+	}
+
+	sub, err := newRabbitSubscriber(b.pool, b.config, b.rabbitConfig, &config)
+	if err != nil {
+		return nil, err
+	}
+	return sub, nil
 }
 
 func (b *rabbitBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus, error) {

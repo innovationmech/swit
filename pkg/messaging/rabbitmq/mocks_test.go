@@ -144,6 +144,15 @@ type mockChannel struct {
 	publishErrors    []error
 	confirmResponses []amqp.Confirmation
 	autoConfirm      bool
+
+	// consumer/ack simulation
+	delivered chan amqp.Delivery
+	acks      []uint64
+	nacks     []struct {
+		tag      uint64
+		multiple bool
+		requeue  bool
+	}
 }
 
 func newMockChannel() *mockChannel {
@@ -243,6 +252,44 @@ func (m *mockChannel) NotifyPublish(receiver chan amqp.Confirmation) chan amqp.C
 	return receiver
 }
 
+func (m *mockChannel) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error) {
+	m.mu.Lock()
+	if m.delivered == nil {
+		m.delivered = make(chan amqp.Delivery, 100)
+	}
+	ch := m.delivered
+	m.mu.Unlock()
+	return ch, nil
+}
+
+func (m *mockChannel) Ack(tag uint64, multiple bool) error {
+	m.mu.Lock()
+	m.acks = append(m.acks, tag)
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockChannel) Nack(tag uint64, multiple, requeue bool) error {
+	m.mu.Lock()
+	m.nacks = append(m.nacks, struct {
+		tag      uint64
+		multiple bool
+		requeue  bool
+	}{tag: tag, multiple: multiple, requeue: requeue})
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockChannel) enqueueDelivery(d amqp.Delivery) {
+	m.mu.Lock()
+	if m.delivered == nil {
+		m.delivered = make(chan amqp.Delivery, 100)
+	}
+	ch := m.delivered
+	m.mu.Unlock()
+	ch <- d
+}
+
 func (m *mockChannel) triggerClose() {
 	m.mu.Lock()
 	if m.closed {
@@ -301,4 +348,22 @@ func (m *mockChannel) queueConfirmation(confirm amqp.Confirmation) {
 	m.mu.Lock()
 	m.confirmResponses = append(m.confirmResponses, confirm)
 	m.mu.Unlock()
+}
+
+func (m *mockChannel) ackedTags() []uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]uint64, len(m.acks))
+	copy(result, m.acks)
+	return result
+}
+
+func (m *mockChannel) nackedTags() []uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]uint64, 0, len(m.nacks))
+	for _, n := range m.nacks {
+		result = append(result, n.tag)
+	}
+	return result
 }
