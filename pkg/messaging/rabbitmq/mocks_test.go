@@ -145,6 +145,32 @@ type mockChannel struct {
 	confirmResponses []amqp.Confirmation
 	autoConfirm      bool
 
+	// topology calls
+	exchangesDeclared []struct {
+		name       string
+		kind       string
+		durable    bool
+		autoDelete bool
+		internal   bool
+		noWait     bool
+		args       amqp.Table
+	}
+	queuesDeclared []struct {
+		name       string
+		durable    bool
+		autoDelete bool
+		exclusive  bool
+		noWait     bool
+		args       amqp.Table
+	}
+	queueBinds []struct {
+		name     string
+		key      string
+		exchange string
+		noWait   bool
+		args     amqp.Table
+	}
+
 	// consumer/ack simulation
 	delivered chan amqp.Delivery
 	acks      []uint64
@@ -227,6 +253,48 @@ func (m *mockChannel) Publish(exchange, key string, mandatory, immediate bool, m
 		}
 	}
 
+	return nil
+}
+
+func (m *mockChannel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	m.mu.Lock()
+	m.exchangesDeclared = append(m.exchangesDeclared, struct {
+		name       string
+		kind       string
+		durable    bool
+		autoDelete bool
+		internal   bool
+		noWait     bool
+		args       amqp.Table
+	}{name: name, kind: kind, durable: durable, autoDelete: autoDelete, internal: internal, noWait: noWait, args: args})
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockChannel) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+	m.mu.Lock()
+	m.queuesDeclared = append(m.queuesDeclared, struct {
+		name       string
+		durable    bool
+		autoDelete bool
+		exclusive  bool
+		noWait     bool
+		args       amqp.Table
+	}{name: name, durable: durable, autoDelete: autoDelete, exclusive: exclusive, noWait: noWait, args: args})
+	m.mu.Unlock()
+	return amqp.Queue{Name: name}, nil
+}
+
+func (m *mockChannel) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
+	m.mu.Lock()
+	m.queueBinds = append(m.queueBinds, struct {
+		name     string
+		key      string
+		exchange string
+		noWait   bool
+		args     amqp.Table
+	}{name: name, key: key, exchange: exchange, noWait: noWait, args: args})
+	m.mu.Unlock()
 	return nil
 }
 

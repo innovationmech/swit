@@ -100,6 +100,61 @@ func TestRabbitBrokerCreatePublisher(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestRabbitBrokerSetupTopologyOnConnect(t *testing.T) {
+	base := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeRabbitMQ,
+		Endpoints: []string{"amqp://localhost:5672"},
+	}
+	base.Connection.PoolSize = 1
+
+	rabbitCfg := DefaultConfig()
+	// Configure simple topology
+	rabbitCfg.Topology.Exchanges["orders"] = ExchangeConfig{
+		Name:       "orders",
+		Type:       "topic",
+		Durable:    true,
+		AutoDelete: false,
+		Internal:   false,
+		Arguments:  map[string]interface{}{"alternate-exchange": "orders.alternate"},
+	}
+	rabbitCfg.Topology.Queues["orders.created"] = QueueConfig{
+		Name:       "orders.created",
+		Durable:    true,
+		AutoDelete: false,
+		Exclusive:  false,
+		Arguments: map[string]interface{}{
+			"x-message-ttl":          3600000,
+			"x-dead-letter-exchange": "orders.dlx",
+		},
+	}
+	rabbitCfg.Topology.Bindings = append(rabbitCfg.Topology.Bindings, BindingConfig{
+		Queue:      "orders.created",
+		Exchange:   "orders",
+		RoutingKey: "order.created.*",
+	})
+
+	broker := newRabbitBroker(base, rabbitCfg)
+
+	// Inject mock connection returning our mockChannel to observe topology calls
+	mconn := newMockConnection(func() amqpChannel { return newMockChannel() })
+	broker.pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
+		return mconn, nil
+	}
+
+	require.NoError(t, broker.Connect(context.Background()))
+	require.True(t, broker.IsConnected())
+
+	// Inspect the first created channel during topology setup
+	require.GreaterOrEqual(t, len(mconn.channels), 1)
+	mc, ok := mconn.channels[0].(*mockChannel)
+	require.True(t, ok)
+
+	// At least one exchange and one queue declared and one bind performed
+	require.NotEmpty(t, mc.exchangesDeclared)
+	require.NotEmpty(t, mc.queuesDeclared)
+	require.NotEmpty(t, mc.queueBinds)
+}
+
 func TestRabbitBrokerReconnectOnConnect(t *testing.T) {
 	base := &messaging.BrokerConfig{
 		Type:      messaging.BrokerTypeRabbitMQ,
