@@ -46,6 +46,10 @@ type amqpChannel interface {
 	Qos(prefetchCount, prefetchSize int, global bool) error
 	Confirm(noWait bool) error
 	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	// Topology management
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
+	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
 	NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
 	NotifyPublish(receiver chan amqp.Confirmation) chan amqp.Confirmation
 	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
@@ -260,6 +264,18 @@ func (r *realChannel) Confirm(noWait bool) error {
 
 func (r *realChannel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
 	return r.ch.Publish(exchange, key, mandatory, immediate, msg)
+}
+
+func (r *realChannel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	return r.ch.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+}
+
+func (r *realChannel) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+	return r.ch.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
+}
+
+func (r *realChannel) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
+	return r.ch.QueueBind(name, key, exchange, noWait, args)
 }
 
 func (r *realChannel) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error {

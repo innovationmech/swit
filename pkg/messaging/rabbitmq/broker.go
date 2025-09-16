@@ -73,6 +73,15 @@ func (b *rabbitBroker) Connect(ctx context.Context) error {
 		return err
 	}
 
+	// Setup topology (exchanges, queues, bindings) if configured
+	if err := setupTopology(ctx, b.pool, b.rabbitConfig.Topology); err != nil {
+		b.mu.Lock()
+		b.metrics.ConnectionFailures++
+		b.metrics.LastConnectionError = err.Error()
+		b.mu.Unlock()
+		return err
+	}
+
 	b.mu.Lock()
 	b.started = true
 	b.metrics.ConnectionStatus = "connected"
