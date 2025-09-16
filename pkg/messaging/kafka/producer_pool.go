@@ -114,7 +114,7 @@ func (tp *topicProducer) workerLoop() {
 					Partition: -1,
 					Offset:    -1,
 					Timestamp: time.Now(),
-					Metadata:  map[string]string{"topic": op.topic},
+					Metadata:  buildConfirmationMetadata(op.topic, op.single),
 				}
 				if op.callback != nil {
 					op.callback(conf, nil)
@@ -288,4 +288,24 @@ func (p *producerPool) Close() error {
 		delete(p.topics, topic)
 	}
 	return nil
+}
+
+func buildConfirmationMetadata(topic string, msg *KafkaMessage) map[string]string {
+	metadata := map[string]string{"topic": topic}
+	if msg == nil {
+		return metadata
+	}
+	if strategy, ok := msg.Headers[partitionStrategyHeader]; ok && strategy != "" {
+		metadata["partition_strategy"] = strategy
+	}
+	if key, ok := msg.Headers[partitionKeyHeader]; ok && key != "" {
+		metadata["partition_key"] = key
+	}
+	if source, ok := msg.Headers[partitionSourceHeader]; ok && source != "" {
+		metadata["partition_source"] = source
+	}
+	if fallback, ok := msg.Headers[partitionFallbackHeader]; ok && fallback != "" {
+		metadata["partition_fallback"] = fallback
+	}
+	return metadata
 }

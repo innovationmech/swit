@@ -29,17 +29,22 @@ import (
 )
 
 type kafkaPublisher struct {
-	pool   *producerPool
-	config *messaging.PublisherConfig
+	pool        *producerPool
+	config      *messaging.PublisherConfig
+	partitioner PartitionStrategy
 }
 
-func newKafkaPublisher(pool *producerPool, cfg *messaging.PublisherConfig) *kafkaPublisher {
+func newKafkaPublisher(pool *producerPool, cfg *messaging.PublisherConfig) (*kafkaPublisher, error) {
 	cpy := *cfg
-	return &kafkaPublisher{pool: pool, config: &cpy}
+	partitioner, err := strategyFromConfig(&cpy)
+	if err != nil {
+		return nil, err
+	}
+	return &kafkaPublisher{pool: pool, config: &cpy, partitioner: partitioner}, nil
 }
 
 func (p *kafkaPublisher) Publish(ctx context.Context, message *messaging.Message) error {
-	km := toKafkaMessage(p.config.Topic, message)
+	km := p.toKafkaMessage(message)
 	return p.pool.PublishSync(ctx, p.config.Topic, km, p.config)
 }
 
@@ -49,19 +54,27 @@ func (p *kafkaPublisher) PublishBatch(ctx context.Context, messages []*messaging
 	}
 	batch := make([]KafkaMessage, 0, len(messages))
 	for _, m := range messages {
-		batch = append(batch, toKafkaMessage(p.config.Topic, m))
+		batch = append(batch, p.toKafkaMessage(m))
 	}
 	return p.pool.PublishBatchSync(ctx, p.config.Topic, batch, p.config)
 }
 
 func (p *kafkaPublisher) PublishWithConfirm(ctx context.Context, message *messaging.Message) (*messaging.PublishConfirmation, error) {
-	km := toKafkaMessage(p.config.Topic, message)
+	km := p.toKafkaMessage(message)
 	return p.pool.PublishWithConfirm(ctx, p.config.Topic, km, p.config)
 }
 
 func (p *kafkaPublisher) PublishAsync(ctx context.Context, message *messaging.Message, callback messaging.PublishCallback) error {
-	km := toKafkaMessage(p.config.Topic, message)
+	km := p.toKafkaMessage(message)
 	return p.pool.PublishAsync(ctx, p.config.Topic, km, p.config, callback)
+}
+
+func (p *kafkaPublisher) toKafkaMessage(message *messaging.Message) KafkaMessage {
+	km := toKafkaMessage(p.config.Topic, message)
+	if p.partitioner != nil {
+		p.partitioner.Assign(message, &km)
+	}
+	return km
 }
 
 func (p *kafkaPublisher) BeginTransaction(ctx context.Context) (messaging.Transaction, error) {
@@ -75,7 +88,7 @@ func (p *kafkaPublisher) GetMetrics() *messaging.PublisherMetrics {
 }
 
 func toKafkaMessage(topic string, m *messaging.Message) KafkaMessage {
-	headers := make(map[string]string, len(m.Headers)+3)
+	headers := make(map[string]string, len(m.Headers)+6)
 	for k, v := range m.Headers {
 		headers[k] = v
 	}
