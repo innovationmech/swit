@@ -15,6 +15,7 @@ SWIT 是一个现代化的微服务框架，提供用户认证、内容管理等
 ### 🏗️ 核心架构
 - [服务开发指南](./service-development-guide.md) - **ServiceHandler 模式开发指南**
 - [服务架构分析](./service-architecture-analysis.md) - ServiceHandler 架构深度分析
+- [Kafka 处理-生产事务模式](./architecture/kafka-process-and-produce.md) - Kafka 事务流程与 Exactly-Once 实践
 
 
 ## 服务文档
