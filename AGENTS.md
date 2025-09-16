@@ -1,44 +1,19 @@
 # Repository Guidelines
 
-## Project Structure & Modules
-- `cmd/`: Service/CLI entrypoints (`swit-serve`, `swit-auth`, `switctl`).
-- `pkg/`: Reusable framework packages (server, transport, middleware, discovery).
-- `internal/`: Reference services and internal-only code.
-- `api/proto` → sources; `api/gen` → generated code; keep gen code committed.
-- `examples/`: Minimal HTTP/gRPC and full-featured samples.
-- `docs/`: Generated API docs and guides; `_output/`: build artifacts.
-- `scripts/`: Makefile includes and tooling wrappers.
+## Project Structure & Module Organization
+The repository centers around Go services and shared messaging libraries. Entry points for binaries live under `cmd/` (for example `cmd/swit-serve`). Reusable packages that power messaging, transport, and middleware sit in `pkg/`, while reference implementations and service-specific logic reside in `internal/`. API definitions are split between `api/proto/` (source `.proto` files) and `api/gen/` (generated code that must stay committed). Supporting documentation and build artifacts can be found in `docs/` and `docs/_output/`, with tooling helpers collected in `scripts/`.
 
-## Build, Test, Develop
-- `make setup-dev`: Install dev tools (buf, swag, quality checks).
-- `make build` / `make build-dev`: Build all services (dev fast path skips full checks).
-- `make test`: Run all tests across `internal` and `pkg` (generates deps).
-- `make test-coverage`: Create `coverage.out` and `coverage.html`.
-- `make proto` / `make swagger`: Generate protobuf stubs and OpenAPI docs.
-- `make quality`: Tidy, format, vet, lint; `make quality-dev` for a faster pass.
-- Docker: `make docker`; run binaries from `./bin/` or images as needed.
+## Build, Test, and Development Commands
+Run `make setup-dev` once to install buf, swag, and the quality toolchain. `make build` produces all binaries with full checks; use `make build-dev` for a faster developer iteration. Execute `make test` (or `go test ./pkg/messaging/rabbitmq -v` when tightening scope) to run unit tests, and `make test-coverage` to generate `coverage.out` and `coverage.html`. Format, lint, and vet the codebase with `make quality`; `make quality-dev` offers a lighter pass. Regenerate protobufs via `make proto`, OpenAPI specs via `make swagger`, and container images with `make docker`.
 
-## Coding Style & Naming
-- Language: Go 1.23+. Format with `gofmt`; organize imports with `goimports`.
-- Packages: lower-case, no underscores (e.g., `transport`, `middleware`).
-- Files: `snake_case.go`; tests in `*_test.go` beside code.
-- Exports: Use Go idioms (`CamelCase`, clear godoc comments on exported items).
-- Protos: keep sources in `api/proto`, generated code in `api/gen` (do not edit).
+## Coding Style & Naming Conventions
+Code targets Go 1.23+ with `gofmt` and `goimports` enforcing formatting and import order. Package names remain lower-case without underscores; Go filenames prefer `snake_case.go` with tests co-located as `*_test.go`. Stick to idiomatic CamelCase for exported identifiers, provide godoc comments on exported types and functions, and keep configuration structures in YAML/JSON aligned with existing tags.
 
 ## Testing Guidelines
-- Framework: standard `go test`; table-driven tests preferred.
-- Scope helpers: `make test-advanced TYPE=race PACKAGE=internal` (also: `unit`, `bench`, `short`).
-- Coverage: keep meaningful unit coverage; verify via `make test-coverage` and review `coverage.html`.
+Tests rely on the standard library and favor table-driven patterns. When feasible, scope runs using `go test ./pkg/...` or issue-specific subsets. Use `make test-coverage` to inspect coverage artifacts and keep meaningful assertions. Name tests with the feature under test (e.g., `TestRabbitPublisherPublishWithConfirm`) and ensure mocks in `pkg/messaging/rabbitmq/mocks_test.go` stay consistent with the AMQP abstraction.
 
-## Commit & PR Guidelines
-- Style: Prefer Conventional Commits (`feat:`, `fix:`, `docs:`). Keep subject imperative; add scope when useful.
-- PRs must include: clear summary, linked issues (e.g., `Closes #123`), test updates, and docs when APIs change.
-- Pre-flight: `make quality && make test` must pass; include screenshots/logs for behavior changes.
+## Commit & Pull Request Guidelines
+Follow Conventional Commit prefixes (`feat:`, `fix:`, `docs:`, etc.) with imperative subjects and optional scopes (`feat(rabbitmq): ...`). Before opening a PR, run `make quality` and `make test`; capture command output or screenshots for behavioral changes. PR descriptions should summarize the change, link related issues using keywords like `Closes #301`, and note any configuration or migration steps. Allow maintainers to edit the branch when possible and keep the change surface focused.
 
-## Security & Configuration
-- Do not commit secrets. Use local env/config files; check `swit.yaml`, `switauth.yaml`, and service-specific YAML in repo as templates.
-- Validate inputs and timeouts when adding middleware/handlers; run `make quality-advanced OPERATION=security` for static checks if installed.
-
-## Architecture Notes
-- HTTP/gRPC coordination and DI live under `pkg/`; examples and `internal/*` show recommended integration patterns. Mirror these when adding new services under `cmd/`.
-
+## Security & Configuration Tips
+Never commit secrets—use the sample configs (`swit.yaml`, `switauth.yaml`, service-specific YAML) as templates. Validate broker endpoints, TLS options, and timeouts when updating messaging adapters, and lean on `make quality-advanced OPERATION=security` if the extended checks are available.
