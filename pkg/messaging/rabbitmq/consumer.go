@@ -24,6 +24,7 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,6 +55,10 @@ type rabbitSubscriber struct {
 	metrics   messaging.SubscriberMetrics
 
 	consumers map[string]*rabbitConsumer // queue -> consumer
+
+	// Derived retry/DLQ queues per source queue
+	retryQueues map[string]string
+	dlqQueues   map[string]string
 }
 
 type rabbitConsumer struct {
@@ -69,12 +74,14 @@ type rabbitConsumer struct {
 func newRabbitSubscriber(pool *connectionPool, brokerCfg *messaging.BrokerConfig, rabbitCfg *Config, cfg *messaging.SubscriberConfig) (*rabbitSubscriber, error) {
 	cpy := *cfg
 	sub := &rabbitSubscriber{
-		pool:      pool,
-		brokerCfg: brokerCfg,
-		rabbitCfg: rabbitCfg,
-		config:    &cpy,
-		metrics:   messaging.SubscriberMetrics{},
-		consumers: make(map[string]*rabbitConsumer, len(cfg.Topics)),
+		pool:        pool,
+		brokerCfg:   brokerCfg,
+		rabbitCfg:   rabbitCfg,
+		config:      &cpy,
+		metrics:     messaging.SubscriberMetrics{},
+		consumers:   make(map[string]*rabbitConsumer, len(cfg.Topics)),
+		retryQueues: make(map[string]string, len(cfg.Topics)),
+		dlqQueues:   make(map[string]string, len(cfg.Topics)),
 	}
 	return sub, nil
 }
@@ -134,6 +141,16 @@ func (s *rabbitSubscriber) startConsumer(queue string) (*rabbitConsumer, error) 
 			return nil, messaging.NewConfigError("failed to apply subscriber QoS", qerr)
 		}
 	}
+
+	// Ensure retry and DLQ topology for this queue (idempotent)
+	retryQ, dlqQ, topoErr := s.ensureRetryAndDLQ(session, queue)
+	if topoErr != nil {
+		_ = session.Close()
+		conn.ReleaseChannel(session)
+		return nil, messaging.NewConfigError("failed to ensure retry/DLQ topology", topoErr)
+	}
+	s.retryQueues[queue] = retryQ
+	s.dlqQueues[queue] = dlqQ
 
 	autoAck := s.config.Processing.AckMode == messaging.AckModeAuto
 	deliveries, err := session.channel.Consume(
@@ -243,21 +260,36 @@ func (s *rabbitSubscriber) consumeLoop(c *rabbitConsumer) {
 				// Manual acknowledgment path
 				if err != nil {
 					action := s.handler.OnError(pctx, msg, err)
+
+					// Extract attempt count from headers (x-retry-attempt)
+					attempt := extractRetryCount(delivery.Headers)
+
 					switch action {
 					case messaging.ErrorActionRetry, messaging.ErrorActionPause:
-						_ = c.session.channel.Nack(delivery.DeliveryTag, false, true)
+						maxRetries := s.config.DeadLetter.MaxRetries
+						if maxRetries <= 0 {
+							maxRetries = 3
+						}
+						if attempt+1 >= maxRetries {
+							_ = s.deadLetterMessage(pctx, c, &delivery)
+							if action == messaging.ErrorActionPause {
+								s.paused.Store(true)
+							}
+							return
+						}
+						_ = s.retryMessage(pctx, c, &delivery, attempt+1)
 						if action == messaging.ErrorActionPause {
 							s.paused.Store(true)
 						}
 						return
 					case messaging.ErrorActionDeadLetter:
-						_ = c.session.channel.Nack(delivery.DeliveryTag, false, false)
+						_ = s.deadLetterMessage(pctx, c, &delivery)
 						return
 					case messaging.ErrorActionDiscard:
 						_ = c.session.channel.Ack(delivery.DeliveryTag, false)
 						return
 					default:
-						_ = c.session.channel.Nack(delivery.DeliveryTag, false, true)
+						_ = s.retryMessage(pctx, c, &delivery, attempt+1)
 						return
 					}
 				}
@@ -367,6 +399,151 @@ func (s *rabbitSubscriber) Resume(ctx context.Context) error {
 	_ = ctx
 	s.paused.Store(false)
 	return nil
+}
+
+// ensureRetryAndDLQ declares per-queue retry and dead-letter queues with TTL-based delay.
+// Patterns:
+// - Retry queue: <queue>.retry with x-message-ttl -> dead-letter to original queue
+// - DLQ: <queue>.dlq bound via x-dead-letter in original queue or direct publishing on failure
+func (s *rabbitSubscriber) ensureRetryAndDLQ(session *channelWrapper, queue string) (string, string, error) {
+	retryQueue := queue + ".retry"
+	dlqQueue := queue + ".dlq"
+
+	// Retry TTL from subscriber retry initial delay, fallback to 5s
+	retryTTL := s.config.Retry.InitialDelay
+	if retryTTL <= 0 {
+		retryTTL = 5 * time.Second
+	}
+
+	// Declare retry queue with TTL and dead-letter back to original queue
+	retryArgs := amqp.Table{
+		"x-message-ttl":             int64(retryTTL / time.Millisecond),
+		"x-dead-letter-exchange":    "",
+		"x-dead-letter-routing-key": queue,
+	}
+	if _, err := session.channel.QueueDeclare(retryQueue, true, false, false, false, retryArgs); err != nil {
+		return "", "", err
+	}
+
+	// Declare DLQ with long TTL for retention
+	dlqTTL := s.config.DeadLetter.TTL
+	if dlqTTL <= 0 {
+		dlqTTL = 7 * 24 * time.Hour
+	}
+	dlqArgs := amqp.Table{
+		"x-message-ttl": int64(dlqTTL / time.Millisecond),
+	}
+	if _, err := session.channel.QueueDeclare(dlqQueue, true, false, false, false, dlqArgs); err != nil {
+		return "", "", err
+	}
+
+	return retryQueue, dlqQueue, nil
+}
+
+// retryMessage republishes the message to the retry queue with incremented attempt header, then acks the original.
+func (s *rabbitSubscriber) retryMessage(ctx context.Context, c *rabbitConsumer, d *amqp.Delivery, nextAttempt int) error {
+	retryQ := s.retryQueues[c.queue]
+	if retryQ == "" {
+		retryQ = c.queue + ".retry"
+	}
+
+	headers := amqp.Table{}
+	for k, v := range d.Headers {
+		headers[k] = v
+	}
+	headers["x-retry-attempt"] = nextAttempt
+
+	pub := amqp.Publishing{
+		Headers:         headers,
+		Body:            d.Body,
+		MessageId:       d.MessageId,
+		Timestamp:       time.Now(),
+		CorrelationId:   d.CorrelationId,
+		ReplyTo:         d.ReplyTo,
+		Priority:        d.Priority,
+		DeliveryMode:    amqp.Persistent,
+		ContentType:     d.ContentType,
+		ContentEncoding: d.ContentEncoding,
+	}
+
+	// Publish to default exchange using routing key = queue name
+	if err := c.session.channel.Publish("", retryQ, false, false, pub); err != nil {
+		_ = c.session.channel.Nack(d.DeliveryTag, false, true)
+		return err
+	}
+
+	// Ack original after successful re-publish
+	_ = c.session.channel.Ack(d.DeliveryTag, false)
+	s.metricsMu.Lock()
+	s.metrics.MessagesRetried++
+	s.metricsMu.Unlock()
+	return nil
+}
+
+// deadLetterMessage republishes the message to DLQ and acks the original delivery.
+func (s *rabbitSubscriber) deadLetterMessage(ctx context.Context, c *rabbitConsumer, d *amqp.Delivery) error {
+	_ = ctx
+	dlq := s.dlqQueues[c.queue]
+	if dlq == "" {
+		dlq = c.queue + ".dlq"
+	}
+
+	headers := amqp.Table{}
+	for k, v := range d.Headers {
+		headers[k] = v
+	}
+	// Add x-death-like metadata for visibility
+	headers["x-death-at"] = time.Now().Format(time.RFC3339)
+
+	pub := amqp.Publishing{
+		Headers:         headers,
+		Body:            d.Body,
+		MessageId:       d.MessageId,
+		Timestamp:       time.Now(),
+		CorrelationId:   d.CorrelationId,
+		ReplyTo:         d.ReplyTo,
+		Priority:        d.Priority,
+		DeliveryMode:    amqp.Persistent,
+		ContentType:     d.ContentType,
+		ContentEncoding: d.ContentEncoding,
+	}
+
+	if err := c.session.channel.Publish("", dlq, false, false, pub); err != nil {
+		_ = c.session.channel.Nack(d.DeliveryTag, false, true)
+		return err
+	}
+
+	_ = c.session.channel.Ack(d.DeliveryTag, false)
+	s.metricsMu.Lock()
+	s.metrics.MessagesDeadLettered++
+	s.metricsMu.Unlock()
+	return nil
+}
+
+func extractRetryCount(h amqp.Table) int {
+	if h == nil {
+		return 0
+	}
+	if v, ok := h["x-retry-attempt"]; ok {
+		switch t := v.(type) {
+		case int:
+			return t
+		case int32:
+			return int(t)
+		case int64:
+			return int(t)
+		case string:
+			if n, err := strconv.Atoi(t); err == nil {
+				return n
+			}
+		}
+	}
+	// Fallback to AMQP x-death header count if present
+	if _, ok := h["x-death"]; ok {
+		// x-death is an array; we conservatively treat any presence as >=1
+		return 1
+	}
+	return 0
 }
 
 // Seek is not supported for RabbitMQ.

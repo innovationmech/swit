@@ -83,6 +83,26 @@ func setupTopology(ctx context.Context, pool *connectionPool, topo TopologyConfi
 		if _, err := ch.QueueDeclare(q.Name, q.Durable, q.AutoDelete, q.Exclusive, false, args); err != nil {
 			return messaging.NewConfigError("rabbitmq declare queue failed", err)
 		}
+
+		// Auto-provision retry and DLQ queues if arguments indicate usage
+		if args != nil {
+			if _, hasDLX := args["x-dead-letter-exchange"]; hasDLX {
+				dlqName := q.Name + ".dlq"
+				if _, err := ch.QueueDeclare(dlqName, true, false, false, false, amqp.Table(nil)); err != nil {
+					return messaging.NewConfigError("rabbitmq declare dlq failed", err)
+				}
+			}
+			if _, hasTTL := args["x-message-ttl"]; hasTTL {
+				retryName := q.Name + ".retry"
+				rArgs := amqp.Table{
+					"x-dead-letter-exchange":    "",
+					"x-dead-letter-routing-key": q.Name,
+				}
+				if _, err := ch.QueueDeclare(retryName, true, false, false, false, rArgs); err != nil {
+					return messaging.NewConfigError("rabbitmq declare retry queue failed", err)
+				}
+			}
+		}
 	}
 
 	// Bindings
