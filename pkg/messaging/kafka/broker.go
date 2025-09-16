@@ -102,7 +102,11 @@ func (b *kafkaBroker) CreatePublisher(config messaging.PublisherConfig) (messagi
 		b.producerPool = pool
 	}
 
-	return newKafkaPublisher(b.producerPool, &config), nil
+	pub, err := newKafkaPublisher(b.producerPool, &config)
+	if err != nil {
+		return nil, err
+	}
+	return pub, nil
 }
 
 func (b *kafkaBroker) CreateSubscriber(config messaging.SubscriberConfig) (messaging.EventSubscriber, error) {
