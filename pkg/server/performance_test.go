@@ -468,9 +468,9 @@ func TestConcurrentPerformance(t *testing.T) {
 
 // TestMemoryLeakDetection tests for memory leaks during server lifecycle
 func TestMemoryLeakDetection(t *testing.T) {
-    if testing.Short() {
-        t.Skip("skipping memory leak detection in -short mode")
-    }
+	if testing.Short() {
+		t.Skip("skipping memory leak detection in -short mode")
+	}
 	gin.SetMode(gin.TestMode)
 
 	var initialMem, finalMem runtime.MemStats
