@@ -125,6 +125,7 @@ All generation commands support dry-run mode to preview changes before applying 
 	cmd.AddCommand(NewAPICommand(&config))
 	cmd.AddCommand(NewModelCommand(&config))
 	cmd.AddCommand(NewMiddlewareCommand(&config))
+	cmd.AddCommand(NewCapabilitiesCommand(&config))
 
 	return cmd
 }
