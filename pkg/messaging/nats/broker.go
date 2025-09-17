@@ -201,7 +201,18 @@ func (b *natsBroker) GetMetrics() *messaging.BrokerMetrics {
 
 func (b *natsBroker) GetCapabilities() *messaging.BrokerCapabilities {
 	caps, _ := messaging.GetCapabilityProfile(messaging.BrokerTypeNATS)
+	// Signal extended capability for NATS KV store (JS required)
+	if b.js != nil {
+		caps.Extended["nats.kv"] = true
+	}
 	return caps
+}
+
+// GetJetStream implements JetStreamProvider for exposing JS context to utils.
+func (b *natsBroker) GetJetStream() nats.JetStreamContext {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.js
 }
 
 // ensureJetStreamTopology creates or updates declared streams and consumers.
