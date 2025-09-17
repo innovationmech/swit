@@ -31,8 +31,8 @@ import (
 
 // testAdapterRegistry implements AdapterRegistryProvider for tests.
 type testAdapterRegistry struct {
-    // map of brokerType -> adapter
-    typeToAdapter map[BrokerType]MessageBrokerAdapter
+	// map of brokerType -> adapter
+	typeToAdapter map[BrokerType]MessageBrokerAdapter
 }
 
 func (r *testAdapterRegistry) GetAdapterForBrokerType(brokerType BrokerType) (MessageBrokerAdapter, error) {
@@ -51,14 +51,14 @@ func (r *testAdapterRegistry) GetSupportedBrokerTypes() []BrokerType {
 }
 
 func (r *testAdapterRegistry) ValidateConfiguration(config *BrokerConfig) (*AdapterValidationResult, error) {
-    if config == nil {
-        return &AdapterValidationResult{Valid: false, Errors: []AdapterValidationError{{Message: "configuration cannot be nil"}}}, nil
-    }
-    a, ok := r.typeToAdapter[config.Type]
-    if !ok {
-        return nil, NewConfigError("no adapter for type", nil)
-    }
-    return a.ValidateConfiguration(config), nil
+	if config == nil {
+		return &AdapterValidationResult{Valid: false, Errors: []AdapterValidationError{{Message: "configuration cannot be nil"}}}, nil
+	}
+	a, ok := r.typeToAdapter[config.Type]
+	if !ok {
+		return nil, NewConfigError("no adapter for type", nil)
+	}
+	return a.ValidateConfiguration(config), nil
 }
 
 // testAdapter implements MessageBrokerAdapter for tests.
