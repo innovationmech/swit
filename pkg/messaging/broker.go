@@ -513,6 +513,17 @@ func NewProcessingError(message string, cause error) *MessagingError {
 	}
 }
 
+// NewProcessingTimeoutError creates a processing-timeout specific error.
+func NewProcessingTimeoutError(message string, cause error) *MessagingError {
+	return &MessagingError{
+		Code:      ErrProcessingTimeout,
+		Message:   message,
+		Cause:     cause,
+		Retryable: true,
+		Timestamp: time.Now(),
+	}
+}
+
 // NewConfigError creates a new configuration-related error.
 func NewConfigError(message string, cause error) *MessagingError {
 	return &MessagingError{
