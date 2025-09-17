@@ -161,6 +161,20 @@ func (b *rabbitBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus
 	b.mu.RLock()
 	connected := b.started
 	poolSize := b.pool.maxConnections()
+	// Inspect blocked flags across pooled connections to expose pressure
+	blocked := false
+	for _, pc := range b.pool.connections {
+		if pc != nil {
+			pc.mu.Lock()
+			if pc.blocked {
+				blocked = true
+			}
+			pc.mu.Unlock()
+			if blocked {
+				break
+			}
+		}
+	}
 	b.mu.RUnlock()
 
 	status := &messaging.HealthStatus{
@@ -173,6 +187,7 @@ func (b *rabbitBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus
 			"connection_pool_size":  poolSize,
 			"channel_pool_capacity": b.rabbitConfig.Channels.MaxPerConnection,
 			"reconnect_enabled":     b.rabbitConfig.Reconnect.Enabled,
+			"flow_blocked":          blocked,
 		},
 	}
 

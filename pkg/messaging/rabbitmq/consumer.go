@@ -204,8 +204,52 @@ func (s *rabbitSubscriber) consumeLoop(c *rabbitConsumer) {
 			return
 		case d, ok := <-c.deliveries:
 			if !ok {
+				// Delivery channel closed (channel/connection closed). Attempt recovery.
 				s.teardownConsumer(c)
-				return
+
+				// Exponential backoff using subscriber retry config
+				backoff := s.config.Retry.InitialDelay
+				if backoff <= 0 {
+					backoff = 100 * time.Millisecond
+				}
+				maxBackoff := s.config.Retry.MaxDelay
+				if maxBackoff <= 0 {
+					maxBackoff = 30 * time.Second
+				}
+
+				for {
+					select {
+					case <-s.ctx.Done():
+						return
+					default:
+					}
+
+					// Try restarting consumer on this queue
+					newc, err := s.startConsumer(c.queue)
+					if err == nil {
+						c = newc
+						// Continue outer loop with new deliveries
+						break
+					}
+
+					// Backoff then retry
+					delay := backoff
+					if delay > maxBackoff {
+						delay = maxBackoff
+					}
+					select {
+					case <-time.After(delay):
+					case <-s.ctx.Done():
+						return
+					}
+					if backoff < maxBackoff {
+						backoff = time.Duration(float64(backoff) * s.config.Retry.Multiplier)
+						if backoff > maxBackoff {
+							backoff = maxBackoff
+						}
+					}
+				}
+				continue
 			}
 
 			select {

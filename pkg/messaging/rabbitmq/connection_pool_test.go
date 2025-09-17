@@ -23,6 +23,7 @@ package rabbitmq
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -151,5 +152,43 @@ func TestConnectionPoolReconnect(t *testing.T) {
 	require.NotSame(t, first, newUnderlying)
 
 	pool.Release(reopened)
+	pool.Close()
+}
+
+func TestConnectionPoolMultiURIFailover(t *testing.T) {
+	base := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeRabbitMQ,
+		Endpoints: []string{"amqp://bad:5672", "amqp://fallback:5672"},
+	}
+	base.Connection.PoolSize = 1
+
+	rabbitCfg := DefaultConfig()
+	rabbitCfg.Reconnect.Enabled = true
+	rabbitCfg.Reconnect.InitialDelay = messaging.Duration(10 * time.Millisecond)
+	rabbitCfg.Reconnect.MaxDelay = messaging.Duration(20 * time.Millisecond)
+	rabbitCfg.Reconnect.MaxRetries = 5
+	pool := newConnectionPool(base, rabbitCfg)
+
+	var dials []string
+	pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) {
+		dials = append(dials, endpoint)
+		if endpoint == "amqp://bad:5672" {
+			return nil, fmt.Errorf("simulated dial failure")
+		}
+		return newMockConnection(func() amqpChannel { return newMockChannel() }), nil
+	}
+
+	ctx := context.Background()
+	require.NoError(t, pool.Initialize(ctx))
+
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+
+	// Ensure we attempted bad then fallback
+	require.Contains(t, dials, "amqp://bad:5672")
+	require.Contains(t, dials, "amqp://fallback:5672")
+
+	pool.Release(conn)
 	pool.Close()
 }

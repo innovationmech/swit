@@ -29,12 +29,13 @@ import (
 )
 
 type mockConnection struct {
-	mu           sync.Mutex
-	closed       bool
-	notify       chan *amqp.Error
-	channels     []amqpChannel
-	channelQueue []amqpChannel
-	factory      func() amqpChannel
+	mu            sync.Mutex
+	closed        bool
+	notify        chan *amqp.Error
+	notifyBlocked chan amqp.Blocking
+	channels      []amqpChannel
+	channelQueue  []amqpChannel
+	factory       func() amqpChannel
 }
 
 func newMockConnection(factory func() amqpChannel) *mockConnection {
@@ -102,6 +103,16 @@ func (m *mockConnection) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
 	return receiver
 }
 
+func (m *mockConnection) NotifyBlocked(receiver chan amqp.Blocking) chan amqp.Blocking {
+	m.mu.Lock()
+	if m.closed {
+		close(receiver)
+	}
+	m.notifyBlocked = receiver
+	m.mu.Unlock()
+	return receiver
+}
+
 func (m *mockConnection) triggerClose() {
 	m.mu.Lock()
 	if m.closed {
@@ -115,6 +126,15 @@ func (m *mockConnection) triggerClose() {
 	if notify != nil {
 		notify <- &amqp.Error{Code: 320, Reason: "forced close"}
 		close(notify)
+	}
+}
+
+func (m *mockConnection) triggerBlocked(active bool) {
+	m.mu.Lock()
+	ch := m.notifyBlocked
+	m.mu.Unlock()
+	if ch != nil {
+		ch <- amqp.Blocking{Active: active, Reason: "mock"}
 	}
 }
 
