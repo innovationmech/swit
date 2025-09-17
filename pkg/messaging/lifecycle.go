@@ -317,13 +317,48 @@ func (gsm *GracefulShutdownManager) executeShutdownSequence() {
 		return
 	}
 
+	// Determine if force shutdown has been triggered or the elapsed time has
+	// exceeded the configured force timeout. This avoids a race where the
+	// shutdown completes almost simultaneously with the force timeout, which
+	// could otherwise cause WaitForCompletion to observe a nil error.
+	forced := false
+	select {
+	case <-gsm.forceShutdown:
+		forced = true
+	default:
+		// Also consider elapsed duration beyond ForceTimeout as forced.
+		gsm.statusMu.RLock()
+		elapsed := time.Since(gsm.status.StartTime)
+		gsm.statusMu.RUnlock()
+		if elapsed >= gsm.config.ForceTimeout {
+			forced = true
+		}
+	}
+
 	gsm.statusMu.Lock()
-	gsm.status.Phase = ShutdownPhaseCompleted
+	if forced {
+		// Preserve forced termination semantics and make sure an error is set
+		// so callers of WaitForCompletion reliably receive an error.
+		if gsm.status.Error == nil {
+			gsm.status.Error = fmt.Errorf("shutdown was forcefully terminated due to timeout")
+		}
+		gsm.status.Phase = ShutdownPhaseForcedTermination
+	} else {
+		gsm.status.Phase = ShutdownPhaseCompleted
+	}
+	duration := time.Since(gsm.status.StartTime)
+	completedSteps := len(gsm.status.CompletedSteps)
 	gsm.statusMu.Unlock()
 
-	logger.Logger.Info("Graceful shutdown sequence completed successfully",
-		zap.Duration("duration", time.Since(gsm.status.StartTime)),
-		zap.Int("completed_steps", len(gsm.status.CompletedSteps)))
+	if forced {
+		logger.Logger.Warn("Graceful shutdown sequence finished after force timeout",
+			zap.Duration("duration", duration),
+			zap.Int("completed_steps", completedSteps))
+	} else {
+		logger.Logger.Info("Graceful shutdown sequence completed successfully",
+			zap.Duration("duration", duration),
+			zap.Int("completed_steps", completedSteps))
+	}
 }
 
 // stopAcceptingNewMessages stops accepting new messages for all brokers
