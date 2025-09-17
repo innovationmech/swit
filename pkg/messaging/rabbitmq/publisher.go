@@ -160,13 +160,13 @@ func (p *rabbitPublisher) publishSimple(ctx context.Context, message *messaging.
 
 	start := time.Now()
 	pub := p.toPublishing(message)
-	err = p.withChannel(ctx, func(ch *channelWrapper) error {
-		return ch.channel.Publish(exchange, routingKey, false, false, pub)
-	})
-	if err != nil {
-		p.recordFailure(err)
-		return messaging.NewPublishError("rabbitmq publish failed", err)
-	}
+    err = p.withChannel(ctx, func(ch *channelWrapper) error {
+        return ch.channel.Publish(exchange, routingKey, false, false, pub)
+    })
+    if err != nil {
+        p.recordFailure(err)
+        return messaging.NewPublishError("rabbitmq publish failed", err)
+    }
 
 	p.recordSuccess(time.Since(start))
 	return nil
@@ -232,20 +232,20 @@ func (p *rabbitPublisher) publishOnceWithConfirm(
 ) (*messaging.PublishConfirmation, error) {
 	var result *messaging.PublishConfirmation
 	err := p.withChannel(ctx, func(ch *channelWrapper) error {
-		if err := ch.channel.Confirm(false); err != nil {
-			return messaging.NewPublishError("rabbitmq enable confirms failed", err)
-		}
+        if err := ch.channel.Confirm(false); err != nil {
+            return messaging.NewPublishError("rabbitmq enable confirms failed", err)
+        }
 
 		confirms := ch.channel.NotifyPublish(make(chan amqp.Confirmation, 1))
 
-		if err := ch.channel.Publish(exchange, routingKey, false, false, publish); err != nil {
-			return messaging.NewPublishError("rabbitmq publish failed", err)
-		}
+        if err := ch.channel.Publish(exchange, routingKey, false, false, publish); err != nil {
+            return messaging.NewPublishError("rabbitmq publish failed", err)
+        }
 
-		confirm, err := p.awaitConfirmation(ctx, confirms)
-		if err != nil {
-			return err
-		}
+        confirm, err := p.awaitConfirmation(ctx, confirms)
+        if err != nil {
+            return err
+        }
 		if !confirm.Ack {
 			return messaging.NewPublishError("rabbitmq publish negatively acknowledged", nil)
 		}

@@ -428,6 +428,15 @@ func (f MessageHandlerFunc) Handle(ctx context.Context, message *Message) error 
 // OnError provides default error handling for MessageHandlerFunc.
 // It returns ErrorActionRetry for retryable errors and ErrorActionDeadLetter for others.
 func (f MessageHandlerFunc) OnError(ctx context.Context, message *Message, err error) ErrorAction {
+	// Prefer new unified error type when available
+	if be := ToBaseMessagingError(err); be != nil {
+		if !be.Retryable {
+			return ErrorActionDeadLetter
+		}
+		return ErrorActionRetry
+	}
+
+	// Fallback to legacy behavior
 	var msgErr *MessagingError
 	if errors.As(err, &msgErr) && !msgErr.Retryable {
 		return ErrorActionDeadLetter
