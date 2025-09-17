@@ -24,6 +24,7 @@ package nats
 import (
 	"context"
 	"crypto/tls"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,9 +92,60 @@ func (b *natsBroker) Connect(ctx context.Context) error {
 		}
 	}
 
-	// Connect using first endpoint initially; nats.Connect accepts multiple URLs separated by comma
-	url := b.config.Endpoints[0]
-	conn, err := nats.Connect(url, opts...)
+	// Connection lifecycle hooks to enrich metrics
+	opts = append(opts,
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			b.metrics.ConnectionStatus = "disconnected"
+			if err != nil {
+				b.metrics.LastConnectionError = err.Error()
+				b.metrics.ConnectionFailures++
+			}
+			if nc != nil {
+				if urls := nc.DiscoveredServers(); len(urls) > 0 {
+					if b.metrics.Extended == nil {
+						b.metrics.Extended = map[string]any{}
+					}
+					b.metrics.Extended["discovered_servers"] = append([]string{}, urls...)
+				}
+			}
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			b.metrics.ConnectionStatus = "reconnected"
+			b.metrics.ConnectionAttempts++
+			b.metrics.LastConnectionTime = time.Now()
+			if nc != nil {
+				if b.metrics.Extended == nil {
+					b.metrics.Extended = map[string]any{}
+				}
+				b.metrics.Extended["connected_url"] = nc.ConnectedUrl()
+				b.metrics.Extended["server_id"] = nc.ConnectedServerId()
+			}
+		}),
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			b.metrics.ConnectionStatus = "closed"
+		}),
+		nats.DiscoveredServersHandler(func(nc *nats.Conn) {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			if nc != nil {
+				if b.metrics.Extended == nil {
+					b.metrics.Extended = map[string]any{}
+				}
+				urls := nc.DiscoveredServers()
+				b.metrics.Extended["discovered_servers"] = append([]string{}, urls...)
+			}
+		}),
+	)
+
+	// Connect using all seed servers as a comma-separated list; nats.go will handle discovery
+	urls := strings.Join(b.config.Endpoints, ",")
+	conn, err := nats.Connect(urls, opts...)
 	if err != nil {
 		return messaging.NewConnectionError("failed to connect to NATS", err)
 	}
@@ -119,6 +171,12 @@ func (b *natsBroker) Connect(ctx context.Context) error {
 	b.started = true
 	b.metrics.ConnectionStatus = "connected"
 	b.metrics.LastConnectionTime = time.Now()
+	if b.metrics.Extended == nil {
+		b.metrics.Extended = map[string]any{}
+	}
+	b.metrics.Extended["connected_url"] = conn.ConnectedUrl()
+	b.metrics.Extended["server_id"] = conn.ConnectedServerId()
+	b.metrics.Extended["seed_servers"] = strings.Join(b.config.Endpoints, ",")
 
 	return nil
 }
@@ -188,9 +246,21 @@ func (b *natsBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus, 
 		LastChecked:  time.Now(),
 		ResponseTime: 0,
 		Details: map[string]any{
-			"connected": b.IsConnected(),
+			"connected":         b.IsConnected(),
+			"reconnect_enabled": b.cfg.Reconnect.Enabled,
 		},
 	}
+	b.mu.RLock()
+	conn := b.conn
+	if conn != nil {
+		status.Details["connected_url"] = conn.ConnectedUrl()
+		status.Details["server_id"] = conn.ConnectedServerId()
+		if urls := conn.DiscoveredServers(); len(urls) > 0 {
+			status.Details["discovered_servers"] = append([]string{}, urls...)
+		}
+	}
+	status.Details["seed_servers"] = append([]string{}, b.config.Endpoints...)
+	b.mu.RUnlock()
 	return status, nil
 }
 
