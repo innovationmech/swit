@@ -342,6 +342,11 @@ func (ec *ErrorClassifier) ClassifyError(err error) ErrorClassificationResult {
 		return ec.classifyMessagingError(msgErr)
 	}
 
+	// Convert legacy or broker errors to BaseMessagingError when possible
+	if be := ToBaseMessagingError(err); be != nil {
+		return ec.classifyMessagingError(be)
+	}
+
 	// Fallback to generic error classification
 	return ec.classifyGenericError(err)
 }
