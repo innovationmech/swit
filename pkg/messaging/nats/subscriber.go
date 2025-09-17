@@ -23,7 +23,7 @@ package nats
 
 import (
 	"context"
-	"sync"
+	"errors"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/messaging"
@@ -32,17 +32,20 @@ import (
 
 // subscriber is a minimal EventSubscriber using NATS Subscribe/QueueSubscribe.
 type subscriber struct {
-	conn   *nats.Conn
-	config *messaging.SubscriberConfig
-	base   *messaging.BaseSubscriber
-	mu     sync.RWMutex
+	conn     *nats.Conn
+	js       nats.JetStreamContext
+	jsConfig *JetStreamConfig
+	config   *messaging.SubscriberConfig
+	base     *messaging.BaseSubscriber
 }
 
-func newSubscriber(conn *nats.Conn, cfg *messaging.SubscriberConfig) messaging.EventSubscriber {
+func newSubscriber(conn *nats.Conn, js nats.JetStreamContext, jsCfg *JetStreamConfig, cfg *messaging.SubscriberConfig) messaging.EventSubscriber {
 	return &subscriber{
-		conn:   conn,
-		config: cfg,
-		base:   messaging.NewBaseSubscriber(*cfg),
+		conn:     conn,
+		js:       js,
+		jsConfig: jsCfg,
+		config:   cfg,
+		base:     messaging.NewBaseSubscriber(*cfg),
 	}
 }
 
@@ -57,16 +60,41 @@ func (s *subscriber) SubscribeWithMiddleware(ctx context.Context, handler messag
 		_ = wrapped       // for future integration; keep scaffold minimal
 
 		var err error
-		if s.config.ConsumerGroup != "" {
-			_, err = s.conn.QueueSubscribe(localTopic, s.config.ConsumerGroup, func(msg *nats.Msg) {
-				m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
-				_ = handler.Handle(context.Background(), m)
-			})
+		if s.js != nil {
+			// Prefer push if a matching consumer declares a deliver subject; else pull
+			if deliverSubject := s.getDeliverSubjectFor(localTopic); deliverSubject != "" {
+				_, err = s.conn.Subscribe(deliverSubject, func(msg *nats.Msg) {
+					m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
+					if hErr := handler.Handle(context.Background(), m); hErr != nil {
+						_ = msg.Nak()
+					} else {
+						_ = msg.Ack()
+					}
+				})
+			} else {
+				durable := s.config.ConsumerGroup
+				if durable == "" {
+					durable = "swit-durable"
+				}
+				sub, jerr := s.js.PullSubscribe(localTopic, durable, nats.ManualAck(), nats.MaxAckPending(s.config.Processing.MaxInFlight))
+				if jerr != nil {
+					return messaging.NewConfigError("failed to create JetStream pull subscription", jerr)
+				}
+				// spawn a worker to fetch and handle
+				go s.runPullConsumer(ctx, sub, handler)
+			}
 		} else {
-			_, err = s.conn.Subscribe(localTopic, func(msg *nats.Msg) {
-				m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
-				_ = handler.Handle(context.Background(), m)
-			})
+			if s.config.ConsumerGroup != "" {
+				_, err = s.conn.QueueSubscribe(localTopic, s.config.ConsumerGroup, func(msg *nats.Msg) {
+					m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
+					_ = handler.Handle(context.Background(), m)
+				})
+			} else {
+				_, err = s.conn.Subscribe(localTopic, func(msg *nats.Msg) {
+					m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
+					_ = handler.Handle(context.Background(), m)
+				})
+			}
 		}
 		if err != nil {
 			return messaging.NewConfigError("failed to subscribe to subject", err)
@@ -79,8 +107,60 @@ func (s *subscriber) Unsubscribe(ctx context.Context) error { return nil }
 func (s *subscriber) Pause(ctx context.Context) error       { return nil }
 func (s *subscriber) Resume(ctx context.Context) error      { return nil }
 func (s *subscriber) Seek(ctx context.Context, position messaging.SeekPosition) error {
-	return messaging.NewConfigError("seek not supported in core NATS (use JetStream)", nil)
+	if s.js == nil {
+		return messaging.NewConfigError("seek not supported in core NATS (use JetStream)", nil)
+	}
+	// Seeking requires per-subscription cursor; a full implementation would track subscriptions.
+	return messaging.NewConfigError("seek not implemented for JetStream subscriber in this scaffold", nil)
 }
 func (s *subscriber) GetLag(ctx context.Context) (int64, error) { return -1, nil }
 func (s *subscriber) Close() error                              { return nil }
 func (s *subscriber) GetMetrics() *messaging.SubscriberMetrics  { return &messaging.SubscriberMetrics{} }
+
+func (s *subscriber) runPullConsumer(ctx context.Context, sub *nats.Subscription, handler messaging.MessageHandler) {
+	batch := s.config.PrefetchCount
+	if batch <= 0 {
+		batch = 10
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		msgs, err := sub.Fetch(batch, nats.MaxWait(1*time.Second))
+		if err != nil {
+			if errors.Is(err, nats.ErrTimeout) {
+				continue
+			}
+			// non-fatal; continue fetching
+			continue
+		}
+		for _, m := range msgs {
+			msg := &messaging.Message{Topic: m.Subject, Payload: m.Data, Timestamp: time.Now()}
+			if hErr := handler.Handle(ctx, msg); hErr != nil {
+				// nack for retry
+				_ = m.Nak()
+			} else {
+				_ = m.Ack()
+			}
+		}
+	}
+}
+
+// getDeliverSubjectFor finds a deliver subject configured for a given topic
+// via JetStream consumer configs.
+func (s *subscriber) getDeliverSubjectFor(subject string) string {
+	if s.jsConfig == nil {
+		return ""
+	}
+	for _, c := range s.jsConfig.Consumers {
+		if c.DeliverSubject != "" {
+			// Prefer exact match on filter subject when set; otherwise allow any
+			if c.FilterSubject == "" || c.FilterSubject == subject {
+				return c.DeliverSubject
+			}
+		}
+	}
+	return ""
+}
