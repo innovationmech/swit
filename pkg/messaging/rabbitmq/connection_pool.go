@@ -24,6 +24,7 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	mathrand "math/rand"
 	"sync"
 	"time"
 
@@ -39,6 +40,9 @@ type amqpConnection interface {
 	Close() error
 	IsClosed() bool
 	NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
+	// NotifyBlocked provides connection-level flow control notifications
+	// so clients can react to broker back-pressure and update health.
+	NotifyBlocked(receiver chan amqp.Blocking) chan amqp.Blocking
 }
 
 type amqpChannel interface {
@@ -93,7 +97,7 @@ func (p *connectionPool) Initialize(ctx context.Context) error {
 	p.mu.Unlock()
 
 	for i := 0; i < p.maxConnections(); i++ {
-		conn, err := p.createConnection()
+		conn, err := p.createConnectionWithFailover(ctx)
 		if err != nil {
 			return err
 		}
@@ -117,25 +121,68 @@ func (p *connectionPool) maxConnections() int {
 	return size
 }
 
-func (p *connectionPool) createConnection() (*pooledConnection, error) {
-	endpoint := p.nextEndpoint()
-	cfg := amqp.Config{
-		Locale:    "en_US",
-		Heartbeat: p.rabbitConfig.Timeouts.HeartbeatInterval(),
-		Dial:      amqp.DefaultDial(p.rabbitConfig.Timeouts.DialTimeout()),
+func (p *connectionPool) createConnectionWithFailover(ctx context.Context) (*pooledConnection, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
-	conn, err := p.dial(endpoint, cfg)
-	if err != nil {
-		return nil, messaging.NewConnectionError(
-			fmt.Sprintf("rabbitmq: failed to connect to %s", endpoint),
-			err,
-		)
+	// Backoff parameters
+	backoff := p.rabbitConfig.Reconnect.InitialBackoff()
+	if backoff <= 0 {
+		backoff = 500 * time.Millisecond
 	}
+	maxBackoff := p.rabbitConfig.Reconnect.MaxBackoff()
+	if maxBackoff <= 0 {
+		maxBackoff = 30 * time.Second
+	}
+	jitterPct := p.rabbitConfig.Reconnect.JitterPercent
+	maxRetries := p.rabbitConfig.Reconnect.MaxRetries
 
-	pooled := newPooledConnection(p, conn, endpoint)
-	pooled.startWatch()
-	return pooled, nil
+	attempts := 0
+	for {
+		attempts++
+
+		endpoint := p.nextEndpoint()
+		cfg := amqp.Config{
+			Locale:    "en_US",
+			Heartbeat: p.rabbitConfig.Timeouts.HeartbeatInterval(),
+			Dial:      amqp.DefaultDial(p.rabbitConfig.Timeouts.DialTimeout()),
+		}
+
+		conn, err := p.dial(endpoint, cfg)
+		if err == nil {
+			pooled := newPooledConnection(p, conn, endpoint)
+			pooled.startWatch()
+			return pooled, nil
+		}
+
+		// Stop when max retries reached (if configured)
+		if maxRetries > 0 && attempts >= maxRetries {
+			return nil, messaging.NewConnectionError(
+				fmt.Sprintf("rabbitmq: failed to connect after %d attempts; last endpoint=%s", attempts, endpoint),
+				err,
+			)
+		}
+
+		// Sleep with backoff and jitter or exit on context cancellation
+		delay := addJitter(backoff, jitterPct)
+		if delay > maxBackoff {
+			delay = maxBackoff
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
 }
 
 func (p *connectionPool) Acquire(ctx context.Context) (*pooledConnection, error) {
@@ -246,6 +293,10 @@ func (r *realConnection) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
 	return r.conn.NotifyClose(receiver)
 }
 
+func (r *realConnection) NotifyBlocked(receiver chan amqp.Blocking) chan amqp.Blocking {
+	return r.conn.NotifyBlocked(receiver)
+}
+
 type realChannel struct {
 	ch *amqp.Channel
 }
@@ -299,16 +350,20 @@ func (r *realChannel) Nack(tag uint64, multiple, requeue bool) error {
 }
 
 type pooledConnection struct {
-	pool     *connectionPool
-	endpoint string
-	mu       sync.Mutex
-	conn     amqpConnection
-	inUse    bool
-	closed   bool
-	notify   chan *amqp.Error
-	channels chan *channelWrapper
-	max      int
-	total    int
+	pool           *connectionPool
+	endpoint       string
+	mu             sync.Mutex
+	conn           amqpConnection
+	inUse          bool
+	closed         bool
+	notify         chan *amqp.Error
+	blocked        bool
+	blockedCh      chan amqp.Blocking
+	lastBlockedAt  time.Time
+	lastFailoverAt time.Time
+	channels       chan *channelWrapper
+	max            int
+	total          int
 }
 
 func newPooledConnection(pool *connectionPool, conn amqpConnection, endpoint string) *pooledConnection {
@@ -341,6 +396,24 @@ func (p *pooledConnection) startWatch() {
 			p.mu.Unlock()
 		}
 	}()
+
+	// Watch for connection-level blocked/unblocked events
+	blockedCh := p.conn.NotifyBlocked(make(chan amqp.Blocking, 1))
+	if blockedCh != nil {
+		p.mu.Lock()
+		p.blockedCh = blockedCh
+		p.mu.Unlock()
+		go func() {
+			for ev := range blockedCh {
+				p.mu.Lock()
+				p.blocked = ev.Active
+				if ev.Active {
+					p.lastBlockedAt = time.Now()
+				}
+				p.mu.Unlock()
+			}
+		}()
+	}
 }
 
 func (p *pooledConnection) markInUse() {
@@ -394,6 +467,7 @@ func (p *pooledConnection) ensureOpen(ctx context.Context) error {
 			p.endpoint = endpoint
 			old = p.channels
 			p.channels = make(chan *channelWrapper, p.max)
+			p.lastFailoverAt = time.Now()
 			p.mu.Unlock()
 			p.startWatch()
 		DrainLoop:
@@ -556,6 +630,35 @@ func (p *pooledConnection) Close() {
 			return
 		}
 	}
+}
+
+// addJitter adds +/- jitterPercent% randomization to a base duration.
+func addJitter(base time.Duration, jitterPercent int) time.Duration {
+	if jitterPercent <= 0 {
+		return base
+	}
+	// Bound jitter to [0, 100]
+	if jitterPercent > 100 {
+		jitterPercent = 100
+	}
+	// Randomize in range [1 - j, 1 + j]
+	jitter := float64(jitterPercent) / 100.0
+	min := 1.0 - jitter
+	max := 1.0 + jitter
+	factor := min + (max-min)*randFloat64()
+	return time.Duration(float64(base) * factor)
+}
+
+// randFloat64 returns a pseudo-random number in [0.0, 1.0).
+// We avoid importing math/rand globally to keep deterministic tests unless needed.
+var _randSeedOnce sync.Once
+var _randSrc *mathrand.Rand
+
+func randFloat64() float64 {
+	_randSeedOnce.Do(func() {
+		_randSrc = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+	})
+	return _randSrc.Float64()
 }
 
 type channelWrapper struct {

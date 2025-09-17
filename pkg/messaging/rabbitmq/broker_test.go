@@ -220,3 +220,28 @@ func TestMetricsUpdateOnGet(t *testing.T) {
 	metrics := broker.GetMetrics()
 	require.Greater(t, metrics.ConnectionUptime, time.Second)
 }
+
+func TestRabbitBrokerHealthReflectsBlocked(t *testing.T) {
+	base := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeRabbitMQ,
+		Endpoints: []string{"amqp://localhost:5672"},
+	}
+	base.Connection.PoolSize = 1
+
+	rabbitCfg := DefaultConfig()
+	broker := newRabbitBroker(base, rabbitCfg)
+
+	mconn := newMockConnection(func() amqpChannel { return newMockChannel() })
+	broker.pool.dial = func(endpoint string, cfg amqp.Config) (amqpConnection, error) { return mconn, nil }
+
+	require.NoError(t, broker.Connect(context.Background()))
+
+	// Simulate flow control blocked event (use the channel registered by pool watch)
+	mconn.triggerBlocked(true)
+	time.Sleep(10 * time.Millisecond)
+
+	health, err := broker.HealthCheck(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, messaging.HealthStatusHealthy, health.Status)
+	require.Equal(t, true, health.Details["flow_blocked"])
+}
