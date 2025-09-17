@@ -39,6 +39,11 @@ type Config struct {
 
 	// TLSInsecureSkipVerify mirrors nats.go option for skipping TLS verification
 	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify" yaml:"tls_insecure_skip_verify"`
+
+	// JetStream controls NATS JetStream related configurations including
+	// stream and consumer management. When enabled, the broker will attempt
+	// to create or update declared streams/consumers on Connect.
+	JetStream *JetStreamConfig `json:"jetstream" yaml:"jetstream"`
 }
 
 // ReconnectConfig tunes automatic reconnection behaviour.
@@ -71,6 +76,7 @@ func DefaultConfig() *Config {
 			Ping:    messaging.Duration(2 * time.Minute),
 		},
 		TLSInsecureSkipVerify: false,
+		JetStream:             &JetStreamConfig{Enabled: false},
 	}
 }
 
@@ -119,9 +125,59 @@ func (c *Config) normalize() {
 	if c.Timeouts.Ping <= 0 {
 		c.Timeouts.Ping = messaging.Duration(2 * time.Minute)
 	}
+	if c.JetStream == nil {
+		c.JetStream = &JetStreamConfig{Enabled: false}
+	}
+	c.JetStream.normalize()
 }
 
 // Helpers
 func (t *TimeoutConfig) DialTimeout() time.Duration    { return time.Duration(t.Dial) }
 func (t *TimeoutConfig) RequestTimeout() time.Duration { return time.Duration(t.Request) }
 func (t *TimeoutConfig) PingInterval() time.Duration   { return time.Duration(t.Ping) }
+
+// JetStream configuration types and helpers
+
+// JetStreamConfig is the top-level JetStream configuration.
+type JetStreamConfig struct {
+	Enabled   bool               `json:"enabled" yaml:"enabled"`
+	Streams   []JSStreamConfig   `json:"streams" yaml:"streams"`
+	Consumers []JSConsumerConfig `json:"consumers" yaml:"consumers"`
+}
+
+// JSStreamConfig declares a stream and its subjects.
+type JSStreamConfig struct {
+	Name       string             `json:"name" yaml:"name"`
+	Subjects   []string           `json:"subjects" yaml:"subjects"`
+	Retention  string             `json:"retention" yaml:"retention"` // limits|workqueue|interest
+	MaxBytes   int64              `json:"max_bytes" yaml:"max_bytes"`
+	MaxAge     messaging.Duration `json:"max_age" yaml:"max_age"`
+	MaxMsgs    int64              `json:"max_msgs" yaml:"max_msgs"`
+	MaxMsgSize int32              `json:"max_msg_size" yaml:"max_msg_size"`
+	Storage    string             `json:"storage" yaml:"storage"` // file|memory
+	Replicas   int                `json:"replicas" yaml:"replicas"`
+}
+
+// JSConsumerConfig declares a consumer to be created/updated for a stream.
+type JSConsumerConfig struct {
+	Name          string             `json:"name" yaml:"name"`
+	Stream        string             `json:"stream" yaml:"stream"`
+	Durable       bool               `json:"durable" yaml:"durable"`
+	DeliverPolicy string             `json:"deliver_policy" yaml:"deliver_policy"` // all|last|new|by_start_sequence|by_start_time
+	AckPolicy     string             `json:"ack_policy" yaml:"ack_policy"`         // none|all|explicit
+	AckWait       messaging.Duration `json:"ack_wait" yaml:"ack_wait"`
+	MaxDeliver    int                `json:"max_deliver" yaml:"max_deliver"`
+	FilterSubject string             `json:"filter_subject" yaml:"filter_subject"`
+	ReplayPolicy  string             `json:"replay_policy" yaml:"replay_policy"` // instant|original
+	MaxAckPending int                `json:"max_ack_pending" yaml:"max_ack_pending"`
+	// Push delivery options
+	DeliverSubject string `json:"deliver_subject" yaml:"deliver_subject"`
+	DeliverGroup   string `json:"deliver_group" yaml:"deliver_group"`
+}
+
+func (j *JetStreamConfig) normalize() {
+	if j == nil {
+		return
+	}
+	// No-op defaults for now; keep values as provided.
+}
