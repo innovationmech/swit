@@ -23,6 +23,8 @@ package messaging
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -119,8 +121,16 @@ func (f *messageBrokerFactoryImpl) CreateBroker(config *BrokerConfig) (MessageBr
 	f.mu.RUnlock()
 
 	if !exists {
+		// Enrich error with supported types for better guidance
+		supported := f.GetSupportedBrokerTypes()
+		supportedStrs := make([]string, 0, len(supported))
+		for _, t := range supported {
+			supportedStrs = append(supportedStrs, t.String())
+		}
+		sort.Strings(supportedStrs)
+
 		return nil, NewConfigError(
-			fmt.Sprintf("unsupported broker type: %s", config.Type),
+			fmt.Sprintf("unsupported broker type: %s (supported: %s)", config.Type, strings.Join(supportedStrs, ", ")),
 			nil,
 		)
 	}
@@ -175,7 +185,20 @@ func (f *messageBrokerFactoryImpl) ValidateConfig(config *BrokerConfig) error {
 	if f.adapters != nil {
 		if result, err := f.adapters.ValidateConfiguration(config); err == nil {
 			if !result.Valid {
-				return NewConfigError("adapter configuration validation failed", nil)
+				// Compose detailed validation error message with field-level details
+				var parts []string
+				for _, e := range result.Errors {
+					if e.Field != "" {
+						parts = append(parts, fmt.Sprintf("%s: %s", e.Field, e.Message))
+					} else {
+						parts = append(parts, e.Message)
+					}
+				}
+				msg := "adapter configuration validation failed"
+				if len(parts) > 0 {
+					msg = fmt.Sprintf("%s: %s", msg, strings.Join(parts, "; "))
+				}
+				return NewConfigError(msg, nil)
 			}
 			return nil // Valid according to adapter
 		}
@@ -187,8 +210,15 @@ func (f *messageBrokerFactoryImpl) ValidateConfig(config *BrokerConfig) error {
 	f.mu.RUnlock()
 
 	if !supported {
+		// Enrich error with supported types for better guidance
+		supportedTypes := f.GetSupportedBrokerTypes()
+		names := make([]string, 0, len(supportedTypes))
+		for _, t := range supportedTypes {
+			names = append(names, t.String())
+		}
+		sort.Strings(names)
 		return NewConfigError(
-			fmt.Sprintf("unsupported broker type: %s", config.Type),
+			fmt.Sprintf("unsupported broker type: %s (supported: %s)", config.Type, strings.Join(names, ", ")),
 			nil,
 		)
 	}
