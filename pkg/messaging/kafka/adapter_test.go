@@ -64,6 +64,45 @@ func TestKafkaAdapter_CreateBroker_And_Lifecycle(t *testing.T) {
 	}
 }
 
+func TestKafkaAdapter_ValidateConfiguration_ExtraParsing(t *testing.T) {
+	a := newAdapter()
+
+	// Invalid acks value should fail adapter validation via ParseConfig
+	cfgBad := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeKafka,
+		Endpoints: []string{"localhost:9092"},
+		Extra: map[string]any{
+			"kafka": map[string]any{
+				"producer": map[string]any{
+					"acks": "invalid",
+				},
+			},
+		},
+	}
+
+	resBad := a.ValidateConfiguration(cfgBad)
+	if resBad == nil || resBad.Valid {
+		t.Fatalf("expected invalid validation result for bad acks, got %#v", resBad)
+	}
+
+	// Valid acks should pass
+	cfgGood := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeKafka,
+		Endpoints: []string{"localhost:9092"},
+		Extra: map[string]any{
+			"kafka": map[string]any{
+				"producer": map[string]any{
+					"acks": "leader",
+				},
+			},
+		},
+	}
+	resGood := a.ValidateConfiguration(cfgGood)
+	if resGood == nil || !resGood.Valid {
+		t.Fatalf("expected valid validation result for good acks, got %#v", resGood)
+	}
+}
+
 func TestKafkaBroker_CreatePublisher_UsesPool(t *testing.T) {
 	a := newAdapter()
 	cfg := &messaging.BrokerConfig{Type: messaging.BrokerTypeKafka, Endpoints: []string{"localhost:9092"}}

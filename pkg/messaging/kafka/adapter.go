@@ -60,13 +60,18 @@ func newAdapter() *KafkaAdapter {
 
 // CreateBroker implements MessageBrokerAdapter.CreateBroker.
 func (a *KafkaAdapter) CreateBroker(config *messaging.BrokerConfig) (messaging.MessageBroker, error) {
-	// Base validation (type/endpoints) first
+	// Base and adapter-specific validation first
 	if res := a.ValidateConfiguration(config); !res.Valid {
 		return nil, messaging.NewConfigError("kafka adapter configuration validation failed", nil)
 	}
 
 	if config.Type != messaging.BrokerTypeKafka {
 		return nil, messaging.NewConfigError(fmt.Sprintf("unsupported broker type for kafka adapter: %s", config.Type), nil)
+	}
+
+	// Parse adapter-specific config (even if broker doesn't fully use it yet)
+	if _, err := ParseConfig(config); err != nil {
+		return nil, err
 	}
 
 	broker := newKafkaBroker(config)
@@ -79,7 +84,20 @@ func (a *KafkaAdapter) ValidateConfiguration(config *messaging.BrokerConfig) *me
 	if !res.Valid {
 		return res
 	}
-	// Suggest sensible defaults if missing
+
+	// Parse Extra for Kafka-specific validation
+	if _, err := ParseConfig(config); err != nil {
+		res.Valid = false
+		res.Errors = append(res.Errors, messaging.AdapterValidationError{
+			Field:    "Extra.kafka",
+			Message:  err.Error(),
+			Code:     "KAFKA_CONFIG_INVALID",
+			Severity: messaging.AdapterValidationSeverityError,
+		})
+		return res
+	}
+
+	// Suggestions for common tuning
 	if config != nil {
 		if config.Connection.Timeout <= 0 {
 			res.Suggestions = append(res.Suggestions, messaging.AdapterValidationSuggestion{
@@ -89,6 +107,7 @@ func (a *KafkaAdapter) ValidateConfiguration(config *messaging.BrokerConfig) *me
 			})
 		}
 	}
+
 	return res
 }
 
