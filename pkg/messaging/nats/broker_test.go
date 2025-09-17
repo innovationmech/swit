@@ -31,7 +31,7 @@ import (
 func TestNATSBrokerConnectAndFactory(t *testing.T) {
 	cfg := &messaging.BrokerConfig{
 		Type:      messaging.BrokerTypeNATS,
-		Endpoints: []string{"nats://127.0.0.1:4222"},
+		Endpoints: []string{"nats://127.0.0.1:4222", "nats://127.0.0.1:4223"},
 	}
 
 	adapter := newAdapter()
@@ -53,5 +53,14 @@ func TestNATSBrokerConnectAndFactory(t *testing.T) {
 	err = broker.Connect(context.Background())
 	if err != nil && !messaging.IsConnectionError(err) {
 		t.Fatalf("unexpected error type from Connect without server: %v", err)
+	}
+
+	// Health details should include seed servers key after attempted connect
+	status, _ := broker.HealthCheck(context.Background())
+	if status == nil || status.Details == nil {
+		t.Fatalf("expected health status details")
+	}
+	if _, ok := status.Details["seed_servers"]; !ok {
+		t.Fatalf("expected seed_servers in health details")
 	}
 }
