@@ -437,7 +437,8 @@ func (cm *DefaultConnectionManager) HealthCheck(ctx context.Context) (*HealthSta
 	message := "Connection manager is healthy"
 
 	stats := cm.GetStats()
-	if stats.ActiveCount == 0 && stats.IdleCount == 0 {
+	noConnections := stats.ActiveCount == 0 && stats.IdleCount == 0 && stats.PoolSize == 0
+	if noConnections {
 		status = HealthStatusDegraded
 		message = "No connections available in pool"
 	} else if poolHealth.Status != HealthStatusHealthy {
