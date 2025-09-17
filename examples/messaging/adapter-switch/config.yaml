@@ -1,0 +1,48 @@
+# Example messaging configuration with multiple adapters. Switch adapters by
+# updating the `current` key or setting the SWIT_TARGET_BROKER environment
+# variable before running the example.
+current: rabbitmq
+migration_target: kafka
+brokers:
+  rabbitmq:
+    type: rabbitmq
+    endpoints:
+      - amqp://guest:guest@localhost:5672/
+    connection:
+      timeout: 5s
+      keep_alive: 30s
+      max_attempts: 3
+      pool_size: 4
+      idle_timeout: 90s
+    retry:
+      max_attempts: 5
+      initial_delay: 500ms
+      max_delay: 10s
+      multiplier: 2.0
+      jitter: 0.1
+    monitoring:
+      enabled: true
+      metrics_interval: 30s
+      health_check_interval: 30s
+      health_check_timeout: 5s
+  kafka:
+    type: kafka
+    endpoints:
+      - localhost:9092
+    connection:
+      timeout: 5s
+      keep_alive: 30s
+      max_attempts: 3
+      pool_size: 3
+      idle_timeout: 90s
+    retry:
+      max_attempts: 5
+      initial_delay: 500ms
+      max_delay: 10s
+      multiplier: 2.0
+      jitter: 0.1
+    monitoring:
+      enabled: true
+      metrics_interval: 30s
+      health_check_interval: 30s
+      health_check_timeout: 5s

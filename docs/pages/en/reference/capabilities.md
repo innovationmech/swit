@@ -38,3 +38,18 @@ This document summarizes supported capabilities across major brokers and suggest
 ## Extended Capabilities
 
 Some adapters expose extended keys in the capabilities map (e.g., `nats.jetstream`, `nats.key_value_store`, `rabbitmq.exchanges`).
+
+## Migration Notes
+
+When switching adapters, pay attention to semantic differences:
+
+- `transactions`: use an outbox + idempotent consumers if the target lacks native support.
+- `ordering`: shard by key or design handlers that tolerate reordering.
+- `partitioning`: emulate with routing keys or subject naming conventions.
+- `dead_letter`: publish failures to a parking queue with a DLQ processor.
+- `delayed_delivery`: schedule retries through timers or cron-style workers.
+- `priority`: split workloads across queues and weight consumer capacity accordingly.
+- `seek`: persist offsets externally and replay from checkpoints.
+- `streaming`: augment with streaming pipelines or batch pull loops if the target is queue-oriented.
+
+The `messaging.PlanBrokerSwitch` helper surfaces these notes programmatically through `FeatureDeltas` so migrations can be validated in tests or CI pipelines.

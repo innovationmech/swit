@@ -34,6 +34,18 @@ cd examples/grpc-service
 go run main.go
 ```
 
+### 🔄 Adapter Switching Example
+Demonstrates config-driven broker selection and how to run `PlanBrokerSwitch` before migrating adapters.
+
+- **Path**: `examples/messaging/adapter-switch/`
+- **Features**: Multiple broker configs, migration planning, environment overrides
+- **Best For**: Cross-broker migrations, rollout rehearsals
+
+```bash
+cd examples/messaging/adapter-switch
+go run .
+```
+
 ### 🏆 Full-Featured Service Example
 Complete showcase of all framework features.
 
