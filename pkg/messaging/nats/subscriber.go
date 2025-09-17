@@ -24,6 +24,7 @@ package nats
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/messaging"
@@ -37,6 +38,15 @@ type subscriber struct {
 	jsConfig *JetStreamConfig
 	config   *messaging.SubscriberConfig
 	base     *messaging.BaseSubscriber
+
+	// lifecycle and coordination
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	// track active subscriptions for graceful shutdown
+	subsMu sync.Mutex
+	subs   []*nats.Subscription
 }
 
 func newSubscriber(conn *nats.Conn, js nats.JetStreamContext, jsCfg *JetStreamConfig, cfg *messaging.SubscriberConfig) messaging.EventSubscriber {
@@ -54,6 +64,9 @@ func (s *subscriber) Subscribe(ctx context.Context, handler messaging.MessageHan
 }
 
 func (s *subscriber) SubscribeWithMiddleware(ctx context.Context, handler messaging.MessageHandler, middleware ...messaging.Middleware) error {
+	// create a cancellable context for internal workers
+	s.ctx, s.cancel = context.WithCancel(ctx)
+
 	for _, topic := range s.config.Topics {
 		localTopic := topic
 		wrapped := s.base // use base to manage metrics and middleware chain
@@ -63,7 +76,12 @@ func (s *subscriber) SubscribeWithMiddleware(ctx context.Context, handler messag
 		if s.js != nil {
 			// Prefer push if a matching consumer declares a deliver subject; else pull
 			if deliverSubject := s.getDeliverSubjectFor(localTopic); deliverSubject != "" {
-				_, err = s.conn.Subscribe(deliverSubject, func(msg *nats.Msg) {
+				// Use queue group when available to enable load balancing among workers
+				queueGroup := s.getDeliverGroupFor(localTopic)
+				if queueGroup == "" {
+					queueGroup = s.config.ConsumerGroup
+				}
+				sub, serr := s.conn.QueueSubscribe(deliverSubject, queueGroup, func(msg *nats.Msg) {
 					m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
 					if hErr := handler.Handle(context.Background(), m); hErr != nil {
 						_ = msg.Nak()
@@ -71,6 +89,11 @@ func (s *subscriber) SubscribeWithMiddleware(ctx context.Context, handler messag
 						_ = msg.Ack()
 					}
 				})
+				if serr != nil {
+					err = serr
+				} else {
+					s.trackSubscription(sub)
+				}
 			} else {
 				durable := s.config.ConsumerGroup
 				if durable == "" {
@@ -81,19 +104,31 @@ func (s *subscriber) SubscribeWithMiddleware(ctx context.Context, handler messag
 					return messaging.NewConfigError("failed to create JetStream pull subscription", jerr)
 				}
 				// spawn a worker to fetch and handle
-				go s.runPullConsumer(ctx, sub, handler)
+				s.wg.Add(1)
+				go s.runPullConsumer(s.ctx, sub, handler)
+				s.trackSubscription(sub)
 			}
 		} else {
 			if s.config.ConsumerGroup != "" {
-				_, err = s.conn.QueueSubscribe(localTopic, s.config.ConsumerGroup, func(msg *nats.Msg) {
+				sub, qerr := s.conn.QueueSubscribe(localTopic, s.config.ConsumerGroup, func(msg *nats.Msg) {
 					m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
 					_ = handler.Handle(context.Background(), m)
 				})
+				if qerr != nil {
+					err = qerr
+				} else {
+					s.trackSubscription(sub)
+				}
 			} else {
-				_, err = s.conn.Subscribe(localTopic, func(msg *nats.Msg) {
+				sub, serr := s.conn.Subscribe(localTopic, func(msg *nats.Msg) {
 					m := &messaging.Message{Topic: localTopic, Payload: msg.Data, Timestamp: time.Now()}
 					_ = handler.Handle(context.Background(), m)
 				})
+				if serr != nil {
+					err = serr
+				} else {
+					s.trackSubscription(sub)
+				}
 			}
 		}
 		if err != nil {
@@ -103,9 +138,41 @@ func (s *subscriber) SubscribeWithMiddleware(ctx context.Context, handler messag
 	return nil
 }
 
-func (s *subscriber) Unsubscribe(ctx context.Context) error { return nil }
-func (s *subscriber) Pause(ctx context.Context) error       { return nil }
-func (s *subscriber) Resume(ctx context.Context) error      { return nil }
+func (s *subscriber) Unsubscribe(ctx context.Context) error {
+	// cancel workers first
+	s.subsMu.Lock()
+	cancel := s.cancel
+	subs := s.subs
+	s.subs = nil
+	s.cancel = nil
+	s.subsMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+
+	// drain/unsubscribe subscriptions to stop receiving new messages
+	for _, sub := range subs {
+		// Drain waits for in-flight callbacks to complete
+		_ = sub.Drain()
+	}
+
+	// wait for worker goroutines with a context-aware wait
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (s *subscriber) Pause(ctx context.Context) error  { return nil }
+func (s *subscriber) Resume(ctx context.Context) error { return nil }
 func (s *subscriber) Seek(ctx context.Context, position messaging.SeekPosition) error {
 	if s.js == nil {
 		return messaging.NewConfigError("seek not supported in core NATS (use JetStream)", nil)
@@ -118,6 +185,7 @@ func (s *subscriber) Close() error                              { return nil }
 func (s *subscriber) GetMetrics() *messaging.SubscriberMetrics  { return &messaging.SubscriberMetrics{} }
 
 func (s *subscriber) runPullConsumer(ctx context.Context, sub *nats.Subscription, handler messaging.MessageHandler) {
+	defer s.wg.Done()
 	batch := s.config.PrefetchCount
 	if batch <= 0 {
 		batch = 10
@@ -163,4 +231,28 @@ func (s *subscriber) getDeliverSubjectFor(subject string) string {
 		}
 	}
 	return ""
+}
+
+// getDeliverGroupFor finds a deliver group configured for a given topic via JetStream consumer configs.
+func (s *subscriber) getDeliverGroupFor(subject string) string {
+	if s.jsConfig == nil {
+		return ""
+	}
+	for _, c := range s.jsConfig.Consumers {
+		if c.DeliverGroup != "" {
+			if c.FilterSubject == "" || c.FilterSubject == subject {
+				return c.DeliverGroup
+			}
+		}
+	}
+	return ""
+}
+
+func (s *subscriber) trackSubscription(sub *nats.Subscription) {
+	if sub == nil {
+		return
+	}
+	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	s.subs = append(s.subs, sub)
 }
