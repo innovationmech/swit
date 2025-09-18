@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7.1
+    container_name: swit-messaging-kafka
+    restart: unless-stopped
+    ports:
+      - "19092:9092"
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:29093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:29093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_MESSAGE_MAX_BYTES: 20971520
+      KAFKA_CFG_REPLICA_FETCH_MAX_BYTES: 20971520
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_ENABLE_KRAFT: "yes"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      BITNAMI_DEBUG: "false"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: swit-messaging-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: test
+      RABBITMQ_DEFAULT_PASS: test
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit log_levels [{connection,error},{channel,error},{default,error}]"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: swit-messaging-nats
+    restart: unless-stopped
+    command: ["-js", "-sd", "/var/lib/nats", "--http_port", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - nats_data:/var/lib/nats
+
+volumes:
+  nats_data:
+    driver: local
