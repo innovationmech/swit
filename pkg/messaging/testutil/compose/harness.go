@@ -201,13 +201,20 @@ func (h *Harness) Start(ctx context.Context) error {
 		_ = h.stopLocked(ctx)
 		return fmt.Errorf("kafka readiness failed: %w", err)
 	}
-	if err := WaitForRabbitMQ(waitCtx, h.endpoints.Rabbit); err != nil {
-		_ = h.stopLocked(ctx)
-		return fmt.Errorf("rabbitmq readiness failed: %w", err)
-	}
-	if err := WaitForNATS(waitCtx, h.endpoints.NATS); err != nil {
-		_ = h.stopLocked(ctx)
-		return fmt.Errorf("nats readiness failed: %w", err)
+	// Only wait for services explicitly requested
+	for _, svc := range h.services {
+		switch svc {
+		case "rabbitmq":
+			if err := WaitForRabbitMQ(waitCtx, h.endpoints.Rabbit); err != nil {
+				_ = h.stopLocked(ctx)
+				return fmt.Errorf("rabbitmq readiness failed: %w", err)
+			}
+		case "nats":
+			if err := WaitForNATS(waitCtx, h.endpoints.NATS); err != nil {
+				_ = h.stopLocked(ctx)
+				return fmt.Errorf("nats readiness failed: %w", err)
+			}
+		}
 	}
 
 	h.started = true

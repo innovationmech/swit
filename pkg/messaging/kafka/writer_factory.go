@@ -26,29 +26,63 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/pkg/messaging"
+	"github.com/segmentio/kafka-go"
 )
 
-// default implementation delegates to segmentio/kafka-go if available.
-// To avoid hard dependency in this step, we provide a thin adapter with a build tag in future.
+// kafkaGoWriter wraps github.com/segmentio/kafka-go.Writer to satisfy kafkaWriter.
+type kafkaGoWriter struct {
+	w *kafka.Writer
+}
 
-// wireDefaultWriterFactory sets a no-op placeholder. Real factory will be set in init() when kafka-go is available.
-func wireDefaultWriterFactory() {
-	if writerFactory == nil {
-		writerFactory = func(brokerCfg *messaging.BrokerConfig, topic string, pubCfg *messaging.PublisherConfig) (kafkaWriter, error) {
-			// minimal in-memory fake to keep tests compiling until kafka-go integration is added
-			return &fakeWriter{}, nil
+func (kw *kafkaGoWriter) WriteMessages(ctx context.Context, msgs ...KafkaMessage) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	converted := make([]kafka.Message, 0, len(msgs))
+	for _, m := range msgs {
+		headers := make([]kafka.Header, 0, len(m.Headers))
+		for k, v := range m.Headers {
+			headers = append(headers, kafka.Header{Key: k, Value: []byte(v)})
 		}
+		converted = append(converted, kafka.Message{
+			Key:   m.Key,
+			Value: m.Value,
+			Time:  m.Timestamp,
+			// Topic is configured on writer; headers still forwarded
+			Headers: headers,
+		})
+	}
+	return kw.w.WriteMessages(ctx, converted...)
+}
+
+func (kw *kafkaGoWriter) Close() error { return kw.w.Close() }
+
+// wireDefaultWriterFactory wires writerFactory to use kafka-go.
+func wireDefaultWriterFactory() {
+	writerFactory = func(brokerCfg *messaging.BrokerConfig, topic string, pubCfg *messaging.PublisherConfig) (kafkaWriter, error) {
+		// Map batching configuration to writer settings with sensible defaults
+		batchBytes := int64(1_048_576) // 1MB default
+		if pubCfg != nil && pubCfg.Batching.MaxBytes > 0 {
+			batchBytes = int64(pubCfg.Batching.MaxBytes)
+		}
+		batchTimeout := 100 * time.Millisecond
+		if pubCfg != nil && pubCfg.Batching.FlushInterval > 0 {
+			batchTimeout = pubCfg.Batching.FlushInterval
+		}
+
+		w := &kafka.Writer{
+			Addr:         kafka.TCP(brokerCfg.Endpoints...),
+			Topic:        topic,
+			RequiredAcks: kafka.RequireAll,
+			BatchBytes:   batchBytes,
+			BatchTimeout: batchTimeout,
+			// Balancer selection will rely on provided message keys by our partition strategy
+			// Default balancer (hash) in kafka-go respects keys.
+			AllowAutoTopicCreation: true,
+		}
+
+		return &kafkaGoWriter{w: w}, nil
 	}
 }
 
-type fakeWriter struct{}
-
-func (f *fakeWriter) WriteMessages(ctx context.Context, msgs ...KafkaMessage) error { return nil }
-func (f *fakeWriter) Close() error                                                  { return nil }
-
-func init() {
-	wireDefaultWriterFactory()
-}
-
-// helper to translate framework config batching into writer settings will be added alongside kafka-go integration.
-func _unused_silence() time.Duration { return time.Duration(0) }
+func init() { wireDefaultWriterFactory() }
