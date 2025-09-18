@@ -22,6 +22,7 @@
 package cmd
 
 import (
+	"github.com/innovationmech/swit/internal/switctl/cmd/bench"
 	"github.com/innovationmech/swit/internal/switctl/cmd/check"
 	"github.com/innovationmech/swit/internal/switctl/cmd/config"
 	"github.com/innovationmech/swit/internal/switctl/cmd/deps"
@@ -66,6 +67,7 @@ Use switctl to:
 
 	// Add subcommands
 	rootCmd.AddCommand(version.NewSwitctlVersionCmd())
+	rootCmd.AddCommand(bench.NewBenchCommand())
 	rootCmd.AddCommand(new.NewNewCommand())
 	rootCmd.AddCommand(check.NewCheckCommand())
 	rootCmd.AddCommand(generate.NewGenerateCommand())
