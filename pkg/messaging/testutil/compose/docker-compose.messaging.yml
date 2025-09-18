@@ -1,9 +1,6 @@
-version: '3.8'
-
 services:
   kafka:
     image: bitnami/kafka:3.7.1
-    container_name: swit-messaging-kafka
     restart: unless-stopped
     ports:
       - "19092:9092"
@@ -32,7 +29,6 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management
-    container_name: swit-messaging-rabbitmq
     restart: unless-stopped
     ports:
       - "5672:5672"
@@ -50,7 +46,6 @@ services:
 
   nats:
     image: nats:2.10-alpine
-    container_name: swit-messaging-nats
     restart: unless-stopped
     command: ["-js", "-sd", "/var/lib/nats", "--http_port", "8222"]
     ports:

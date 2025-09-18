@@ -61,9 +61,9 @@ func WaitForKafka(ctx context.Context, endpoint string) error {
 		if err != nil {
 			return err
 		}
-		if len(partitions) == 0 {
-			return errors.New("no partitions reported")
-		}
+		// Some clusters may not report partitions until a topic/consumer is created.
+		// Treat successful metadata retrieval as readiness even if no partitions.
+		_ = partitions
 		return nil
 	}
 
