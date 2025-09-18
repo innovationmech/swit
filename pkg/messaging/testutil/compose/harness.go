@@ -186,7 +186,7 @@ func (h *Harness) Start(ctx context.Context) error {
 		args = append(args, h.services...)
 	}
 
-	if err := h.cmd.Run(ctx, h.composeFile, h.projectName, h.env, args...); err != nil {
+    if err := h.cmd.Run(ctx, h.composeFile, h.projectName, h.env, args...); err != nil {
 		return fmt.Errorf("compose up failed: %w", err)
 	}
 
@@ -197,13 +197,14 @@ func (h *Harness) Start(ctx context.Context) error {
 		defer cancel()
 	}
 
-	if err := WaitForKafka(waitCtx, h.endpoints.Kafka); err != nil {
-		_ = h.stopLocked(ctx)
-		return fmt.Errorf("kafka readiness failed: %w", err)
-	}
-	// Only wait for services explicitly requested
-	for _, svc := range h.services {
+    // Only wait for services explicitly requested
+    for _, svc := range h.services {
 		switch svc {
+        case "kafka":
+            if err := WaitForKafka(waitCtx, h.endpoints.Kafka); err != nil {
+                _ = h.stopLocked(ctx)
+                return fmt.Errorf("kafka readiness failed: %w", err)
+            }
 		case "rabbitmq":
 			if err := WaitForRabbitMQ(waitCtx, h.endpoints.Rabbit); err != nil {
 				_ = h.stopLocked(ctx)
