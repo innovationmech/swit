@@ -39,14 +39,14 @@ import (
 type alwaysRetryHandler struct{ counter *int32 }
 
 func (h alwaysRetryHandler) Handle(ctx context.Context, m *messaging.Message) error {
-    if h.counter != nil {
-        atomic.AddInt32(h.counter, 1)
-    }
-    return messaging.NewProcessingError("fail", nil)
+	if h.counter != nil {
+		atomic.AddInt32(h.counter, 1)
+	}
+	return messaging.NewProcessingError("fail", nil)
 }
 
 func (alwaysRetryHandler) OnError(ctx context.Context, m *messaging.Message, err error) messaging.ErrorAction {
-    return messaging.ErrorActionRetry
+	return messaging.ErrorActionRetry
 }
 
 // newRabbitBrokerConfig constructs a BrokerConfig with topology declaring the base queue.
@@ -245,12 +245,12 @@ func TestRabbitMQIntegration_Consumer_ManualAck_RetryThenDLQ(t *testing.T) {
 	}
 	defer dlqSubscriber.Close()
 
-    var processed int32
-    dlqArrived := make(chan *messaging.Message, 1)
+	var processed int32
+	dlqArrived := make(chan *messaging.Message, 1)
 
-    // Always request retry on error; subscriber will enforce MaxRetries then DLQ
-    retryH := alwaysRetryHandler{counter: &processed}
-    go func() { _ = subscriber.Subscribe(ctx, retryH) }()
+	// Always request retry on error; subscriber will enforce MaxRetries then DLQ
+	retryH := alwaysRetryHandler{counter: &processed}
+	go func() { _ = subscriber.Subscribe(ctx, retryH) }()
 
 	go func() {
 		_ = dlqSubscriber.Subscribe(ctx, messaging.MessageHandlerFunc(func(ctx context.Context, m *messaging.Message) error {
@@ -276,20 +276,20 @@ func TestRabbitMQIntegration_Consumer_ManualAck_RetryThenDLQ(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 
-    select {
-    case <-dlqArrived:
-        // Wait briefly for the second processing attempt to be counted
-        deadline := time.Now().Add(2 * time.Second)
-        for {
-            if n := atomic.LoadInt32(&processed); n >= 2 {
-                break
-            }
-            if time.Now().After(deadline) {
-                t.Fatalf("expected >=2 processing attempts before DLQ, got %d", atomic.LoadInt32(&processed))
-            }
-            time.Sleep(50 * time.Millisecond)
-        }
-    case <-time.After(10 * time.Second):
-        t.Fatal("timeout waiting for message to arrive on DLQ")
-    }
+	select {
+	case <-dlqArrived:
+		// Wait briefly for the second processing attempt to be counted
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if n := atomic.LoadInt32(&processed); n >= 2 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("expected >=2 processing attempts before DLQ, got %d", atomic.LoadInt32(&processed))
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for message to arrive on DLQ")
+	}
 }
