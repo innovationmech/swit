@@ -1,3 +1,88 @@
+# 分层配置设计与合并语义
+
+本设计满足 Issue #359：提供分层配置结构及清晰的加载与合并规则，适用于 SWIT 框架与消息系统。
+
+## 层级与优先级（低 → 高）
+
+1. Defaults（代码内默认值，`SetDefault`）
+2. Base 文件（`swit.yaml`）
+3. Environment 文件（`swit.<env>.yaml`，如 `swit.dev.yaml`）
+4. Override 文件（`swit.override.yaml`）
+5. 环境变量（`SWIT_` 前缀，`.` → `_`）
+
+更高优先级将覆盖更低优先级的相同键。嵌套 Map 采用浅覆盖：子键按键级别分别覆盖，未覆盖的键保持原值。
+
+## 命名与环境变量映射
+
+示例键：`messaging.publisher.batch_size` → 环境变量：`SWIT_MESSAGING_PUBLISHER_BATCH_SIZE`。
+
+## 文件与路径约定
+
+- 基础名：`swit`（可配置）
+- 类型：`yaml`（支持 `yml/json`）
+- 工作目录：进程工作目录（可配置）
+
+## 示例配置
+
+```yaml
+# swit.yaml（Base）
+server:
+  port: "9000"
+messaging:
+  broker:
+    type: rabbitmq
+  publisher:
+    batch_size: 10
+    timeout: 5
+```
+
+```yaml
+# swit.dev.yaml（Environment）
+server:
+  port: "9100"
+messaging:
+  broker:
+    type: kafka
+  publisher:
+    timeout: 8
+```
+
+```yaml
+# swit.override.yaml（Override）
+server:
+  port: "9200"
+messaging:
+  publisher:
+    batch_size: 100
+```
+
+环境变量示例：
+
+```bash
+export SWIT_SERVER_PORT=9300
+export SWIT_MESSAGING_PUBLISHER_BATCH_SIZE=200
+```
+
+最终生效：`server.port=9300`，`messaging.publisher.batch_size=200`，`messaging.publisher.timeout=8`，`messaging.broker.type=kafka`。
+
+## 使用方法
+
+```go
+opts := config.DefaultOptions()
+opts.WorkDir = "."
+opts.EnvironmentName = "dev"
+m := config.NewManager(opts)
+m.SetDefault("server.port", "8080")
+_ = m.Load()
+var cfg MyConfig
+_ = m.Unmarshal(&cfg)
+```
+
+## 与现有组件的关系
+
+- `internal/switserve/config` 当前直接 `viper` 加载 `swit.yaml`。后续可切换为 `pkg/config.Manager`，以获得层级与覆盖能力。
+- `internal/switctl/config` 已有分层实现，本包为框架通用实现，面向服务侧与库侧共用。
+
 # Configuration Reference
 
 This document provides a comprehensive reference for configuring the base server framework.
