@@ -104,8 +104,21 @@ func (a *Adapter) ValidateConfiguration(config *messaging.BrokerConfig) *messagi
 		return result
 	}
 
-	// Validate topology semantics (exchanges/queues/bindings)
-	if rabbitCfg != nil {
+	// Endpoint and heartbeat semantics, then topology (exchanges/queues/bindings)
+	if config != nil && rabbitCfg != nil {
+		if errs, warns, suggs := validateRabbitConfiguration(config, rabbitCfg); len(errs)+len(warns)+len(suggs) > 0 {
+			if len(errs) > 0 {
+				result.Valid = false
+				result.Errors = append(result.Errors, errs...)
+			}
+			if len(warns) > 0 {
+				result.Warnings = append(result.Warnings, warns...)
+			}
+			if len(suggs) > 0 {
+				result.Suggestions = append(result.Suggestions, suggs...)
+			}
+		}
+
 		if errs, warns, suggs := validateTopology(rabbitCfg.Topology); len(errs)+len(warns)+len(suggs) > 0 {
 			if len(errs) > 0 {
 				result.Valid = false
