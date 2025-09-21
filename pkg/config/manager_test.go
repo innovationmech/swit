@@ -22,10 +22,10 @@
 package config
 
 import (
-    "os"
-    "path/filepath"
-    "testing"
-    "strings"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -166,13 +166,13 @@ func TestUnmarshalNilTarget(t *testing.T) {
 }
 
 func TestAutoDetect_JSONAndYAML_MergePrecedence(t *testing.T) {
-    t.Setenv("SWIT_SERVER_PORT", "9301")
-    t.Setenv("SWIT_MESSAGING_PUBLISHER_BATCH_SIZE", "201")
+	t.Setenv("SWIT_SERVER_PORT", "9301")
+	t.Setenv("SWIT_MESSAGING_PUBLISHER_BATCH_SIZE", "201")
 
-    tempDir := t.TempDir()
+	tempDir := t.TempDir()
 
-    // Base: JSON
-    writeFile(t, tempDir, "swit.json", `{
+	// Base: JSON
+	writeFile(t, tempDir, "swit.json", `{
         "server": {"port": "9001"},
         "messaging": {
             "broker": {"type": "rabbitmq"},
@@ -180,53 +180,53 @@ func TestAutoDetect_JSONAndYAML_MergePrecedence(t *testing.T) {
         }
     }`)
 
-    // Env: YAML
-    writeFile(t, tempDir, "swit.dev.yaml", `server: { port: "9101" }
+	// Env: YAML
+	writeFile(t, tempDir, "swit.dev.yaml", `server: { port: "9101" }
 messaging:
   publisher:
     timeout: 7
 `)
 
-    // Override: JSON
-    writeFile(t, tempDir, "swit.override.json", `{"messaging": {"publisher": {"batch_size": 101}}}`)
+	// Override: JSON
+	writeFile(t, tempDir, "swit.override.json", `{"messaging": {"publisher": {"batch_size": 101}}}`)
 
-    m := NewManager(Options{
-        WorkDir:            tempDir,
-        ConfigBaseName:     "swit",
-        ConfigType:         "auto",
-        EnvironmentName:    "dev",
-        OverrideFilename:   "swit.override", // extension auto-detected
-        EnvPrefix:          "SWIT",
-        EnableAutomaticEnv: true,
-    })
+	m := NewManager(Options{
+		WorkDir:            tempDir,
+		ConfigBaseName:     "swit",
+		ConfigType:         "auto",
+		EnvironmentName:    "dev",
+		OverrideFilename:   "swit.override", // extension auto-detected
+		EnvPrefix:          "SWIT",
+		EnableAutomaticEnv: true,
+	})
 
-    m.SetDefault("server.port", "8080")
-    m.SetDefault("messaging.publisher.batch_size", 1)
-    m.SetDefault("messaging.publisher.timeout", 2)
+	m.SetDefault("server.port", "8080")
+	m.SetDefault("messaging.publisher.batch_size", 1)
+	m.SetDefault("messaging.publisher.timeout", 2)
 
-    if err := m.Load(); err != nil {
-        t.Fatalf("load: %v", err)
-    }
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
 
-    var cfg testConfig
-    if err := m.Unmarshal(&cfg); err != nil {
-        t.Fatalf("unmarshal: %v", err)
-    }
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
 
-    if got, want := cfg.Server.Port, "9301"; got != want {
-        t.Fatalf("server.port precedence = %s, want %s", got, want)
-    }
-    if got, want := cfg.Messaging.Publisher.Timeout, 7; got != want {
-        t.Fatalf("publisher.timeout = %d, want %d", got, want)
-    }
-    if got, want := cfg.Messaging.Publisher.BatchSize, 201; got != want {
-        t.Fatalf("publisher.batch_size = %d, want %d", got, want)
-    }
+	if got, want := cfg.Server.Port, "9301"; got != want {
+		t.Fatalf("server.port precedence = %s, want %s", got, want)
+	}
+	if got, want := cfg.Messaging.Publisher.Timeout, 7; got != want {
+		t.Fatalf("publisher.timeout = %d, want %d", got, want)
+	}
+	if got, want := cfg.Messaging.Publisher.BatchSize, 201; got != want {
+		t.Fatalf("publisher.batch_size = %d, want %d", got, want)
+	}
 }
 
 func TestUnmarshalStrict_UnknownFields(t *testing.T) {
-    tempDir := t.TempDir()
-    writeFile(t, tempDir, "swit.yaml", `server:
+	tempDir := t.TempDir()
+	writeFile(t, tempDir, "swit.yaml", `server:
   port: "9000"
 messaging:
   publisher:
@@ -234,68 +234,161 @@ messaging:
   unknown_section: true
 `)
 
-    m := NewManager(Options{WorkDir: tempDir})
-    if err := m.Load(); err != nil {
-        t.Fatalf("load: %v", err)
-    }
+	m := NewManager(Options{WorkDir: tempDir})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
 
-    var cfg testConfig
-    if err := m.UnmarshalStrict(&cfg); err == nil {
-        t.Fatalf("expected strict unmarshal to fail on unknown fields")
-    }
+	var cfg testConfig
+	if err := m.UnmarshalStrict(&cfg); err == nil {
+		t.Fatalf("expected strict unmarshal to fail on unknown fields")
+	}
 }
 
 func TestRequireKeys(t *testing.T) {
-    tempDir := t.TempDir()
-    writeFile(t, tempDir, "swit.yaml", `server: { port: "8000" }`)
+	tempDir := t.TempDir()
+	writeFile(t, tempDir, "swit.yaml", `server: { port: "8000" }`)
 
-    m := NewManager(Options{WorkDir: tempDir})
-    if err := m.Load(); err != nil {
-        t.Fatalf("load: %v", err)
-    }
+	m := NewManager(Options{WorkDir: tempDir})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
 
-    if err := m.RequireKeys("server.port", "messaging.publisher.timeout", "nonexistent.key"); err == nil {
-        t.Fatalf("expected missing keys error")
-    }
+	if err := m.RequireKeys("server.port", "messaging.publisher.timeout", "nonexistent.key"); err == nil {
+		t.Fatalf("expected missing keys error")
+	}
 }
 
 func TestOverrideFilename_ExtensionAutoDetection(t *testing.T) {
-    tempDir := t.TempDir()
-    writeFile(t, tempDir, "swit.yaml", `server: { port: "9800" }`)
-    // provide custom override without extension in options; create JSON file
-    writeFile(t, tempDir, "custom.override.json", `{"server": {"port": "9900"}}`)
+	tempDir := t.TempDir()
+	writeFile(t, tempDir, "swit.yaml", `server: { port: "9800" }`)
+	// provide custom override without extension in options; create JSON file
+	writeFile(t, tempDir, "custom.override.json", `{"server": {"port": "9900"}}`)
 
-    m := NewManager(Options{
-        WorkDir:          tempDir,
-        OverrideFilename: "custom.override",
-        ConfigType:       "auto",
-    })
-    if err := m.Load(); err != nil {
-        t.Fatalf("load: %v", err)
-    }
-    var cfg testConfig
-    if err := m.Unmarshal(&cfg); err != nil {
-        t.Fatalf("unmarshal: %v", err)
-    }
-    if got, want := cfg.Server.Port, "9900"; got != want {
-        t.Fatalf("server.port = %s, want %s", got, want)
-    }
+	m := NewManager(Options{
+		WorkDir:          tempDir,
+		OverrideFilename: "custom.override",
+		ConfigType:       "auto",
+	})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got, want := cfg.Server.Port, "9900"; got != want {
+		t.Fatalf("server.port = %s, want %s", got, want)
+	}
 }
 
 func TestParseErrorActionable(t *testing.T) {
-    tempDir := t.TempDir()
-    // invalid YAML (missing colon)
-    writeFile(t, tempDir, "swit.yaml", `server\n  port "9800"`)
+	tempDir := t.TempDir()
+	// invalid YAML (missing colon)
+	writeFile(t, tempDir, "swit.yaml", `server\n  port "9800"`)
 
-    m := NewManager(Options{WorkDir: tempDir, ConfigType: "auto"})
-    err := m.Load()
-    if err == nil {
-        t.Fatalf("expected parse error, got nil")
-    }
-    if !strings.Contains(err.Error(), "parse ") {
-        t.Fatalf("error should include 'parse', got: %v", err)
-    }
-    if !strings.Contains(err.Error(), "swit.yaml") {
-        t.Fatalf("error should include filename, got: %v", err)
-    }
+	m := NewManager(Options{WorkDir: tempDir, ConfigType: "auto"})
+	err := m.Load()
+	if err == nil {
+		t.Fatalf("expected parse error, got nil")
+	}
+	if !strings.Contains(err.Error(), "parse ") {
+		t.Fatalf("error should include 'parse', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "swit.yaml") {
+		t.Fatalf("error should include filename, got: %v", err)
+	}
+}
+
+func TestInterpolationInConfigValues(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("MY_PORT", "9350")
+	t.Setenv("MY_TIMEOUT", "12")
+
+	writeFile(t, tempDir, "swit.yaml", `
+server:
+  port: "${MY_PORT:-9100}"
+messaging:
+  publisher:
+    timeout: ${MY_TIMEOUT:-8}
+`)
+
+	m := NewManager(Options{WorkDir: tempDir, EnableInterpolation: true})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got, want := cfg.Server.Port, "9350"; got != want {
+		t.Fatalf("interpolated server.port = %s, want %s", got, want)
+	}
+	if got, want := cfg.Messaging.Publisher.Timeout, 12; got != want {
+		t.Fatalf("interpolated publisher.timeout = %d, want %d", got, want)
+	}
+}
+
+func TestInterpolationDefaultFallback(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeFile(t, tempDir, "swit.yaml", `server: { port: "${UNSET_VAR:-9100}" }`)
+
+	m := NewManager(Options{WorkDir: tempDir, EnableInterpolation: true})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got, want := cfg.Server.Port, "9100"; got != want {
+		t.Fatalf("defaulted server.port = %s, want %s", got, want)
+	}
+}
+
+func TestSecretFileSetsEnvAndOverrides(t *testing.T) {
+	tempDir := t.TempDir()
+	// Prepare secret file with desired port value
+	secretPath := writeFile(t, tempDir, "port.txt", "9400\n")
+
+	// Only set *_FILE, do not set the main var
+	t.Setenv("SWIT_SERVER_PORT_FILE", secretPath)
+
+	// Base file
+	writeFile(t, tempDir, "swit.yaml", `server: { port: "9000" }`)
+
+	m := NewManager(Options{WorkDir: tempDir, EnvPrefix: "SWIT", EnableAutomaticEnv: true})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	// After load, the env var should be populated from file
+	if val := os.Getenv("SWIT_SERVER_PORT"); val != "9400" {
+		t.Fatalf("SWIT_SERVER_PORT env = %q, want %q", val, "9400")
+	}
+
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got, want := cfg.Server.Port, "9400"; got != want {
+		t.Fatalf("server.port with secret file = %s, want %s", got, want)
+	}
+}
+
+func TestSecretFileConflictReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+	secretPath := writeFile(t, tempDir, "token.txt", "s3cr3t\n")
+
+	t.Setenv("SWIT_API_KEY", "inline")
+	t.Setenv("SWIT_API_KEY_FILE", secretPath)
+
+	writeFile(t, tempDir, "swit.yaml", `{}
+`)
+
+	m := NewManager(Options{WorkDir: tempDir, EnvPrefix: "SWIT"})
+	if err := m.Load(); err == nil {
+		t.Fatalf("expected conflict error when both VAR and VAR_FILE are set")
+	}
 }

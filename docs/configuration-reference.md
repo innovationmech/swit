@@ -16,11 +16,45 @@
 
 示例键：`messaging.publisher.batch_size` → 环境变量：`SWIT_MESSAGING_PUBLISHER_BATCH_SIZE`。
 
+- **前缀**：默认 `SWIT`，可通过 `Options.EnvPrefix` 定制
+- **键映射**：配置键中的 `.` 将映射为 `_`（通过 `viper.SetEnvKeyReplacer(".", "_")`）
+- **优先级**：环境变量始终高于文件与默认值
+
 ## 文件与路径约定
 
 - 基础名：`swit`（可配置）
 - 类型：`yaml`（支持 `yml/json`）
 - 工作目录：进程工作目录（可配置）
+
+## 文件内变量插值（${VAR} 与 ${VAR:-default}）
+
+- 启用方式：`Options.EnableInterpolation = true`（默认开启）
+- 语法：
+  - `${VAR}`：替换为环境变量 `VAR` 的值，未设置则替换为空字符串
+  - `${VAR:-default}`：若 `VAR` 未设置或为空，则使用 `default`
+  - `$VAR`：遵循系统标准展开（`os.ExpandEnv`）
+- 示例：
+```yaml
+server:
+  port: "${MY_PORT:-8080}"
+```
+在设置 `MY_PORT=9090` 时，最终 `server.port=9090`；未设置时，`server.port=8080`。
+
+注意：插值发生在文件合并之后、环境变量覆盖之前，不改变 SWIT_* 覆盖优先级。
+
+## 机密文件注入（*_FILE）
+
+为便于从容器 Secret/挂载文件中注入机密，支持将 `*_FILE` 的内容注入为同名环境变量。
+
+- 启用方式：默认开启；后缀可通过 `Options.SecretFileSuffix` 定制（默认 `_FILE`）
+- 作用范围：仅处理前缀为 `EnvPrefix`（默认 `SWIT_`）的环境变量，例如 `SWIT_DB_PASSWORD_FILE`
+- 冲突保护：若同时设置了 `SWIT_FOO` 与 `SWIT_FOO_FILE`，加载将报错以避免歧义
+- 示例：
+```bash
+# 将文件内容注入为 SWIT_SERVER_PORT（会自动去掉结尾换行）
+export SWIT_SERVER_PORT_FILE=/run/secrets/server_port
+```
+此时 `SWIT_SERVER_PORT` 会在加载时被设置为文件内容，随后按照常规 SWIT_* 覆盖规则生效。
 
 ## 示例配置
 
