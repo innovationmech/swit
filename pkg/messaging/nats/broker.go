@@ -166,6 +166,16 @@ func (b *natsBroker) Connect(ctx context.Context) error {
 		if err := b.ensureJetStreamTopology(ctx); err != nil {
 			return err
 		}
+
+		// Ensure Key-Value buckets
+		if err := b.ensureJetStreamKeyValue(ctx); err != nil {
+			return err
+		}
+
+		// Ensure Object Store buckets
+		if err := b.ensureJetStreamObjectStores(ctx); err != nil {
+			return err
+		}
 	}
 
 	b.started = true
@@ -316,6 +326,49 @@ func (b *natsBroker) ensureJetStreamTopology(ctx context.Context) error {
 	return nil
 }
 
+// ensureJetStreamKeyValue creates or opens configured KV buckets.
+func (b *natsBroker) ensureJetStreamKeyValue(ctx context.Context) error {
+	if b.js == nil || b.cfg.JetStream == nil || !b.cfg.JetStream.Enabled {
+		return nil
+	}
+	for _, kv := range b.cfg.JetStream.KV {
+		// Normalize and translate
+		kvc := toNATSKeyValueConfig(&kv)
+		if kvc == nil || kvc.Bucket == "" {
+			return messaging.NewConfigError("invalid JetStream KV bucket configuration", nil)
+		}
+		// Try open first
+		if _, err := b.js.KeyValue(kvc.Bucket); err == nil {
+			continue
+		}
+		if _, err := b.js.CreateKeyValue(kvc); err != nil {
+			return messaging.NewConnectionError("failed to create JetStream KV bucket", err)
+		}
+	}
+	return nil
+}
+
+// ensureJetStreamObjectStores creates or opens configured Object Store buckets.
+func (b *natsBroker) ensureJetStreamObjectStores(ctx context.Context) error {
+	if b.js == nil || b.cfg.JetStream == nil || !b.cfg.JetStream.Enabled {
+		return nil
+	}
+	for _, osb := range b.cfg.JetStream.ObjectStores {
+		osc := toNATSObjectStoreConfig(&osb)
+		if osc == nil || osc.Bucket == "" {
+			return messaging.NewConfigError("invalid JetStream Object Store configuration", nil)
+		}
+		// Try open first
+		if _, err := b.js.ObjectStore(osc.Bucket); err == nil {
+			continue
+		}
+		if _, err := b.js.CreateObjectStore(osc); err != nil {
+			return messaging.NewConnectionError("failed to create JetStream Object Store", err)
+		}
+	}
+	return nil
+}
+
 // Helpers to translate our config into nats.go configs
 func toNATSStreamConfig(in *JSStreamConfig) *nats.StreamConfig {
 	var retention nats.RetentionPolicy
@@ -399,5 +452,60 @@ func toNATSConsumerConfig(in *JSConsumerConfig) *nats.ConsumerConfig {
 		MaxAckPending:  in.MaxAckPending,
 		DeliverSubject: in.DeliverSubject,
 		DeliverGroup:   in.DeliverGroup,
+	}
+}
+
+func toNATSKeyValueConfig(in *JSKeyValueBucketConfig) *nats.KeyValueConfig {
+	if in == nil || in.Name == "" {
+		return nil
+	}
+	// Normalize local copy
+	cfg := *in
+	cfg.normalize()
+
+	var storage nats.StorageType
+	switch cfg.Storage {
+	case "memory":
+		storage = nats.MemoryStorage
+	default:
+		storage = nats.FileStorage
+	}
+
+	return &nats.KeyValueConfig{
+		Bucket:       cfg.Name,
+		Description:  cfg.Description,
+		TTL:          time.Duration(cfg.TTL),
+		History:      uint8(cfg.History),
+		MaxValueSize: cfg.MaxValueSize,
+		MaxBytes:     cfg.MaxBucketBytes,
+		Storage:      storage,
+		Replicas:     cfg.Replicas,
+	}
+}
+
+func toNATSObjectStoreConfig(in *JSObjectStoreConfig) *nats.ObjectStoreConfig {
+	if in == nil || in.Name == "" {
+		return nil
+	}
+	// Normalize local copy
+	cfg := *in
+	cfg.normalize()
+
+	var storage nats.StorageType
+	switch cfg.Storage {
+	case "memory":
+		storage = nats.MemoryStorage
+	default:
+		storage = nats.FileStorage
+	}
+
+	return &nats.ObjectStoreConfig{
+		Bucket:      cfg.Name,
+		Description: cfg.Description,
+		Storage:     storage,
+		Replicas:    cfg.Replicas,
+		MaxBytes:    cfg.MaxBucketBytes,
+		// Compression and MaxObjectSize are not directly available on ObjectStoreConfig
+		// in some versions; they are kept for forward compatibility but ignored here.
 	}
 }

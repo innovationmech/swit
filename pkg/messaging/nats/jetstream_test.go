@@ -190,3 +190,57 @@ func TestToNATSConsumerConfigMapping(t *testing.T) {
 		})
 	}
 }
+
+func TestToNATSKeyValueAndObjectStoreConfigMapping(t *testing.T) {
+	t.Run("kv mapping and defaults", func(t *testing.T) {
+		in := JSKeyValueBucketConfig{
+			Name:           "app.cfg",
+			Description:    "desc",
+			TTL:            messaging.Duration(0),
+			History:        10,
+			MaxValueSize:   1024,
+			MaxBucketBytes: 10 * 1024,
+			Storage:        "memory",
+			Replicas:       3,
+		}
+		out := toNATSKeyValueConfig(&in)
+		if out == nil {
+			t.Fatalf("nil kv config")
+		}
+		if out.Bucket != "app.cfg" || out.Description != "desc" {
+			t.Fatalf("kv fields mismatch")
+		}
+		if out.Storage != nats.MemoryStorage {
+			t.Fatalf("kv storage mismatch")
+		}
+		if out.Replicas != 3 {
+			t.Fatalf("kv replicas mismatch")
+		}
+	})
+
+	t.Run("object store mapping and defaults", func(t *testing.T) {
+		in := JSObjectStoreConfig{
+			Name:           "objects",
+			Description:    "bin",
+			Storage:        "file",
+			Replicas:       2,
+			MaxBucketBytes: 1 << 20,
+		}
+		out := toNATSObjectStoreConfig(&in)
+		if out == nil {
+			t.Fatalf("nil object store config")
+		}
+		if out.Bucket != "objects" || out.Description != "bin" {
+			t.Fatalf("obj fields mismatch")
+		}
+		if out.Storage != nats.FileStorage {
+			t.Fatalf("obj storage mismatch")
+		}
+		if out.Replicas != 2 {
+			t.Fatalf("obj replicas mismatch")
+		}
+		if out.MaxBytes != 1<<20 {
+			t.Fatalf("obj max bytes mismatch")
+		}
+	})
+}
