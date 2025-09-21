@@ -463,6 +463,67 @@ func TestValidateStruct(t *testing.T) {
 	}
 }
 
+func TestTagValidator_BrokerEndpoints(t *testing.T) {
+	cases := []struct {
+		name      string
+		cfg       BrokerConfig
+		wantError bool
+	}{
+		{
+			name:      "empty endpoints invalid",
+			cfg:       BrokerConfig{Type: BrokerTypeInMemory, Endpoints: []string{}},
+			wantError: true,
+		},
+		{
+			name:      "blank endpoint invalid",
+			cfg:       BrokerConfig{Type: BrokerTypeInMemory, Endpoints: []string{"  "}},
+			wantError: true,
+		},
+		{
+			name:      "host:port valid",
+			cfg:       BrokerConfig{Type: BrokerTypeInMemory, Endpoints: []string{"localhost:9092"}},
+			wantError: false,
+		},
+		{
+			name:      "scheme endpoint valid",
+			cfg:       BrokerConfig{Type: BrokerTypeInMemory, Endpoints: []string{"nats://localhost:4222"}},
+			wantError: false,
+		},
+		{
+			name:      "host-only allowed (no port)",
+			cfg:       BrokerConfig{Type: BrokerTypeInMemory, Endpoints: []string{"localhost"}},
+			wantError: false,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			// Defaults to satisfy semantic checks
+			tt.cfg.SetDefaults()
+			err := tt.cfg.Validate()
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTagValidator_PublisherSubscriberRequired(t *testing.T) {
+	pub := &PublisherConfig{}
+	if err := AggregateValidationError(GetTagValidator().Struct(pub)); err == nil {
+		t.Fatalf("expected validation error for empty publisher config")
+	}
+
+	sub := &SubscriberConfig{}
+	if err := AggregateValidationError(GetTagValidator().Struct(sub)); err == nil {
+		t.Fatalf("expected validation error for empty subscriber config")
+	}
+}
+
 func TestConfigValidator_ValidateWithProfile(t *testing.T) {
 	validator := NewConfigValidator()
 
