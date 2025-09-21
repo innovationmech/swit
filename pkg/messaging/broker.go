@@ -535,6 +535,18 @@ func NewConfigError(message string, cause error) *MessagingError {
 	}
 }
 
+// NewConfigValidationError creates a new configuration validation error with
+// ErrConfigValidation code and aggregated message.
+func NewConfigValidationError(message string, cause error) *MessagingError {
+	return &MessagingError{
+		Code:      ErrConfigValidation,
+		Message:   message,
+		Cause:     cause,
+		Retryable: false,
+		Timestamp: time.Now(),
+	}
+}
+
 // NewTransactionError creates a new transaction-related error.
 func NewTransactionError(message string, cause error) *MessagingError {
 	return &MessagingError{

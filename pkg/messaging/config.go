@@ -90,7 +90,7 @@ type BrokerConfig struct {
 	Type BrokerType `yaml:"type" json:"type" validate:"required,oneof=kafka nats rabbitmq inmemory"`
 
 	// Endpoints contains the list of broker endpoints
-	Endpoints []string `yaml:"endpoints" json:"endpoints" validate:"required,min=1"`
+	Endpoints []string `yaml:"endpoints" json:"endpoints" validate:"required,min=1,dive,endpoint"`
 
 	// Connection configuration
 	Connection ConnectionConfig `yaml:"connection" json:"connection"`
@@ -116,18 +116,24 @@ type BrokerConfig struct {
 
 // Validate validates the broker configuration.
 func (c *BrokerConfig) Validate() error {
+	// First, run semantic validation rules to preserve legacy UX/messages
 	if !c.Type.IsValid() {
 		return NewConfigError(fmt.Sprintf("invalid broker type: %s", c.Type), nil)
 	}
 
+	// Preserve legacy explicit checks for clearer UX and test expectations
 	if len(c.Endpoints) == 0 {
 		return NewConfigError("at least one endpoint must be specified", nil)
 	}
-
 	for i, endpoint := range c.Endpoints {
-		if endpoint == "" {
+		if strings.TrimSpace(endpoint) == "" {
 			return NewConfigError(fmt.Sprintf("endpoint %d cannot be empty", i), nil)
 		}
+	}
+
+	// Then, run tag-based validation for additional constraints
+	if err := AggregateValidationError(GetTagValidator().Struct(c)); err != nil {
+		return err
 	}
 
 	if err := c.Connection.Validate(); err != nil {
@@ -601,7 +607,7 @@ func (c *MonitoringConfig) SetDefaults() {
 // PublisherConfig defines publisher-specific configuration.
 type PublisherConfig struct {
 	// Topic is the destination topic/queue
-	Topic string `yaml:"topic" json:"topic" validate:"required"`
+	Topic string `yaml:"topic" json:"topic" validate:"required,notblank"`
 
 	// Routing configuration
 	Routing RoutingConfig `yaml:"routing" json:"routing"`
@@ -690,10 +696,10 @@ type TimeoutConfig struct {
 // SubscriberConfig defines subscriber-specific configuration.
 type SubscriberConfig struct {
 	// Topics to subscribe to
-	Topics []string `yaml:"topics" json:"topics" validate:"required,min=1"`
+	Topics []string `yaml:"topics" json:"topics" validate:"required,min=1,dive,notblank"`
 
 	// ConsumerGroup name
-	ConsumerGroup string `yaml:"consumer_group" json:"consumer_group" validate:"required"`
+	ConsumerGroup string `yaml:"consumer_group" json:"consumer_group" validate:"required,notblank"`
 
 	// Serialization configures how payloads should be decoded and validated.
 	Serialization *SerializationOptions `yaml:"serialization,omitempty" json:"serialization,omitempty"`
@@ -1038,8 +1044,8 @@ func setSubscriberDefaults(config *SubscriberConfig) {
 
 // validatePublisherConfig validates publisher configuration
 func (cm *ConfigManager) validatePublisherConfig(config *PublisherConfig) error {
-	if config.Topic == "" {
-		return NewConfigError("publisher topic is required", nil)
+	if err := AggregateValidationError(GetTagValidator().Struct(config)); err != nil {
+		return err
 	}
 
 	validStrategies := []string{"round_robin", "hash", "random"}
@@ -1085,12 +1091,18 @@ func (cm *ConfigManager) validatePublisherConfig(config *PublisherConfig) error 
 
 // validateSubscriberConfig validates subscriber configuration
 func (cm *ConfigManager) validateSubscriberConfig(config *SubscriberConfig) error {
+	// Preserve legacy explicit checks for clearer UX and test expectations
 	if len(config.Topics) == 0 {
 		return NewConfigError("subscriber topics are required", nil)
 	}
 
 	if config.ConsumerGroup == "" {
 		return NewConfigError("subscriber consumer_group is required", nil)
+	}
+
+	// Tag-based checks for additional constraints
+	if err := AggregateValidationError(GetTagValidator().Struct(config)); err != nil {
+		return err
 	}
 
 	if config.Serialization != nil {
