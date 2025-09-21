@@ -14,7 +14,15 @@ NC='\033[0m' # No Color
 # 配置变量
 PROJECT_NAME="swit"
 API_DIR="api"
-BUF_VERSION=${BUF_VERSION:-"latest"}
+# 解析BUF_VERSION，优先环境变量，否则从scripts/mk/variables.mk读取，最后回退到v1.28.1
+if [ -z "${BUF_VERSION}" ] || [ "${BUF_VERSION}" = "latest" ]; then
+    if [ -f "scripts/mk/variables.mk" ]; then
+        BUF_VERSION=$(grep -E '^BUF_VERSION\s*:?=\s*' scripts/mk/variables.mk | awk '{print $3}' | tr -d '\r')
+    fi
+    if [ -z "${BUF_VERSION}" ]; then
+        BUF_VERSION="v1.28.1"
+    fi
+fi
 
 # 函数：打印日志
 log_info() {
@@ -89,23 +97,32 @@ check_project_root() {
 install_buf() {
     log_info "检查Buf工具..."
     
+    local desired_version_no_v="${BUF_VERSION#v}"
+    local need_install="true"
     if command -v buf &> /dev/null; then
-        local current_version=$(buf --version 2>/dev/null | head -1 || echo "unknown")
-        log_info "Buf已安装: $current_version"
-        return 0
+        # buf --version 通常输出形如: 1.28.1
+        local current_version=$(buf --version 2>/dev/null | head -1 | awk '{print $1}')
+        if [ -n "$current_version" ]; then
+            log_info "Buf已安装: $current_version"
+            if [ "$desired_version_no_v" = "$current_version" ]; then
+                need_install="false"
+                log_info "Buf版本匹配，无需重新安装"
+            fi
+        fi
     fi
     
-    log_info "安装Buf CLI..."
-    if [ "$DRY_RUN" = "true" ]; then
-        echo "go install github.com/bufbuild/buf/cmd/buf@${BUF_VERSION}"
-        return 0
-    fi
-    
-    if go install "github.com/bufbuild/buf/cmd/buf@${BUF_VERSION}"; then
-        log_success "✓ Buf工具安装完成"
-    else
-        log_error "Buf工具安装失败"
-        exit 1
+    if [ "$need_install" = "true" ]; then
+        log_info "安装Buf CLI 版本: ${BUF_VERSION}"
+        if [ "$DRY_RUN" = "true" ]; then
+            echo "go install github.com/bufbuild/buf/cmd/buf@${BUF_VERSION}"
+            return 0
+        fi
+        if go install "github.com/bufbuild/buf/cmd/buf@${BUF_VERSION}"; then
+            log_success "✓ Buf工具安装完成"
+        else
+            log_error "Buf工具安装失败"
+            exit 1
+        fi
     fi
 }
 
