@@ -322,7 +322,24 @@ func (m *Manager) mergeFirstExistingFile(candidates []string) error {
 }
 
 // mergeFile merges a specific configuration file, auto-selecting parser by its extension.
-func (m *Manager) mergeFile(path string) error {
+func (m *Manager) mergeFile(path string) error { // wrapper with fresh visited set
+	visited := make(map[string]bool)
+	return m.mergeFileRecursive(path, visited)
+}
+
+// mergeFileRecursive merges a specific configuration file, supporting `extends` inheritance.
+// It resolves and merges extended files first (lower precedence), then merges the file itself.
+// Cycles in extends chains are detected and reported.
+func (m *Manager) mergeFileRecursive(path string, visited map[string]bool) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	if visited[abs] {
+		return fmt.Errorf("cyclic extends detected involving %s", abs)
+	}
+	visited[abs] = true
+
 	// Read file into a temporary viper to avoid changing base settings on read errors
 	tmp := viper.New()
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
@@ -347,8 +364,92 @@ func (m *Manager) mergeFile(path string) error {
 	if err := tmp.ReadConfig(bytes.NewReader(content)); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
-	// Merge using parsed map to avoid relying on base viper's ConfigType
-	return m.v.MergeConfigMap(tmp.AllSettings())
+
+	// Handle optional `extends` at top-level (string or list). Extended files are merged first.
+	if tmp.IsSet("extends") {
+		var refs []string
+		switch v := tmp.Get("extends").(type) {
+		case string:
+			if strings.TrimSpace(v) != "" {
+				refs = append(refs, v)
+			}
+		case []interface{}:
+			for _, it := range v {
+				s := fmt.Sprintf("%v", it)
+				if strings.TrimSpace(s) != "" {
+					refs = append(refs, s)
+				}
+			}
+		case []string:
+			refs = append(refs, v...)
+		default:
+			// ignore unsupported types silently
+		}
+
+		baseDir := filepath.Dir(abs)
+		for _, ref := range refs {
+			cand := m.extendsCandidatesFor(baseDir, ref)
+			target := firstExisting(cand)
+			if target == "" {
+				return fmt.Errorf("extends target not found: %s (searched: %s)", ref, strings.Join(cand, ", "))
+			}
+			if err := m.mergeFileRecursive(target, visited); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Merge current file settings (excluding `extends` key itself)
+	settings := tmp.AllSettings()
+	// Remove top-level `extends` to avoid leaking into final settings
+	delete(settings, "extends")
+	return m.v.MergeConfigMap(settings)
+}
+
+// extendsCandidatesFor builds candidate file paths for an extends reference.
+// If the reference has a known extension, it is treated as exact; otherwise
+// candidates are generated based on config type settings (auto/yaml/json).
+func (m *Manager) extendsCandidatesFor(baseDir, ref string) []string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil
+	}
+	// Absolute path stays as-is; relative paths resolved against the including file directory
+	var basePath string
+	if filepath.IsAbs(ref) {
+		basePath = ref
+	} else {
+		basePath = filepath.Join(baseDir, ref)
+	}
+
+	// If ref already has a known extension, use it directly
+	if ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(basePath)), "."); ext == "yaml" || ext == "yml" || ext == "json" || ext == "toml" || ext == "hcl" {
+		return []string{basePath}
+	}
+
+	// Otherwise, generate candidates according to ConfigType
+	var exts []string
+	switch strings.ToLower(m.options.ConfigType) {
+	case "auto", "":
+		exts = []string{"yaml", "yml", "json"}
+	default:
+		exts = []string{m.normalizedConfigExt()}
+	}
+	out := make([]string, 0, len(exts))
+	for _, e := range exts {
+		out = append(out, basePath+"."+e)
+	}
+	return out
+}
+
+// firstExisting returns the first path that exists from candidates, or empty string if none.
+func firstExisting(candidates []string) string {
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // UnmarshalStrict binds settings into target like Unmarshal, but fails on unknown fields.

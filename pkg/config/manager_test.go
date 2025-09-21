@@ -392,3 +392,143 @@ func TestSecretFileConflictReturnsError(t *testing.T) {
 		t.Fatalf("expected conflict error when both VAR and VAR_FILE are set")
 	}
 }
+
+func TestExtends_SingleChainAndPrecedence(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// common base referenced by swit.yaml
+	writeFile(t, tempDir, "base.yaml", `
+server:
+  port: "8000"
+messaging:
+  broker:
+    type: rabbitmq
+  publisher:
+    batch_size: 5
+    timeout: 3
+`)
+
+	// swit.yaml extends base.yaml and overrides some fields
+	writeFile(t, tempDir, "swit.yaml", `
+extends: base.yaml
+server:
+  port: "9000"
+messaging:
+  publisher:
+    timeout: 6
+`)
+
+	m := NewManager(Options{WorkDir: tempDir})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got, want := cfg.Server.Port, "9000"; got != want {
+		t.Fatalf("server.port = %s, want %s", got, want)
+	}
+	if got, want := cfg.Messaging.Publisher.BatchSize, 5; got != want {
+		t.Fatalf("publisher.batch_size = %d, want %d", got, want)
+	}
+	if got, want := cfg.Messaging.Publisher.Timeout, 6; got != want {
+		t.Fatalf("publisher.timeout = %d, want %d", got, want)
+	}
+	if v := m.Get("extends"); v != nil {
+		t.Fatalf("extends key leaked into settings: %v", v)
+	}
+}
+
+func TestExtends_MultipleFiles_ListOrder(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeFile(t, tempDir, "one.yaml", `
+messaging:
+  publisher:
+    batch_size: 10
+`)
+	writeFile(t, tempDir, "two.yaml", `
+messaging:
+  publisher:
+    timeout: 7
+`)
+	writeFile(t, tempDir, "swit.yaml", `
+extends: [one.yaml, two.yaml]
+messaging:
+  publisher:
+    batch_size: 20
+`)
+
+	m := NewManager(Options{WorkDir: tempDir})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got, want := cfg.Messaging.Publisher.BatchSize, 20; got != want {
+		t.Fatalf("publisher.batch_size = %d, want %d", got, want)
+	}
+	if got, want := cfg.Messaging.Publisher.Timeout, 7; got != want {
+		t.Fatalf("publisher.timeout = %d, want %d", got, want)
+	}
+}
+
+func TestExtends_RelativePathWithoutExtension_AutoDetection(t *testing.T) {
+	tempDir := t.TempDir()
+	nested := filepath.Join(tempDir, "configs")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeFile(t, nested, "base.yml", `server: { port: "9700" }`)
+
+	writeFile(t, tempDir, "swit.yaml", `
+extends: configs/base
+messaging:
+  publisher:
+    timeout: 4
+`)
+
+	m := NewManager(Options{WorkDir: tempDir, ConfigType: "auto"})
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var cfg testConfig
+	if err := m.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got, want := cfg.Server.Port, "9700"; got != want {
+		t.Fatalf("server.port = %s, want %s", got, want)
+	}
+}
+
+func TestExtends_CycleDetection(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeFile(t, tempDir, "a.yaml", `extends: b.yaml
+server: { port: "9800" }
+`)
+	writeFile(t, tempDir, "b.yaml", `extends: a.yaml
+`)
+	writeFile(t, tempDir, "swit.yaml", `extends: a.yaml
+`)
+
+	m := NewManager(Options{WorkDir: tempDir})
+	if err := m.Load(); err == nil {
+		t.Fatalf("expected cycle detection error, got nil")
+	}
+}
+
+func TestExtends_MissingTargetReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+	writeFile(t, tempDir, "swit.yaml", `extends: not-exists.yaml
+`)
+	m := NewManager(Options{WorkDir: tempDir})
+	if err := m.Load(); err == nil {
+		t.Fatalf("expected error for missing extends target")
+	}
+}
