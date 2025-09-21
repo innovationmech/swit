@@ -60,6 +60,9 @@ func (kw *kafkaGoWriter) Close() error { return kw.w.Close() }
 // wireDefaultWriterFactory wires writerFactory to use kafka-go.
 func wireDefaultWriterFactory() {
 	writerFactory = func(brokerCfg *messaging.BrokerConfig, topic string, pubCfg *messaging.PublisherConfig) (kafkaWriter, error) {
+		// Parse Kafka adapter-specific configuration
+		kcfg, _ := ParseConfig(brokerCfg)
+
 		// Map batching configuration to writer settings with sensible defaults
 		batchBytes := int64(1_048_576) // 1MB default
 		if pubCfg != nil && pubCfg.Batching.MaxBytes > 0 {
@@ -70,15 +73,46 @@ func wireDefaultWriterFactory() {
 			batchTimeout = pubCfg.Batching.FlushInterval
 		}
 
+		// Build optional transport with TLS/SASL
+		var transport *kafka.Transport
+		if brokerCfg != nil {
+			tlsConf, _ := buildTLSConfig(brokerCfg.TLS)
+			mech, _ := buildSASLMechanism(brokerCfg.Authentication)
+			if tlsConf != nil || mech != nil {
+				transport = &kafka.Transport{TLS: tlsConf, SASL: mech}
+			}
+		}
+
 		w := &kafka.Writer{
-			Addr:         kafka.TCP(brokerCfg.Endpoints...),
-			Topic:        topic,
-			RequiredAcks: kafka.RequireAll,
+			Addr:  kafka.TCP(brokerCfg.Endpoints...),
+			Topic: topic,
+			RequiredAcks: func() kafka.RequiredAcks {
+				if kcfg != nil {
+					return mapRequiredAcks(kcfg.Producer.Acks)
+				}
+				return kafka.RequireOne
+			}(),
 			BatchBytes:   batchBytes,
 			BatchTimeout: batchTimeout,
 			// Balancer selection will rely on provided message keys by our partition strategy
 			// Default balancer (hash) in kafka-go respects keys.
 			AllowAutoTopicCreation: true,
+			Transport:              transport,
+		}
+
+		// Compression selection: prefer producer override in adapter config, then publisher config, then adapter default
+		if kcfg != nil && kcfg.Producer.Compression != "" {
+			if comp, ok := mapCompression(kcfg.Producer.Compression); ok {
+				w.Compression = comp
+			}
+		} else if pubCfg != nil && pubCfg.Compression != "" {
+			if comp, ok := mapCompression(pubCfg.Compression); ok {
+				w.Compression = comp
+			}
+		} else if kcfg != nil {
+			if comp, ok := mapCompression(kcfg.Compression); ok {
+				w.Compression = comp
+			}
 		}
 
 		return &kafkaGoWriter{w: w}, nil

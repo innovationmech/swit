@@ -59,6 +59,10 @@ type ProducerConfig struct {
 
 	// Batching controls basic batching strategy
 	Batching ProducerBatchingConfig `json:"batching" yaml:"batching"`
+
+	// Compression overrides global compression for producer (optional)
+	// Supported values follow messaging.CompressionType
+	Compression messaging.CompressionType `json:"compression" yaml:"compression"`
 }
 
 // ProducerBatchingConfig controls producer batching.
@@ -165,6 +169,20 @@ func (c *Config) validate() error {
 	// Validate numeric ranges
 	if c.Producer.Batching.MaxBytes < 0 {
 		return messaging.NewConfigError("producer.batching.max_bytes cannot be negative", nil)
+	}
+
+	// Validate optional producer compression when provided
+	switch c.Producer.Compression {
+	case "":
+		// not set
+	case messaging.CompressionNone, messaging.CompressionGZIP, messaging.CompressionSnappy,
+		messaging.CompressionLZ4, messaging.CompressionZSTD:
+		// ok
+	default:
+		return messaging.NewConfigError(
+			fmt.Sprintf("invalid producer.compression: %s", c.Producer.Compression),
+			nil,
+		)
 	}
 
 	return nil
