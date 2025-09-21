@@ -14,6 +14,34 @@ brokers:
       max_attempts: 3
       pool_size: 4
       idle_timeout: 90s
+    # RabbitMQ-specific settings
+    extra:
+      rabbitmq:
+        timeouts:
+          dial: 10s
+          operation: 5s
+          heartbeat: 30s
+        channels:
+          max_per_connection: 16
+          idle_ttl: 1m
+          acquire_timeout: 5s
+        topology:
+          exchanges:
+            orders:
+              name: orders
+              type: topic
+              durable: true
+          queues:
+            orders.created:
+              name: orders.created
+              durable: true
+              arguments:
+                x-message-ttl: 3600000
+                x-dead-letter-exchange: orders.dlx
+          bindings:
+            - queue: orders.created
+              exchange: orders
+              routing_key: order.created.*
     retry:
       max_attempts: 5
       initial_delay: 500ms
