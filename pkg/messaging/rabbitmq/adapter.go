@@ -92,7 +92,8 @@ func (a *Adapter) ValidateConfiguration(config *messaging.BrokerConfig) *messagi
 		})
 	}
 
-	if _, err := ParseConfig(config); err != nil {
+	rabbitCfg, err := ParseConfig(config)
+	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, messaging.AdapterValidationError{
 			Field:    "Extra.rabbitmq",
@@ -100,6 +101,23 @@ func (a *Adapter) ValidateConfiguration(config *messaging.BrokerConfig) *messagi
 			Code:     "RABBITMQ_CONFIG_INVALID",
 			Severity: messaging.AdapterValidationSeverityError,
 		})
+		return result
+	}
+
+	// Validate topology semantics (exchanges/queues/bindings)
+	if rabbitCfg != nil {
+		if errs, warns, suggs := validateTopology(rabbitCfg.Topology); len(errs)+len(warns)+len(suggs) > 0 {
+			if len(errs) > 0 {
+				result.Valid = false
+				result.Errors = append(result.Errors, errs...)
+			}
+			if len(warns) > 0 {
+				result.Warnings = append(result.Warnings, warns...)
+			}
+			if len(suggs) > 0 {
+				result.Suggestions = append(result.Suggestions, suggs...)
+			}
+		}
 	}
 
 	return result

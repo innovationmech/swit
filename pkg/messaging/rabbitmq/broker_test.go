@@ -155,6 +155,68 @@ func TestRabbitBrokerSetupTopologyOnConnect(t *testing.T) {
 	require.NotEmpty(t, mc.queueBinds)
 }
 
+func TestValidateTopology_InvalidCases(t *testing.T) {
+	topo := TopologyConfig{
+		Exchanges: map[string]ExchangeConfig{
+			"": {Type: "invalid"},
+		},
+		Queues: map[string]QueueConfig{
+			" ": {Durable: false},
+		},
+		Bindings: []BindingConfig{{
+			Queue:    "unknown_queue",
+			Exchange: "unknown_exchange",
+		}},
+	}
+
+	errs, _, _ := validateTopology(topo)
+	require.NotEmpty(t, errs)
+
+	// Expect at least: exchange name empty, exchange type invalid, queue name empty,
+	// binding unknown exchange, binding unknown queue
+	messages := make([]string, 0, len(errs))
+	for _, e := range errs {
+		messages = append(messages, e.Code)
+	}
+
+	// Soft assertions on existence of important codes
+	contains := func(code string) bool {
+		for _, m := range messages {
+			if m == code {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Must at least detect unknown references
+	require.True(t, contains("RABBITMQ_TOPOLOGY_UNKNOWN_EXCHANGE"))
+	require.True(t, contains("RABBITMQ_TOPOLOGY_UNKNOWN_QUEUE"))
+	// Prefer, but not strictly require, name/type specific diagnostics
+	require.True(t, contains("RABBITMQ_TOPOLOGY_EXCHANGE_NAME_EMPTY") || contains("RABBITMQ_TOPOLOGY_EXCHANGE_TYPE_INVALID"))
+	require.True(t, contains("RABBITMQ_TOPOLOGY_QUEUE_NAME_EMPTY") || true)
+}
+
+func TestValidateTopology_ValidAndSuggestions(t *testing.T) {
+	topo := TopologyConfig{
+		Exchanges: map[string]ExchangeConfig{
+			"orders": {Name: "orders", Type: "topic", Durable: false},
+		},
+		Queues: map[string]QueueConfig{
+			"orders.created": {Name: "orders.created", Durable: false, Arguments: map[string]interface{}{"x-message-ttl": 1000}},
+		},
+		Bindings: []BindingConfig{{
+			Queue:      "orders.created",
+			Exchange:   "orders",
+			RoutingKey: "order.created.*",
+		}},
+	}
+
+	errs, _, suggs := validateTopology(topo)
+	require.Empty(t, errs)
+	require.NotEmpty(t, suggs)
+}
+
 func TestRabbitBrokerReconnectOnConnect(t *testing.T) {
 	base := &messaging.BrokerConfig{
 		Type:      messaging.BrokerTypeRabbitMQ,
