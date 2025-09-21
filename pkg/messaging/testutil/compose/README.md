@@ -17,13 +17,17 @@ endpoints := h.Endpoints()
 // Use endpoints.Kafka, endpoints.Rabbit, endpoints.NATS in your tests.
 ```
 
-`Start` automatically waits for each broker to become reachable using lightweight readiness probes. You can override the compose file, project name, or exposed endpoints with the supplied options.
+`Start` automatically waits for each broker to become reachable using lightweight readiness probes. You can override the compose file, project name, or exposed endpoints with the supplied options. For chaos tests, you can stop/start/restart a single service and the harness will wait for readiness where applicable.
 
 ```go
 h := compose.NewHarness(
     compose.WithProjectName("messaging-ci"),
     compose.WithServices("kafka", "nats"),
 )
+// Chaos: temporarily stop a service and bring it back
+_ = h.StopService(ctx, "nats")
+_ = h.StartService(ctx, "nats")
+_ = h.RestartService(ctx, "nats")
 ```
 
 To run the stack manually, execute:
