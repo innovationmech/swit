@@ -46,6 +46,22 @@ func newKafkaGoReader(brokerCfg *messaging.BrokerConfig, topic string, groupID s
 		return nil, messaging.NewConfigError("broker endpoints required for kafka reader", nil)
 	}
 
+	// Build SASL/TLS dialer if configured
+	var dialer *kafka.Dialer
+	if brokerCfg != nil {
+		tlsConf, _ := buildTLSConfig(brokerCfg.TLS)
+		mech, _ := buildSASLMechanism(brokerCfg.Authentication)
+		if tlsConf != nil || mech != nil || brokerCfg.Connection.Timeout > 0 {
+			d := &kafka.Dialer{
+				Timeout:       brokerCfg.Connection.Timeout,
+				DualStack:     true,
+				TLS:           tlsConf,
+				SASLMechanism: mech,
+			}
+			dialer = d
+		}
+	}
+
 	minBytes := 1
 	maxBytes := 10 * 1024 * 1024
 	maxWait := 500 * time.Millisecond
@@ -73,6 +89,7 @@ func newKafkaGoReader(brokerCfg *messaging.BrokerConfig, topic string, groupID s
 		MaxWait:        maxWait,
 		CommitInterval: commitInterval,
 		StartOffset:    startOffset,
+		Dialer:         dialer,
 	})
 
 	return &kafkaGoReader{r: r, topic: topic, groupID: groupID, seen: make(map[string]kafka.Message)}, nil
