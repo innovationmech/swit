@@ -229,6 +229,91 @@ func (h *Harness) Stop(ctx context.Context) error {
 	return h.stopLocked(ctx)
 }
 
+// StopService stops a single service managed by the compose stack.
+func (h *Harness) StopService(ctx context.Context, service string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if err := h.ensureComposeCommand(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(service) == "" {
+		return errors.New("service is required")
+	}
+
+	args := []string{"stop", service}
+	if err := h.cmd.Run(ctx, h.composeFile, h.projectName, h.env, args...); err != nil {
+		return fmt.Errorf("compose stop %s failed: %w", service, err)
+	}
+	return nil
+}
+
+// StartService starts a single service and waits until it becomes ready.
+func (h *Harness) StartService(ctx context.Context, service string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if err := h.ensureComposeCommand(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(service) == "" {
+		return errors.New("service is required")
+	}
+
+	args := []string{"start", service}
+	if err := h.cmd.Run(ctx, h.composeFile, h.projectName, h.env, args...); err != nil {
+		return fmt.Errorf("compose start %s failed: %w", service, err)
+	}
+
+	// Wait for readiness of the specific service
+	return h.waitForServiceLocked(ctx, service)
+}
+
+// RestartService restarts a single service and waits until it becomes ready.
+func (h *Harness) RestartService(ctx context.Context, service string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if err := h.ensureComposeCommand(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(service) == "" {
+		return errors.New("service is required")
+	}
+
+	args := []string{"restart", service}
+	if err := h.cmd.Run(ctx, h.composeFile, h.projectName, h.env, args...); err != nil {
+		return fmt.Errorf("compose restart %s failed: %w", service, err)
+	}
+
+	// Wait for readiness of the specific service
+	return h.waitForServiceLocked(ctx, service)
+}
+
+// waitForServiceLocked waits until the specified service is reachable.
+// Caller must hold h.mu.
+func (h *Harness) waitForServiceLocked(ctx context.Context, service string) error {
+	// Use a bounded context if none provided
+	waitCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, defaultStartTimeout)
+		defer cancel()
+	}
+
+	switch service {
+	case "kafka":
+		return WaitForKafka(waitCtx, h.endpoints.Kafka)
+	case "rabbitmq":
+		return WaitForRabbitMQ(waitCtx, h.endpoints.Rabbit)
+	case "nats":
+		return WaitForNATS(waitCtx, h.endpoints.NATS)
+	default:
+		// Unknown service: nothing to wait for
+		return nil
+	}
+}
+
 func (h *Harness) stopLocked(ctx context.Context) error {
 	if !h.started {
 		return nil
