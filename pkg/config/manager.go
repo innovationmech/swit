@@ -80,7 +80,7 @@ func DefaultOptions() Options {
 	return Options{
 		WorkDir:            ".",
 		ConfigBaseName:     "swit",
-		ConfigType:         "yaml",
+        ConfigType:         "yaml", // set to "auto" to enable extension auto-detection (yaml/yml/json)
 		EnvironmentName:    "",
 		OverrideFilename:   "swit.override.yaml",
 		EnvPrefix:          "SWIT",
@@ -134,20 +134,20 @@ func (m *Manager) Load() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 1) Base layer: swit.yaml
-	if err := m.mergeFileIfExists(m.filePathFor(BaseLayer)); err != nil {
+    // 1) Base layer: swit.{yaml|json}
+    if err := m.mergeFirstExistingFile(m.fileCandidatesFor(BaseLayer)); err != nil {
 		return fmt.Errorf("load base config: %w", err)
 	}
 
-	// 2) Environment file layer: swit.<env>.yaml
+    // 2) Environment file layer: swit.<env>.{yaml|json}
 	if m.options.EnvironmentName != "" {
-		if err := m.mergeFileIfExists(m.filePathFor(EnvironmentFileLayer)); err != nil {
+        if err := m.mergeFirstExistingFile(m.fileCandidatesFor(EnvironmentFileLayer)); err != nil {
 			return fmt.Errorf("load env config: %w", err)
 		}
 	}
 
-	// 3) Override file layer: swit.override.yaml
-	if err := m.mergeFileIfExists(m.filePathFor(OverrideFileLayer)); err != nil {
+    // 3) Override file layer: swit.override.{yaml|json}
+    if err := m.mergeFirstExistingFile(m.fileCandidatesFor(OverrideFileLayer)); err != nil {
 		return fmt.Errorf("load override config: %w", err)
 	}
 
@@ -188,24 +188,80 @@ func (m *Manager) MergeConfigMap(settings map[string]interface{}) error {
 }
 
 // filePathFor returns the absolute file path for a given layer.
-func (m *Manager) filePathFor(layer Layer) string {
-	dir := m.options.WorkDir
-	base := m.options.ConfigBaseName
-	switch layer {
-	case BaseLayer:
-		return filepath.Join(dir, fmt.Sprintf("%s.%s", base, m.normalizedConfigExt()))
-	case EnvironmentFileLayer:
-		env := m.options.EnvironmentName
-		return filepath.Join(dir, fmt.Sprintf("%s.%s.%s", base, strings.ToLower(env), m.normalizedConfigExt()))
-	case OverrideFileLayer:
-		name := m.options.OverrideFilename
-		if name == "" {
-			name = fmt.Sprintf("%s.override.%s", base, m.normalizedConfigExt())
-		}
-		return filepath.Join(dir, name)
-	default:
-		return ""
-	}
+func (m *Manager) filePathFor(layer Layer) string { // kept for backward-compat and single-type flows
+    dir := m.options.WorkDir
+    base := m.options.ConfigBaseName
+    switch layer {
+    case BaseLayer:
+        return filepath.Join(dir, fmt.Sprintf("%s.%s", base, m.normalizedConfigExt()))
+    case EnvironmentFileLayer:
+        env := m.options.EnvironmentName
+        return filepath.Join(dir, fmt.Sprintf("%s.%s.%s", base, strings.ToLower(env), m.normalizedConfigExt()))
+    case OverrideFileLayer:
+        name := m.options.OverrideFilename
+        if name == "" {
+            name = fmt.Sprintf("%s.override.%s", base, m.normalizedConfigExt())
+        }
+        return filepath.Join(dir, name)
+    default:
+        return ""
+    }
+}
+
+// fileCandidatesFor returns candidate file paths for a layer, allowing extension auto-detection when ConfigType=="auto".
+func (m *Manager) fileCandidatesFor(layer Layer) []string {
+    dir := m.options.WorkDir
+    base := m.options.ConfigBaseName
+
+    // determine candidate extensions in precedence order
+    var exts []string
+    switch strings.ToLower(m.options.ConfigType) {
+    case "auto", "":
+        exts = []string{"yaml", "yml", "json"}
+    default:
+        exts = []string{m.normalizedConfigExt()}
+    }
+
+    // build candidate names
+    switch layer {
+    case BaseLayer:
+        // swit.yaml | swit.yml | swit.json
+        candidates := make([]string, 0, len(exts))
+        for _, ext := range exts {
+            candidates = append(candidates, filepath.Join(dir, fmt.Sprintf("%s.%s", base, ext)))
+        }
+        return candidates
+    case EnvironmentFileLayer:
+        // swit.<env>.yaml | swit.<env>.yml | swit.<env>.json
+        env := strings.ToLower(m.options.EnvironmentName)
+        candidates := make([]string, 0, len(exts))
+        for _, ext := range exts {
+            candidates = append(candidates, filepath.Join(dir, fmt.Sprintf("%s.%s.%s", base, env, ext)))
+        }
+        return candidates
+    case OverrideFileLayer:
+        // explicit override filename respects user-provided value
+        if name := strings.TrimSpace(m.options.OverrideFilename); name != "" {
+            // If name has a known config extension, treat as exact; otherwise treat as base name
+            if ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), "."); ext == "yaml" || ext == "yml" || ext == "json" || ext == "toml" || ext == "hcl" {
+                return []string{filepath.Join(dir, name)}
+            }
+            // otherwise, try with candidate extensions
+            candidates := make([]string, 0, len(exts))
+            for _, ext := range exts {
+                candidates = append(candidates, filepath.Join(dir, fmt.Sprintf("%s.%s", name, ext)))
+            }
+            return candidates
+        }
+        // default override file name uses base + ".override"
+        candidates := make([]string, 0, len(exts))
+        for _, ext := range exts {
+            candidates = append(candidates, filepath.Join(dir, fmt.Sprintf("%s.override.%s", base, ext)))
+        }
+        return candidates
+    default:
+        return nil
+    }
 }
 
 func (m *Manager) normalizedConfigExt() string {
@@ -213,36 +269,91 @@ func (m *Manager) normalizedConfigExt() string {
 	switch t {
 	case "yml":
 		return "yaml"
-	case "yaml", "json", "toml", "hcl":
+    case "yaml", "json", "toml", "hcl":
 		return t
 	default:
-		return "yaml"
+        // keep yaml as default for backward compatibility
+        return "yaml"
 	}
 }
 
-// mergeFileIfExists merges a configuration file if it exists. Missing files are ignored.
-func (m *Manager) mergeFileIfExists(path string) error {
-	if path == "" {
-		return nil
-	}
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
+// mergeFirstExistingFile tries candidates in order and merges the first existing one.
+// Missing files are ignored; parse errors are returned with actionable context.
+func (m *Manager) mergeFirstExistingFile(candidates []string) error {
+    for _, path := range candidates {
+        if path == "" {
+            continue
+        }
+        if _, err := os.Stat(path); err != nil {
+            if os.IsNotExist(err) {
+                continue
+            }
+            return err
+        }
+        return m.mergeFile(path)
+    }
+    return nil
+}
 
-	// Read file into a temporary viper to avoid changing base settings on read errors
-	tmp := viper.New()
-	tmp.SetConfigType(m.normalizedConfigExt())
+// mergeFile merges a specific configuration file, auto-selecting parser by its extension.
+func (m *Manager) mergeFile(path string) error {
+    // Read file into a temporary viper to avoid changing base settings on read errors
+    tmp := viper.New()
+    ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
+    switch ext {
+    case "yml":
+        ext = "yaml"
+    case "yaml", "json", "toml", "hcl":
+        // ok
+    case "":
+        // fallback to configured default
+        ext = m.normalizedConfigExt()
+    default:
+        // unknown extension, but still try configured default to be lenient
+        ext = m.normalizedConfigExt()
+    }
+    tmp.SetConfigType(ext)
 
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if err := tmp.ReadConfig(bytes.NewReader(content)); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
-	}
-	// Merge using parsed map to avoid relying on base viper's ConfigType
-	return m.v.MergeConfigMap(tmp.AllSettings())
+    content, err := os.ReadFile(path)
+    if err != nil {
+        return err
+    }
+    if err := tmp.ReadConfig(bytes.NewReader(content)); err != nil {
+        return fmt.Errorf("parse %s: %w", path, err)
+    }
+    // Merge using parsed map to avoid relying on base viper's ConfigType
+    return m.v.MergeConfigMap(tmp.AllSettings())
+}
+
+// UnmarshalStrict binds settings into target like Unmarshal, but fails on unknown fields.
+// It provides actionable errors to help users fix configuration mismatches.
+func (m *Manager) UnmarshalStrict(target interface{}) error {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    if target == nil {
+        return errors.New("target must not be nil")
+    }
+    if err := m.v.UnmarshalExact(target); err != nil {
+        return fmt.Errorf("configuration validation failed (unknown or invalid fields): %w", err)
+    }
+    return nil
+}
+
+// RequireKeys ensures a list of keys exist after merge; returns aggregated error for missing keys.
+func (m *Manager) RequireKeys(keys ...string) error {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    if len(keys) == 0 {
+        return nil
+    }
+    missing := make([]string, 0)
+    for _, k := range keys {
+        if !m.v.IsSet(k) {
+            missing = append(missing, k)
+        }
+    }
+    if len(missing) > 0 {
+        return fmt.Errorf("missing required configuration keys: %s", strings.Join(missing, ", "))
+    }
+    return nil
 }
