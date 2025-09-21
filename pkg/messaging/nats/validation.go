@@ -291,3 +291,39 @@ func validateJetStream(js *JetStreamConfig) (
 
 	return errs, warns, suggs
 }
+
+// validateNATSConfiguration performs endpoint and TLS-related checks:
+// - Endpoints should use nats:// or tls-enabled scheme (nats, natsws etc. kept simple: expect scheme present)
+// - Warn when TLS is enabled but SkipVerify=true
+func validateNATSConfiguration(base *messaging.BrokerConfig, cfg *Config) (
+	[]messaging.AdapterValidationError,
+	[]messaging.AdapterValidationWarning,
+	[]messaging.AdapterValidationSuggestion,
+) {
+	var errs []messaging.AdapterValidationError
+	var warns []messaging.AdapterValidationWarning
+	var suggs []messaging.AdapterValidationSuggestion
+
+	for i, ep := range base.Endpoints {
+		s := strings.TrimSpace(ep)
+		// Require a scheme for clarity (e.g., nats://host:4222)
+		if !strings.Contains(s, "://") {
+			errs = append(errs, messaging.AdapterValidationError{
+				Field:    "Endpoints[" + strconv.Itoa(i) + "]",
+				Message:  "endpoint should include scheme, e.g., nats://host:4222",
+				Code:     "NATS_ENDPOINT_SCHEME_REQUIRED",
+				Severity: messaging.AdapterValidationSeverityError,
+			})
+		}
+	}
+
+	if cfg != nil && base != nil && base.TLS != nil && base.TLS.Enabled && base.TLS.SkipVerify {
+		warns = append(warns, messaging.AdapterValidationWarning{
+			Field:   "TLS.SkipVerify",
+			Message: "TLS enabled with SkipVerify=true may be insecure; consider valid CA and server name",
+			Code:    "NATS_TLS_SKIP_VERIFY",
+		})
+	}
+
+	return errs, warns, suggs
+}

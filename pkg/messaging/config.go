@@ -862,6 +862,29 @@ func (cm *ConfigManager) LoadBrokerConfig(filename string) (*BrokerConfig, error
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
+	// Cross-broker compatibility and adapter-level validation
+	// Use adapter registry for detailed validation to provide helpful messages
+	if adapters := GetDefaultAdapterRegistry(); adapters != nil {
+		if result, err := adapters.ValidateConfiguration(config); err == nil && result != nil {
+			if !result.Valid {
+				var parts []string
+				for _, e := range result.Errors {
+					if e.Field != "" {
+						parts = append(parts, fmt.Sprintf("%s: %s", e.Field, e.Message))
+					} else {
+						parts = append(parts, e.Message)
+					}
+				}
+				msg := "adapter configuration validation failed"
+				if len(parts) > 0 {
+					msg = fmt.Sprintf("%s: %s", msg, strings.Join(parts, "; "))
+				}
+				return nil, NewConfigError(msg, nil)
+			}
+			// Surface warnings as suggestions in logs later; keep success path
+		}
+	}
+
 	return config, nil
 }
 

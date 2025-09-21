@@ -86,8 +86,9 @@ func (a *Adapter) ValidateConfiguration(config *messaging.BrokerConfig) *messagi
 		return result
 	}
 
-	// Validate Extra if present
-	if _, err := ParseConfig(config); err != nil {
+	// Parse Extra if present
+	ncfg, err := ParseConfig(config)
+	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, messaging.AdapterValidationError{
 			Field:    "Extra.nats",
@@ -98,20 +99,34 @@ func (a *Adapter) ValidateConfiguration(config *messaging.BrokerConfig) *messagi
 		return result
 	}
 
-	// JetStream semantic validation
+	// Endpoint/TLS semantics
 	if config != nil {
-		if ncfg, err := ParseConfig(config); err == nil && ncfg != nil && ncfg.JetStream != nil {
-			if errs, warns, suggs := validateJetStream(ncfg.JetStream); len(errs)+len(warns)+len(suggs) > 0 {
-				if len(errs) > 0 {
-					result.Valid = false
-					result.Errors = append(result.Errors, errs...)
-				}
-				if len(warns) > 0 {
-					result.Warnings = append(result.Warnings, warns...)
-				}
-				if len(suggs) > 0 {
-					result.Suggestions = append(result.Suggestions, suggs...)
-				}
+		if errs, warns, suggs := validateNATSConfiguration(config, ncfg); len(errs)+len(warns)+len(suggs) > 0 {
+			if len(errs) > 0 {
+				result.Valid = false
+				result.Errors = append(result.Errors, errs...)
+			}
+			if len(warns) > 0 {
+				result.Warnings = append(result.Warnings, warns...)
+			}
+			if len(suggs) > 0 {
+				result.Suggestions = append(result.Suggestions, suggs...)
+			}
+		}
+	}
+
+	// JetStream semantic validation
+	if config != nil && ncfg != nil && ncfg.JetStream != nil {
+		if errs, warns, suggs := validateJetStream(ncfg.JetStream); len(errs)+len(warns)+len(suggs) > 0 {
+			if len(errs) > 0 {
+				result.Valid = false
+				result.Errors = append(result.Errors, errs...)
+			}
+			if len(warns) > 0 {
+				result.Warnings = append(result.Warnings, warns...)
+			}
+			if len(suggs) > 0 {
+				result.Suggestions = append(result.Suggestions, suggs...)
 			}
 		}
 	}

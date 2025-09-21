@@ -86,7 +86,8 @@ func (a *KafkaAdapter) ValidateConfiguration(config *messaging.BrokerConfig) *me
 	}
 
 	// Parse Extra for Kafka-specific validation
-	if _, err := ParseConfig(config); err != nil {
+	kcfg, err := ParseConfig(config)
+	if err != nil {
 		res.Valid = false
 		res.Errors = append(res.Errors, messaging.AdapterValidationError{
 			Field:    "Extra.kafka",
@@ -95,6 +96,22 @@ func (a *KafkaAdapter) ValidateConfiguration(config *messaging.BrokerConfig) *me
 			Severity: messaging.AdapterValidationSeverityError,
 		})
 		return res
+	}
+
+	// Kafka semantic validation (endpoints/auth/producer semantics)
+	if config != nil {
+		if errs, warns, suggs := validateKafkaConfiguration(config, kcfg); len(errs)+len(warns)+len(suggs) > 0 {
+			if len(errs) > 0 {
+				res.Valid = false
+				res.Errors = append(res.Errors, errs...)
+			}
+			if len(warns) > 0 {
+				res.Warnings = append(res.Warnings, warns...)
+			}
+			if len(suggs) > 0 {
+				res.Suggestions = append(res.Suggestions, suggs...)
+			}
+		}
 	}
 
 	// Suggestions for common tuning

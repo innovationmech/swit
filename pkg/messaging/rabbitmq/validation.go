@@ -23,6 +23,7 @@ package rabbitmq
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/innovationmech/swit/pkg/messaging"
@@ -149,6 +150,54 @@ func validateTopology(t TopologyConfig) (
 				Message:  fmt.Sprintf("binding references unknown queue: %s", b.Queue),
 				Code:     "RABBITMQ_TOPOLOGY_UNKNOWN_QUEUE",
 				Severity: messaging.AdapterValidationSeverityError,
+			})
+		}
+	}
+
+	return errs, warns, suggs
+}
+
+// validateRabbitConfiguration performs additional adapter-level validation:
+// - Enforce amqp/amqps URL scheme for endpoints
+// - Warn if heartbeat is too low for production
+func validateRabbitConfiguration(base *messaging.BrokerConfig, cfg *Config) (
+	[]messaging.AdapterValidationError,
+	[]messaging.AdapterValidationWarning,
+	[]messaging.AdapterValidationSuggestion,
+) {
+	var errs []messaging.AdapterValidationError
+	var warns []messaging.AdapterValidationWarning
+	var suggs []messaging.AdapterValidationSuggestion
+
+	// Endpoint scheme validation: require amqp:// or amqps://
+	for i, ep := range base.Endpoints {
+		s := strings.TrimSpace(ep)
+		if !strings.HasPrefix(s, "amqp://") && !strings.HasPrefix(s, "amqps://") {
+			errs = append(errs, messaging.AdapterValidationError{
+				Field:    fmt.Sprintf("Endpoints[%d]", i),
+				Message:  "endpoint must start with amqp:// or amqps://",
+				Code:     "RABBITMQ_ENDPOINT_SCHEME_INVALID",
+				Severity: messaging.AdapterValidationSeverityError,
+			})
+			continue
+		}
+		if u, err := url.Parse(s); err != nil || u.Host == "" {
+			errs = append(errs, messaging.AdapterValidationError{
+				Field:    fmt.Sprintf("Endpoints[%d]", i),
+				Message:  "invalid AMQP endpoint URL",
+				Code:     "RABBITMQ_ENDPOINT_INVALID",
+				Severity: messaging.AdapterValidationSeverityError,
+			})
+		}
+	}
+
+	if cfg != nil {
+		// Heartbeat warn when < 10s
+		if cfg.Timeouts.Heartbeat > 0 && cfg.Timeouts.Heartbeat < messaging.Duration(10_000_000_000) { // 10s
+			warns = append(warns, messaging.AdapterValidationWarning{
+				Field:   "Extra.rabbitmq.timeouts.heartbeat",
+				Message: "heartbeat is set very low; consider >= 10s to avoid churn",
+				Code:    "RABBITMQ_HEARTBEAT_TOO_LOW",
 			})
 		}
 	}
