@@ -143,6 +143,12 @@ type JetStreamConfig struct {
 	Enabled   bool               `json:"enabled" yaml:"enabled"`
 	Streams   []JSStreamConfig   `json:"streams" yaml:"streams"`
 	Consumers []JSConsumerConfig `json:"consumers" yaml:"consumers"`
+
+	// KV declares Key-Value buckets to ensure on startup (JetStream-backed)
+	KV []JSKeyValueBucketConfig `json:"kv" yaml:"kv"`
+
+	// ObjectStores declares Object Store buckets to ensure on startup
+	ObjectStores []JSObjectStoreConfig `json:"object_stores" yaml:"object_stores"`
 }
 
 // JSStreamConfig declares a stream and its subjects.
@@ -180,4 +186,77 @@ func (j *JetStreamConfig) normalize() {
 		return
 	}
 	// No-op defaults for now; keep values as provided.
+	if j.Streams == nil {
+		j.Streams = make([]JSStreamConfig, 0)
+	}
+	if j.Consumers == nil {
+		j.Consumers = make([]JSConsumerConfig, 0)
+	}
+	if j.KV == nil {
+		j.KV = make([]JSKeyValueBucketConfig, 0)
+	}
+	if j.ObjectStores == nil {
+		j.ObjectStores = make([]JSObjectStoreConfig, 0)
+	}
+}
+
+// JSKeyValueBucketConfig declares a NATS Key-Value bucket to create/ensure.
+type JSKeyValueBucketConfig struct {
+	Name           string             `json:"name" yaml:"name"`
+	Description    string             `json:"description" yaml:"description"`
+	TTL            messaging.Duration `json:"ttl" yaml:"ttl"`
+	History        int                `json:"history" yaml:"history"`
+	MaxValueSize   int32              `json:"max_value_size" yaml:"max_value_size"`
+	MaxBucketBytes int64              `json:"max_bucket_bytes" yaml:"max_bucket_bytes"`
+	Storage        string             `json:"storage" yaml:"storage"` // file|memory
+	Replicas       int                `json:"replicas" yaml:"replicas"`
+}
+
+func (k *JSKeyValueBucketConfig) normalize() {
+	if k == nil {
+		return
+	}
+	if k.History < 0 {
+		k.History = 0
+	}
+	if k.History > 64 {
+		k.History = 64
+	}
+	if k.Replicas <= 0 {
+		k.Replicas = 1
+	}
+	if k.Storage == "" {
+		k.Storage = "file"
+	}
+	if k.TTL < 0 {
+		k.TTL = 0
+	}
+}
+
+// JSObjectStoreConfig declares a NATS Object Store bucket to create/ensure.
+type JSObjectStoreConfig struct {
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description" yaml:"description"`
+	// Storage backend: file|memory (default file)
+	Storage string `json:"storage" yaml:"storage"`
+	// Replication factor for the underlying stream
+	Replicas int `json:"replicas" yaml:"replicas"`
+	// Max total bytes the bucket can store (0 = unlimited)
+	MaxBucketBytes int64 `json:"max_bucket_bytes" yaml:"max_bucket_bytes"`
+	// Enable compression for stored objects (server dependent)
+	Compression bool `json:"compression" yaml:"compression"`
+	// MaxObjectSize limits individual object size in bytes (0 = server default)
+	MaxObjectSize int32 `json:"max_object_size" yaml:"max_object_size"`
+}
+
+func (o *JSObjectStoreConfig) normalize() {
+	if o == nil {
+		return
+	}
+	if o.Replicas <= 0 {
+		o.Replicas = 1
+	}
+	if o.Storage == "" {
+		o.Storage = "file"
+	}
 }
