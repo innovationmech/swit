@@ -22,9 +22,10 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
-	"testing"
+    "os"
+    "path/filepath"
+    "testing"
+    "strings"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -162,4 +163,139 @@ func TestUnmarshalNilTarget(t *testing.T) {
 	if err := m.Unmarshal(nil); err == nil {
 		t.Fatalf("expected error for nil target")
 	}
+}
+
+func TestAutoDetect_JSONAndYAML_MergePrecedence(t *testing.T) {
+    t.Setenv("SWIT_SERVER_PORT", "9301")
+    t.Setenv("SWIT_MESSAGING_PUBLISHER_BATCH_SIZE", "201")
+
+    tempDir := t.TempDir()
+
+    // Base: JSON
+    writeFile(t, tempDir, "swit.json", `{
+        "server": {"port": "9001"},
+        "messaging": {
+            "broker": {"type": "rabbitmq"},
+            "publisher": {"batch_size": 11, "timeout": 6}
+        }
+    }`)
+
+    // Env: YAML
+    writeFile(t, tempDir, "swit.dev.yaml", `server: { port: "9101" }
+messaging:
+  publisher:
+    timeout: 7
+`)
+
+    // Override: JSON
+    writeFile(t, tempDir, "swit.override.json", `{"messaging": {"publisher": {"batch_size": 101}}}`)
+
+    m := NewManager(Options{
+        WorkDir:            tempDir,
+        ConfigBaseName:     "swit",
+        ConfigType:         "auto",
+        EnvironmentName:    "dev",
+        OverrideFilename:   "swit.override", // extension auto-detected
+        EnvPrefix:          "SWIT",
+        EnableAutomaticEnv: true,
+    })
+
+    m.SetDefault("server.port", "8080")
+    m.SetDefault("messaging.publisher.batch_size", 1)
+    m.SetDefault("messaging.publisher.timeout", 2)
+
+    if err := m.Load(); err != nil {
+        t.Fatalf("load: %v", err)
+    }
+
+    var cfg testConfig
+    if err := m.Unmarshal(&cfg); err != nil {
+        t.Fatalf("unmarshal: %v", err)
+    }
+
+    if got, want := cfg.Server.Port, "9301"; got != want {
+        t.Fatalf("server.port precedence = %s, want %s", got, want)
+    }
+    if got, want := cfg.Messaging.Publisher.Timeout, 7; got != want {
+        t.Fatalf("publisher.timeout = %d, want %d", got, want)
+    }
+    if got, want := cfg.Messaging.Publisher.BatchSize, 201; got != want {
+        t.Fatalf("publisher.batch_size = %d, want %d", got, want)
+    }
+}
+
+func TestUnmarshalStrict_UnknownFields(t *testing.T) {
+    tempDir := t.TempDir()
+    writeFile(t, tempDir, "swit.yaml", `server:
+  port: "9000"
+messaging:
+  publisher:
+    timeout: 8
+  unknown_section: true
+`)
+
+    m := NewManager(Options{WorkDir: tempDir})
+    if err := m.Load(); err != nil {
+        t.Fatalf("load: %v", err)
+    }
+
+    var cfg testConfig
+    if err := m.UnmarshalStrict(&cfg); err == nil {
+        t.Fatalf("expected strict unmarshal to fail on unknown fields")
+    }
+}
+
+func TestRequireKeys(t *testing.T) {
+    tempDir := t.TempDir()
+    writeFile(t, tempDir, "swit.yaml", `server: { port: "8000" }`)
+
+    m := NewManager(Options{WorkDir: tempDir})
+    if err := m.Load(); err != nil {
+        t.Fatalf("load: %v", err)
+    }
+
+    if err := m.RequireKeys("server.port", "messaging.publisher.timeout", "nonexistent.key"); err == nil {
+        t.Fatalf("expected missing keys error")
+    }
+}
+
+func TestOverrideFilename_ExtensionAutoDetection(t *testing.T) {
+    tempDir := t.TempDir()
+    writeFile(t, tempDir, "swit.yaml", `server: { port: "9800" }`)
+    // provide custom override without extension in options; create JSON file
+    writeFile(t, tempDir, "custom.override.json", `{"server": {"port": "9900"}}`)
+
+    m := NewManager(Options{
+        WorkDir:          tempDir,
+        OverrideFilename: "custom.override",
+        ConfigType:       "auto",
+    })
+    if err := m.Load(); err != nil {
+        t.Fatalf("load: %v", err)
+    }
+    var cfg testConfig
+    if err := m.Unmarshal(&cfg); err != nil {
+        t.Fatalf("unmarshal: %v", err)
+    }
+    if got, want := cfg.Server.Port, "9900"; got != want {
+        t.Fatalf("server.port = %s, want %s", got, want)
+    }
+}
+
+func TestParseErrorActionable(t *testing.T) {
+    tempDir := t.TempDir()
+    // invalid YAML (missing colon)
+    writeFile(t, tempDir, "swit.yaml", `server\n  port "9800"`)
+
+    m := NewManager(Options{WorkDir: tempDir, ConfigType: "auto"})
+    err := m.Load()
+    if err == nil {
+        t.Fatalf("expected parse error, got nil")
+    }
+    if !strings.Contains(err.Error(), "parse ") {
+        t.Fatalf("error should include 'parse', got: %v", err)
+    }
+    if !strings.Contains(err.Error(), "swit.yaml") {
+        t.Fatalf("error should include filename, got: %v", err)
+    }
 }
