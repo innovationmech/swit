@@ -65,6 +65,15 @@ export const enConfig = defineConfig({
     ],
     
     sidebar: {
+      '/en/reference/': [
+        {
+          text: 'Reference',
+          items: [
+            { text: 'Capabilities Matrix', link: '/en/reference/capabilities' },
+            { text: 'Configuration Compatibility', link: '/en/reference/config-compatibility' }
+          ]
+        }
+      ],
       '/en/guide/': [
         {
           text: 'Getting Started',

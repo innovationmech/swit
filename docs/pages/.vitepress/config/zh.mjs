@@ -69,6 +69,15 @@ export const zhConfig = defineConfig({
     ],
     
     sidebar: {
+      '/zh/reference/': [
+        {
+          text: '参考',
+          items: [
+            { text: '能力矩阵', link: '/zh/reference/capabilities' },
+            { text: '配置兼容性矩阵', link: '/zh/reference/config-compatibility' }
+          ]
+        }
+      ],
       '/zh/guide/': [
         {
           text: '快速开始',
