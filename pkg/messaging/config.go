@@ -110,6 +110,9 @@ type BrokerConfig struct {
 	// Audit logging configuration
 	Audit *MessagingAuditConfig `yaml:"audit,omitempty" json:"audit,omitempty"`
 
+	// Compliance configuration (audit retention, redaction, residency, reporting)
+	Compliance *ComplianceConfig `yaml:"compliance,omitempty" json:"compliance,omitempty"`
+
 	// Broker-specific configuration
 	Extra map[string]interface{} `yaml:"extra,omitempty" json:"extra,omitempty"`
 }
@@ -162,6 +165,12 @@ func (c *BrokerConfig) Validate() error {
 		}
 	}
 
+	if c.Compliance != nil {
+		if err := c.Compliance.Validate(); err != nil {
+			return fmt.Errorf("compliance config validation failed: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -173,6 +182,10 @@ func (c *BrokerConfig) SetDefaults() {
 
 	if c.Audit != nil {
 		c.Audit.SetDefaults()
+	}
+
+	if c.Compliance != nil {
+		c.Compliance.SetDefaults()
 	}
 }
 
