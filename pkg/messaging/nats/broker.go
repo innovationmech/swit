@@ -23,7 +23,6 @@ package nats
 
 import (
 	"context"
-	"crypto/tls"
 	"strings"
 	"sync"
 	"time"
@@ -75,7 +74,13 @@ func (b *natsBroker) Connect(ctx context.Context) error {
 
 	// TLS options
 	if b.config.TLS != nil && b.config.TLS.Enabled {
-		opts = append(opts, nats.Secure(&tls.Config{InsecureSkipVerify: b.cfg.TLSInsecureSkipVerify}))
+		if tlsConf, err := messaging.BuildTLSConfig(b.config.TLS); err == nil && tlsConf != nil {
+			// Override InsecureSkipVerify with adapter-specific toggle if provided
+			tlsConf.InsecureSkipVerify = b.cfg.TLSInsecureSkipVerify || tlsConf.InsecureSkipVerify
+			opts = append(opts, nats.Secure(tlsConf))
+		} else if err != nil {
+			return messaging.NewConfigError("failed to build TLS config for NATS", err)
+		}
 	}
 
 	// Auth options (basic token / username/password via URL supported by nats.go)
