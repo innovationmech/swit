@@ -49,7 +49,7 @@ func newKafkaGoReader(brokerCfg *messaging.BrokerConfig, topic string, groupID s
 	// Build SASL/TLS dialer if configured
 	var dialer *kafka.Dialer
 	if brokerCfg != nil {
-		tlsConf, _ := buildTLSConfig(brokerCfg.TLS)
+		tlsConf, _ := messaging.BuildTLSConfig(brokerCfg.TLS)
 		mech, _ := buildSASLMechanism(brokerCfg.Authentication)
 		if tlsConf != nil || mech != nil || brokerCfg.Connection.Timeout > 0 {
 			d := &kafka.Dialer{

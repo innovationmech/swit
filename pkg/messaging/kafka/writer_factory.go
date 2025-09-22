@@ -76,7 +76,7 @@ func wireDefaultWriterFactory() {
 		// Build optional transport with TLS/SASL
 		var transport *kafka.Transport
 		if brokerCfg != nil {
-			tlsConf, _ := buildTLSConfig(brokerCfg.TLS)
+			tlsConf, _ := messaging.BuildTLSConfig(brokerCfg.TLS)
 			mech, _ := buildSASLMechanism(brokerCfg.Authentication)
 			if tlsConf != nil || mech != nil {
 				transport = &kafka.Transport{TLS: tlsConf, SASL: mech}

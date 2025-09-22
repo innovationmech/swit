@@ -23,6 +23,7 @@ package rabbitmq
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	mathrand "math/rand"
 	"sync"
@@ -148,6 +149,16 @@ func (p *connectionPool) createConnectionWithFailover(ctx context.Context) (*poo
 			Heartbeat: p.rabbitConfig.Timeouts.HeartbeatInterval(),
 			Dial:      amqp.DefaultDial(p.rabbitConfig.Timeouts.DialTimeout()),
 		}
+		// Inject TLS when enabled or amqps scheme is used
+		if shouldUseTLS(p.config) {
+			tlsConf, err := messaging.BuildTLSConfig(p.config.TLS)
+			if err == nil {
+				if tlsConf == nil {
+					tlsConf = &tls.Config{}
+				}
+				cfg.TLSClientConfig = tlsConf
+			}
+		}
 
 		conn, err := p.dial(endpoint, cfg)
 		if err == nil {
@@ -257,6 +268,15 @@ func (p *connectionPool) redial(endpoint string) (amqpConnection, error) {
 		Locale:    "en_US",
 		Heartbeat: p.rabbitConfig.Timeouts.HeartbeatInterval(),
 		Dial:      amqp.DefaultDial(p.rabbitConfig.Timeouts.DialTimeout()),
+	}
+	if shouldUseTLS(p.config) {
+		tlsConf, err := messaging.BuildTLSConfig(p.config.TLS)
+		if err == nil {
+			if tlsConf == nil {
+				tlsConf = &tls.Config{}
+			}
+			cfg.TLSClientConfig = tlsConf
+		}
 	}
 	return p.dial(endpoint, cfg)
 }
@@ -736,4 +756,20 @@ func (c *channelWrapper) Close() error {
 	c.closed = true
 	c.mu.Unlock()
 	return c.channel.Close()
+}
+
+// shouldUseTLS decides to enable TLS when any endpoint uses amqps:// or TLS config is enabled.
+func shouldUseTLS(cfg *messaging.BrokerConfig) bool {
+	if cfg == nil {
+		return false
+	}
+	if cfg.TLS != nil && cfg.TLS.Enabled {
+		return true
+	}
+	for _, ep := range cfg.Endpoints {
+		if len(ep) >= 8 && ep[:8] == "amqps://" {
+			return true
+		}
+	}
+	return false
 }

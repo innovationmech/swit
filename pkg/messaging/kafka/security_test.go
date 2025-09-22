@@ -79,7 +79,7 @@ func TestBuildSASLMechanism_Unsupported(t *testing.T) {
 }
 
 func TestBuildTLSConfig_Basic(t *testing.T) {
-	cfg, err := buildTLSConfig(&messaging.TLSConfig{Enabled: true, SkipVerify: true, ServerName: "kafka.local"})
+	cfg, err := messaging.BuildTLSConfig(&messaging.TLSConfig{Enabled: true, SkipVerify: true, ServerName: "kafka.local"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

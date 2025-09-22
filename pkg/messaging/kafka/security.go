@@ -22,10 +22,7 @@
 package kafka
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"os"
 
 	"github.com/innovationmech/swit/pkg/messaging"
 	kgo "github.com/segmentio/kafka-go"
@@ -33,42 +30,6 @@ import (
 	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/segmentio/kafka-go/sasl/scram"
 )
-
-// buildTLSConfig constructs a *tls.Config from generic messaging TLS settings.
-func buildTLSConfig(tlsCfg *messaging.TLSConfig) (*tls.Config, error) {
-	if tlsCfg == nil || !tlsCfg.Enabled {
-		return nil, nil
-	}
-
-	cfg := &tls.Config{InsecureSkipVerify: tlsCfg.SkipVerify} //nolint:gosec // allow via configuration
-	if tlsCfg.ServerName != "" {
-		cfg.ServerName = tlsCfg.ServerName
-	}
-
-	// Load client cert if provided
-	if tlsCfg.CertFile != "" && tlsCfg.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(tlsCfg.CertFile, tlsCfg.KeyFile)
-		if err != nil {
-			return nil, messaging.NewConfigError(fmt.Sprintf("failed to load client TLS cert/key: %v", err), err)
-		}
-		cfg.Certificates = []tls.Certificate{cert}
-	}
-
-	// Load CA if provided
-	if tlsCfg.CAFile != "" {
-		caData, err := os.ReadFile(tlsCfg.CAFile)
-		if err != nil {
-			return nil, messaging.NewConfigError(fmt.Sprintf("failed to read CA file: %v", err), err)
-		}
-		pool := x509.NewCertPool()
-		if ok := pool.AppendCertsFromPEM(caData); !ok {
-			return nil, messaging.NewConfigError("failed to append CA certificates", nil)
-		}
-		cfg.RootCAs = pool
-	}
-
-	return cfg, nil
-}
 
 // buildSASLMechanism constructs a kafka-go SASL mechanism from generic auth config.
 func buildSASLMechanism(auth *messaging.AuthConfig) (sasl.Mechanism, error) {
