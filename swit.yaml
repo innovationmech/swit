@@ -115,5 +115,34 @@ messaging:
     health_check_enabled: true
     health_check_interval: "30s"
 
+# Access Control (RBAC) Configuration
+access_control:
+  enabled: false
+  strict_mode: false
+  super_admin_role: ""
+  default_roles: []
+  resource_separator: ":"
+
+  # Define permissions registry (optional). You can also reference inline patterns like "orders:read"
+  permissions:
+    # example_view:
+    #   description: "View example resource"
+    #   resource: "example"
+    #   action: "view"
+    #   is_system: true
+
+  # Define roles and their permissions (names or inline patterns) and inheritance
+  roles:
+    # reader:
+    #   description: "Read-only access"
+    #   permissions: ["example:view", "orders:read"]
+    #   inherits: []
+    #   is_system: false
+    # admin:
+    #   description: "Administrator"
+    #   permissions: ["*"]  # Grant via inline wildcard patterns if your enforcement supports it
+    #   inherits: ["reader"]
+    #   is_system: true
+
 serviceDiscovery:
   address: "localhost:8500"

@@ -92,6 +92,12 @@ func TestNewServerConfig(t *testing.T) {
 	assert.Equal(t, []float64{0.001, 0.01, 0.1, 0.5, 1, 2.5, 5, 10}, config.Prometheus.Buckets.Duration)
 	assert.Equal(t, []float64{100, 1000, 10000, 100000, 1000000}, config.Prometheus.Buckets.Size)
 	assert.NotNil(t, config.Prometheus.Labels)
+
+	// AccessControl defaults
+	assert.False(t, config.AccessControl.Enabled)
+	assert.Equal(t, ":", config.AccessControl.ResourceSeparator)
+	assert.NotNil(t, config.AccessControl.Permissions)
+	assert.NotNil(t, config.AccessControl.Roles)
 }
 
 func TestServerConfig_SetDefaults(t *testing.T) {
@@ -271,6 +277,15 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					},
 					Labels:           make(map[string]string),
 					CardinalityLimit: 10000,
+				},
+				AccessControl: AccessControlConfig{
+					Enabled:           false,
+					StrictMode:        false,
+					SuperAdminRole:    "",
+					DefaultRoles:      nil,
+					ResourceSeparator: ":",
+					Permissions:       map[string]PermissionDefinition{},
+					Roles:             map[string]RoleDefinition{},
 				},
 				Tracing: tracing.TracingConfig{
 					Enabled:     false,
@@ -480,6 +495,15 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					},
 					Labels:           make(map[string]string),
 					CardinalityLimit: 10000,
+				},
+				AccessControl: AccessControlConfig{
+					Enabled:           false,
+					StrictMode:        false,
+					SuperAdminRole:    "",
+					DefaultRoles:      nil,
+					ResourceSeparator: ":",
+					Permissions:       map[string]PermissionDefinition{},
+					Roles:             map[string]RoleDefinition{},
 				},
 				Tracing: tracing.TracingConfig{
 					Enabled:     false,
