@@ -325,5 +325,20 @@ func validateNATSConfiguration(base *messaging.BrokerConfig, cfg *Config) (
 		})
 	}
 
+	// OAuth2 specific checks for NATS when selected
+	if base != nil && base.Authentication != nil && base.Authentication.Type == messaging.AuthTypeOAuth2 {
+		// Allow either static token or client credentials flow
+		if strings.TrimSpace(base.Authentication.Token) == "" {
+			if strings.TrimSpace(base.Authentication.ClientID) == "" || strings.TrimSpace(base.Authentication.ClientSecret) == "" || strings.TrimSpace(base.Authentication.TokenURL) == "" {
+				errs = append(errs, messaging.AdapterValidationError{
+					Field:    "Authentication",
+					Message:  "oauth2 requires either token or client_id/client_secret/token_url",
+					Code:     "NATS_OAUTH2_CONFIG_INCOMPLETE",
+					Severity: messaging.AdapterValidationSeverityError,
+				})
+			}
+		}
+	}
+
 	return errs, warns, suggs
 }

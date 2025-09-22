@@ -673,12 +673,16 @@ func (s *BusinessServerImpl) initializeMessagingSystem(ctx context.Context) erro
 		// Convert authentication config if present
 		if serverBrokerConfig.Authentication != nil {
 			brokerConfig.Authentication = &messaging.AuthConfig{
-				Type:      messaging.AuthType(serverBrokerConfig.Authentication.Type),
-				Username:  serverBrokerConfig.Authentication.Username,
-				Password:  serverBrokerConfig.Authentication.Password,
-				Token:     serverBrokerConfig.Authentication.Token,
-				APIKey:    serverBrokerConfig.Authentication.APIKey,
-				Mechanism: serverBrokerConfig.Authentication.Mechanism,
+				Type:         messaging.AuthType(serverBrokerConfig.Authentication.Type),
+				Username:     serverBrokerConfig.Authentication.Username,
+				Password:     serverBrokerConfig.Authentication.Password,
+				Token:        serverBrokerConfig.Authentication.Token,
+				APIKey:       serverBrokerConfig.Authentication.APIKey,
+				Mechanism:    serverBrokerConfig.Authentication.Mechanism,
+				ClientID:     serverBrokerConfig.Authentication.ClientID,
+				ClientSecret: serverBrokerConfig.Authentication.ClientSecret,
+				TokenURL:     serverBrokerConfig.Authentication.TokenURL,
+				Scopes:       serverBrokerConfig.Authentication.Scopes,
 			}
 		}
 

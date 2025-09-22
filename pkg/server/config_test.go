@@ -1082,6 +1082,77 @@ func TestServerConfig_MessagingValidation(t *testing.T) {
 				ShutdownTimeout: 5 * time.Second,
 			},
 		},
+		{
+			name: "oauth2 client credentials accepted",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP:        HTTPConfig{Port: "8080", Enabled: true, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second},
+				Messaging: MessagingConfig{
+					Enabled:       true,
+					DefaultBroker: "nats",
+					Brokers: map[string]BrokerConfig{
+						"nats": {
+							Type:      "nats",
+							Endpoints: []string{"nats://localhost:4222"},
+							Authentication: &MessagingAuthConfig{
+								Type:         "oauth2",
+								ClientID:     "id",
+								ClientSecret: "secret",
+								TokenURL:     "https://example.com/token",
+							},
+						},
+					},
+					Connection: MessagingConnectionConfig{
+						Timeout:       30 * time.Second,
+						KeepAlive:     30 * time.Second,
+						MaxAttempts:   3,
+						RetryInterval: 5 * time.Second,
+						PoolSize:      10,
+						IdleTimeout:   5 * time.Minute,
+					},
+					Performance: MessagingPerformanceConfig{
+						BatchSize:          100,
+						BatchTimeout:       100 * time.Millisecond,
+						BufferSize:         1000,
+						Concurrency:        1,
+						PrefetchCount:      10,
+						CompressionEnabled: false,
+					},
+					Monitoring: MessagingMonitoringConfig{
+						Enabled:             true,
+						MetricsEnabled:      true,
+						TracingEnabled:      false,
+						HealthCheckEnabled:  true,
+						HealthCheckInterval: 30 * time.Second,
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+		},
+		{
+			name: "oauth2 client credentials missing token_url",
+			config: &ServerConfig{
+				ServiceName: "test",
+				HTTP:        HTTPConfig{Port: "8080", Enabled: true, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second},
+				Messaging: MessagingConfig{
+					Enabled:       true,
+					DefaultBroker: "nats",
+					Brokers: map[string]BrokerConfig{
+						"nats": {
+							Type:      "nats",
+							Endpoints: []string{"nats://localhost:4222"},
+							Authentication: &MessagingAuthConfig{
+								Type:         "oauth2",
+								ClientID:     "id",
+								ClientSecret: "secret",
+							},
+						},
+					},
+				},
+				ShutdownTimeout: 5 * time.Second,
+			},
+			wantErr: "token_url is required for OAuth2 client credentials flow",
+		},
 	}
 
 	for _, tt := range tests {
