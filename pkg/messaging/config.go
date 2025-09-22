@@ -353,14 +353,17 @@ func (c *AuthConfig) Validate() error {
 			return NewConfigError("password is required for SASL authentication", nil)
 		}
 	case AuthTypeOAuth2:
-		if c.ClientID == "" {
-			return NewConfigError("client_id is required for OAuth2 authentication", nil)
-		}
-		if c.ClientSecret == "" {
-			return NewConfigError("client_secret is required for OAuth2 authentication", nil)
-		}
-		if c.TokenURL == "" {
-			return NewConfigError("token_url is required for OAuth2 authentication", nil)
+		// Support static token OR client credentials flow
+		if strings.TrimSpace(c.Token) == "" {
+			if c.ClientID == "" {
+				return NewConfigError("client_id is required for OAuth2 authentication", nil)
+			}
+			if c.ClientSecret == "" {
+				return NewConfigError("client_secret is required for OAuth2 authentication", nil)
+			}
+			if strings.TrimSpace(c.TokenURL) == "" {
+				return NewConfigError("token_url is required for OAuth2 authentication", nil)
+			}
 		}
 	case AuthTypeAPIKey:
 		if c.APIKey == "" {

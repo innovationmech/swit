@@ -1226,6 +1226,16 @@ messaging:
           - "messaging:publish"
           - "messaging:subscribe"
         grant_type: "client_credentials"
+
+      # NATS example using OAuth2 client credentials
+      nats_oauth2_example:
+        type: "oauth2"
+        client_id: "${OAUTH_CLIENT_ID}"
+        client_secret: "${OAUTH_CLIENT_SECRET}"
+        token_url: "https://auth.example.com/oauth2/token"
+        scopes:
+          - "nats.publish"
+          - "nats.subscribe"
       
       # mTLS authentication
       mtls:

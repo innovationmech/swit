@@ -90,6 +90,27 @@ func (b *natsBroker) Connect(ctx context.Context) error {
 			if b.config.Authentication.Token != "" {
 				opts = append(opts, nats.Token(b.config.Authentication.Token))
 			}
+		case messaging.AuthTypeOAuth2:
+			// Prefer static token if provided; else perform client-credentials flow once during connect
+			if tok := strings.TrimSpace(b.config.Authentication.Token); tok != "" {
+				opts = append(opts, nats.Token(tok))
+			} else {
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				defer cancel()
+				tok, _, err := messaging.FetchOAuth2ClientCredentialsToken(
+					ctx,
+					b.config.Authentication.ClientID,
+					b.config.Authentication.ClientSecret,
+					b.config.Authentication.TokenURL,
+					b.config.Authentication.Scopes,
+				)
+				if err != nil {
+					return messaging.NewConfigError("failed to obtain OAuth2 token for NATS", err)
+				}
+				opts = append(opts, nats.Token(tok))
+				// Store token in config for potential reuse (best-effort)
+				b.config.Authentication.Token = tok
+			}
 		case messaging.AuthTypeSASL: // Map to user/pass
 			if b.config.Authentication.Username != "" || b.config.Authentication.Password != "" {
 				opts = append(opts, nats.UserInfo(b.config.Authentication.Username, b.config.Authentication.Password))

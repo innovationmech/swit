@@ -274,6 +274,16 @@ type MessagingAuthConfig struct {
 
 	// Mechanism for SASL (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)
 	Mechanism string `yaml:"mechanism,omitempty" json:"mechanism,omitempty"`
+
+	// OAuth2 client credentials flow settings
+	// ClientID for OAuth2 client credentials
+	ClientID string `yaml:"client_id,omitempty" json:"client_id,omitempty"`
+	// ClientSecret for OAuth2 client credentials
+	ClientSecret string `yaml:"client_secret,omitempty" json:"client_secret,omitempty"`
+	// TokenURL for OAuth2 token endpoint
+	TokenURL string `yaml:"token_url,omitempty" json:"token_url,omitempty"`
+	// Scopes for OAuth2 token request (space-joined)
+	Scopes []string `yaml:"scopes,omitempty" json:"scopes,omitempty"`
 }
 
 // MessagingTLSConfig defines messaging TLS settings
@@ -1316,8 +1326,19 @@ func (c *ServerConfig) validateMessagingAuthConfig(auth *MessagingAuthConfig) er
 			return fmt.Errorf("password is required for SASL authentication")
 		}
 	case "oauth2":
+		// Support two modes:
+		// 1) Static bearer token via Token
+		// 2) Client credentials flow via client_id/client_secret/token_url (preferred)
 		if auth.Token == "" {
-			return fmt.Errorf("token is required for OAuth2 authentication")
+			if auth.ClientID == "" {
+				return fmt.Errorf("client_id is required for OAuth2 client credentials flow")
+			}
+			if auth.ClientSecret == "" {
+				return fmt.Errorf("client_secret is required for OAuth2 client credentials flow")
+			}
+			if strings.TrimSpace(auth.TokenURL) == "" {
+				return fmt.Errorf("token_url is required for OAuth2 client credentials flow")
+			}
 		}
 	case "apikey":
 		if auth.APIKey == "" {

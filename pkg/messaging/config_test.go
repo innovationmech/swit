@@ -178,7 +178,7 @@ func TestAuthConfigValidation(t *testing.T) {
 		t.Error("Expected error for SASL auth without password")
 	}
 
-	// Test OAuth2 auth - valid
+	// Test OAuth2 auth - valid (client credentials)
 	oauth2Auth := &AuthConfig{
 		Type:         AuthTypeOAuth2,
 		ClientID:     "client-id",
@@ -188,6 +188,15 @@ func TestAuthConfigValidation(t *testing.T) {
 	err = oauth2Auth.Validate()
 	if err != nil {
 		t.Errorf("Expected no error for valid OAuth2 auth, got: %v", err)
+	}
+
+	// Test OAuth2 auth - valid (static token)
+	oauth2Static := &AuthConfig{
+		Type:  AuthTypeOAuth2,
+		Token: "bearer-token",
+	}
+	if err := oauth2Static.Validate(); err != nil {
+		t.Errorf("Expected no error for OAuth2 with static token, got: %v", err)
 	}
 
 	// Test OAuth2 auth - missing client ID
