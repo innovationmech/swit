@@ -28,6 +28,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,6 +111,13 @@ type KeyManagementConfig struct {
 
 	// Cache configuration
 	Cache *KeyCacheConfig `json:"cache,omitempty" yaml:"cache,omitempty"`
+
+	// Provider-specific configurations (integration points)
+	// These define where keys are sourced/managed when using external KMS/providers
+	Vault *VaultConfig         `json:"vault,omitempty" yaml:"vault,omitempty"`
+	AWS   *AWSKMSConfig        `json:"aws,omitempty" yaml:"aws,omitempty"`
+	GCP   *GCPKMSConfig        `json:"gcp,omitempty" yaml:"gcp,omitempty"`
+	Azure *AzureKeyVaultConfig `json:"azure,omitempty" yaml:"azure,omitempty"`
 }
 
 // AuditConfig defines audit logging settings
@@ -185,6 +193,58 @@ type KeyCacheConfig struct {
 
 	// Cleanup interval for expired keys
 	CleanupInterval time.Duration `json:"cleanup_interval" yaml:"cleanup_interval" default:"10m"`
+}
+
+// VaultConfig defines HashiCorp Vault integration points
+type VaultConfig struct {
+	// Address of the Vault server (e.g., https://vault.example.com)
+	Address string `json:"address" yaml:"address"`
+
+	// Namespace (if Vault Enterprise namespaces are used)
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+
+	// AuthMethod used to authenticate to Vault (token, kubernetes, approle)
+	AuthMethod string `json:"auth_method" yaml:"auth_method"`
+
+	// Role used by the chosen auth method (e.g., Kubernetes role name)
+	Role string `json:"role,omitempty" yaml:"role,omitempty"`
+
+	// Path where the encryption key material is stored
+	EncryptionKeyPath string `json:"encryption_key_path" yaml:"encryption_key_path"`
+
+	// Path where the signing key material is stored (optional if only encryption is used)
+	SigningKeyPath string `json:"signing_key_path,omitempty" yaml:"signing_key_path,omitempty"`
+}
+
+// AWSKMSConfig defines AWS KMS integration points
+type AWSKMSConfig struct {
+	// Region for AWS KMS (e.g., us-east-1)
+	Region string `json:"region" yaml:"region"`
+
+	// KeyID or ARN for the KMS key to use
+	KeyID string `json:"key_id" yaml:"key_id"`
+
+	// Optional custom endpoint (for testing/localstack)
+	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+}
+
+// GCPKMSConfig defines Google Cloud KMS integration points
+type GCPKMSConfig struct {
+	ProjectID   string `json:"project_id" yaml:"project_id"`
+	LocationID  string `json:"location_id" yaml:"location_id"`
+	KeyRingID   string `json:"key_ring_id" yaml:"key_ring_id"`
+	CryptoKeyID string `json:"crypto_key_id" yaml:"crypto_key_id"`
+	Endpoint    string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+}
+
+// AzureKeyVaultConfig defines Azure Key Vault integration points
+type AzureKeyVaultConfig struct {
+	// VaultURI like https://<vault-name>.vault.azure.net/
+	VaultURI string `json:"vault_uri" yaml:"vault_uri"`
+	// KeyName is the name of the key in the vault
+	KeyName string `json:"key_name" yaml:"key_name"`
+	// KeyVersion is optional; latest will be used if empty
+	KeyVersion string `json:"key_version,omitempty" yaml:"key_version,omitempty"`
 }
 
 // EncryptionAlgorithm defines supported encryption algorithms
@@ -793,6 +853,40 @@ func (c *KeyManagementConfig) Validate() error {
 		}
 	}
 
+	// Provider-specific validation
+	switch c.Provider {
+	case KeyProviderStatic:
+		// No external configuration required
+	case KeyProviderVault:
+		if c.Vault == nil {
+			return fmt.Errorf("vault config is required when provider is 'vault'")
+		}
+		if err := c.Vault.Validate(); err != nil {
+			return fmt.Errorf("invalid vault config: %w", err)
+		}
+	case KeyProviderAWS:
+		if c.AWS == nil {
+			return fmt.Errorf("aws config is required when provider is 'aws'")
+		}
+		if err := c.AWS.Validate(); err != nil {
+			return fmt.Errorf("invalid aws kms config: %w", err)
+		}
+	case KeyProviderGCP:
+		if c.GCP == nil {
+			return fmt.Errorf("gcp config is required when provider is 'gcp'")
+		}
+		if err := c.GCP.Validate(); err != nil {
+			return fmt.Errorf("invalid gcp kms config: %w", err)
+		}
+	case KeyProviderAzure:
+		if c.Azure == nil {
+			return fmt.Errorf("azure config is required when provider is 'azure'")
+		}
+		if err := c.Azure.Validate(); err != nil {
+			return fmt.Errorf("invalid azure key vault config: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -911,5 +1005,58 @@ func (c *KeyCacheConfig) Validate() error {
 		return fmt.Errorf("cleanup interval must be positive")
 	}
 
+	return nil
+}
+
+// Validate validates the Vault configuration
+func (c *VaultConfig) Validate() error {
+	if strings.TrimSpace(c.Address) == "" {
+		return fmt.Errorf("vault address is required")
+	}
+	if strings.TrimSpace(c.AuthMethod) == "" {
+		return fmt.Errorf("vault auth_method is required")
+	}
+	if strings.TrimSpace(c.EncryptionKeyPath) == "" && strings.TrimSpace(c.SigningKeyPath) == "" {
+		return fmt.Errorf("at least one of encryption_key_path or signing_key_path must be provided")
+	}
+	return nil
+}
+
+// Validate validates the AWS KMS configuration
+func (c *AWSKMSConfig) Validate() error {
+	if strings.TrimSpace(c.Region) == "" {
+		return fmt.Errorf("aws region is required")
+	}
+	if strings.TrimSpace(c.KeyID) == "" {
+		return fmt.Errorf("aws key_id is required")
+	}
+	return nil
+}
+
+// Validate validates the GCP KMS configuration
+func (c *GCPKMSConfig) Validate() error {
+	if strings.TrimSpace(c.ProjectID) == "" {
+		return fmt.Errorf("gcp project_id is required")
+	}
+	if strings.TrimSpace(c.LocationID) == "" {
+		return fmt.Errorf("gcp location_id is required")
+	}
+	if strings.TrimSpace(c.KeyRingID) == "" {
+		return fmt.Errorf("gcp key_ring_id is required")
+	}
+	if strings.TrimSpace(c.CryptoKeyID) == "" {
+		return fmt.Errorf("gcp crypto_key_id is required")
+	}
+	return nil
+}
+
+// Validate validates the Azure Key Vault configuration
+func (c *AzureKeyVaultConfig) Validate() error {
+	if strings.TrimSpace(c.VaultURI) == "" {
+		return fmt.Errorf("azure vault_uri is required")
+	}
+	if strings.TrimSpace(c.KeyName) == "" {
+		return fmt.Errorf("azure key_name is required")
+	}
 	return nil
 }

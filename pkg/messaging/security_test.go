@@ -371,3 +371,115 @@ func TestSecurityManager_Compression(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, testData, decompressed)
 }
+
+func TestKeyManagementConfig_Validate_ProviderSpecific(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *KeyManagementConfig
+		wantErr bool
+		errSub  string
+	}{
+		{
+			name:    "static provider no extra config",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderStatic},
+			wantErr: false,
+		},
+		{
+			name:    "vault provider missing config",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderVault},
+			wantErr: true,
+			errSub:  "vault config is required",
+		},
+		{
+			name: "vault provider minimal valid",
+			cfg: &KeyManagementConfig{Provider: KeyProviderVault, Vault: &VaultConfig{
+				Address:           "https://vault.example.com",
+				AuthMethod:        "kubernetes",
+				Role:              "messaging-service",
+				EncryptionKeyPath: "secret/messaging/encryption-key",
+			}},
+			wantErr: false,
+		},
+		{
+			name:    "aws provider missing",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderAWS},
+			wantErr: true,
+			errSub:  "aws config is required",
+		},
+		{
+			name:    "aws provider invalid (missing key id)",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderAWS, AWS: &AWSKMSConfig{Region: "us-east-1"}},
+			wantErr: true,
+			errSub:  "key_id is required",
+		},
+		{
+			name: "aws provider valid",
+			cfg:  &KeyManagementConfig{Provider: KeyProviderAWS, AWS: &AWSKMSConfig{Region: "us-east-1", KeyID: "arn:aws:kms:..."}},
+		},
+		{
+			name:    "gcp provider missing",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderGCP},
+			wantErr: true,
+			errSub:  "gcp config is required",
+		},
+		{
+			name:    "gcp provider invalid",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderGCP, GCP: &GCPKMSConfig{ProjectID: "p", LocationID: "loc", KeyRingID: "ring"}},
+			wantErr: true,
+			errSub:  "crypto_key_id is required",
+		},
+		{
+			name: "gcp provider valid",
+			cfg:  &KeyManagementConfig{Provider: KeyProviderGCP, GCP: &GCPKMSConfig{ProjectID: "p", LocationID: "loc", KeyRingID: "ring", CryptoKeyID: "key"}},
+		},
+		{
+			name:    "azure provider missing",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderAzure},
+			wantErr: true,
+			errSub:  "azure config is required",
+		},
+		{
+			name:    "azure provider invalid",
+			cfg:     &KeyManagementConfig{Provider: KeyProviderAzure, Azure: &AzureKeyVaultConfig{VaultURI: "https://vault"}},
+			wantErr: true,
+			errSub:  "key_name is required",
+		},
+		{
+			name: "azure provider valid",
+			cfg:  &KeyManagementConfig{Provider: KeyProviderAzure, Azure: &AzureKeyVaultConfig{VaultURI: "https://vault", KeyName: "messaging"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errSub != "" {
+					assert.Contains(t, err.Error(), tt.errSub)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestVaultConfig_Validate(t *testing.T) {
+	t.Run("missing all", func(t *testing.T) {
+		v := &VaultConfig{}
+		err := v.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "vault address is required")
+	})
+	t.Run("missing key paths", func(t *testing.T) {
+		v := &VaultConfig{Address: "https://vault", AuthMethod: "token"}
+		err := v.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "at least one of encryption_key_path or signing_key_path")
+	})
+	t.Run("ok", func(t *testing.T) {
+		v := &VaultConfig{Address: "https://vault", AuthMethod: "token", EncryptionKeyPath: "secret/k"}
+		require.NoError(t, v.Validate())
+	})
+}
