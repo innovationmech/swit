@@ -823,6 +823,41 @@ func getMapEnv(key string, defaultValue map[string]string) map[string]string {
 
 ## Configuration Validation
 
+### Compliance Configuration
+
+```yaml
+messaging:
+  brokers:
+    kafka:
+      type: kafka
+      endpoints: ["localhost:9092"]
+      compliance:
+        enabled: true
+        retention:
+          enabled: true
+          default_period: "30d"
+          topic_overrides:
+            audit.logs: "90d"
+        redaction:
+          enabled: true
+          fields: ["authorization", "x-api-key"]
+          payload_enabled: false
+        residency:
+          enforce: true
+          allowed_regions: ["eu-west-1", "eu-central-1"]
+        reporting:
+          enabled: true
+          metrics_enabled: true
+          log_enabled: true
+          interval: "1m"
+```
+
+Compliance 验证规则：
+- enabled=false 时跳过校验
+- retention.enabled=true 时 `default_period` 必须为正数，`topic_overrides` 中每个时长必须为正数
+- residency.enforce=true 时 `allowed_regions` 不能为空
+- reporting.enabled=true 时 `interval` 必须为正数
+
 The framework provides built-in configuration validation:
 
 ```go
