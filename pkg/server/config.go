@@ -43,6 +43,7 @@ type ServerConfig struct {
 	Discovery       DiscoveryConfig       `yaml:"discovery" json:"discovery"`
 	Middleware      MiddlewareConfig      `yaml:"middleware" json:"middleware"`
 	Messaging       MessagingConfig       `yaml:"messaging" json:"messaging"`
+	AccessControl   AccessControlConfig   `yaml:"access_control" json:"access_control"`
 	Sentry          SentryConfig          `yaml:"sentry" json:"sentry"`
 	Logging         LoggingConfig         `yaml:"logging" json:"logging"`
 	Prometheus      PrometheusConfig      `yaml:"prometheus" json:"prometheus"`
@@ -187,6 +188,46 @@ type MiddlewareConfig struct {
 	EnableAuth      bool `yaml:"enable_auth" json:"enable_auth"`
 	EnableRateLimit bool `yaml:"enable_rate_limit" json:"enable_rate_limit"`
 	EnableLogging   bool `yaml:"enable_logging" json:"enable_logging"`
+}
+
+// AccessControlConfig defines role-based access control configuration
+type AccessControlConfig struct {
+	// Enabled toggles access control configuration activation
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// StrictMode enforces strict validation of roles/permissions at startup
+	StrictMode bool `yaml:"strict_mode" json:"strict_mode"`
+
+	// SuperAdminRole, when set, grants all permissions
+	SuperAdminRole string `yaml:"super_admin_role" json:"super_admin_role"`
+
+	// DefaultRoles assigned to new identities by default
+	DefaultRoles []string `yaml:"default_roles" json:"default_roles"`
+
+	// ResourceSeparator used for inline permission patterns (e.g., "resource:action")
+	ResourceSeparator string `yaml:"resource_separator" json:"resource_separator"`
+
+	// Permissions registry keyed by permission name
+	Permissions map[string]PermissionDefinition `yaml:"permissions" json:"permissions"`
+
+	// Roles registry keyed by role name
+	Roles map[string]RoleDefinition `yaml:"roles" json:"roles"`
+}
+
+// PermissionDefinition represents a single permission over a resource and action
+type PermissionDefinition struct {
+	Description string `yaml:"description" json:"description"`
+	Resource    string `yaml:"resource" json:"resource"`
+	Action      string `yaml:"action" json:"action"`
+	IsSystem    bool   `yaml:"is_system" json:"is_system"`
+}
+
+// RoleDefinition represents a role with permissions and optional inheritance
+type RoleDefinition struct {
+	Description string   `yaml:"description" json:"description"`
+	Permissions []string `yaml:"permissions" json:"permissions"`
+	Inherits    []string `yaml:"inherits" json:"inherits"`
+	IsSystem    bool     `yaml:"is_system" json:"is_system"`
 }
 
 // MessagingConfig holds messaging system configuration
@@ -659,6 +700,18 @@ func (c *ServerConfig) SetDefaults() {
 		c.Messaging.Monitoring.HealthCheckInterval = 30 * time.Second
 	}
 
+	// Access control defaults
+	c.AccessControl.Enabled = false
+	if c.AccessControl.ResourceSeparator == "" {
+		c.AccessControl.ResourceSeparator = ":"
+	}
+	if c.AccessControl.Permissions == nil {
+		c.AccessControl.Permissions = make(map[string]PermissionDefinition)
+	}
+	if c.AccessControl.Roles == nil {
+		c.AccessControl.Roles = make(map[string]RoleDefinition)
+	}
+
 	// Apply messaging environment overrides
 	c.Messaging.ApplyEnvironmentOverrides()
 
@@ -1081,6 +1134,11 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
+	// Validate access control configuration
+	if err := c.validateAccessControl(); err != nil {
+		return err
+	}
+
 	// Validate shutdown timeout
 	if c.ShutdownTimeout <= 0 {
 		return fmt.Errorf("shutdown_timeout must be positive")
@@ -1296,6 +1354,139 @@ func (c *ServerConfig) validateBrokerConfig(name string, brokerConfig *BrokerCon
 		}
 	}
 
+	return nil
+}
+
+// validateAccessControl validates the access control configuration
+func (c *ServerConfig) validateAccessControl() error {
+	ac := c.AccessControl
+
+	// When disabled, accept configuration as-is to allow gradual rollout
+	if !ac.Enabled {
+		return nil
+	}
+
+	// Validate resource separator
+	if strings.TrimSpace(ac.ResourceSeparator) == "" {
+		return fmt.Errorf("access_control.resource_separator cannot be empty")
+	}
+
+	// Validate super admin and default roles existence (if set)
+	if ac.SuperAdminRole != "" {
+		if _, ok := ac.Roles[ac.SuperAdminRole]; !ok {
+			return fmt.Errorf("access_control.super_admin_role '%s' not found in roles", ac.SuperAdminRole)
+		}
+	}
+	for _, r := range ac.DefaultRoles {
+		if _, ok := ac.Roles[r]; !ok {
+			return fmt.Errorf("access_control.default_roles contains unknown role: %s", r)
+		}
+	}
+
+	// Validate permissions
+	for name, p := range ac.Permissions {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("access_control.permissions contains empty key")
+		}
+		if strings.Contains(name, " ") {
+			return fmt.Errorf("access_control.permissions.%s: name cannot contain spaces", name)
+		}
+		if strings.TrimSpace(p.Resource) == "" {
+			return fmt.Errorf("access_control.permissions.%s.resource cannot be empty", name)
+		}
+		if strings.TrimSpace(p.Action) == "" {
+			return fmt.Errorf("access_control.permissions.%s.action cannot be empty", name)
+		}
+	}
+
+	// Validate roles, their permissions and inheritance
+	for roleName, r := range ac.Roles {
+		if strings.TrimSpace(roleName) == "" {
+			return fmt.Errorf("access_control.roles contains empty role name")
+		}
+
+		// Validate permission references for the role
+		for i, permRef := range r.Permissions {
+			if strings.TrimSpace(permRef) == "" {
+				return fmt.Errorf("access_control.roles.%s.permissions[%d] cannot be empty", roleName, i)
+			}
+			// Permission can be a registered name or an inline pattern like "resource:action" (supports wildcards)
+			if _, ok := ac.Permissions[permRef]; ok {
+				continue
+			}
+			if !isInlinePermissionPattern(permRef, ac.ResourceSeparator) {
+				return fmt.Errorf("access_control.roles.%s.permissions[%d] references unknown permission '%s'", roleName, i, permRef)
+			}
+		}
+
+		// Validate inheritance references
+		for i, parent := range r.Inherits {
+			if _, ok := ac.Roles[parent]; !ok {
+				return fmt.Errorf("access_control.roles.%s.inherits[%d] references unknown role '%s'", roleName, i, parent)
+			}
+		}
+	}
+
+	// Detect cycles in role inheritance
+	if err := detectRoleInheritanceCycles(ac.Roles); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// isInlinePermissionPattern returns true if s matches pattern "resource{sep}action" (wildcards allowed)
+func isInlinePermissionPattern(s, sep string) bool {
+	idx := strings.Index(s, sep)
+	if idx <= 0 || idx >= len(s)-len(sep) {
+		return false
+	}
+	resource := strings.TrimSpace(s[:idx])
+	action := strings.TrimSpace(s[idx+len(sep):])
+	if resource == "" || action == "" {
+		return false
+	}
+	return true
+}
+
+// detectRoleInheritanceCycles performs DFS to detect cyclic inheritance among roles
+func detectRoleInheritanceCycles(roles map[string]RoleDefinition) error {
+	const (
+		visiting = 1
+		visited  = 2
+	)
+	state := make(map[string]int)
+
+	var dfs func(string, []string) error
+	dfs = func(cur string, stack []string) error {
+		if state[cur] == visiting {
+			// Build cycle description
+			return fmt.Errorf("access_control.roles: cyclic inheritance detected involving role '%s'", cur)
+		}
+		if state[cur] == visited {
+			return nil
+		}
+		state[cur] = visiting
+		for _, parent := range roles[cur].Inherits {
+			if _, ok := roles[parent]; !ok {
+				// Unknown parents are validated earlier
+				continue
+			}
+			if err := dfs(parent, append(stack, cur)); err != nil {
+				return err
+			}
+		}
+		state[cur] = visited
+		return nil
+	}
+
+	for name := range roles {
+		if state[name] == 0 {
+			if err := dfs(name, nil); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

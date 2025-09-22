@@ -133,6 +133,8 @@ type ServerConfig struct {
     ShutdownTimeout time.Duration     `yaml:"shutdown_timeout"`
     Discovery       DiscoveryConfig   `yaml:"discovery"`
     Middleware      MiddlewareConfig  `yaml:"middleware"`
+    Messaging       MessagingConfig   `yaml:"messaging"`
+    AccessControl   AccessControlConfig `yaml:"access_control"`
 }
 ```
 
@@ -491,6 +493,74 @@ type GRPCTLSConfig struct {
     CAFile     string `yaml:"ca_file"`
     ServerName string `yaml:"server_name"`
 }
+```
+
+## AccessControlConfig
+
+Role-Based Access Control (RBAC) configuration for services.
+
+```go
+type AccessControlConfig struct {
+    Enabled           bool                          `yaml:"enabled"`
+    StrictMode        bool                          `yaml:"strict_mode"`
+    SuperAdminRole    string                        `yaml:"super_admin_role"`
+    DefaultRoles      []string                      `yaml:"default_roles"`
+    ResourceSeparator string                        `yaml:"resource_separator"`
+    Permissions       map[string]PermissionDefinition `yaml:"permissions"`
+    Roles             map[string]RoleDefinition       `yaml:"roles"`
+}
+
+type PermissionDefinition struct {
+    Description string `yaml:"description"`
+    Resource    string `yaml:"resource"`
+    Action      string `yaml:"action"`
+    IsSystem    bool   `yaml:"is_system"`
+}
+
+type RoleDefinition struct {
+    Description string   `yaml:"description"`
+    Permissions []string `yaml:"permissions"`
+    Inherits    []string `yaml:"inherits"`
+    IsSystem    bool     `yaml:"is_system"`
+}
+```
+
+### AccessControl Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Enabled` | `bool` | `false` | Enable RBAC configuration validation |
+| `StrictMode` | `bool` | `false` | Enforce strict validation at startup |
+| `SuperAdminRole` | `string` | `""` | Role that has all permissions |
+| `DefaultRoles` | `[]string` | `[]` | Roles assigned to new identities |
+| `ResourceSeparator` | `string` | `":"` | Separator for inline permissions (e.g., `orders:read`) |
+| `Permissions` | `map[string]PermissionDefinition` | `{}` | Registry of named permissions |
+| `Roles` | `map[string]RoleDefinition` | `{}` | Registry of roles with permissions and inheritance |
+
+### AccessControl Example
+
+```yaml
+access_control:
+  enabled: true
+  strict_mode: true
+  super_admin_role: "admin"
+  default_roles: ["reader"]
+  resource_separator: ":"
+  permissions:
+    orders_read:
+      description: "Read orders"
+      resource: "orders"
+      action: "read"
+  roles:
+    reader:
+      description: "Read-only"
+      permissions: ["orders_read", "inventory:read"]
+      inherits: []
+    admin:
+      description: "Administrator"
+      permissions: ["*"]
+      inherits: ["reader"]
+      is_system: true
 ```
 
 #### GRPCTLSConfig Fields
