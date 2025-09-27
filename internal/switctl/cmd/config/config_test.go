@@ -773,7 +773,7 @@ func (s *ConfigCommandTestSuite) TestRunMigrateCommand() {
 	s.mockUI.On("ShowProgress", "Migrating files", 1).Return(mockProgress)
 
 	configPath := filepath.Join(s.tempDir, "valid.yaml")
-	err := runMigrateCommand([]string{configPath}, "v1", "v2", true)
+	err := runMigrateCommand([]string{configPath}, "v1", "v2", true, "")
 	assert.NoError(s.T(), err)
 
 	s.mockUI.AssertCalled(s.T(), "ShowSuccess", mock.MatchedBy(func(msg string) bool {
