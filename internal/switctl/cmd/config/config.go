@@ -27,6 +27,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -114,6 +116,7 @@ Examples:
 	cmd.AddCommand(NewSchemaCommand())
 	cmd.AddCommand(NewMigrateCommand())
 	cmd.AddCommand(NewMergeCommand())
+	cmd.AddCommand(NewDiffCommand())
 
 	return cmd
 }
@@ -286,6 +289,7 @@ func NewMigrateCommand() *cobra.Command {
 		fromVersion string
 		toVersion   string
 		backup      bool
+		rulesPath   string
 	)
 
 	cmd := &cobra.Command{
@@ -303,13 +307,14 @@ Examples:
   # Migrate with backup
   switctl config migrate --from v1 --to v2 --backup`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMigrateCommand(args, fromVersion, toVersion, backup)
+			return runMigrateCommand(args, fromVersion, toVersion, backup, rulesPath)
 		},
 	}
 
 	cmd.Flags().StringVar(&fromVersion, "from", "", "Source version")
 	cmd.Flags().StringVar(&toVersion, "to", "", "Target version")
 	cmd.Flags().BoolVar(&backup, "backup", true, "Create backup of original files")
+	cmd.Flags().StringVar(&rulesPath, "rules", "", "Path to migration rules file (YAML/JSON)")
 
 	return cmd
 }
@@ -350,6 +355,43 @@ Examples:
 	cmd.Flags().StringVar(&strategy, "strategy", "override", "Merge strategy (override, append, deep)")
 	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Overwrite base file with merged result")
 	cmd.Flags().BoolVar(&ignoreNulls, "ignore-nulls", false, "Ignore null values during merge")
+
+	return cmd
+}
+
+// NewDiffCommand creates the 'diff' subcommand.
+func NewDiffCommand() *cobra.Command {
+	var (
+		compatCheck bool
+		keysOnly    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "diff <old-file> <new-file>",
+		Short: "Show differences between two configuration files",
+		Long: `The diff command compares two configuration files and prints structural differences.
+
+Examples:
+  # Show diff in table format
+  switctl config diff base.yaml overlay.yaml
+
+  # JSON output for machines
+  switctl config diff --report-format json base.yaml overlay.yaml
+
+  # Run compatibility checks to flag breaking changes
+  switctl config diff --compat base.yaml overlay.yaml`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDiffCommand(args[0], args[1], compatCheck, keysOnly)
+		},
+	}
+
+	cmd.Flags().StringVar(&reportFormat, "report-format", "table", "Report format (table, json)")
+	_ = cmd.RegisterFlagCompletionFunc("report-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"table", "json"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	cmd.Flags().BoolVar(&compatCheck, "compat", true, "Run compatibility checks for breaking changes")
+	cmd.Flags().BoolVar(&keysOnly, "keys-only", false, "Only compare key presence, ignore value changes")
 
 	return cmd
 }
@@ -753,7 +795,7 @@ func runSchemaCommand(schemaType, version string) error {
 }
 
 // runMigrateCommand executes the migrate subcommand.
-func runMigrateCommand(files []string, fromVersion, toVersion string, backup bool) error {
+func runMigrateCommand(files []string, fromVersion, toVersion string, backup bool, rulesPath string) error {
 	// Create dependency container and services
 	container, err := createDependencyContainer()
 	if err != nil {
@@ -792,13 +834,24 @@ func runMigrateCommand(files []string, fromVersion, toVersion string, backup boo
 		return nil
 	}
 
+	// Load migration rules if provided
+	var rules []MigrationRule
+	if strings.TrimSpace(rulesPath) != "" {
+		loaded, err := loadMigrationRules(rulesPath)
+		if err != nil {
+			return fmt.Errorf("failed to load migration rules: %w", err)
+		}
+		rules = loaded
+		terminalUI.ShowInfo(fmt.Sprintf("Loaded %d migration rules", len(rules)))
+	}
+
 	// Migrate files
 	progress := terminalUI.ShowProgress("Migrating files", len(migrateFiles))
 
 	for i, file := range migrateFiles {
 		progress.SetMessage(fmt.Sprintf("Migrating %s...", filepath.Base(file)))
 
-		if err := migrateConfigFile(file, fromVersion, toVersion, backup); err != nil {
+		if err := migrateConfigFileWithRules(file, fromVersion, toVersion, backup, rules); err != nil {
 			terminalUI.ShowError(fmt.Errorf("failed to migrate %s: %w", file, err))
 		}
 
@@ -1263,6 +1316,42 @@ func writeSchemaToFile(schema, filename string) error {
 }
 
 func migrateConfigFile(file, fromVersion, toVersion string, backup bool) error {
+	return migrateConfigFileWithRules(file, fromVersion, toVersion, backup, nil)
+}
+
+// MigrationRule defines a single migration transformation.
+type MigrationRule struct {
+	FromKey     string      `yaml:"from" json:"from"`
+	ToKey       string      `yaml:"to" json:"to"`
+	Default     interface{} `yaml:"default,omitempty" json:"default,omitempty"`
+	Remove      bool        `yaml:"remove,omitempty" json:"remove,omitempty"`
+	Description string      `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+// loadMigrationRules loads migration rules from YAML/JSON.
+func loadMigrationRules(path string) ([]MigrationRule, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var rules []MigrationRule
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &rules); err != nil {
+			return nil, err
+		}
+	case ".json":
+		if err := json.Unmarshal(data, &rules); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported rules file extension: %s", filepath.Ext(path))
+	}
+	return rules, nil
+}
+
+// migrateConfigFile applies migration rules and version changes to a file.
+func migrateConfigFileWithRules(file, fromVersion, toVersion string, backup bool, rules []MigrationRule) error {
 	if backup {
 		backupFile := file + ".backup"
 		if err := copyFile(file, backupFile); err != nil {
@@ -1270,9 +1359,352 @@ func migrateConfigFile(file, fromVersion, toVersion string, backup bool) error {
 		}
 	}
 
-	// In a real implementation, this would perform actual migration
-	// For now, just pretend we migrated the file
+	content, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+
+	ext := strings.ToLower(filepath.Ext(file))
+	var cfg map[string]interface{}
+	switch ext {
+	case ".json":
+		if err := json.Unmarshal(content, &cfg); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+	default:
+		if err := yaml.Unmarshal(content, &cfg); err != nil {
+			return fmt.Errorf("invalid YAML: %w", err)
+		}
+	}
+
+	// Apply simple version stamping if present
+	setNested(cfg, "version", toVersion)
+
+	// Apply rules
+	for _, r := range rules {
+		if strings.TrimSpace(r.FromKey) == "" && strings.TrimSpace(r.ToKey) == "" {
+			continue
+		}
+		if r.Remove {
+			removeNested(cfg, r.FromKey)
+			continue
+		}
+		val, ok := getNested(cfg, r.FromKey)
+		if !ok {
+			if r.Default != nil && r.ToKey != "" {
+				setNested(cfg, r.ToKey, r.Default)
+			}
+			continue
+		}
+		if r.ToKey != "" {
+			setNested(cfg, r.ToKey, val)
+		}
+		if r.ToKey != r.FromKey {
+			removeNested(cfg, r.FromKey)
+		}
+	}
+
+	// Write back
+	var out []byte
+	if ext == ".json" {
+		out, err = json.MarshalIndent(cfg, "", "  ")
+	} else {
+		out, err = yaml.Marshal(cfg)
+	}
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(file, out, 0644)
+}
+
+// getNested retrieves value by dotted path.
+func getNested(m map[string]interface{}, path string) (interface{}, bool) {
+	if strings.TrimSpace(path) == "" {
+		return nil, false
+	}
+	parts := strings.Split(path, ".")
+	cur := interface{}(m)
+	for _, p := range parts {
+		asMap, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		v, exists := asMap[p]
+		if !exists {
+			return nil, false
+		}
+		cur = v
+	}
+	return cur, true
+}
+
+// setNested sets value by dotted path, creating intermediate maps.
+func setNested(m map[string]interface{}, path string, value interface{}) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	parts := strings.Split(path, ".")
+	cur := m
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			cur[p] = value
+			return
+		}
+		next, ok := cur[p].(map[string]interface{})
+		if !ok {
+			next = map[string]interface{}{}
+			cur[p] = next
+		}
+		cur = next
+	}
+}
+
+// removeNested removes key by dotted path.
+func removeNested(m map[string]interface{}, path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	parts := strings.Split(path, ".")
+	cur := m
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			delete(cur, p)
+			return
+		}
+		next, ok := cur[p].(map[string]interface{})
+		if !ok {
+			return
+		}
+		cur = next
+	}
+}
+
+// runDiffCommand runs the diff subcommand logic.
+func runDiffCommand(oldPath, newPath string, compatCheck, keysOnly bool) error {
+	// Basic file reads and unmarshal
+	load := func(p string) (map[string]interface{}, error) {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		var out map[string]interface{}
+		switch strings.ToLower(filepath.Ext(p)) {
+		case ".json":
+			if err := json.Unmarshal(b, &out); err != nil {
+				return nil, err
+			}
+		default:
+			if err := yaml.Unmarshal(b, &out); err != nil {
+				return nil, err
+			}
+		}
+		if out == nil {
+			out = map[string]interface{}{}
+		}
+		return out, nil
+	}
+
+	left, err := load(oldPath)
+	if err != nil {
+		return fmt.Errorf("failed to load %s: %w", oldPath, err)
+	}
+	right, err := load(newPath)
+	if err != nil {
+		return fmt.Errorf("failed to load %s: %w", newPath, err)
+	}
+
+	// Compute diff
+	d := diffMaps(left, right, keysOnly)
+
+	// Output
+	if strings.EqualFold(reportFormat, "json") {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(d)
+	}
+
+	// human table-like
+	rows := [][]string{}
+	for _, it := range d.Items {
+		rows = append(rows, []string{it.Path, it.Change, it.LeftValue, it.RightValue})
+	}
+
+	// Use UI for a nicer table if available
+	container, _ := createDependencyContainer()
+	if container != nil {
+		defer container.Close()
+		if uiSvc, err := container.GetService("ui"); err == nil {
+			terminalUI := uiSvc.(interfaces.InteractiveUI)
+			terminalUI.PrintHeader("🧩 Configuration Diff")
+			_ = terminalUI.ShowTable([]string{"Path", "Change", "Old", "New"}, rows)
+			if compatCheck {
+				br := breakingChanges(left, right)
+				if len(br) > 0 {
+					terminalUI.PrintSubHeader("Compatibility Warnings")
+					for _, msg := range br {
+						_ = terminalUI.ShowTable([]string{"Warning"}, [][]string{{msg.Error()}})
+					}
+				} else {
+					terminalUI.ShowSuccess("No breaking changes detected")
+				}
+			}
+			return nil
+		}
+	}
+
+	// Fallback plain output
+	fmt.Println("PATH\tCHANGE\tOLD\tNEW")
+	for _, r := range rows {
+		fmt.Printf("%s\t%s\t%s\t%s\n", r[0], r[1], r[2], r[3])
+	}
 	return nil
+}
+
+// DiffResult holds diff items.
+type DiffResult struct {
+	Items []DiffItem `json:"items"`
+}
+
+// DiffItem represents a single diff entry.
+type DiffItem struct {
+	Path       string `json:"path"`
+	Change     string `json:"change"` // added|removed|modified
+	LeftValue  string `json:"left_value"`
+	RightValue string `json:"right_value"`
+}
+
+func stringify(v interface{}) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case fmt.Stringer:
+		return x.String()
+	default:
+		b, _ := json.Marshal(x)
+		return string(b)
+	}
+}
+
+func diffMaps(left, right map[string]interface{}, keysOnly bool) DiffResult {
+	items := []DiffItem{}
+	var walk func(prefix string, a, b interface{})
+	walk = func(prefix string, a, b interface{}) {
+		am, aok := a.(map[string]interface{})
+		bm, bok := b.(map[string]interface{})
+		if aok || bok {
+			// map case
+			keys := map[string]struct{}{}
+			if aok {
+				for k := range am {
+					keys[k] = struct{}{}
+				}
+			}
+			if bok {
+				for k := range bm {
+					keys[k] = struct{}{}
+				}
+			}
+			// stable order
+			klist := make([]string, 0, len(keys))
+			for k := range keys {
+				klist = append(klist, k)
+			}
+			sort.Strings(klist)
+			for _, k := range klist {
+				var av, bv interface{}
+				if aok {
+					av = am[k]
+				}
+				if bok {
+					bv = bm[k]
+				}
+				path := k
+				if prefix != "" {
+					path = prefix + "." + k
+				}
+				if av == nil && bv != nil {
+					items = append(items, DiffItem{Path: path, Change: "added", LeftValue: "", RightValue: stringify(bv)})
+					continue
+				}
+				if av != nil && bv == nil {
+					items = append(items, DiffItem{Path: path, Change: "removed", LeftValue: stringify(av), RightValue: ""})
+					continue
+				}
+				// both present
+				if keysOnly {
+					// no value compare; recurse to detect nested add/remove
+					walk(path, av, bv)
+					continue
+				}
+				// Compare values
+				if reflect.DeepEqual(av, bv) {
+					walk(path, av, bv)
+					continue
+				}
+				// If both are maps, dive to find granular differences
+				if _, ok := av.(map[string]interface{}); ok {
+					walk(path, av, bv)
+					continue
+				}
+				if _, ok := bv.(map[string]interface{}); ok {
+					walk(path, av, bv)
+					continue
+				}
+				items = append(items, DiffItem{Path: path, Change: "modified", LeftValue: stringify(av), RightValue: stringify(bv)})
+			}
+			return
+		}
+
+		// scalar comparison at root
+		if !keysOnly && !reflect.DeepEqual(a, b) {
+			items = append(items, DiffItem{Path: prefix, Change: "modified", LeftValue: stringify(a), RightValue: stringify(b)})
+		}
+	}
+	walk("", left, right)
+	return DiffResult{Items: items}
+}
+
+// breakingChanges performs simple compatibility checks.
+func breakingChanges(oldCfg, newCfg map[string]interface{}) []error {
+	var out []error
+	// Detect required fields removed (heuristic: keys containing 'required' or ending with 'port' etc.)
+	oldKeys := flatKeys(oldCfg, "")
+	newKeys := flatKeys(newCfg, "")
+	oldSet := map[string]struct{}{}
+	for _, k := range oldKeys {
+		oldSet[k] = struct{}{}
+	}
+	newSet := map[string]struct{}{}
+	for _, k := range newKeys {
+		newSet[k] = struct{}{}
+	}
+	for k := range oldSet {
+		if _, ok := newSet[k]; !ok {
+			if strings.Contains(k, "required") || strings.HasSuffix(k, ".port") || strings.HasSuffix(k, ".host") {
+				out = append(out, fmt.Errorf("potential breaking change: removed key %s", k))
+			}
+		}
+	}
+	return out
+}
+
+func flatKeys(m map[string]interface{}, prefix string) []string {
+	keys := []string{}
+	for k, v := range m {
+		path := k
+		if prefix != "" {
+			path = prefix + "." + k
+		}
+		if sub, ok := v.(map[string]interface{}); ok {
+			keys = append(keys, flatKeys(sub, path)...)
+			continue
+		}
+		keys = append(keys, path)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func mergeConfigFiles(baseFile string, overlayFiles []string, strategy string, ignoreNulls bool) (string, error) {
