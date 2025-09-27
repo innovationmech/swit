@@ -31,6 +31,7 @@ import (
 	"github.com/innovationmech/swit/pkg/logger"
 	baseserver "github.com/innovationmech/swit/pkg/server"
 	"github.com/innovationmech/swit/pkg/transport"
+	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -153,4 +154,12 @@ func (s *Server) GetGRPCAddress() string {
 		return ""
 	}
 	return s.baseServer.GetGRPCAddress()
+}
+
+// GetPrometheusCollector returns the Prometheus metrics collector from the base server
+func (s *Server) GetPrometheusCollector() *types.PrometheusMetricsCollector {
+	if s.baseServer == nil {
+		return nil
+	}
+	return s.baseServer.GetPrometheusCollector()
 }

@@ -31,6 +31,7 @@ import (
 
 	cfg "github.com/innovationmech/swit/pkg/config"
 	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/types"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -95,6 +96,23 @@ func runServer() error {
 	if err != nil {
 		logger.Logger.Error("Failed to create server", zap.Error(err))
 		return err
+	}
+
+	// Initialize configuration monitoring and drift detection
+	if pmc := srv.GetPrometheusCollector(); pmc != nil {
+		var collector types.MetricsCollector = pmc
+		monitor := cfg.NewConfigMonitor(manager, reloader, collector, cfg.ConfigMonitorOptions{
+			DesiredConfigPath:    "", // optional, can be set by env SWIT_CONFIG_DESIRED_FILE
+			EnableSectionMetrics: true,
+			SectionLabelLimit:    12,
+		})
+		if err := monitor.Start(context.Background()); err != nil {
+			logger.Logger.Warn("config monitor start failed", zap.Error(err))
+		} else {
+			logger.Logger.Info("configuration monitoring started")
+		}
+	} else {
+		logger.Logger.Debug("Prometheus collector not available; config monitoring metrics disabled")
 	}
 
 	// Create context for graceful shutdown
