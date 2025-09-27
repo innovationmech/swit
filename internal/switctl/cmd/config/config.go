@@ -117,6 +117,9 @@ Examples:
 	cmd.AddCommand(NewMigrateCommand())
 	cmd.AddCommand(NewMergeCommand())
 	cmd.AddCommand(NewDiffCommand())
+	cmd.AddCommand(NewBackupCommand())
+	cmd.AddCommand(NewRestoreCommand())
+	cmd.AddCommand(NewHistoryCommand())
 
 	return cmd
 }
@@ -392,6 +395,106 @@ Examples:
 	})
 	cmd.Flags().BoolVar(&compatCheck, "compat", true, "Run compatibility checks for breaking changes")
 	cmd.Flags().BoolVar(&keysOnly, "keys-only", false, "Only compare key presence, ignore value changes")
+
+	return cmd
+}
+
+// NewBackupCommand creates the 'backup' subcommand.
+func NewBackupCommand() *cobra.Command {
+	var (
+		label     string
+		backupDir string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "backup [files...]",
+		Short: "Create a versioned backup of configuration files",
+		Long: `The backup command saves copies of configuration files into a versioned directory.
+
+Examples:
+  # Backup detected configuration files in the working directory
+  switctl config backup
+
+  # Backup specific files with a label
+  switctl config backup swit.yaml switauth.yaml --label nightly
+
+  # Specify backup output directory
+  switctl config backup --dir .switctl/backups/config`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runBackupCommand(args, label, backupDir)
+		},
+	}
+
+	cmd.Flags().StringVar(&label, "label", "", "Optional label for this backup (e.g., nightly, pre-release)")
+	cmd.Flags().StringVar(&backupDir, "dir", "", "Backup directory (default: .switctl/backups/config under work dir)")
+
+	return cmd
+}
+
+// NewRestoreCommand creates the 'restore' subcommand.
+func NewRestoreCommand() *cobra.Command {
+	var (
+		id        string
+		overwrite bool
+		targetDir string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "restore [files...]",
+		Short: "Restore configuration files from a backup",
+		Long: `The restore command restores configuration files from a specified backup ID.
+
+Examples:
+  # Restore the latest backup
+  switctl config restore
+
+  # Restore a specific backup ID
+  switctl config restore --id 20250921_081440-nightly
+
+  # Restore to a custom directory
+  switctl config restore --id 20250921_081440 --target-dir ./restore
+
+  # Overwrite existing files
+  switctl config restore --overwrite`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRestoreCommand(args, id, overwrite, targetDir)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "Backup ID to restore from (default: latest)")
+	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Overwrite existing files during restore")
+	cmd.Flags().StringVar(&targetDir, "target-dir", "", "Target directory to restore files to (default: work dir)")
+
+	return cmd
+}
+
+// NewHistoryCommand creates the 'history' subcommand.
+func NewHistoryCommand() *cobra.Command {
+	var (
+		limit int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "history",
+		Short: "List configuration backup history",
+		Long: `The history command lists available configuration backups with metadata.
+
+Examples:
+  # Show recent backups
+  switctl config history
+
+  # Show the last 50 backups in JSON
+  switctl config history --limit 50 --report-format json`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHistoryCommand(limit)
+		},
+	}
+
+	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum number of entries to display")
+	cmd.Flags().StringVar(&reportFormat, "report-format", "table", "Report format (table, json)")
+	_ = cmd.RegisterFlagCompletionFunc("report-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"table", "json"}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	return cmd
 }
@@ -928,6 +1031,15 @@ type ValidationResult struct {
 	Warnings []string
 }
 
+// BackupManifest describes a single backup snapshot.
+type BackupManifest struct {
+	ID        string   `json:"id" yaml:"id"`
+	Label     string   `json:"label,omitempty" yaml:"label,omitempty"`
+	CreatedAt string   `json:"created_at" yaml:"created_at"`
+	Files     []string `json:"files" yaml:"files"`
+	WorkDir   string   `json:"work_dir" yaml:"work_dir"`
+}
+
 // createDependencyContainer creates the dependency injection container.
 var createDependencyContainer = func() (interfaces.DependencyContainer, error) {
 	container := deps.NewContainer()
@@ -1060,6 +1172,244 @@ func displayValidationResult(ui interfaces.InteractiveUI, result ValidationResul
 			fmt.Fprintf(os.Stdout, "    - %s\n", ui.GetStyle().Warning.Sprint(warning))
 		}
 	}
+}
+
+// runBackupCommand executes the backup subcommand.
+func runBackupCommand(files []string, label, dirFlag string) error {
+	// Create dependency container and services
+	container, err := createDependencyContainer()
+	if err != nil {
+		return fmt.Errorf("failed to create dependency container: %w", err)
+	}
+	defer container.Close()
+
+	uiService, err := container.GetService("ui")
+	if err != nil {
+		return fmt.Errorf("failed to get UI service: %w", err)
+	}
+	terminalUI := uiService.(interfaces.InteractiveUI)
+
+	fsSvc, err := container.GetService("filesystem")
+	if err != nil {
+		return fmt.Errorf("failed to get filesystem service: %w", err)
+	}
+	fs := fsSvc.(interfaces.FileSystem)
+
+	terminalUI.PrintHeader("🗂️ Configuration Backup")
+
+	// Determine files
+	backupFiles := files
+	if len(backupFiles) == 0 {
+		detected, err := findConfigFiles()
+		if err != nil {
+			return fmt.Errorf("failed to find configuration files: %w", err)
+		}
+		backupFiles = detected
+	}
+	if len(backupFiles) == 0 {
+		terminalUI.ShowInfo("No configuration files found to backup")
+		return nil
+	}
+
+	// Prepare backup directory
+	baseDir := defaultBackupBaseDir(dirFlag)
+	if err := fs.MkdirAll(baseDir, 0755); err != nil {
+		return fmt.Errorf("failed to create backup base directory: %w", err)
+	}
+
+	backupID := generateBackupID(label)
+	backupPath := filepath.Join(baseDir, backupID)
+	if err := fs.MkdirAll(backupPath, 0755); err != nil {
+		return fmt.Errorf("failed to create backup directory: %w", err)
+	}
+
+	progress := terminalUI.ShowProgress("Backing up files", len(backupFiles))
+	for i, f := range backupFiles {
+		progress.SetMessage(fmt.Sprintf("Copying %s...", filepath.Base(f)))
+		dest := filepath.Join(backupPath, filepath.Base(f))
+		if err := fs.Copy(f, dest); err != nil {
+			_ = progress.Finish()
+			return fmt.Errorf("failed to copy %s: %w", f, err)
+		}
+		progress.Update(i + 1)
+	}
+	progress.Finish()
+
+	// Write manifest
+	manifest := BackupManifest{
+		ID:        backupID,
+		Label:     strings.TrimSpace(label),
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Files:     basenames(backupFiles),
+		WorkDir:   workDir,
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal manifest: %w", err)
+	}
+	if err := fs.WriteFile(filepath.Join(backupPath, "manifest.json"), data, 0644); err != nil {
+		return fmt.Errorf("failed to write manifest: %w", err)
+	}
+
+	terminalUI.ShowSuccess(fmt.Sprintf("Backup created: %s", backupID))
+	return nil
+}
+
+// runRestoreCommand executes the restore subcommand.
+func runRestoreCommand(files []string, id string, overwrite bool, targetDir string) error {
+	container, err := createDependencyContainer()
+	if err != nil {
+		return fmt.Errorf("failed to create dependency container: %w", err)
+	}
+	defer container.Close()
+
+	uiService, err := container.GetService("ui")
+	if err != nil {
+		return fmt.Errorf("failed to get UI service: %w", err)
+	}
+	terminalUI := uiService.(interfaces.InteractiveUI)
+
+	fsSvc, err := container.GetService("filesystem")
+	if err != nil {
+		return fmt.Errorf("failed to get filesystem service: %w", err)
+	}
+	fs := fsSvc.(interfaces.FileSystem)
+
+	terminalUI.PrintHeader("📦 Configuration Restore")
+
+	baseDir := defaultBackupBaseDir("")
+	backupID := id
+	if strings.TrimSpace(backupID) == "" {
+		// pick latest by directory name sort (timestamp prefix)
+		latest, err := findLatestBackupID(baseDir)
+		if err != nil {
+			return err
+		}
+		backupID = latest
+	}
+	if strings.TrimSpace(backupID) == "" {
+		terminalUI.ShowInfo("No backups found")
+		return nil
+	}
+
+	backupPath := filepath.Join(baseDir, backupID)
+	manifest, err := readBackupManifest(fs, backupPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	// Determine files to restore
+	var toRestore []string
+	if len(files) > 0 {
+		// Only restore the specified basenames
+		toRestore = basenames(files)
+	} else {
+		toRestore = manifest.Files
+	}
+	if len(toRestore) == 0 {
+		terminalUI.ShowInfo("No files to restore in backup")
+		return nil
+	}
+
+	// Determine target directory
+	dstDir := targetDir
+	if strings.TrimSpace(dstDir) == "" {
+		dstDir = workDir
+	}
+
+	if err := fs.MkdirAll(dstDir, 0755); err != nil {
+		return fmt.Errorf("failed to ensure target directory: %w", err)
+	}
+
+	progress := terminalUI.ShowProgress("Restoring files", len(toRestore))
+	for i, name := range toRestore {
+		src := filepath.Join(backupPath, name)
+		dst := filepath.Join(dstDir, name)
+		if !overwrite && fs.Exists(dst) {
+			_ = progress.Finish()
+			return fmt.Errorf("target exists: %s (use --overwrite)", dst)
+		}
+		progress.SetMessage(fmt.Sprintf("Restoring %s...", name))
+		if err := fs.Copy(src, dst); err != nil {
+			_ = progress.Finish()
+			return fmt.Errorf("failed to restore %s: %w", name, err)
+		}
+		progress.Update(i + 1)
+	}
+	progress.Finish()
+
+	terminalUI.ShowSuccess(fmt.Sprintf("Restored backup %s", backupID))
+	return nil
+}
+
+// runHistoryCommand executes the history subcommand.
+func runHistoryCommand(limit int) error {
+	container, err := createDependencyContainer()
+	if err != nil {
+		return fmt.Errorf("failed to create dependency container: %w", err)
+	}
+	defer container.Close()
+
+	uiService, err := container.GetService("ui")
+	if err != nil {
+		return fmt.Errorf("failed to get UI service: %w", err)
+	}
+	terminalUI := uiService.(interfaces.InteractiveUI)
+
+	terminalUI.PrintHeader("🕘 Configuration Backup History")
+
+	baseDir := defaultBackupBaseDir("")
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			terminalUI.ShowInfo("No backups found")
+			return nil
+		}
+		return fmt.Errorf("failed to read backup directory: %w", err)
+	}
+
+	// Collect backup manifests
+	manifests := make([]BackupManifest, 0)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		m := BackupManifest{ID: e.Name()}
+		data, err := os.ReadFile(filepath.Join(baseDir, e.Name(), "manifest.json"))
+		if err == nil {
+			_ = json.Unmarshal(data, &m)
+		}
+		manifests = append(manifests, m)
+	}
+
+	// Sort by CreatedAt (fallback to ID lexicographic)
+	sort.Slice(manifests, func(i, j int) bool {
+		it, jt := manifests[i], manifests[j]
+		// try timestamp
+		ti, ei := time.Parse(time.RFC3339, it.CreatedAt)
+		tj, ej := time.Parse(time.RFC3339, jt.CreatedAt)
+		if ei == nil && ej == nil {
+			return tj.Before(ti)
+		}
+		return it.ID > jt.ID
+	})
+
+	if limit > 0 && len(manifests) > limit {
+		manifests = manifests[:limit]
+	}
+
+	if strings.EqualFold(reportFormat, "json") || strings.EqualFold(format, "json") {
+		b, _ := json.MarshalIndent(manifests, "", "  ")
+		fmt.Println(string(b))
+		return nil
+	}
+
+	rows := make([][]string, 0, len(manifests))
+	for _, m := range manifests {
+		rows = append(rows, []string{m.ID, m.Label, m.CreatedAt, fmt.Sprintf("%d", len(m.Files))})
+	}
+	_ = terminalUI.ShowTable([]string{"ID", "Label", "CreatedAt", "Files"}, rows)
+	return nil
 }
 
 // generateConfigTemplate generates a configuration template.
@@ -1754,6 +2104,85 @@ func formatBool(value bool) string {
 		return "enabled"
 	}
 	return "disabled"
+}
+
+// Helper functions for backup/restore
+
+// defaultBackupBaseDir returns the base directory for backups.
+func defaultBackupBaseDir(dirFlag string) string {
+	if strings.TrimSpace(dirFlag) != "" {
+		if filepath.IsAbs(dirFlag) {
+			return dirFlag
+		}
+		return filepath.Join(workDir, dirFlag)
+	}
+	return filepath.Join(workDir, ".switctl", "backups", "config")
+}
+
+// generateBackupID creates a backup identifier using timestamp and optional label.
+func generateBackupID(label string) string {
+	stamp := time.Now().UTC().Format("20060102_150405")
+	if s := strings.TrimSpace(label); s != "" {
+		return fmt.Sprintf("%s-%s", stamp, sanitizeLabel(s))
+	}
+	return stamp
+}
+
+// sanitizeLabel converts label to filesystem-friendly token.
+func sanitizeLabel(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, " ", "-")
+	allowed := func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}
+	return strings.Map(allowed, s)
+}
+
+// basenames returns base names from a list of paths.
+func basenames(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, filepath.Base(p))
+	}
+	return out
+}
+
+// readBackupManifest reads manifest.json in the given backup path.
+func readBackupManifest(fs interfaces.FileSystem, backupPath string) (BackupManifest, error) {
+	data, err := fs.ReadFile(filepath.Join(backupPath, "manifest.json"))
+	if err != nil {
+		return BackupManifest{}, err
+	}
+	var m BackupManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return BackupManifest{}, err
+	}
+	return m, nil
+}
+
+// findLatestBackupID finds the lexicographically latest backup ID under baseDir.
+func findLatestBackupID(baseDir string) (string, error) {
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read backup directory: %w", err)
+	}
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			ids = append(ids, e.Name())
+		}
+	}
+	if len(ids) == 0 {
+		return "", nil
+	}
+	sort.Strings(ids)
+	return ids[len(ids)-1], nil
 }
 
 // SimpleConfigManager provides a basic config manager implementation.
