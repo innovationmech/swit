@@ -24,6 +24,7 @@ package checker
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -319,11 +320,22 @@ func CreateTestValidationResult(isValid bool, errorCount int) interfaces.Validat
 				Value:   fmt.Sprintf("invalid_value_%d", i),
 				Rule:    "required",
 				Code:    "REQUIRED_FIELD",
+				Line:    10 + i,
+				Column:  2,
+				Hint:    "provide required value",
 			}
 		}
 	}
 
 	return result
+}
+
+// Ensure extended fields exist and are assignable
+func TestValidationErrorExtendedFields(t *testing.T) {
+	v := interfaces.ValidationError{Field: "file.yaml:key", Message: "err", Code: "X", Line: 10, Column: 5, Hint: "fix"}
+	if v.Line != 10 || v.Column != 5 || v.Hint == "" {
+		t.Fatalf("unexpected validation error fields: %+v", v)
+	}
 }
 
 // SlowChecker is a test checker that simulates slow operations

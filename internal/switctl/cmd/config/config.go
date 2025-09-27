@@ -28,13 +28,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
-	"github.com/innovationmech/swit/internal/switctl/config"
 	"github.com/innovationmech/swit/internal/switctl/checker"
+	"github.com/innovationmech/swit/internal/switctl/config"
 	"github.com/innovationmech/swit/internal/switctl/deps"
 	"github.com/innovationmech/swit/internal/switctl/filesystem"
 	"github.com/innovationmech/swit/internal/switctl/interfaces"
@@ -43,15 +45,17 @@ import (
 
 var (
 	// Global flags for config commands
-	verbose      bool
-	noColor      bool
-	workDir      string
-	configFile   string
-	outputFile   string
-	format       string
-	strict       bool
-	showDefaults bool
-	reportFormat string
+	verbose       bool
+	noColor       bool
+	workDir       string
+	configFile    string
+	outputFile    string
+	format        string
+	strict        bool
+	showDefaults  bool
+	reportFormat  string
+	watchMode     bool
+	watchDebounce time.Duration
 )
 
 // NewConfigCommand creates the main 'config' command with subcommands.
@@ -187,10 +191,12 @@ Examples:
 
 	cmd.Flags().BoolVar(&strict, "strict", false, "Strict mode - treat warnings as errors")
 	cmd.Flags().BoolVar(&showDefaults, "show-defaults", false, "Show default values in validation results")
-    cmd.Flags().StringVar(&reportFormat, "report-format", "table", "Report format (table, json)")
-    _ = cmd.RegisterFlagCompletionFunc("report-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-        return []string{"table", "json"}, cobra.ShellCompDirectiveNoFileComp
-    })
+	cmd.Flags().StringVar(&reportFormat, "report-format", "table", "Report format (table, json)")
+	_ = cmd.RegisterFlagCompletionFunc("report-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"table", "json"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	cmd.Flags().BoolVar(&watchMode, "watch", false, "Watch configuration files and re-validate on changes")
+	cmd.Flags().DurationVar(&watchDebounce, "watch-debounce", 300*time.Millisecond, "Debounce interval for watch mode")
 
 	return cmd
 }
@@ -366,175 +372,290 @@ func runValidateCommand(files []string) error {
 	}
 	terminalUI := uiService.(interfaces.InteractiveUI)
 
-    // config manager is available if needed later via the container
+	// config manager is available if needed later via the container
 
 	terminalUI.PrintHeader("✅ Configuration Validation")
 
-    // Determine files to validate (explicit path → detected list → none)
-    configFiles := files
-    if len(configFiles) == 0 {
-        if configFile != "" {
-            configFiles = []string{configFile}
-        } else {
-            detectedFiles, err := findConfigFiles()
-            if err != nil {
-                return fmt.Errorf("failed to find configuration files: %w", err)
-            }
-            configFiles = detectedFiles
-        }
-    }
+	// Determine files to validate (explicit path → detected list → none)
+	configFiles := files
+	if len(configFiles) == 0 {
+		if configFile != "" {
+			configFiles = []string{configFile}
+		} else {
+			detectedFiles, err := findConfigFiles()
+			if err != nil {
+				return fmt.Errorf("failed to find configuration files: %w", err)
+			}
+			configFiles = detectedFiles
+		}
+	}
 
-    if len(configFiles) > 0 {
-        // Legacy per-file validation path (backward compatible with tests and flags)
-        terminalUI.ShowInfo(fmt.Sprintf("Strict mode: %s", formatBool(strict)))
+	if watchMode {
+		return runValidateWatch(terminalUI, configFiles)
+	}
 
-        allValid := true
-        results := []ValidationResult{}
-        progress := terminalUI.ShowProgress("Validating files", len(configFiles))
+	if len(configFiles) > 0 {
+		// Legacy per-file validation path (backward compatible with tests and flags)
+		terminalUI.ShowInfo(fmt.Sprintf("Strict mode: %s", formatBool(strict)))
 
-        for i, file := range configFiles {
-            progress.SetMessage(fmt.Sprintf("Validating %s...", filepath.Base(file)))
+		allValid := true
+		results := []ValidationResult{}
+		progress := terminalUI.ShowProgress("Validating files", len(configFiles))
 
-            result := validateConfigFile(nil, file)
-            results = append(results, result)
+		for i, file := range configFiles {
+			progress.SetMessage(fmt.Sprintf("Validating %s...", filepath.Base(file)))
 
-            if !result.Valid {
-                allValid = false
-            }
-            if strict && len(result.Warnings) > 0 {
-                allValid = false
-            }
-            progress.Update(i + 1)
-        }
-        progress.Finish()
+			result := validateConfigFile(nil, file)
+			results = append(results, result)
 
-        terminalUI.PrintSubHeader("Validation Results")
-        for _, result := range results {
-            displayValidationResult(terminalUI, result)
-        }
+			if !result.Valid {
+				allValid = false
+			}
+			if strict && len(result.Warnings) > 0 {
+				allValid = false
+			}
+			progress.Update(i + 1)
+		}
+		progress.Finish()
 
-        terminalUI.PrintSubHeader("Summary")
-        validCount := 0
-        warningCount := 0
-        errorCount := 0
-        for _, result := range results {
-            if result.Valid {
-                validCount++
-            }
-            warningCount += len(result.Warnings)
-            errorCount += len(result.Errors)
-        }
-        summaryTable := [][]string{
-            {"Total Files", fmt.Sprintf("%d", len(configFiles))},
-            {"Valid", fmt.Sprintf("%d", validCount)},
-            {"With Warnings", fmt.Sprintf("%d", warningCount)},
-            {"With Errors", fmt.Sprintf("%d", errorCount)},
-        }
-        if err := terminalUI.ShowTable([]string{"Metric", "Count"}, summaryTable); err != nil {
-            return fmt.Errorf("failed to show summary table: %w", err)
-        }
+		terminalUI.PrintSubHeader("Validation Results")
+		for _, result := range results {
+			displayValidationResult(terminalUI, result)
+		}
 
-        if allValid {
-            terminalUI.ShowSuccess("All configuration files are valid!")
-            return nil
-        }
-        terminalUI.ShowError(fmt.Errorf("validation failed for one or more files"))
-        return fmt.Errorf("configuration validation failed")
-    }
+		terminalUI.PrintSubHeader("Summary")
+		validCount := 0
+		warningCount := 0
+		errorCount := 0
+		for _, result := range results {
+			if result.Valid {
+				validCount++
+			}
+			warningCount += len(result.Warnings)
+			errorCount += len(result.Errors)
+		}
+		summaryTable := [][]string{
+			{"Total Files", fmt.Sprintf("%d", len(configFiles))},
+			{"Valid", fmt.Sprintf("%d", validCount)},
+			{"With Warnings", fmt.Sprintf("%d", warningCount)},
+			{"With Errors", fmt.Sprintf("%d", errorCount)},
+		}
+		if err := terminalUI.ShowTable([]string{"Metric", "Count"}, summaryTable); err != nil {
+			return fmt.Errorf("failed to show summary table: %w", err)
+		}
 
-    // Aggregated workspace validation when no files were found
-    cfgChecker := checker.NewConfigChecker(workDir, nil)
-    cfgChecker.SetConfig(checker.ConfigValidationConfig{YAMLValidation: true, JSONValidation: true, ProtoValidation: true, TOMLValidation: false, ConfigPaths: []string{workDir}, StrictMode: strict, CheckKeys: true, CheckValues: true})
+		if allValid {
+			terminalUI.ShowSuccess("All configuration files are valid!")
+			return nil
+		}
+		terminalUI.ShowError(fmt.Errorf("validation failed for one or more files"))
+		return fmt.Errorf("configuration validation failed")
+	}
 
-    terminalUI.ShowInfo(fmt.Sprintf("Strict mode: %s", formatBool(strict)))
+	// Aggregated workspace validation when no files were found
+	cfgChecker := checker.NewConfigChecker(workDir, nil)
+	cfgChecker.SetConfig(checker.ConfigValidationConfig{YAMLValidation: true, JSONValidation: true, ProtoValidation: true, TOMLValidation: false, ConfigPaths: []string{workDir}, StrictMode: strict, CheckKeys: true, CheckValues: true})
 
-    progress := terminalUI.ShowProgress("Validating configuration", 1)
-    progress.SetMessage("Scanning and validating...")
-    vr := cfgChecker.ValidateConfig()
-    progress.Update(1)
-    progress.Finish()
+	terminalUI.ShowInfo(fmt.Sprintf("Strict mode: %s", formatBool(strict)))
 
-    if strings.EqualFold(reportFormat, "json") || strings.EqualFold(format, "json") {
-        report := buildJSONReport(vr)
-        data, err := json.MarshalIndent(report, "", "  ")
-        if err != nil {
-            return fmt.Errorf("failed to marshal validation report: %w", err)
-        }
-        fmt.Println(string(data))
-    }
+	progress := terminalUI.ShowProgress("Validating configuration", 1)
+	progress.SetMessage("Scanning and validating...")
+	vr := cfgChecker.ValidateConfig()
+	progress.Update(1)
+	progress.Finish()
 
-    if !strings.EqualFold(reportFormat, "json") {
-        terminalUI.PrintSubHeader("Validation Results")
-        for _, r := range buildPerFileResults(vr) {
-            displayValidationResult(terminalUI, r)
-        }
-        terminalUI.PrintSubHeader("Summary")
-        summaryTable := [][]string{{"Total Issues", fmt.Sprintf("%d", len(vr.Errors)+len(vr.Warnings))}, {"Errors", fmt.Sprintf("%d", len(vr.Errors))}, {"Warnings", fmt.Sprintf("%d", len(vr.Warnings))}}
-        if err := terminalUI.ShowTable([]string{"Metric", "Count"}, summaryTable); err != nil {
-            return fmt.Errorf("failed to show summary table: %w", err)
-        }
-    }
+	if strings.EqualFold(reportFormat, "json") || strings.EqualFold(format, "json") {
+		report := buildJSONReport(vr)
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal validation report: %w", err)
+		}
+		fmt.Println(string(data))
+	}
 
-    if vr.Valid && (!strict || len(vr.Warnings) == 0) {
-        terminalUI.ShowSuccess("Configuration validation passed")
-        return nil
-    }
-    terminalUI.ShowError(fmt.Errorf("configuration validation failed"))
-    return fmt.Errorf("configuration validation failed")
+	if !strings.EqualFold(reportFormat, "json") {
+		terminalUI.PrintSubHeader("Validation Results")
+		for _, r := range buildPerFileResults(vr) {
+			displayValidationResult(terminalUI, r)
+		}
+		terminalUI.PrintSubHeader("Summary")
+		summaryTable := [][]string{{"Total Issues", fmt.Sprintf("%d", len(vr.Errors)+len(vr.Warnings))}, {"Errors", fmt.Sprintf("%d", len(vr.Errors))}, {"Warnings", fmt.Sprintf("%d", len(vr.Warnings))}}
+		if err := terminalUI.ShowTable([]string{"Metric", "Count"}, summaryTable); err != nil {
+			return fmt.Errorf("failed to show summary table: %w", err)
+		}
+	}
+
+	if vr.Valid && (!strict || len(vr.Warnings) == 0) {
+		terminalUI.ShowSuccess("Configuration validation passed")
+		return nil
+	}
+	terminalUI.ShowError(fmt.Errorf("configuration validation failed"))
+	return fmt.Errorf("configuration validation failed")
 }
 
 // buildPerFileResults groups ValidationResult by file for display compatibility
 func buildPerFileResults(vr interfaces.ValidationResult) []ValidationResult {
-    // group by file using the Field prefix before first ':'
-    fileMap := map[string]*ValidationResult{}
-    ensure := func(file string) *ValidationResult {
-        if fileMap[file] == nil {
-            fileMap[file] = &ValidationResult{File: file, Valid: true}
-        }
-        return fileMap[file]
-    }
-    for _, e := range vr.Errors {
-        file, msg := splitField(e.Field)
-        r := ensure(file)
-        r.Valid = false
-        r.Errors = append(r.Errors, fmt.Sprintf("%s", msgOrMessage(msg, e.Message)))
-    }
-    for _, w := range vr.Warnings {
-        file, msg := splitField(w.Field)
-        r := ensure(file)
-        r.Warnings = append(r.Warnings, fmt.Sprintf("%s", msgOrMessage(msg, w.Message)))
-    }
-    out := make([]ValidationResult, 0, len(fileMap))
-    for _, v := range fileMap {
-        out = append(out, *v)
-    }
-    return out
+	// group by file using the Field prefix before first ':'
+	fileMap := map[string]*ValidationResult{}
+	ensure := func(file string) *ValidationResult {
+		if fileMap[file] == nil {
+			fileMap[file] = &ValidationResult{File: file, Valid: true}
+		}
+		return fileMap[file]
+	}
+	for _, e := range vr.Errors {
+		file, msg := splitField(e.Field)
+		r := ensure(file)
+		r.Valid = false
+		loc := formatLoc(e.Line, e.Column)
+		hint := strings.TrimSpace(e.Hint)
+		base := msgOrMessage(msg, e.Message)
+		if hint != "" {
+			base = fmt.Sprintf("%s (%s)", base, hint)
+		}
+		if loc != "" {
+			r.Errors = append(r.Errors, fmt.Sprintf("%s: %s", loc, base))
+		} else {
+			r.Errors = append(r.Errors, base)
+		}
+	}
+	for _, w := range vr.Warnings {
+		file, msg := splitField(w.Field)
+		r := ensure(file)
+		loc := formatLoc(w.Line, w.Column)
+		hint := strings.TrimSpace(w.Hint)
+		base := msgOrMessage(msg, w.Message)
+		if hint != "" {
+			base = fmt.Sprintf("%s (%s)", base, hint)
+		}
+		if loc != "" {
+			r.Warnings = append(r.Warnings, fmt.Sprintf("%s: %s", loc, base))
+		} else {
+			r.Warnings = append(r.Warnings, base)
+		}
+	}
+	out := make([]ValidationResult, 0, len(fileMap))
+	for _, v := range fileMap {
+		out = append(out, *v)
+	}
+	return out
 }
 
 func splitField(field string) (string, string) {
-    if idx := strings.Index(field, ":"); idx != -1 {
-        return field[:idx], field[idx+1:]
-    }
-    return field, ""
+	if idx := strings.Index(field, ":"); idx != -1 {
+		return field[:idx], field[idx+1:]
+	}
+	return field, ""
 }
 
 func msgOrMessage(a, b string) string {
-    if strings.TrimSpace(a) != "" {
-        return strings.TrimSpace(a)
-    }
-    return b
+	if strings.TrimSpace(a) != "" {
+		return strings.TrimSpace(a)
+	}
+	return b
+}
+
+func formatLoc(line, col int) string {
+	if line > 0 && col > 0 {
+		return fmt.Sprintf("L%d:C%d", line, col)
+	}
+	if line > 0 {
+		return fmt.Sprintf("L%d", line)
+	}
+	return ""
+}
+
+// runValidateWatch runs validation in watch mode using fsnotify
+func runValidateWatch(terminalUI interfaces.InteractiveUI, explicitFiles []string) error {
+	terminalUI.PrintSubHeader("Watch mode enabled")
+	files := explicitFiles
+	if len(files) == 0 {
+		detected, err := findConfigFiles()
+		if err != nil {
+			return fmt.Errorf("failed to find configuration files: %w", err)
+		}
+		files = detected
+	}
+	if len(files) == 0 {
+		terminalUI.ShowInfo("No configuration files found to watch")
+		return nil
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %w", err)
+	}
+	defer watcher.Close()
+
+	// watch files and their parent directories (handle atomics)
+	dirs := map[string]struct{}{}
+	for _, f := range files {
+		_ = watcher.Add(f)
+		dir := filepath.Dir(f)
+		if _, ok := dirs[dir]; !ok {
+			_ = watcher.Add(dir)
+			dirs[dir] = struct{}{}
+		}
+	}
+
+	// initial validation
+	_ = runValidateCommand(files)
+
+	debounce := time.NewTimer(watchDebounce)
+	if !debounce.Stop() {
+		<-debounce.C
+	}
+	pending := false
+
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return nil
+			}
+			// consider only writes/creates/renames
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
+				pending = true
+				if !debounce.Stop() {
+					select {
+					case <-debounce.C:
+					default:
+					}
+				}
+				debounce.Reset(watchDebounce)
+			}
+		case <-debounce.C:
+			if pending {
+				pending = false
+				// re-scan files (new files might appear)
+				current := explicitFiles
+				if len(current) == 0 {
+					detected, err := findConfigFiles()
+					if err == nil {
+						current = detected
+					}
+				}
+				_ = runValidateCommand(current)
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
+			}
+			terminalUI.ShowError(fmt.Errorf("watch error: %v", err))
+		}
+	}
 }
 
 // json report model
 type jsonReport struct {
-    Valid    bool                         `json:"valid"`
-    Strict   bool                         `json:"strict"`
-    Errors   []interfaces.ValidationError `json:"errors"`
-    Warnings []interfaces.ValidationError `json:"warnings"`
+	Valid    bool                         `json:"valid"`
+	Strict   bool                         `json:"strict"`
+	Errors   []interfaces.ValidationError `json:"errors"`
+	Warnings []interfaces.ValidationError `json:"warnings"`
 }
 
 func buildJSONReport(vr interfaces.ValidationResult) jsonReport {
-    return jsonReport{Valid: vr.Valid, Strict: strict, Errors: vr.Errors, Warnings: vr.Warnings}
+	return jsonReport{Valid: vr.Valid, Strict: strict, Errors: vr.Errors, Warnings: vr.Warnings}
 }
 
 // runTemplateCommand executes the template subcommand.
