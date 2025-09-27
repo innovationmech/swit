@@ -40,6 +40,8 @@ var (
 	mu sync.RWMutex
 	// initialized tracks whether logger has been initialized
 	initialized bool
+	// logLevel holds the atomic log level to support runtime updates
+	logLevel zap.AtomicLevel
 )
 
 // LoggerConfig holds configuration for the logger
@@ -125,12 +127,14 @@ func buildLogger(config *LoggerConfig) (*zap.Logger, error) {
 		zapConfig = zap.NewProductionConfig()
 	}
 
-	// Set log level
+	// Set log level using an atomic level so it can be changed at runtime
 	level, err := zapcore.ParseLevel(config.Level)
 	if err != nil {
 		return nil, fmt.Errorf("invalid log level %s: %w", config.Level, err)
 	}
-	zapConfig.Level = zap.NewAtomicLevelAt(level)
+	// keep a reference to the atomic level for runtime updates
+	logLevel = zap.NewAtomicLevelAt(level)
+	zapConfig.Level = logLevel
 
 	// Set encoding
 	zapConfig.Encoding = config.Encoding
@@ -215,6 +219,32 @@ func GetSugaredLogger() *zap.SugaredLogger {
 
 	InitLogger()
 	return SugaredLogger
+}
+
+// SetLevel updates the global logger level at runtime.
+// Supported levels: debug, info, warn, error, dpanic, panic, fatal
+func SetLevel(level string) error {
+	mu.RLock()
+	initializedLocal := initialized
+	mu.RUnlock()
+
+	if !initializedLocal {
+		return fmt.Errorf("logger is not initialized")
+	}
+
+	parsed, err := zapcore.ParseLevel(level)
+	if err != nil {
+		return fmt.Errorf("invalid log level %s: %w", level, err)
+	}
+	logLevel.SetLevel(parsed)
+	return nil
+}
+
+// GetLevel returns the current global logger level as string.
+func GetLevel() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return logLevel.Level().String()
 }
 
 // WithContext returns a logger with context fields

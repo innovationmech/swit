@@ -31,7 +31,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
 
@@ -105,6 +107,156 @@ type Manager struct {
 	mu      sync.RWMutex
 	v       *viper.Viper
 	options Options
+}
+
+// Change represents a configuration change event produced by HotReloader
+type Change struct {
+	// File is the changed file path that triggered the reload
+	File string
+	// Settings is the merged settings after reload
+	Settings map[string]interface{}
+	// Err holds a validation or reload error when non-nil
+	Err error
+}
+
+// HotReloader watches configuration files and emits debounced change events.
+// It performs safe reload: re-merge files, re-apply env overrides and return merged map.
+type HotReloader struct {
+	manager    *Manager
+	watchPaths []string
+	debounce   time.Duration
+	stopCh     chan struct{}
+	eventsCh   chan Change
+}
+
+// NewHotReloader creates a hot reloader for the given manager.
+// debounce controls the minimal interval to coalesce frequent fs events.
+func NewHotReloader(manager *Manager, debounce time.Duration) *HotReloader {
+	if debounce <= 0 {
+		debounce = 300 * time.Millisecond
+	}
+	return &HotReloader{
+		manager:  manager,
+		debounce: debounce,
+		stopCh:   make(chan struct{}),
+		eventsCh: make(chan Change, 8),
+	}
+}
+
+// Events returns a read-only channel of configuration change events.
+func (hr *HotReloader) Events() <-chan Change {
+	return hr.eventsCh
+}
+
+// Start begins watching base/env/override candidates and their parent dirs.
+func (hr *HotReloader) Start() error {
+	// Resolve initial candidate files
+	base := hr.manager.fileCandidatesFor(BaseLayer)
+	env := hr.manager.fileCandidatesFor(EnvironmentFileLayer)
+	override := hr.manager.fileCandidatesFor(OverrideFileLayer)
+
+	// Filter only existing files and also include their parent directories
+	set := make(map[string]struct{})
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		if _, err := os.Stat(p); err == nil {
+			set[p] = struct{}{}
+			dir := filepath.Dir(p)
+			set[dir] = struct{}{}
+		}
+	}
+	for _, p := range base {
+		add(p)
+	}
+	for _, p := range env {
+		add(p)
+	}
+	for _, p := range override {
+		add(p)
+	}
+
+	// Nothing to watch is acceptable
+	if len(set) == 0 {
+		close(hr.eventsCh)
+		return nil
+	}
+	hr.watchPaths = make([]string, 0, len(set))
+	for p := range set {
+		hr.watchPaths = append(hr.watchPaths, p)
+	}
+
+	// Defer to a separate goroutine to avoid importing fsnotify for users that don't use hot reload
+	go hr.loop()
+	return nil
+}
+
+func (hr *HotReloader) loop() {
+	// Lazy import to keep file header imports minimal; fsnotify is widely used and tiny
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		hr.eventsCh <- Change{Err: fmt.Errorf("failed to create watcher: %w", err)}
+		close(hr.eventsCh)
+		return
+	}
+	defer watcher.Close()
+
+	for _, p := range hr.watchPaths {
+		_ = watcher.Add(p)
+	}
+
+	timer := time.NewTimer(hr.debounce)
+	if !timer.Stop() {
+		<-timer.C
+	}
+	var pendingPath string
+
+	for {
+		select {
+		case <-hr.stopCh:
+			close(hr.eventsCh)
+			return
+		case ev, ok := <-watcher.Events:
+			if !ok {
+				close(hr.eventsCh)
+				return
+			}
+			if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
+				pendingPath = ev.Name
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(hr.debounce)
+			}
+		case <-timer.C:
+			if pendingPath != "" {
+				// Re-run Load (safe re-merge) and then emit merged settings
+				if err := hr.manager.Load(); err != nil {
+					hr.eventsCh <- Change{File: pendingPath, Err: fmt.Errorf("reload failed: %w", err)}
+				} else {
+					settings := hr.manager.AllSettings()
+					hr.eventsCh <- Change{File: pendingPath, Settings: settings}
+				}
+				pendingPath = ""
+			}
+		case err := <-watcher.Errors:
+			hr.eventsCh <- Change{Err: fmt.Errorf("watch error: %v", err)}
+		}
+	}
+}
+
+// Stop stops the hot reloader.
+func (hr *HotReloader) Stop() {
+	select {
+	case <-hr.stopCh:
+		// already closed
+	default:
+		close(hr.stopCh)
+	}
 }
 
 // NewManager creates a new Manager with the given options.

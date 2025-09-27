@@ -27,7 +27,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	cfg "github.com/innovationmech/swit/pkg/config"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -59,6 +61,34 @@ func NewServeCmd() *cobra.Command {
 // runServer runs the SWIT server
 func runServer() error {
 	logger.Logger.Info("Starting SWIT server...")
+
+	// Initialize config manager and hot reloader for non-breaking updates
+	manager := cfg.NewManager(cfg.DefaultOptions())
+	if err := manager.Load(); err != nil {
+		logger.Logger.Warn("Initial config load failed; continuing", zap.Error(err))
+	}
+	reloader := cfg.NewHotReloader(manager, 500*time.Millisecond)
+	if err := reloader.Start(); err == nil {
+		go func() {
+			for change := range reloader.Events() {
+				if change.Err != nil {
+					logger.Logger.Warn("config reload error", zap.Error(change.Err))
+					continue
+				}
+				if v, ok := change.Settings["logging"].(map[string]interface{}); ok {
+					if level, ok2 := v["level"].(string); ok2 && level != "" {
+						if err := logger.SetLevel(level); err != nil {
+							logger.Logger.Warn("apply log level failed", zap.Error(err))
+						} else {
+							logger.Logger.Info("log level updated via hot-reload", zap.String("level", logger.GetLevel()))
+						}
+					}
+				}
+			}
+		}()
+	} else {
+		logger.Logger.Debug("hot reloader not started", zap.Error(err))
+	}
 
 	// Create server
 	srv, err := switserve.NewServer()
