@@ -22,6 +22,7 @@
 package checker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,9 +196,9 @@ func (cc *ConfigChecker) ValidateConfig() interfaces.ValidationResult {
 		return result
 	}
 
-    if cc.logger != nil {
-        cc.logger.Info("Found configuration files", "count", len(configFiles))
-    }
+	if cc.logger != nil {
+		cc.logger.Info("Found configuration files", "count", len(configFiles))
+	}
 
 	// Validate each configuration file
 	for _, file := range configFiles {
@@ -310,14 +312,18 @@ func (cc *ConfigChecker) validateYAMLFile(filename string) ([]interfaces.Validat
 		return errors, warnings
 	}
 
-	// Parse YAML
+	// Parse YAML - try to extract precise error position when possible
 	var yamlData any
-	err = yaml.Unmarshal(content, &yamlData)
-	if err != nil {
+	if err := yaml.Unmarshal(content, &yamlData); err != nil {
+		line, col := extractYAMLErrorPosition(err.Error())
+		hint := hintForYAMLError(err.Error())
 		errors = append(errors, interfaces.ValidationError{
 			Field:   filename,
 			Message: fmt.Sprintf("Invalid YAML syntax: %v", err),
 			Code:    "YAML_SYNTAX_ERROR",
+			Line:    line,
+			Column:  col,
+			Hint:    hint,
 		})
 		return errors, warnings
 	}
@@ -352,14 +358,31 @@ func (cc *ConfigChecker) validateJSONFile(filename string) ([]interfaces.Validat
 		return errors, warnings
 	}
 
-	// Parse JSON
+	// Parse JSON with detailed error position
 	var jsonData any
-	err = json.Unmarshal(content, &jsonData)
-	if err != nil {
+	if err := json.Unmarshal(content, &jsonData); err != nil {
+		line, col := 0, 0
+		hint := ""
+		switch e := err.(type) {
+		case *json.SyntaxError:
+			line, col = computeJSONLineColumn(content, int(e.Offset))
+			hint = hintForJSONError(string(snippetAround(content, int(e.Offset))))
+		case *json.UnmarshalTypeError:
+			line, col = computeJSONLineColumn(content, int(e.Offset))
+			hint = fmt.Sprintf("Field '%s' expects %s", e.Field, e.Type.String())
+		default:
+			// try to parse offset from error string if present
+			if off := extractJSONOffset(err.Error()); off > 0 {
+				line, col = computeJSONLineColumn(content, off)
+			}
+		}
 		errors = append(errors, interfaces.ValidationError{
 			Field:   filename,
 			Message: fmt.Sprintf("Invalid JSON syntax: %v", err),
 			Code:    "JSON_SYNTAX_ERROR",
+			Line:    line,
+			Column:  col,
+			Hint:    hint,
 		})
 		return errors, warnings
 	}
@@ -370,6 +393,98 @@ func (cc *ConfigChecker) validateJSONFile(filename string) ([]interfaces.Validat
 	warnings = append(warnings, jsonWarnings...)
 
 	return errors, warnings
+}
+
+// extractYAMLErrorPosition tries to parse line and column from yaml.v3 error text.
+// Common formats include: "yaml: line 12: ..." or "line 5: column 8: ...".
+func extractYAMLErrorPosition(msg string) (int, int) {
+	// line X: column Y
+	reLC := regexp.MustCompile(`(?i)line\s+(\d+)\s*[:\,]?\s*column\s+(\d+)`)
+	if m := reLC.FindStringSubmatch(msg); len(m) == 3 {
+		return atoiSafe(m[1]), atoiSafe(m[2])
+	}
+	// yaml: line X:
+	reL := regexp.MustCompile(`(?i)line\s+(\d+)`)
+	if m := reL.FindStringSubmatch(msg); len(m) == 2 {
+		return atoiSafe(m[1]), 0
+	}
+	return 0, 0
+}
+
+// hintForYAMLError provides a short suggestion based on the error content.
+func hintForYAMLError(msg string) string {
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(lower, "found character that cannot start any token"):
+		return "检查缩进与非法字符，例如使用制表符或混合缩进"
+	case strings.Contains(lower, "did not find expected key"):
+		return "可能缺少冒号或缩进错误"
+	case strings.Contains(lower, "mapping values are not allowed here"):
+		return "键值对换行或缩进不正确，检查冒号后是否有空格"
+	default:
+		return "检查 YAML 语法与缩进一致性"
+	}
+}
+
+// extractJSONOffset tries to parse an offset integer from error text like "invalid character '}' after object key:value pair at offset 123".
+func extractJSONOffset(msg string) int {
+	re := regexp.MustCompile(`(?i)offset\s+(\d+)`)
+	if m := re.FindStringSubmatch(msg); len(m) == 2 {
+		return atoiSafe(m[1])
+	}
+	return 0
+}
+
+// computeJSONLineColumn computes 1-based line and column given a byte offset.
+func computeJSONLineColumn(content []byte, offset int) (int, int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(content) {
+		offset = len(content)
+	}
+	line := 1
+	col := 1
+	for i := 0; i < offset; i++ {
+		if content[i] == '\n' {
+			line++
+			col = 1
+		} else {
+			col++
+		}
+	}
+	return line, col
+}
+
+// snippetAround returns a small window around a position for diagnostics.
+func snippetAround(content []byte, offset int) []byte {
+	start := offset - 20
+	end := offset + 20
+	if start < 0 {
+		start = 0
+	}
+	if end > len(content) {
+		end = len(content)
+	}
+	return bytes.TrimSpace(content[start:end])
+}
+
+// hintForJSONError provides a suggestion based on a small snippet.
+func hintForJSONError(snippet string) string {
+	s := strings.ToLower(snippet)
+	switch {
+	case strings.Contains(s, "//"):
+		return "JSON 不支持注释，移除 // 注释"
+	case strings.Contains(s, ",}") || strings.Contains(s, ", ]"):
+		return "可能存在尾随逗号，移除最后一个元素后的逗号"
+	default:
+		return "检查 JSON 逗号、引号与大括号是否成对匹配"
+	}
+}
+
+func atoiSafe(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
 // validateTOMLFile validates a TOML configuration file.

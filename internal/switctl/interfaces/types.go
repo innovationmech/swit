@@ -670,6 +670,9 @@ type ValidationError struct {
 	Value   interface{} `json:"value,omitempty"`
 	Rule    string      `json:"rule,omitempty"`
 	Code    string      `json:"code,omitempty"`
+	Line    int         `json:"line,omitempty"`
+	Column  int         `json:"column,omitempty"`
+	Hint    string      `json:"hint,omitempty"`
 }
 
 // AuditResult represents the result of dependency audit.
