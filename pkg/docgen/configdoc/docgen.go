@@ -18,9 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 //
-// Package configdoc provides a lightweight generator that scans Go configuration
-// structs, reads YAML/JSON/validate/default tags and default values, and
-// produces Markdown reference documentation.
+
 package configdoc
 
 import (
