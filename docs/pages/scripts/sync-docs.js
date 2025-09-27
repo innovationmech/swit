@@ -31,9 +31,19 @@ class DocumentSynchronizer {
         path.join(this.projectRoot, 'DEVELOPMENT-CN.md'),
         path.join(this.projectRoot, 'CODE_OF_CONDUCT.md'),
         path.join(this.projectRoot, 'SECURITY.md')
-  ],
-  examplesDir: path.join(this.projectRoot, 'examples'),
-  examplesTargetDir: path.join(this.docsRoot, 'en/examples') // 目前仅生成英文示例
+      ],
+      examplesDir: path.join(this.projectRoot, 'examples'),
+      examplesTargetDir: path.join(this.docsRoot, 'en/examples'), // 目前仅生成英文示例
+      // Inject generated configuration reference into docs site
+      generatedConfigRef: path.join(this.projectRoot, 'docs/generated/configuration-reference.md'),
+      configGuideTargets: {
+        en: path.join(this.docsRoot, 'en/guide/configuration.md'),
+        zh: path.join(this.docsRoot, 'zh/guide/configuration.md')
+      },
+      configRefTargets: {
+        en: path.join(this.docsRoot, 'en/guide/configuration-reference.md'),
+        zh: path.join(this.docsRoot, 'zh/guide/configuration-reference.md')
+      }
     };
   }
 
@@ -483,6 +493,7 @@ ${processed}`;
     const results = {
       main: {},
       additional: [],
+      configRef: {},
       timestamp: new Date().toISOString()
     };
 
@@ -533,6 +544,30 @@ ${processed}`;
       }
     }
 
+    // Inject generated configuration reference
+    try {
+      const genPath = this.config.generatedConfigRef;
+      const stat = await fs.stat(genPath).catch(() => null);
+      if (stat) {
+        const generated = await fs.readFile(genPath, 'utf8');
+        // Prepare wrapped pages for en/zh
+        const enOut = `---\ntitle: Configuration Reference\noutline: deep\n---\n\n# Configuration Reference\n\n> This page is generated. Do not edit manually.\n\n${generated}`;
+        const zhOut = `---\ntitle: 配置参考\noutline: deep\n---\n\n# 配置参考\n\n> 本页为自动生成，请勿手动编辑。\n\n${generated}`;
+
+        await fs.writeFile(this.config.configRefTargets.en, enOut);
+        await fs.writeFile(this.config.configRefTargets.zh, zhOut);
+        results.configRef = { status: 'synced', targets: this.config.configRefTargets };
+
+        // Ensure guide pages link to the reference
+        await this.ensureGuideLinks();
+      } else {
+        results.configRef = { status: 'skipped', reason: 'no_generated_config' };
+      }
+    } catch (err) {
+      console.warn('⚠ 注入配置参考失败:', err.message);
+      results.configRef = { status: 'error', error: err.message };
+    }
+
     // Process additional documentation files
     try {
       console.log('📚 处理附加文档...');
@@ -549,6 +584,9 @@ ${processed}`;
     console.log('\n📋 同步报告:');
     console.log(`   主要文档: ${Object.keys(results.main).length} 个语言`);
     console.log(`   附加文档: ${results.additional.length} 个文件`);
+    if (results.configRef.status) {
+      console.log(`   配置参考: ${results.configRef.status}`);
+    }
     console.log(`   报告保存: ${reportPath}`);
     console.log('🎉 文档同步完成！');
 
@@ -580,6 +618,29 @@ ${processed}`;
     console.log(`✨ 监视 ${watchPaths.length} 个文件...`);
     console.log('按 Ctrl+C 退出监视模式');
   }
+}
+
+// Ensure configuration guide contains link to generated reference
+DocumentSynchronizer.prototype.ensureGuideLinks = async function() {
+  // English
+  try {
+    const enPath = this.config.configGuideTargets.en;
+    let content = await fs.readFile(enPath, 'utf8');
+    if (!content.includes('/en/guide/configuration-reference')) {
+      content += `\n\n### Complete Configuration Reference\n\n- See the generated reference: [/en/guide/configuration-reference](/en/guide/configuration-reference)\n`;
+      await fs.writeFile(enPath, content);
+    }
+  } catch (e) { /* ignore */ }
+
+  // Chinese
+  try {
+    const zhPath = this.config.configGuideTargets.zh;
+    let contentZh = await fs.readFile(zhPath, 'utf8');
+    if (!contentZh.includes('/zh/guide/configuration-reference')) {
+      contentZh += `\n\n### 完整配置参考\n\n- 查看自动生成参考：[/zh/guide/configuration-reference](/zh/guide/configuration-reference)\n`;
+      await fs.writeFile(zhPath, contentZh);
+    }
+  } catch (e) { /* ignore */ }
 }
 
 // CLI interface

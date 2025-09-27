@@ -45,4 +45,12 @@ func TestGenerate_ServerConfigMinimal(t *testing.T) {
 	if !strings.Contains(md, "grpc.port") {
 		t.Fatalf("expected grpc.port key in output")
 	}
+	// Env var column present
+	if !strings.Contains(md, "Env Var") {
+		t.Fatalf("expected Env Var column in table")
+	}
+	// Example env mapping
+	if !strings.Contains(md, "SWIT_HTTP_PORT") {
+		t.Fatalf("expected env mapping SWIT_HTTP_PORT in output")
+	}
 }

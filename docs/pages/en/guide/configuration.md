@@ -760,3 +760,8 @@ fmt.Printf("Configuration: %+v\n", summary)
 ```
 
 This configuration guide provides comprehensive coverage of all configuration options, best practices, and troubleshooting guidance for the Swit framework.
+
+
+### Complete Configuration Reference
+
+- See the generated reference: [/en/guide/configuration-reference](/en/guide/configuration-reference)

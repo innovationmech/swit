@@ -1,20 +1,12 @@
 {
   "main": {
     "en": {
-      "status": "synced",
-      "source": "/Users/liyanjie/VSCodeProjects/swit/README.md",
-      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/en/index.md",
-      "validationIssues": [
-        "发现可能的内部链接: 17 个"
-      ]
+      "status": "skipped",
+      "reason": "no_changes"
     },
     "zh": {
-      "status": "synced",
-      "source": "/Users/liyanjie/VSCodeProjects/swit/README-CN.md",
-      "target": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/zh/index.md",
-      "validationIssues": [
-        "发现可能的内部链接: 17 个"
-      ]
+      "status": "skipped",
+      "reason": "no_changes"
     }
   },
   "additional": [
@@ -39,5 +31,12 @@
       "status": "synced"
     }
   ],
-  "timestamp": "2025-08-15T09:52:36.075Z"
+  "configRef": {
+    "status": "synced",
+    "targets": {
+      "en": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/en/guide/configuration-reference.md",
+      "zh": "/Users/liyanjie/VSCodeProjects/swit/docs/pages/zh/guide/configuration-reference.md"
+    }
+  },
+  "timestamp": "2025-09-27T13:20:41.561Z"
 }
