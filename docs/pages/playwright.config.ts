@@ -127,7 +127,9 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
-      NODE_ENV: 'test'
+      NODE_ENV: 'test',
+      // Force root base during E2E to avoid GitHub Pages base path
+      VITEPRESS_BASE: '/'
     }
   },
 
