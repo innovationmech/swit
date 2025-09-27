@@ -194,7 +194,9 @@ func (cc *ConfigChecker) ValidateConfig() interfaces.ValidationResult {
 		return result
 	}
 
-	cc.logger.Info("Found configuration files", "count", len(configFiles))
+    if cc.logger != nil {
+        cc.logger.Info("Found configuration files", "count", len(configFiles))
+    }
 
 	// Validate each configuration file
 	for _, file := range configFiles {
