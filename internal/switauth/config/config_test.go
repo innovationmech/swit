@@ -34,17 +34,42 @@ import (
 )
 
 func TestJwtSecret(t *testing.T) {
-	// Set up environment variable for testing - must be at least 32 characters
+	// inline secret path
 	os.Setenv("JWT_SECRET", "my-256-bit-secret-for-testing-12345")
 	defer os.Unsetenv("JWT_SECRET")
 
-	// Initialize JWT secret
 	err := InitJwtSecret()
 	assert.NoError(t, err)
-
-	expectedSecret := []byte("my-256-bit-secret-for-testing-12345")
-	assert.Equal(t, expectedSecret, JwtSecret)
+	assert.Equal(t, []byte("my-256-bit-secret-for-testing-12345"), JwtSecret)
 	assert.NotEmpty(t, JwtSecret)
+}
+
+func TestJwtSecret_File(t *testing.T) {
+	// Prepare secret file with newline suffix
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "jwt.txt")
+	require.NoError(t, ioutil.WriteFile(path, []byte("file-secret-with-min-length-1234567890\n"), 0644))
+
+	// Ensure inline is not set; only file is set
+	os.Unsetenv("JWT_SECRET")
+	os.Setenv("JWT_SECRET_FILE", path)
+	defer os.Unsetenv("JWT_SECRET_FILE")
+
+	err := InitJwtSecret()
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("file-secret-with-min-length-1234567890"), JwtSecret)
+}
+
+func TestJwtSecret_Conflict(t *testing.T) {
+	os.Setenv("JWT_SECRET", "my-256-bit-secret-for-testing-12345")
+	os.Setenv("JWT_SECRET_FILE", "/tmp/whatever")
+	defer func() {
+		os.Unsetenv("JWT_SECRET")
+		os.Unsetenv("JWT_SECRET_FILE")
+	}()
+
+	err := InitJwtSecret()
+	assert.Error(t, err)
 }
 
 func TestAuthConfig_Structure(t *testing.T) {
