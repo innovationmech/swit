@@ -15,6 +15,9 @@ spec:
     metadata:
       labels:
         {{- include "swit.auth.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
@@ -63,6 +66,7 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.switAuth.image.repository }}:{{ .Values.switAuth.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.switAuth.image.pullPolicy }}
+          workingDir: /app
           
           ports:
             - name: http
@@ -99,11 +103,9 @@ spec:
                 configMapKeyRef:
                   name: {{ include "swit.fullname" . }}-config
                   key: SERVICE_DISCOVERY_ADDRESS
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "swit.fullname" . }}-secret
-                  key: jwt-secret
+            # Prefer file-based secret to avoid exposing secret in env
+            - name: JWT_SECRET_FILE
+              value: "/run/secrets/jwt/secret"
             - name: LOG_LEVEL
               valueFrom:
                 configMapKeyRef:
@@ -127,6 +129,9 @@ spec:
             - name: config
               mountPath: /app/config
               readOnly: true
+            - name: jwt-secret
+              mountPath: /run/secrets/jwt
+              readOnly: true
       
       volumes:
         - name: config
@@ -135,6 +140,12 @@ spec:
             items:
               - key: auth-app.yaml
                 path: app.yaml
+        - name: jwt-secret
+          secret:
+            secretName: {{ include "swit.fullname" . }}-secret
+            items:
+              - key: jwt-secret
+                path: secret
       
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -24,6 +24,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -58,7 +59,26 @@ type AuthConfig struct {
 // InitJwtSecret initializes the JWT secret from environment variable
 // The secret must be at least 32 characters for security
 func InitJwtSecret() error {
-	secret := os.Getenv("JWT_SECRET")
+	// Support secure file-based secret injection via JWT_SECRET_FILE
+	filePath := os.Getenv("JWT_SECRET_FILE")
+	inline := os.Getenv("JWT_SECRET")
+
+	if strings.TrimSpace(filePath) != "" && strings.TrimSpace(inline) != "" {
+		return fmt.Errorf("both JWT_SECRET and JWT_SECRET_FILE are set; please set only one")
+	}
+
+	var secret string
+	if strings.TrimSpace(filePath) != "" {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("read JWT secret file: %w", err)
+		}
+		// Trim trailing newline that is common in mounted secret files
+		secret = strings.TrimSuffix(string(data), "\n")
+	} else {
+		secret = inline
+	}
+
 	if secret == "" {
 		return fmt.Errorf("JWT_SECRET environment variable is required")
 	}
