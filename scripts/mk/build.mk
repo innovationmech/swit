@@ -12,6 +12,15 @@ build: quality-dev proto swagger
 	@echo "📦 构建当前平台的所有服务..."
 	@$(PROJECT_ROOT)/scripts/tools/build-multiplatform.sh -p $$(go env GOOS)/$$(go env GOARCH)
 
+# 生成配置文档
+.PHONY: docgen
+docgen:
+	@echo "📚 生成配置参考文档..."
+	@mkdir -p $(OUTPUTDIR)/dist
+	@mkdir -p docs/generated
+	@$(GO) build -o $(OUTPUTDIR)/dist/swit-docgen ./cmd/swit-docgen
+	@$(OUTPUTDIR)/dist/swit-docgen -out docs/generated/configuration-reference.md
+
 # 快速开发构建 - 跳过质量检查，加速迭代
 .PHONY: build-dev
 build-dev:
