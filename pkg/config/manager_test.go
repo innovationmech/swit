@@ -22,11 +22,172 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	ctu "github.com/innovationmech/swit/pkg/config/testutil"
 )
+
+// Test layered file merge, interpolation, *_FILE, and environment overrides end-to-end.
+func TestManager_Load_MergeAndOverrides(t *testing.T) {
+	sandbox := ctu.NewEnvSandbox(t)
+	defer sandbox.Cleanup()
+
+	sandbox.Chdir()
+
+	// base config
+	sandbox.WriteYAML("swit.yaml", map[string]interface{}{
+		"server": map[string]interface{}{
+			"port": 8080,
+		},
+		"db": map[string]interface{}{
+			"host": "${DB_HOST:-localhost}",
+			"user": "app",
+		},
+	})
+
+	// env config
+	sandbox.WriteYAML("swit.dev.yaml", map[string]interface{}{
+		"server": map[string]interface{}{"port": 9090},
+	})
+
+	// override config
+	sandbox.WriteYAML("swit.override.yaml", map[string]interface{}{
+		"db": map[string]interface{}{
+			"user": "override-user",
+		},
+	})
+
+	// secret file injection for SWIT_DB_PASSWORD from SWIT_DB_PASSWORD_FILE
+	secretPath := sandbox.WriteFile("secret.txt", []byte("s3cr3t\n"))
+	sandbox.SetEnv("SWIT_DB_PASSWORD_FILE", secretPath)
+
+	// env overrides
+	sandbox.SetEnv("SWIT_SERVER_PORT", "10080") // highest precedence
+	sandbox.SetEnv("DB_HOST", "db.example")     // used by interpolation
+
+	m := NewManager(DefaultOptions())
+	m.options.WorkDir = sandbox.Dir
+	m.options.EnvironmentName = "dev"
+	m.options.EnableInterpolation = true
+
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	// verify interpolation was applied before env overlay
+	if got := m.Get("db.host"); got != "db.example" {
+		t.Fatalf("db.host = %v, want db.example", got)
+	}
+
+	// verify layered merge precedence and env override (env gives string)
+	if got := m.Get("server.port"); fmt.Sprint(got) != "10080" { // env overrides file values
+		t.Fatalf("server.port = %v, want 10080", got)
+	}
+
+	// override file should win over base/env for user
+	if got := m.Get("db.user"); got != "override-user" {
+		t.Fatalf("db.user = %v, want override-user", got)
+	}
+
+	// secret file injection should set SWIT_DB_PASSWORD
+	if got := os.Getenv("SWIT_DB_PASSWORD"); got != "s3cr3t" {
+		t.Fatalf("SWIT_DB_PASSWORD = %q, want s3cr3t", got)
+	}
+}
+
+// Test extends chain resolution and cyclic detection.
+func TestManager_Load_ExtendsAndCycle(t *testing.T) {
+	sandbox := ctu.NewEnvSandbox(t)
+	defer sandbox.Cleanup()
+	sandbox.Chdir()
+
+	// create a chain: base -> a.yaml extends b.yaml; b.yaml extends c.yaml
+	sandbox.WriteYAML("swit.yaml", map[string]interface{}{
+		"extends": "a.yaml",
+	})
+	sandbox.WriteYAML("a.yaml", map[string]interface{}{
+		"extends": "b.yaml",
+		"k":       "a",
+	})
+	sandbox.WriteYAML("b.yaml", map[string]interface{}{
+		"extends": "c.yaml",
+		"k":       "b",
+	})
+	sandbox.WriteYAML("c.yaml", map[string]interface{}{
+		"k": "c",
+	})
+
+	m := NewManager(DefaultOptions())
+	m.options.WorkDir = sandbox.Dir
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	// last merged overrides previous keys: c -> b -> a -> swit.yaml (no keys)
+	if got := m.Get("k"); got != "a" { // 'a' file merged last in chain
+		t.Fatalf("k = %v, want a", got)
+	}
+
+	// now create a cycle: d.yaml extends e.yaml; e.yaml extends d.yaml
+	sandbox.WriteYAML("swit.yaml", map[string]interface{}{"extends": "d.yaml"})
+	sandbox.WriteYAML("d.yaml", map[string]interface{}{"extends": "e.yaml"})
+	sandbox.WriteYAML("e.yaml", map[string]interface{}{"extends": "d.yaml"})
+
+	m2 := NewManager(DefaultOptions())
+	m2.options.WorkDir = sandbox.Dir
+	if err := m2.Load(); err == nil {
+		t.Fatalf("expected cycle error, got nil")
+	}
+}
+
+// Test explicit override file name and auto extension candidates.
+func TestManager_Load_CustomOverrideAndAutoExt(t *testing.T) {
+	sandbox := ctu.NewEnvSandbox(t)
+	defer sandbox.Cleanup()
+	sandbox.Chdir()
+
+	// base without value
+	sandbox.WriteYAML("swit.yml", map[string]interface{}{"x": 1})
+
+	// provide override as json via custom name
+	_ = sandbox.WriteFile("custom-ov.json", []byte(`{"x": 3}`))
+
+	opts := DefaultOptions()
+	opts.WorkDir = sandbox.Dir
+	opts.ConfigType = "auto"
+	opts.OverrideFilename = "custom-ov.json"
+	m := NewManager(opts)
+	if err := m.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := m.Get("x"); fmt.Sprint(got) != "3" {
+		t.Fatalf("x = %v, want 3", got)
+	}
+}
+
+// Test Secret VAR and VAR_FILE conflict detection.
+func TestManager_Load_SecretFileConflict(t *testing.T) {
+	sandbox := ctu.NewEnvSandbox(t)
+	defer sandbox.Cleanup()
+	sandbox.Chdir()
+
+	sandbox.WriteYAML("swit.yaml", map[string]interface{}{"a": 1})
+
+	// Set both VAR and VAR_FILE
+	sandbox.SetEnv("SWIT_TOKEN", "abc")
+	secretPath := filepath.Join(sandbox.Dir, "tok.txt")
+	sandbox.WriteFile("tok.txt", []byte("zzz"))
+	sandbox.SetEnv("SWIT_TOKEN_FILE", secretPath)
+
+	m := NewManager(DefaultOptions())
+	m.options.WorkDir = sandbox.Dir
+	if err := m.Load(); err == nil {
+		t.Fatalf("expected conflict error, got nil")
+	}
+}
 
 func writeFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
