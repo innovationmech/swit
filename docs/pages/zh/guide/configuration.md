@@ -562,3 +562,8 @@ if err != nil {
 5. **反射**：在生产中禁用 gRPC 反射
 
 这个配置指南提供了 Swit 框架所有配置选项、最佳实践和故障排除指导的全面覆盖。
+
+
+### 完整配置参考
+
+- 查看自动生成参考：[/zh/guide/configuration-reference](/zh/guide/configuration-reference)
