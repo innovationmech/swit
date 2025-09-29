@@ -450,3 +450,11 @@ func CreateLoggingMiddleware(config map[string]interface{}) (messaging.Middlewar
 
 	return NewStructuredLoggingMiddleware(loggingConfig), nil
 }
+
+// init registers the structured logging middleware factory into the global registry.
+func init() {
+	if messaging.GlobalMiddlewareRegistry != nil {
+		// Register under a clear, non-conflicting name
+		_ = messaging.GlobalMiddlewareRegistry.RegisterFactory("structured-logging", CreateLoggingMiddleware)
+	}
+}

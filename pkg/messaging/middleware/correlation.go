@@ -508,3 +508,10 @@ func CreateCorrelationMiddleware(config map[string]interface{}) (messaging.Middl
 
 	return NewCorrelationMiddleware(correlationConfig), nil
 }
+
+// init registers the correlation middleware factory into the global registry.
+func init() {
+	if messaging.GlobalMiddlewareRegistry != nil {
+		_ = messaging.GlobalMiddlewareRegistry.RegisterFactory("correlation", CreateCorrelationMiddleware)
+	}
+}
