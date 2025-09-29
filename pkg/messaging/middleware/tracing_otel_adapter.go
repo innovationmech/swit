@@ -18,6 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 //
+
 package middleware
 
 import (
@@ -238,5 +239,3 @@ func (w *otelSpanWrapper) GetSpanID() string {
 	}
 	return w.span.SpanContext().SpanID().String()
 }
-
-

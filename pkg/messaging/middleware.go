@@ -694,11 +694,11 @@ func (mr *MiddlewareRegistry) RegisterMiddleware(name string, mw Middleware) err
 	mr.mutex.Lock()
 	defer mr.mutex.Unlock()
 
-    if _, exists := mr.middleware[name]; exists {
+	if _, exists := mr.middleware[name]; exists {
 		return fmt.Errorf("middleware already registered: %s", name)
 	}
 
-    mr.middleware[name] = mw
+	mr.middleware[name] = mw
 	return nil
 }
 

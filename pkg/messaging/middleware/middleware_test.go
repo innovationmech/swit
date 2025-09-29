@@ -189,29 +189,29 @@ func TestTracingMiddleware(t *testing.T) {
 
 // TestPublisherTracingMiddleware ensures publish path injects propagation headers and sets span status
 func TestPublisherTracingMiddleware(t *testing.T) {
-    tracer := NewInMemoryTracer()
-    mw := NewPublisherTracingMiddleware(tracer)
+	tracer := NewInMemoryTracer()
+	mw := NewPublisherTracingMiddleware(tracer)
 
-    // next func records headers presence
-    var injected bool
-    next := func(ctx context.Context, msg *messaging.Message) error {
-        if msg != nil && len(msg.Headers) > 0 {
-            // traceparent should exist for in-memory injection style
-            if _, ok := msg.Headers["traceparent"]; ok {
-                injected = true
-            }
-        }
-        return nil
-    }
+	// next func records headers presence
+	var injected bool
+	next := func(ctx context.Context, msg *messaging.Message) error {
+		if msg != nil && len(msg.Headers) > 0 {
+			// traceparent should exist for in-memory injection style
+			if _, ok := msg.Headers["traceparent"]; ok {
+				injected = true
+			}
+		}
+		return nil
+	}
 
-    msg := &messaging.Message{ID: "id", Topic: "t", Headers: map[string]string{}}
-    err := mw.WrapPublish(next)(context.Background(), msg)
-    if err != nil {
-        t.Fatalf("unexpected error: %v", err)
-    }
-    if !injected {
-        t.Fatalf("expected trace headers to be injected")
-    }
+	msg := &messaging.Message{ID: "id", Topic: "t", Headers: map[string]string{}}
+	err := mw.WrapPublish(next)(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !injected {
+		t.Fatalf("expected trace headers to be injected")
+	}
 }
 
 // TestRateLimitMiddleware tests the rate limiting middleware.

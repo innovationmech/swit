@@ -619,61 +619,61 @@ func (b *publisherBuilderImpl) Build(ctx context.Context) (EventPublisher, error
 
 // wrapWithMiddleware wraps the publisher with middleware chain.
 func (b *publisherBuilderImpl) wrapWithMiddleware(publisher EventPublisher) EventPublisher {
-    // Build wrapped publish function
-    publish := func(ctx context.Context, message *Message) error {
-        return publisher.Publish(ctx, message)
-    }
+	// Build wrapped publish function
+	publish := func(ctx context.Context, message *Message) error {
+		return publisher.Publish(ctx, message)
+	}
 
-    batch := func(ctx context.Context, messages []*Message) error {
-        return publisher.PublishBatch(ctx, messages)
-    }
+	batch := func(ctx context.Context, messages []*Message) error {
+		return publisher.PublishBatch(ctx, messages)
+	}
 
-    // Apply middleware in reverse order so the first added is outermost
-    for i := len(b.middleware) - 1; i >= 0; i-- {
-        mw := b.middleware[i]
-        if mw != nil {
-            publish = mw.WrapPublish(publish)
-            batch = mw.WrapPublishBatch(batch)
-        }
-    }
+	// Apply middleware in reverse order so the first added is outermost
+	for i := len(b.middleware) - 1; i >= 0; i-- {
+		mw := b.middleware[i]
+		if mw != nil {
+			publish = mw.WrapPublish(publish)
+			batch = mw.WrapPublishBatch(batch)
+		}
+	}
 
-    return &middlewareWrappedPublisher{
-        base:        publisher,
-        publish:     publish,
-        publishBatch: batch,
-    }
+	return &middlewareWrappedPublisher{
+		base:         publisher,
+		publish:      publish,
+		publishBatch: batch,
+	}
 }
 
 // middlewareWrappedPublisher decorates an EventPublisher with middleware chains
 // for Publish and PublishBatch while delegating other methods directly.
 type middlewareWrappedPublisher struct {
-    base         EventPublisher
-    publish      PublishFunc
-    publishBatch PublishBatchFunc
+	base         EventPublisher
+	publish      PublishFunc
+	publishBatch PublishBatchFunc
 }
 
 func (m *middlewareWrappedPublisher) Publish(ctx context.Context, message *Message) error {
-    return m.publish(ctx, message)
+	return m.publish(ctx, message)
 }
 
 func (m *middlewareWrappedPublisher) PublishBatch(ctx context.Context, messages []*Message) error {
-    return m.publishBatch(ctx, messages)
+	return m.publishBatch(ctx, messages)
 }
 
 func (m *middlewareWrappedPublisher) PublishWithConfirm(ctx context.Context, message *Message) (*PublishConfirmation, error) {
-    // Delegate directly (middleware currently targets Publish/PublishBatch)
-    return m.base.PublishWithConfirm(ctx, message)
+	// Delegate directly (middleware currently targets Publish/PublishBatch)
+	return m.base.PublishWithConfirm(ctx, message)
 }
 
 func (m *middlewareWrappedPublisher) PublishAsync(ctx context.Context, message *Message, callback PublishCallback) error {
-    // Delegate directly
-    return m.base.PublishAsync(ctx, message, callback)
+	// Delegate directly
+	return m.base.PublishAsync(ctx, message, callback)
 }
 
 func (m *middlewareWrappedPublisher) BeginTransaction(ctx context.Context) (Transaction, error) {
-    return m.base.BeginTransaction(ctx)
+	return m.base.BeginTransaction(ctx)
 }
 
 func (m *middlewareWrappedPublisher) Flush(ctx context.Context) error { return m.base.Flush(ctx) }
-func (m *middlewareWrappedPublisher) Close() error { return m.base.Close() }
-func (m *middlewareWrappedPublisher) GetMetrics() *PublisherMetrics { return m.base.GetMetrics() }
+func (m *middlewareWrappedPublisher) Close() error                    { return m.base.Close() }
+func (m *middlewareWrappedPublisher) GetMetrics() *PublisherMetrics   { return m.base.GetMetrics() }
