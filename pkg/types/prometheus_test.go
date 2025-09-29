@@ -482,6 +482,41 @@ func TestPrometheusMetricsCollector_GetRegistry(t *testing.T) {
 	assert.IsType(t, &prometheus.Registry{}, registry)
 }
 
+func TestPrometheusMetricsCollector_DefaultCollectorsRegistered(t *testing.T) {
+	collector := NewPrometheusMetricsCollector(nil)
+
+	// Give a tiny moment for collectors to be ready
+	time.Sleep(10 * time.Millisecond)
+
+	metrics := collector.GetMetrics()
+	assert.NotEmpty(t, metrics)
+
+	hasGoBuildInfo := false
+	hasGoMetric := false
+	hasProcessMetric := false
+
+	for _, m := range metrics {
+		if m.Name == "go_build_info" {
+			hasGoBuildInfo = true
+		}
+		if strings.HasPrefix(m.Name, "go_") {
+			hasGoMetric = true
+		}
+		if strings.HasPrefix(m.Name, "process_") {
+			hasProcessMetric = true
+		}
+
+		// Early exit if all found
+		if hasGoBuildInfo && hasGoMetric && hasProcessMetric {
+			break
+		}
+	}
+
+	assert.True(t, hasGoBuildInfo, "should expose go_build_info from default collectors")
+	assert.True(t, hasGoMetric, "should expose at least one go_* metric from runtime collector")
+	assert.True(t, hasProcessMetric, "should expose at least one process_* metric from process collector")
+}
+
 func TestPrometheusMetricsCollector_CardinalityLimiting(t *testing.T) {
 	collector := NewPrometheusMetricsCollector(nil)
 	collector.maxCardinality = 5 // Set low limit for testing

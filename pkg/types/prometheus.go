@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap"
@@ -111,6 +112,14 @@ func NewPrometheusMetricsCollector(config *PrometheusConfig) *PrometheusMetricsC
 	}
 
 	registry := prometheus.NewRegistry()
+
+	// Register default collectors to provide Go runtime, process and build info metrics
+	// These are standard Prometheus collectors recommended for most services.
+	// Errors are intentionally ignored to avoid failing initialization due to duplicate registration
+	// in rare scenarios; our registry is new so conflicts are unlikely.
+	_ = registry.Register(collectors.NewGoCollector())
+	_ = registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	_ = registry.Register(prometheus.NewBuildInfoCollector())
 
 	return &PrometheusMetricsCollector{
 		config:         config,
