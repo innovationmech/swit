@@ -44,3 +44,14 @@ test.log
 .augment/
 .vercel/
 
+# 文档站点（VitePress）与 Playwright 生成文件
+/docs/pages/dist/
+/docs/pages/.vitepress/cache/
+/docs/pages/tests/e2e-results/
+/docs/pages/tests/reports/
+# Playwright state
+/playwright-report/
+/.playwright/**
+# Vitest cache (if any)
+/docs/pages/node_modules/.cache/
+

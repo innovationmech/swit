@@ -97,7 +97,8 @@ export const enConfig = defineConfig({
             { text: 'Error Monitoring', link: '/en/guide/monitoring' },
             { text: 'Performance Monitoring', link: '/en/guide/performance' },
             { text: 'Service Discovery', link: '/en/guide/service-discovery' },
-            { text: 'Testing', link: '/en/guide/testing' }
+            { text: 'Testing', link: '/en/guide/testing' },
+            { text: 'Deployment Examples', link: '/en/guide/deployment-examples' }
           ]
         },
         {

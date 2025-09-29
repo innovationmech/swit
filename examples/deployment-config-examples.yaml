@@ -1,0 +1,84 @@
+# Consolidated deployment configuration examples
+
+---
+# swit.dev.yaml - development defaults
+server:
+  http:
+    enabled: true
+    port: "9000"
+
+tracing:
+  enabled: true
+  sampling:
+    type: "traceidratio"
+    rate: 1.0
+  exporter:
+    type: "jaeger"
+    endpoint: "http://localhost:14268/api/traces"
+
+messaging:
+  enabled: false
+  default_broker: "local"
+  connection:
+    timeout: "30s"
+    retry_interval: "5s"
+    max_attempts: 3
+
+---
+# swit.prod.yaml - production overlay
+server:
+  http:
+    enabled: true
+    port: "9000"
+
+tracing:
+  enabled: true
+  sampling:
+    type: "traceidratio"
+    rate: 0.2
+  exporter:
+    type: "jaeger"
+    endpoint: "http://jaeger-collector:14268/api/traces"
+
+messaging:
+  enabled: true
+  default_broker: "local"
+  connection:
+    timeout: "20s"
+    retry_interval: "3s"
+    max_attempts: 5
+  security:
+    enable_encryption: true
+    enable_authentication: true
+
+---
+# switauth.dev.yaml
+server:
+  http:
+    enabled: true
+    port: "9001"
+
+tracing:
+  enabled: true
+  exporter:
+    type: "jaeger"
+    endpoint: "http://localhost:14268/api/traces"
+
+---
+# switauth.prod.yaml
+server:
+  http:
+    enabled: true
+    port: "9001"
+
+tracing:
+  enabled: true
+  exporter:
+    type: "jaeger"
+    endpoint: "http://jaeger-collector:14268/api/traces"
+
+security:
+  cookie_secure: true
+  csrf_enabled: true
+
+

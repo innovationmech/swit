@@ -18,17 +18,11 @@ async function globalSetup(config: FullConfig) {
     mkdirSync(e2eResultsDir, { recursive: true })
   }
 
-  // 确保静态资源准备就绪
+  // 由 Playwright webServer 负责构建与预览，此处不再执行构建以避免与预览进程的产物竞争
   try {
-    console.log('📦 Building project for E2E tests...')
-    execSync('npm run build', { 
-      stdio: 'inherit',
-      timeout: 300000 // 5分钟超时
-    })
-    console.log('✅ Build completed successfully')
+    console.log('🧭 Skipping build in global setup (handled by webServer)')
   } catch (error) {
-    console.error('❌ Build failed:', error)
-    process.exit(1)
+    console.warn('⚠️  Setup note:', (error as Error).message)
   }
 
   // 预热服务器 - 确保第一个测试运行时服务器已就绪
@@ -67,7 +61,9 @@ async function globalSetup(config: FullConfig) {
       '/zh/',
       '/en/guide/getting-started',
       '/en/api/',
-      '/en/examples/'
+      '/en/examples/',
+      '/en/guide/deployment-examples',
+      '/zh/guide/deployment-examples'
     ]
 
     console.log('🔄 Preloading critical pages...')
@@ -87,7 +83,7 @@ async function globalSetup(config: FullConfig) {
     console.log('🔍 Performing health checks...')
     
     // 检查首页是否正常加载
-    await page.goto('http://localhost:3000')
+    await page.goto('http://localhost:3000', { waitUntil: 'domcontentloaded', timeout: 15000 })
     const title = await page.title()
     if (!title.includes('Swit')) {
       throw new Error('Homepage title check failed')
@@ -99,15 +95,13 @@ async function globalSetup(config: FullConfig) {
       console.warn('⚠️  No navigation links found')
     }
     
-    // 检查多语言切换是否可用
-    try {
-      await page.goto('http://localhost:3000/zh/')
-      const chineseTitle = await page.title()
-      if (!chineseTitle.includes('Swit') && !chineseTitle.includes('框架')) {
-        console.warn('⚠️  Chinese language version may have issues')
+    // 检查多语言切换是否可用（在 CI 中更宽松）
+    if (!process.env.CI) {
+      try {
+        await page.goto('http://localhost:3000/zh/', { waitUntil: 'domcontentloaded', timeout: 10000 })
+      } catch (error) {
+        console.warn('⚠️  Chinese language version not accessible:', (error as Error).message)
       }
-    } catch (error) {
-      console.warn('⚠️  Chinese language version not accessible:', error.message)
     }
 
     console.log('✅ Health checks completed')

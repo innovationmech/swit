@@ -101,7 +101,8 @@ export const zhConfig = defineConfig({
             { text: '错误监控', link: '/zh/guide/monitoring' },
             { text: '性能监控', link: '/zh/guide/performance' },
             { text: '服务发现', link: '/zh/guide/service-discovery' },
-            { text: '测试', link: '/zh/guide/testing' }
+            { text: '测试', link: '/zh/guide/testing' },
+            { text: '部署示例', link: '/zh/guide/deployment-examples' }
           ]
         },
         {

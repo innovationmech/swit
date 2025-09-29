@@ -12,10 +12,10 @@ export default defineConfig({
   
   // 报告器配置
   reporter: [
-    ['html', { outputFolder: 'tests/reports/playwright-report' }],
+    ['html', { outputFolder: 'tests/reports/playwright-report', open: 'never' }],
     ['json', { outputFile: 'tests/reports/playwright-results.json' }],
     ['junit', { outputFile: 'tests/reports/playwright-results.xml' }],
-    process.env.CI ? ['github'] : ['list']
+    process.env.CI ? ['github'] : ['line']
   ],
   
   // 全局测试配置
@@ -127,7 +127,9 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
-      NODE_ENV: 'test'
+      NODE_ENV: 'test',
+      // Force root base during E2E to avoid GitHub Pages base path
+      VITEPRESS_BASE: '/'
     }
   },
 

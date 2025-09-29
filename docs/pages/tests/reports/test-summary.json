@@ -1,0 +1,14 @@
+{
+  "timestamp": "2025-09-27T17:37:09.338Z",
+  "environment": {
+    "ci": true,
+    "baseUrl": "http://localhost:3000"
+  },
+  "teardownCompleted": true,
+  "testResults": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "duration": 43738.206
+  }
+}

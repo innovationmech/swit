@@ -10,30 +10,26 @@ head:
     - |
       // Browser language detection and auto-redirect
       (function() {
-        // Only run on the root page
-        if (window.location.pathname !== '/' && !window.location.pathname.startsWith('/swit/')) return;
-        
-        // Don't redirect if user has manually selected a language
-        if (localStorage.getItem('vitepress-preferred-locale')) return;
-        
-        // Detect user's preferred language
-        const userLang = navigator.language || navigator.userLanguage;
-        const langCode = userLang.toLowerCase();
-        
-        let targetLang = 'en'; // default to English
-        
-        // Check if user prefers Chinese
-        if (langCode.startsWith('zh')) {
-          targetLang = 'zh';
-        }
-        
-        // Get current path and redirect to appropriate language version
-        const currentPath = window.location.pathname;
-        const basePath = '/swit/';
-        
-        // If we're on the root page, redirect to language-specific page
-        if (currentPath === '/' || currentPath === basePath) {
-          window.location.href = basePath + targetLang + '/';
+        try {
+          // Respect VitePress base from <html data-base> or global config, fallback to '/'
+          var baseTag = document.querySelector('html');
+          var detectedBase = (baseTag && baseTag.getAttribute('data-base')) || '/';
+          var basePath = detectedBase.endsWith('/') ? detectedBase : (detectedBase + '/');
+
+          // Only run at root or the base path
+          var path = window.location.pathname;
+          if (path !== '/' && path !== basePath) return;
+
+          // Skip if user explicitly chose a locale
+          if (localStorage.getItem('vitepress-preferred-locale')) return;
+
+          var userLang = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+          var targetLang = userLang.startsWith('zh') ? 'zh' : 'en';
+
+          // Redirect to language root
+          window.location.replace(basePath + targetLang + '/');
+        } catch (e) {
+          // No-op on failure to avoid breaking page render
         }
       })();
 

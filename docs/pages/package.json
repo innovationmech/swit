@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vitepress dev",
     "build": "vitepress build",
-    "preview": "vitepress preview",
+    "preview": "vitepress preview --port 3000",
     "generate-api-docs": "node scripts/api-docs-generator.js",
     "sync-docs": "node scripts/sync-docs.js",
     "build-all": "./scripts/build-all.sh",
