@@ -10,6 +10,7 @@ This guide provides production-oriented configuration examples for running Swit 
 Useful reference files:
 
 - Example configs: `examples/deployment-config-examples.yaml`
+- Templates: `examples/deployment-templates/`
 - Service configs: `swit.yaml`, `switauth.yaml`
 - K8s templates: `deployments/k8s/*.yaml`
 - Docker compose: `deployments/docker/docker-compose.yml`
@@ -68,6 +69,14 @@ services:
     depends_on:
       - jaeger
 ```
+
+#### 2.1) Production-leaning Compose Override
+
+See `examples/deployment-templates/docker-compose.prod.override.yml` for:
+
+- Resource hints (CPU/memory limits/reservations)
+- File-based secrets via `_FILE` environment variables
+- Jaeger collector endpoint for production networks
 
 ### 3) Security & Performance Tips
 

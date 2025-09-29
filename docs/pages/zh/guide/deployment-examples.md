@@ -10,6 +10,7 @@ outline: deep
 相关参考：
 
 - 示例配置：`examples/deployment-config-examples.yaml`
+- 模板目录：`examples/deployment-templates/`
 - 服务配置：`swit.yaml`、`switauth.yaml`
 - K8s 模板：`deployments/k8s/*.yaml`
 - Docker 组合：`deployments/docker/docker-compose.yml`
@@ -68,6 +69,14 @@ services:
     depends_on:
       - jaeger
 ```
+
+#### 2.1) 生产向 Compose 覆盖
+
+参考 `examples/deployment-templates/docker-compose.prod.override.yml`，包含：
+
+- 资源提示（CPU/内存限制与保留）
+- 基于文件的机密注入（`*_FILE` 环境变量）
+- 生产网络下的 Jaeger Collector 端点
 
 ### 3) 安全与性能要点
 

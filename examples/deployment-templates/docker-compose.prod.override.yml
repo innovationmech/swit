@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  swit-serve:
+    image: your-registry.com/swit-serve:v1.0.0
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.20'
+          memory: 256M
+    environment:
+      SWIT_TRACING_EXPORTER_ENDPOINT: http://jaeger-collector:14268/api/traces
+      SWIT_MESSAGING_ENABLED: "true"
+      SWIT_SERVER_PORT_FILE: /run/secrets/server_port
+      SWIT_DB_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - server_port
+      - db_password
+    volumes:
+      - ./swit.docker.yaml:/app/config/swit.yaml:ro
+
+secrets:
+  server_port:
+    file: ./secrets/server_port
+  db_password:
+    file: ./secrets/db_password
+
+
