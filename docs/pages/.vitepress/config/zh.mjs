@@ -106,10 +106,17 @@ export const zhConfig = defineConfig({
           ]
         },
         {
+          text: '迁移与维护',
+          items: [
+            { text: '迁移与升级指南', link: '/zh/guide/migration' },
+            { text: '故障排除与常见问题', link: '/zh/guide/troubleshooting' }
+          ]
+        },
+        {
           text: '网站使用',
           items: [
             { text: '网站使用指南', link: '/zh/guide/website-usage' },
-            { text: '故障排除与常见问题', link: '/zh/guide/troubleshooting' }
+            
           ]
         }
       ],
