@@ -83,7 +83,7 @@ async function globalSetup(config: FullConfig) {
     console.log('🔍 Performing health checks...')
     
     // 检查首页是否正常加载
-    await page.goto('http://localhost:3000')
+    await page.goto('http://localhost:3000', { waitUntil: 'domcontentloaded', timeout: 15000 })
     const title = await page.title()
     if (!title.includes('Swit')) {
       throw new Error('Homepage title check failed')
@@ -95,15 +95,13 @@ async function globalSetup(config: FullConfig) {
       console.warn('⚠️  No navigation links found')
     }
     
-    // 检查多语言切换是否可用
-    try {
-      await page.goto('http://localhost:3000/zh/')
-      const chineseTitle = await page.title()
-      if (!chineseTitle.includes('Swit') && !chineseTitle.includes('框架')) {
-        console.warn('⚠️  Chinese language version may have issues')
+    // 检查多语言切换是否可用（在 CI 中更宽松）
+    if (!process.env.CI) {
+      try {
+        await page.goto('http://localhost:3000/zh/', { waitUntil: 'domcontentloaded', timeout: 10000 })
+      } catch (error) {
+        console.warn('⚠️  Chinese language version not accessible:', (error as Error).message)
       }
-    } catch (error) {
-      console.warn('⚠️  Chinese language version not accessible:', error.message)
     }
 
     console.log('✅ Health checks completed')

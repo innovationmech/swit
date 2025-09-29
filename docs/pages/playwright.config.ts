@@ -12,10 +12,10 @@ export default defineConfig({
   
   // 报告器配置
   reporter: [
-    ['html', { outputFolder: 'tests/reports/playwright-report' }],
+    ['html', { outputFolder: 'tests/reports/playwright-report', open: 'never' }],
     ['json', { outputFile: 'tests/reports/playwright-results.json' }],
     ['junit', { outputFile: 'tests/reports/playwright-results.xml' }],
-    process.env.CI ? ['github'] : ['list']
+    process.env.CI ? ['github'] : ['line']
   ],
   
   // 全局测试配置
