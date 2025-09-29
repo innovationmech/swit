@@ -142,6 +142,26 @@ func (s *ServiceRegistrar) RegisterServices(registry server.BusinessServiceRegis
 	return nil
 }
 
+// RegisterEventHandlers implements server.MessagingServiceRegistrar to support event handler registration.
+// Current service does not expose messaging handlers; provide minimal no-op to satisfy interface and enable future extension.
+func (s *ServiceRegistrar) RegisterEventHandlers(registry server.EventHandlerRegistry) error {
+    if registry == nil {
+        return fmt.Errorf("event handler registry cannot be nil")
+    }
+    // No messaging handlers yet for switserve.
+    return nil
+}
+
+// GetEventHandlerMetadata returns minimal metadata for messaging capabilities.
+func (s *ServiceRegistrar) GetEventHandlerMetadata() *server.EventHandlerMetadata {
+    return &server.EventHandlerMetadata{
+        HandlerCount:       0,
+        Topics:             nil,
+        BrokerRequirements: nil,
+        Description:        "switserve has no messaging handlers currently",
+    }
+}
+
 // GreeterBusinessHTTPHandler adapts the switserve greeter handler to the base server BusinessHTTPHandler interface
 type GreeterBusinessHTTPHandler struct {
 	handler *greeterv1.GreeterHandler
