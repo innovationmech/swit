@@ -214,6 +214,24 @@ switctl dev watch      # Auto-rebuild on changes
 switctl deps check     # Dependency management
 ```
 
+## Messaging Adapter Switching (preview)
+
+Before switching messaging adapters (e.g., RabbitMQ → Kafka → NATS), generate a migration plan to surface capability deltas and a safe rollout checklist:
+
+```go
+ctx := context.Background()
+plan, err := messaging.PlanBrokerSwitch(ctx, currentConfig, targetConfig)
+if err != nil {
+    return fmt.Errorf("plan switch: %w", err)
+}
+fmt.Printf("Switching %s -> %s (score %d)\n", plan.CurrentType, plan.TargetType, plan.CompatibilityScore)
+for _, item := range plan.Checklist {
+    fmt.Printf("✔ %s\n", item)
+}
+```
+
+See detailed guidance in the Messaging Adapter Switching guide.
+
 ## Security Enhancements Migration
 
 ### 1. GitHub Actions Workflow Updates
@@ -425,6 +443,33 @@ if err := config.Validate(); err != nil {
 - [ ] Monitor Sentry dashboard
 - [ ] Gradually increase sampling rates
 - [ ] Configure production filters
+
+## Configuration Migration & Upgrade (switctl)
+
+Use switctl to validate and migrate configuration files across versions. Start with strict validation, then run migration with backups.
+
+```bash
+# Strict validation (fail on warnings)
+switctl config validate --strict
+
+# Migrate configuration from v1 to v2 with backup
+switctl config migrate --from v1 --to v2 --backup
+
+# Optionally provide explicit rules (JSON/YAML)
+switctl config migrate --from v1 --to v2 --rules ./migration-rules.yaml
+```
+
+Key behaviors:
+- Key remapping and removal (e.g., `a.b` → `x.y`, or remove deprecated keys)
+- Default value backfilling via `default`
+- Version stamping (`version: v2`)
+
+Environment variables follow the generated mapping rules:
+- Prefix: `SWIT_`
+- Mapping: config key `a.b.c` → env var `SWIT_A_B_C`
+- Precedence (low → high): Defaults, Base file, Env file, Override file, Environment variables
+
+See also: `/en/guide/configuration-reference` (generated)
 
 ## Rollback Procedures
 
