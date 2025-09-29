@@ -57,9 +57,19 @@ func (p *publisher) Publish(ctx context.Context, message *messaging.Message) err
 
 	start := time.Now()
 	var err error
+	// Headers injection for core NATS is not native; prefer prior middleware/builder to inject
+	// into message.Headers. JetStream supports headers via nats.Msg; basic publish uses payload only.
 	if js != nil {
-		// JetStream sync publish for persistence and ack
-		_, err = js.Publish(message.Topic, message.Payload)
+		// JetStream sync publish with headers if available
+		if len(message.Headers) > 0 {
+			msg := &nats.Msg{Subject: message.Topic, Data: message.Payload, Header: nats.Header{}}
+			for k, v := range message.Headers {
+				msg.Header.Set(k, v)
+			}
+			_, err = js.PublishMsg(msg)
+		} else {
+			_, err = js.Publish(message.Topic, message.Payload)
+		}
 	} else {
 		if deadline, ok := ctx.Deadline(); ok {
 			timeout := time.Until(deadline)

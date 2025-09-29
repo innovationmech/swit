@@ -690,7 +690,7 @@ func (mr *MiddlewareRegistry) registerBuiltInFactories() {
 }
 
 // RegisterMiddleware registers a middleware instance with a name.
-func (mr *MiddlewareRegistry) RegisterMiddleware(name string, middleware Middleware) error {
+func (mr *MiddlewareRegistry) RegisterMiddleware(name string, mw Middleware) error {
 	mr.mutex.Lock()
 	defer mr.mutex.Unlock()
 
@@ -698,7 +698,7 @@ func (mr *MiddlewareRegistry) RegisterMiddleware(name string, middleware Middlew
 		return fmt.Errorf("middleware already registered: %s", name)
 	}
 
-	mr.middleware[name] = middleware
+	mr.middleware[name] = mw
 	return nil
 }
 
