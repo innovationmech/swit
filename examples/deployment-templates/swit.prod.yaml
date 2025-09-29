@@ -1,0 +1,26 @@
+server:
+  http:
+    enabled: true
+    port: "9000"
+
+tracing:
+  enabled: true
+  sampling:
+    type: "traceidratio"
+    rate: 0.2
+  exporter:
+    type: "jaeger"
+    endpoint: "http://jaeger-collector:14268/api/traces"
+
+messaging:
+  enabled: true
+  default_broker: "local"
+  connection:
+    timeout: "20s"
+    retry_interval: "3s"
+    max_attempts: 5
+  security:
+    enable_encryption: true
+    enable_authentication: true
+
+

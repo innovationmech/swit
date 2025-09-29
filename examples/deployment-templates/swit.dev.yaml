@@ -1,0 +1,23 @@
+server:
+  http:
+    enabled: true
+    port: "9000"
+
+tracing:
+  enabled: true
+  sampling:
+    type: "traceidratio"
+    rate: 1.0
+  exporter:
+    type: "jaeger"
+    endpoint: "http://localhost:14268/api/traces"
+
+messaging:
+  enabled: false
+  default_broker: "local"
+  connection:
+    timeout: "30s"
+    retry_interval: "5s"
+    max_attempts: 3
+
+

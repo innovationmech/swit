@@ -1,0 +1,22 @@
+# Base settings optimized for containers
+server:
+  http:
+    enabled: true
+    port: "9000"
+
+messaging:
+  enabled: true
+  default_broker: "local"
+  connection:
+    timeout: "20s"
+    retry_interval: "3s"
+  security:
+    enable_encryption: false
+
+tracing:
+  enabled: true
+  exporter:
+    type: "jaeger"
+    endpoint: "http://jaeger:14268/api/traces"
+
+
