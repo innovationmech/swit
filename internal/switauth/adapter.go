@@ -93,20 +93,20 @@ func (s *ServiceRegistrar) RegisterServices(registry server.BusinessServiceRegis
 // RegisterEventHandlers implements server.MessagingServiceRegistrar to support event handler registration.
 // switauth currently does not expose messaging handlers; this is a no-op implementation for future use.
 func (s *ServiceRegistrar) RegisterEventHandlers(registry server.EventHandlerRegistry) error {
-    if registry == nil {
-        return fmt.Errorf("event handler registry cannot be nil")
-    }
-    return nil
+	if registry == nil {
+		return fmt.Errorf("event handler registry cannot be nil")
+	}
+	return nil
 }
 
 // GetEventHandlerMetadata returns minimal metadata for messaging capabilities of switauth.
 func (s *ServiceRegistrar) GetEventHandlerMetadata() *server.EventHandlerMetadata {
-    return &server.EventHandlerMetadata{
-        HandlerCount:       0,
-        Topics:             nil,
-        BrokerRequirements: nil,
-        Description:        "switauth has no messaging handlers currently",
-    }
+	return &server.EventHandlerMetadata{
+		HandlerCount:       0,
+		Topics:             nil,
+		BrokerRequirements: nil,
+		Description:        "switauth has no messaging handlers currently",
+	}
 }
 
 // AuthBusinessHTTPHandler adapts the switauth auth handler to the base server BusinessHTTPHandler interface
