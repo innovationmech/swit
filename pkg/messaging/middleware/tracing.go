@@ -666,6 +666,13 @@ func CreateTracingMiddleware(config map[string]interface{}) (messaging.Middlewar
 				tracingConfig.Tracer = NewNoOpTracer()
 			case "in_memory":
 				tracingConfig.Tracer = NewInMemoryTracer()
+            case "otel":
+                // Use global OpenTelemetry provider/propagator via adapter
+                serviceName := ""
+                if v, ok := config["service_name"].(string); ok {
+                    serviceName = v
+                }
+                tracingConfig.Tracer = NewOTelTracerAdapter(serviceName)
 			default:
 				tracingConfig.Tracer = NewNoOpTracer()
 			}

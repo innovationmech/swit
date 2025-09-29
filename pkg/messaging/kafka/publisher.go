@@ -350,6 +350,13 @@ func toKafkaMessage(topic string, m *messaging.Message) KafkaMessage {
 	for k, v := range m.Headers {
 		headers[k] = v
 	}
+    // Inject W3C traceparent if present in headers.Custom (ValidatedMessage path)
+    // or derive from existing TraceContext fields if available.
+    if _, ok := headers["traceparent"]; !ok {
+        // If message.Headers contains W3C parts in Custom, skip. Otherwise try to synthesize minimal info.
+        // Note: Full synthesis requires access to context; here we defer to upstream builder/middleware to inject.
+        // No-op if not available.
+    }
 	// Populate minimal tracing/correlation metadata if present
 	if m.CorrelationID != "" {
 		headers["correlation_id"] = m.CorrelationID
