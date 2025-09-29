@@ -142,6 +142,16 @@ curl http://localhost:8080/metrics
 # HELP swit_server_http_requests_total Total number of HTTP requests
 # TYPE swit_server_http_requests_total counter
 # swit_server_http_requests_total{method="GET",endpoint="/api/users",status="200"} 42
+
+#### 4. Default Collectors
+
+Starting from v1.0.0, SWIT registers the following Prometheus default collectors by default:
+
+- Go runtime collector: exposes `go_*` metrics (GC, goroutines, memory, etc.)
+- Process collector: exposes `process_*` metrics (CPU, memory, file descriptors, etc.)
+- Build info collector: exposes `go_build_info` metric
+
+These collectors are bound to the framework's custom registry and are available at the same `/metrics` endpoint without any additional configuration.
 # 
 # HELP swit_server_http_request_duration_seconds HTTP request duration in seconds  
 # TYPE swit_server_http_request_duration_seconds histogram
