@@ -693,6 +693,8 @@ configWatcher.OnChange(func(newConfig *server.ServerConfig) {
 4. **Secure secrets**: Never store secrets in configuration files; use environment variables or secret management
 5. **Version configuration**: Keep configuration files in version control
 
+- See also: [Configuration Best Practices](/en/guide/configuration-best-practices)
+
 ### Security Best Practices
 
 1. **CORS security**: Never use wildcard origins with credentials
