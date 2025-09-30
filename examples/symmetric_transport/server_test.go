@@ -41,7 +41,7 @@ func TestNewSymmetricServer(t *testing.T) {
 	server := NewSymmetricServer()
 
 	assert.NotNil(t, server)
-	assert.NotNil(t, server.transportManager)
+	assert.NotNil(t, server.coordinator)
 	assert.NotNil(t, server.httpTransport)
 	assert.NotNil(t, server.grpcTransport)
 }
@@ -82,7 +82,7 @@ func TestSymmetricServer_ArchitecturalSymmetry(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify both transports work independently
-	registryManager := server.transportManager.GetServiceRegistryManager()
+	registryManager := server.coordinator.GetMultiTransportRegistry()
 	httpRegistry := registryManager.GetRegistry("http")
 	grpcRegistry := registryManager.GetRegistry("grpc")
 
