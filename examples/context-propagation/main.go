@@ -26,6 +26,8 @@
 // Note: This is example/demonstration code that intentionally prints context values
 // (correlation IDs, user IDs, etc.) to show how context propagation works.
 // In production code, ensure appropriate logging practices and data sensitivity handling.
+//
+// lgtm[go/clear-text-logging]
 package main
 
 import (
