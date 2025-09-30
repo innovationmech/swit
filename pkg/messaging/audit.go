@@ -107,6 +107,12 @@ type MessagingAuditConfig struct {
 
 	// FlushInterval for async audit log flushing
 	FlushInterval time.Duration `json:"flush_interval" yaml:"flush_interval" default:"5s"`
+
+	// Sinks for audit log output (optional, defaults to logger only)
+	Sinks []SinkConfig `json:"sinks,omitempty" yaml:"sinks,omitempty"`
+
+	// Redaction configuration for sensitive data
+	Redaction *RedactionConfig `json:"redaction,omitempty" yaml:"redaction,omitempty"`
 }
 
 // Validate validates the audit configuration
@@ -129,6 +135,13 @@ func (c *MessagingAuditConfig) Validate() error {
 		// Valid levels
 	default:
 		return fmt.Errorf("invalid log_level: %s", c.LogLevel)
+	}
+
+	// Validate redaction config
+	if c.Redaction != nil {
+		if err := c.Redaction.Validate(); err != nil {
+			return fmt.Errorf("redaction config validation failed: %w", err)
+		}
 	}
 
 	return nil
@@ -240,6 +253,12 @@ type MessagingAuditor struct {
 
 	// Wait group for graceful shutdown
 	wg sync.WaitGroup
+
+	// Sinks for audit log output
+	sinks []AuditSink
+
+	// Redactor for sensitive data redaction
+	redactor *Redactor
 }
 
 // NewMessagingAuditor creates a new messaging auditor
@@ -254,6 +273,29 @@ func NewMessagingAuditor(config *MessagingAuditConfig) *MessagingAuditor {
 		metrics:      &AuditMetrics{CollectedAt: time.Now(), EventsByType: make(map[AuditEventType]int64)},
 		eventChan:    make(chan *AuditEvent, config.BufferSize),
 		shutdownChan: make(chan struct{}),
+		sinks:        make([]AuditSink, 0),
+	}
+
+	// Initialize sinks
+	if config.Enabled {
+		for _, sinkConfig := range config.Sinks {
+			sink, err := CreateSink(&sinkConfig)
+			if err != nil {
+				// Log error but continue with other sinks
+				continue
+			}
+			auditor.sinks = append(auditor.sinks, sink)
+		}
+	}
+
+	// Initialize redactor
+	if config.Redaction != nil && config.Redaction.Enabled {
+		redactor, err := NewRedactor(config.Redaction)
+		if err != nil {
+			// Log error but continue without redaction
+		} else {
+			auditor.redactor = redactor
+		}
 	}
 
 	if config.Enabled {
@@ -438,77 +480,93 @@ func (a *MessagingAuditor) flushEvents(events []*AuditEvent) {
 
 // logEventSynchronously logs an event synchronously
 func (a *MessagingAuditor) logEventSynchronously(event *AuditEvent) {
-	// Update metrics
+	// Apply redaction if configured
+	redactedEvent := event
+	if a.redactor != nil {
+		redactedEvent = a.redactor.RedactEvent(event)
+	}
+
+	// Update metrics (use original event for metrics)
 	a.updateMetrics(event)
+
+	// Write to sinks
+	for _, sink := range a.sinks {
+		if err := sink.Write(context.Background(), redactedEvent); err != nil {
+			// Log sink errors but continue with other sinks
+			a.logger.Warn("Failed to write to audit sink",
+				zap.String("sink", sink.Name()),
+				zap.Error(err))
+		}
+	}
 
 	// Determine log level based on event type and success
 	logFunc := a.logger.Info
-	switch event.Type {
+	switch redactedEvent.Type {
 	case AuditEventMessageFailed, AuditEventAuthFailure, AuditEventPolicyViolation:
 		logFunc = a.logger.Error
 	case AuditEventBrokerDisconnected:
-		if !event.Success {
+		if !redactedEvent.Success {
 			logFunc = a.logger.Warn
 		}
 	}
 
 	// Create log fields
 	fields := []zap.Field{
-		zap.String("audit_event_type", string(event.Type)),
-		zap.Time("timestamp", event.Timestamp),
-		zap.String("operation", event.Operation),
-		zap.Bool("success", event.Success),
+		zap.String("audit_event_type", string(redactedEvent.Type)),
+		zap.Time("timestamp", redactedEvent.Timestamp),
+		zap.String("operation", redactedEvent.Operation),
+		zap.Bool("success", redactedEvent.Success),
 	}
 
-	if event.MessageID != "" {
-		fields = append(fields, zap.String("message_id", event.MessageID))
+	if redactedEvent.MessageID != "" {
+		fields = append(fields, zap.String("message_id", redactedEvent.MessageID))
 	}
 
-	if event.Topic != "" {
-		fields = append(fields, zap.String("topic", event.Topic))
+	if redactedEvent.Topic != "" {
+		fields = append(fields, zap.String("topic", redactedEvent.Topic))
 	}
 
-	if event.BrokerType != "" {
-		fields = append(fields, zap.String("broker_type", string(event.BrokerType)))
+	if redactedEvent.BrokerType != "" {
+		fields = append(fields, zap.String("broker_type", string(redactedEvent.BrokerType)))
 	}
 
-	if event.Duration > 0 {
-		fields = append(fields, zap.Float64("duration_ms", event.Duration))
+	if redactedEvent.Duration > 0 {
+		fields = append(fields, zap.Float64("duration_ms", redactedEvent.Duration))
 	}
 
-	if event.MessageSize > 0 {
-		fields = append(fields, zap.Int64("message_size", event.MessageSize))
+	if redactedEvent.MessageSize > 0 {
+		fields = append(fields, zap.Int64("message_size", redactedEvent.MessageSize))
 	}
 
-	if event.CorrelationID != "" {
-		fields = append(fields, zap.String("correlation_id", event.CorrelationID))
+	if redactedEvent.CorrelationID != "" {
+		fields = append(fields, zap.String("correlation_id", redactedEvent.CorrelationID))
 	}
 
-	if event.UserID != "" {
-		fields = append(fields, zap.String("user_id", event.UserID))
+	if redactedEvent.UserID != "" {
+		fields = append(fields, zap.String("user_id", redactedEvent.UserID))
 	}
 
-	if event.Error != nil {
-		fields = append(fields, zap.Error(event.Error))
+	if redactedEvent.Error != nil {
+		fields = append(fields, zap.Error(redactedEvent.Error))
 	}
 
-	if event.AuthContext != nil && a.config.IncludeAuthContext && event.AuthContext.Credentials != nil {
+	if redactedEvent.AuthContext != nil && a.config.IncludeAuthContext && redactedEvent.AuthContext.Credentials != nil {
 		fields = append(fields,
-			zap.String("auth_user_id", event.AuthContext.Credentials.UserID),
-			zap.Strings("auth_scopes", event.AuthContext.Credentials.Scopes),
+			zap.String("auth_user_id", redactedEvent.AuthContext.Credentials.UserID),
+			zap.Strings("auth_scopes", redactedEvent.AuthContext.Credentials.Scopes),
 		)
 	}
 
-	if event.Headers != nil && a.config.IncludeHeaders {
+	if redactedEvent.Headers != nil && a.config.IncludeHeaders {
 		// Add headers as individual fields
-		for key, value := range event.Headers {
+		for key, value := range redactedEvent.Headers {
 			fields = append(fields, zap.String("header_"+key, value))
 		}
 	}
 
-	if event.Metadata != nil {
+	if redactedEvent.Metadata != nil {
 		// Add metadata as individual fields
-		for key, value := range event.Metadata {
+		for key, value := range redactedEvent.Metadata {
 			switch v := value.(type) {
 			case string:
 				fields = append(fields, zap.String("meta_"+key, v))
@@ -577,6 +635,18 @@ func (a *MessagingAuditor) Close() error {
 
 	// Wait for processor to finish
 	a.wg.Wait()
+
+	// Close all sinks
+	var errs []error
+	for _, sink := range a.sinks {
+		if err := sink.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close sink %s: %w", sink.Name(), err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors closing sinks: %v", errs)
+	}
 
 	return nil
 }
