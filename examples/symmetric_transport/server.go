@@ -39,56 +39,56 @@ import (
 
 // SymmetricServer demonstrates the new symmetric transport architecture
 type SymmetricServer struct {
-	transportManager *transport.Manager
-	httpTransport    *transport.HTTPTransport
-	grpcTransport    *transport.GRPCTransport
+	coordinator   *transport.TransportCoordinator
+	httpTransport *transport.HTTPNetworkService
+	grpcTransport *transport.GRPCNetworkService
 }
 
 // NewSymmetricServer creates a server with symmetric transport architecture
 func NewSymmetricServer() *SymmetricServer {
-	// Create transport manager with integrated service registry management
-	manager := transport.NewManager()
+	// Create transport coordinator with integrated service registry management
+	coordinator := transport.NewTransportCoordinator()
 
 	// Create HTTP transport
 	httpConfig := &transport.HTTPTransportConfig{
 		Address:     ":8080",
 		EnableReady: true,
 	}
-	httpTransport := transport.NewHTTPTransportWithConfig(httpConfig)
+	httpTransport := transport.NewHTTPNetworkServiceWithConfig(httpConfig)
 
 	// Create gRPC transport
 	grpcConfig := transport.DefaultGRPCConfig()
 	grpcConfig.Address = ":9090"
-	grpcTransport := transport.NewGRPCTransportWithConfig(grpcConfig)
+	grpcTransport := transport.NewGRPCNetworkServiceWithConfig(grpcConfig)
 
-	// Register transports with manager
-	manager.Register(httpTransport)
-	manager.Register(grpcTransport)
+	// Register transports with coordinator
+	coordinator.Register(httpTransport)
+	coordinator.Register(grpcTransport)
 
 	return &SymmetricServer{
-		transportManager: manager,
-		httpTransport:    httpTransport,
-		grpcTransport:    grpcTransport,
+		coordinator:   coordinator,
+		httpTransport: httpTransport,
+		grpcTransport: grpcTransport,
 	}
 }
 
 // RegisterHTTPOnlyService registers a service that only supports HTTP
-func (s *SymmetricServer) RegisterHTTPOnlyService(handler transport.HandlerRegister) error {
-	return s.transportManager.RegisterHTTPHandler(handler)
+func (s *SymmetricServer) RegisterHTTPOnlyService(handler transport.TransportServiceHandler) error {
+	return s.coordinator.RegisterHTTPService(handler)
 }
 
 // RegisterGRPCOnlyService registers a service that only supports gRPC
-func (s *SymmetricServer) RegisterGRPCOnlyService(handler transport.HandlerRegister) error {
-	return s.transportManager.RegisterGRPCHandler(handler)
+func (s *SymmetricServer) RegisterGRPCOnlyService(handler transport.TransportServiceHandler) error {
+	return s.coordinator.RegisterGRPCService(handler)
 }
 
 // RegisterDualProtocolService registers a service that supports both HTTP and gRPC
-func (s *SymmetricServer) RegisterDualProtocolService(handler transport.HandlerRegister) error {
+func (s *SymmetricServer) RegisterDualProtocolService(handler transport.TransportServiceHandler) error {
 	// Register with both transports
-	if err := s.transportManager.RegisterHTTPHandler(handler); err != nil {
+	if err := s.coordinator.RegisterHTTPService(handler); err != nil {
 		return fmt.Errorf("failed to register HTTP handler: %w", err)
 	}
-	if err := s.transportManager.RegisterGRPCHandler(handler); err != nil {
+	if err := s.coordinator.RegisterGRPCService(handler); err != nil {
 		return fmt.Errorf("failed to register gRPC handler: %w", err)
 	}
 	return nil
@@ -97,27 +97,27 @@ func (s *SymmetricServer) RegisterDualProtocolService(handler transport.HandlerR
 // Start starts the server with symmetric transport initialization
 func (s *SymmetricServer) Start(ctx context.Context) error {
 	// Initialize all services
-	if err := s.transportManager.InitializeAllServices(ctx); err != nil {
+	if err := s.coordinator.InitializeTransportServices(ctx); err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
-	}
-
-	// Start all transports
-	if err := s.transportManager.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start transports: %w", err)
 	}
 
 	// Register HTTP routes with HTTP transport
 	httpRouter := s.httpTransport.GetRouter()
-	if err := s.transportManager.RegisterAllHTTPRoutes(httpRouter); err != nil {
+	if err := s.coordinator.BindAllHTTPEndpoints(httpRouter); err != nil {
 		return fmt.Errorf("failed to register HTTP routes: %w", err)
 	}
 
 	// Register gRPC services with gRPC transport
 	grpcServer := s.grpcTransport.GetServer()
 	if grpcServer != nil {
-		if err := s.transportManager.RegisterAllGRPCServices(grpcServer); err != nil {
+		if err := s.coordinator.BindAllGRPCServices(grpcServer); err != nil {
 			return fmt.Errorf("failed to register gRPC services: %w", err)
 		}
+	}
+
+	// Start all transports
+	if err := s.coordinator.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start transports: %w", err)
 	}
 
 	return nil
@@ -126,12 +126,12 @@ func (s *SymmetricServer) Start(ctx context.Context) error {
 // Stop gracefully stops the server
 func (s *SymmetricServer) Stop(ctx context.Context) error {
 	// Shutdown all services first
-	if err := s.transportManager.ShutdownAllServices(ctx); err != nil {
+	if err := s.coordinator.ShutdownAllServices(ctx); err != nil {
 		log.Printf("Error shutting down services: %v", err)
 	}
 
 	// Stop all transports
-	if err := s.transportManager.Stop(5 * time.Second); err != nil {
+	if err := s.coordinator.Stop(5 * time.Second); err != nil {
 		return fmt.Errorf("failed to stop transports: %w", err)
 	}
 
