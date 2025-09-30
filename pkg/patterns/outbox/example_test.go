@@ -146,15 +146,15 @@ func Example_processorWithWorker() {
 	// 注意：这个示例需要一个真实的消息发布器
 	// 这里使用 nil 仅作为演示，实际应用中需要提供真实的发布器
 
-	storage := outbox.NewInMemoryStorage()
+	_ = outbox.NewInMemoryStorage() // storage 变量用于注释中的示例
 
 	// 配置处理器
-	config := outbox.ProcessorConfig{
-		PollInterval:    5 * time.Second,  // 每5秒轮询一次
-		BatchSize:       100,               // 每批处理100条
-		MaxRetries:      3,                 // 最多重试3次
-		WorkerCount:     1,                 // 单个 worker
-		CleanupInterval: 24 * time.Hour,    // 每天清理一次
+	_ = outbox.ProcessorConfig{
+		PollInterval:    5 * time.Second,    // 每5秒轮询一次
+		BatchSize:       100,                // 每批处理100条
+		MaxRetries:      3,                  // 最多重试3次
+		WorkerCount:     1,                  // 单个 worker
+		CleanupInterval: 24 * time.Hour,     // 每天清理一次
 		CleanupAfter:    7 * 24 * time.Hour, // 清理7天前的已处理消息
 	}
 
