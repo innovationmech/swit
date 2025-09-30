@@ -795,6 +795,20 @@ type DeadLetterConfig struct {
 
 	// TTL for dead letter messages
 	TTL time.Duration `yaml:"ttl" json:"ttl" default:"168h"`
+
+	// Policy defines the dead letter handling policy
+	// Options: "store", "discard", "retry", "notify"
+	Policy string `yaml:"policy" json:"policy" default:"store"`
+
+	// MaxQueueSize limits the number of messages in the dead letter queue
+	// 0 means unlimited
+	MaxQueueSize int `yaml:"max_queue_size" json:"max_queue_size" default:"10000"`
+
+	// RetryInterval sets the delay between retry attempts
+	RetryInterval time.Duration `yaml:"retry_interval" json:"retry_interval" default:"5s"`
+
+	// EnableMetrics enables Prometheus metrics collection for DLQ
+	EnableMetrics bool `yaml:"enable_metrics" json:"enable_metrics" default:"true"`
 }
 
 // OffsetConfig defines offset management settings.
