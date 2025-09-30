@@ -47,6 +47,9 @@ type HandlerMetadata struct {
 	Tags []string `json:"tags,omitempty"`
 	// Dependencies are the services this service depends on
 	Dependencies []string `json:"dependencies,omitempty"`
+	// MessagingMetadata contains extended messaging-specific metadata (optional)
+	// This field is populated when the service has messaging capabilities
+	MessagingMetadata interface{} `json:"messaging_metadata,omitempty"`
 }
 
 // TransportServiceHandler defines the unified interface for service registration and management
