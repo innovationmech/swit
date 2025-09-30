@@ -1,0 +1,13 @@
+# CodeQL configuration file
+# This configuration excludes example and demonstration code from security scanning
+
+name: "CodeQL Config"
+
+paths-ignore:
+  - examples/**
+  - docs/**
+  - '**/example_test.go'
+  - '**/*_example.go'
+
+queries:
+  - uses: security-and-quality

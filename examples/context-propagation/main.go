@@ -22,6 +22,10 @@
 // Package main demonstrates cross-transport context propagation in SWIT framework.
 // This example shows how to propagate request context information across HTTP, gRPC,
 // and messaging transports to maintain correlation IDs, user context, and trace information.
+//
+// Note: This is example/demonstration code that intentionally prints context values
+// (correlation IDs, user IDs, etc.) to show how context propagation works.
+// In production code, ensure appropriate logging practices and data sensitivity handling.
 package main
 
 import (
