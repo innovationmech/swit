@@ -37,7 +37,8 @@ import (
 )
 
 func main() {
-	fmt.Println("=== SWIT Context Propagation Example ===\n")
+	fmt.Println("=== SWIT Context Propagation Example ===")
+	fmt.Println()
 
 	// Example 1: HTTP to Messaging
 	example1HTTPToMessaging()
