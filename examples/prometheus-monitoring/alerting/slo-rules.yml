@@ -1,0 +1,337 @@
+groups:
+  # SLO-based Alerting Rules
+  # These rules implement Service Level Objective monitoring with error budget tracking
+  
+  # Availability SLO Alerts
+  - name: slo_availability
+    rules:
+      - alert: SLOAvailability99_9Violated
+        expr: |
+          100 * (
+            1 - (
+              sum(rate(http_requests_total{status=~"5.."}[30d]))
+              /
+              sum(rate(http_requests_total[30d]))
+            )
+          ) < 99.9
+        for: 5m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: availability
+          tier: critical
+        annotations:
+          summary: "SLO: 99.9% availability violated"
+          description: "Service availability is {{ $value | humanizePercentage }} over 30 days, below the 99.9% SLO target"
+          impact: "Critical SLO violation - immediate action required"
+          runbook: "https://docs.example.com/runbooks/slo-availability"
+          
+      - alert: SLOAvailabilityErrorBudgetLow
+        expr: |
+          (
+            (99.9 - 100 * (1 - (sum(rate(http_requests_total{status=~"5.."}[30d])) / sum(rate(http_requests_total[30d])))))
+            /
+            (99.9 - 99.0)
+          ) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: slo
+          slo_type: availability
+          tier: critical
+        annotations:
+          summary: "SLO: Availability error budget 80% consumed"
+          description: "{{ $value | humanizePercentage }} of the 30-day availability error budget has been consumed"
+          impact: "High error budget consumption - reduce error rate to preserve SLO"
+          
+      - alert: SLOAvailabilityErrorBudgetCritical
+        expr: |
+          (
+            (99.9 - 100 * (1 - (sum(rate(http_requests_total{status=~"5.."}[30d])) / sum(rate(http_requests_total[30d])))))
+            /
+            (99.9 - 99.0)
+          ) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: availability
+          tier: critical
+        annotations:
+          summary: "SLO: Availability error budget critically low"
+          description: "{{ $value | humanizePercentage }} of the 30-day availability error budget consumed - SLO at risk"
+          impact: "Immediate action required to prevent SLO violation"
+
+  # Latency SLO Alerts
+  - name: slo_latency
+    rules:
+      - alert: SLOLatencyP95Violated
+        expr: |
+          100 * (
+            sum(rate(http_request_duration_seconds_bucket{le="0.5"}[7d]))
+            /
+            sum(rate(http_request_duration_seconds_count[7d]))
+          ) < 95.0
+        for: 5m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: latency
+          tier: important
+        annotations:
+          summary: "SLO: P95 latency SLO violated"
+          description: "Only {{ $value | humanizePercentage }} of requests served under 500ms over 7 days (target: 95%)"
+          impact: "Latency SLO violation - user experience degraded"
+          runbook: "https://docs.example.com/runbooks/slo-latency"
+          
+      - alert: SLOLatencyP95Warning
+        expr: |
+          100 * (
+            sum(rate(http_request_duration_seconds_bucket{le="0.5"}[7d]))
+            /
+            sum(rate(http_request_duration_seconds_count[7d]))
+          ) < 90.0
+        for: 10m
+        labels:
+          severity: warning
+          category: slo
+          slo_type: latency
+          tier: important
+        annotations:
+          summary: "SLO: P95 latency approaching violation"
+          description: "{{ $value | humanizePercentage }} of requests served under 500ms - approaching 95% SLO target"
+          impact: "Latency degradation detected - investigate performance issues"
+          
+      - alert: SLOLatencyP99Violated
+        expr: |
+          histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          category: slo
+          slo_type: latency
+          tier: important
+        annotations:
+          summary: "SLO: P99 latency exceeds 1 second"
+          description: "99th percentile latency is {{ $value | humanizeDuration }} - affecting user experience"
+          impact: "Tail latency degraded - investigate slow requests"
+
+  # Error Rate SLO Alerts
+  - name: slo_error_rate
+    rules:
+      - alert: SLOErrorRateViolated
+        expr: |
+          100 * (
+            1 - (
+              sum(rate(http_requests_total{status=~"[45].."}[7d]))
+              /
+              sum(rate(http_requests_total[7d]))
+            )
+          ) < 99.0
+        for: 5m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: error_rate
+          tier: critical
+        annotations:
+          summary: "SLO: Error rate SLO violated"
+          description: "Success rate is {{ $value | humanizePercentage }} over 7 days (target: 99%)"
+          impact: "Critical error rate SLO violation - reliability compromised"
+          runbook: "https://docs.example.com/runbooks/slo-error-rate"
+          
+      - alert: SLOErrorRateWarning
+        expr: |
+          100 * (
+            1 - (
+              sum(rate(http_requests_total{status=~"[45].."}[7d]))
+              /
+              sum(rate(http_requests_total[7d]))
+            )
+          ) < 98.0
+        for: 10m
+        labels:
+          severity: warning
+          category: slo
+          slo_type: error_rate
+          tier: critical
+        annotations:
+          summary: "SLO: Error rate approaching violation"
+          description: "Success rate is {{ $value | humanizePercentage }} - approaching 99% SLO target"
+          impact: "Elevated error rate - investigate root cause"
+          
+      - alert: SLOErrorBudgetBurnRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"[45].."}[1h]))
+            /
+            sum(rate(http_requests_total[1h]))
+          ) > (1 - 0.99) * 14.4
+        for: 5m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: error_rate
+          tier: critical
+        annotations:
+          summary: "SLO: Error budget burning too fast"
+          description: "Error budget burning at {{ $value | humanizePercentage }}x the acceptable rate"
+          impact: "Rapid error budget consumption - will exhaust budget in < 2 days at current rate"
+          runbook: "https://docs.example.com/runbooks/error-budget-burn"
+
+  # Throughput SLO Alerts
+  - name: slo_throughput
+    rules:
+      - alert: SLOThroughputBelowTarget
+        expr: |
+          sum(rate(http_requests_total[5m])) < 100
+        for: 15m
+        labels:
+          severity: warning
+          category: slo
+          slo_type: throughput
+          tier: important
+        annotations:
+          summary: "SLO: Throughput below target"
+          description: "Request rate is {{ $value | humanize }} req/s (target: 100 req/s)"
+          impact: "Traffic significantly below expected levels - potential service issue"
+          
+      - alert: SLOThroughputDropped
+        expr: |
+          sum(rate(http_requests_total[5m])) < 50
+        for: 10m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: throughput
+          tier: important
+        annotations:
+          summary: "SLO: Throughput critically low"
+          description: "Request rate dropped to {{ $value | humanize }} req/s (expected: 100+ req/s)"
+          impact: "Severe traffic drop - investigate service availability"
+
+  # Multi-Window Error Budget Burn Rate Alerts
+  # Based on Google SRE best practices for multi-window, multi-burn-rate alerts
+  - name: slo_burn_rate_multiwindow
+    rules:
+      # Fast burn (2% budget in 1 hour) - indicates severe issues
+      - alert: SLOErrorBudgetFastBurn
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total[1h]))
+          ) > (1 - 0.999) * 14.4
+          and
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > (1 - 0.999) * 14.4
+        for: 2m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: burn_rate
+          tier: critical
+          burn_speed: fast
+        annotations:
+          summary: "SLO: Fast error budget burn detected"
+          description: "Error budget burning at 14.4x rate - will exhaust 30-day budget in ~2 days"
+          impact: "Critical - immediate investigation required"
+          
+      # Medium burn (5% budget in 6 hours)
+      - alert: SLOErrorBudgetMediumBurn
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total[6h]))
+          ) > (1 - 0.999) * 6
+          and
+          (
+            sum(rate(http_requests_total{status=~"5.."}[30m]))
+            /
+            sum(rate(http_requests_total[30m]))
+          ) > (1 - 0.999) * 6
+        for: 15m
+        labels:
+          severity: warning
+          category: slo
+          slo_type: burn_rate
+          tier: critical
+          burn_speed: medium
+        annotations:
+          summary: "SLO: Medium error budget burn detected"
+          description: "Error budget burning at 6x rate - will exhaust 30-day budget in ~5 days"
+          impact: "Elevated error rate - investigate before critical"
+          
+      # Slow burn (10% budget in 3 days)
+      - alert: SLOErrorBudgetSlowBurn
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[3d]))
+            /
+            sum(rate(http_requests_total[3d]))
+          ) > (1 - 0.999) * 1
+          and
+          (
+            sum(rate(http_requests_total{status=~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total[6h]))
+          ) > (1 - 0.999) * 1
+        for: 1h
+        labels:
+          severity: info
+          category: slo
+          slo_type: burn_rate
+          tier: critical
+          burn_speed: slow
+        annotations:
+          summary: "SLO: Slow error budget burn detected"
+          description: "Error budget burning at expected rate - monitor for trends"
+          impact: "Normal error budget consumption - no immediate action required"
+
+  # Composite SLO Alerts (combining multiple signals)
+  - name: slo_composite
+    rules:
+      - alert: SLOServiceDegradation
+        expr: |
+          (
+            100 * (1 - (sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])))) < 99.5
+          )
+          and
+          (
+            histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.8
+          )
+        for: 10m
+        labels:
+          severity: warning
+          category: slo
+          slo_type: composite
+          tier: critical
+        annotations:
+          summary: "SLO: Service degradation detected (errors + latency)"
+          description: "Both error rate and latency are degraded - compound SLO impact"
+          impact: "Multiple SLO indicators degraded - investigate system health"
+          
+      - alert: SLOCriticalServiceFailure
+        expr: |
+          (
+            100 * (1 - (sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])))) < 95.0
+          )
+          and
+          (
+            sum(rate(http_requests_total[5m])) < 50
+          )
+        for: 5m
+        labels:
+          severity: critical
+          category: slo
+          slo_type: composite
+          tier: critical
+        annotations:
+          summary: "SLO: Critical service failure (errors + low traffic)"
+          description: "High error rate combined with traffic drop - potential outage"
+          impact: "Critical - possible service outage - immediate action required"
+
