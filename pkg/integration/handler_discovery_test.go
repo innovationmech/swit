@@ -66,7 +66,7 @@ type serviceWithFieldHandlers struct {
 
 // Test service with method handlers
 type serviceWithMethodHandlers struct {
-	handler *mockEventHandler
+	_ *mockEventHandler // unused field for testing field discovery
 }
 
 func (s *serviceWithMethodHandlers) GetOrderHandler() server.EventHandler {

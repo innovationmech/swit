@@ -107,7 +107,6 @@ type handlerLifecycleState struct {
 	state          LifecycleState
 	lastTransition time.Time
 	error          error
-	healthStatus   *HealthStatus
 }
 
 // NewHandlerLifecycleManager creates a new handler lifecycle manager.
