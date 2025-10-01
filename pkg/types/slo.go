@@ -348,4 +348,3 @@ func (m *SLOMonitor) GetErrorBudgetStatus() map[string]float64 {
 
 	return budgets
 }
-

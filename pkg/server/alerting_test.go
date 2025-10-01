@@ -332,9 +332,9 @@ func TestSLOAlertingHook(t *testing.T) {
 	sloMonitor.UpdateStatus("availability_99_9", 98.0) // Below critical threshold
 
 	alertConfig := &AlertingConfig{
-		Enabled:         true,
-		EnableSLOAlerts: true,
-		MaxAlertsPerMinute: 10,
+		Enabled:             true,
+		EnableSLOAlerts:     true,
+		MaxAlertsPerMinute:  10,
 		DeduplicationWindow: 1 * time.Minute,
 	}
 
@@ -387,11 +387,11 @@ func TestMetricsAlertHandler(t *testing.T) {
 	handler := MetricsAlertHandler(metricsCollector)
 
 	alert := &Alert{
-		ID:       "test-001",
-		Name:     "Test Alert",
-		Severity: AlertSeverityCritical,
+		ID:        "test-001",
+		Name:      "Test Alert",
+		Severity:  AlertSeverityCritical,
 		Timestamp: time.Now(),
-		Source:   "test",
+		Source:    "test",
 	}
 
 	err := handler(alert)
@@ -448,7 +448,7 @@ func TestPrometheusAlertHandler(t *testing.T) {
 
 	// Verify metrics were recorded
 	metrics := metricsCollector.GetMetrics()
-	
+
 	var foundActive, foundValue, foundThreshold bool
 	for _, m := range metrics {
 		// Metrics may have namespace/subsystem prefix
@@ -523,4 +523,3 @@ func TestAlertingManager_ConcurrentTriggers(t *testing.T) {
 
 	t.Logf("Processed %d out of 10 concurrent alerts", callCount)
 }
-
