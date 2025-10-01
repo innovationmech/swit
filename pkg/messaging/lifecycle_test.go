@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/innovationmech/swit/internal/testing"
+	testingx "github.com/innovationmech/swit/internal/testing"
 	"github.com/innovationmech/swit/pkg/messaging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

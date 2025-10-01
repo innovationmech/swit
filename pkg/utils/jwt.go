@@ -23,8 +23,9 @@ package utils
 
 import (
 	"errors"
-	"github.com/innovationmech/swit/internal/switauth/config"
 	"time"
+
+	"github.com/innovationmech/swit/internal/switauth/config"
 
 	"github.com/golang-jwt/jwt/v5"
 )

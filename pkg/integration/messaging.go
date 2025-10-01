@@ -34,9 +34,7 @@ import (
 // It implements the BusinessServiceRegistrar interface to enable messaging services
 // to be registered with the server's transport layer and dependency injection system.
 type MessagingServiceRegistrar struct {
-	broker    messaging.MessageBroker
-	publisher messaging.EventPublisher
-	config    *messaging.BrokerConfig
+	config *messaging.BrokerConfig
 }
 
 // NewMessagingServiceRegistrar creates a new messaging service registrar.

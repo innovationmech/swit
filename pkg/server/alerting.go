@@ -430,4 +430,3 @@ func PrometheusAlertHandler(metricsCollector types.MetricsCollector) AlertHandle
 		return nil
 	}
 }
-

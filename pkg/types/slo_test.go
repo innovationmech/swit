@@ -242,8 +242,8 @@ func TestSLOMonitor_IsHealthy(t *testing.T) {
 		{
 			name: "all healthy",
 			statusUpdates: map[string]float64{
-				"availability_99_9":        99.95,
-				"latency_p95_500ms":        96.0,
+				"availability_99_9":          99.95,
+				"latency_p95_500ms":          96.0,
 				"error_rate_below_1_percent": 99.5,
 			},
 			expectedHealthy: true,
@@ -251,8 +251,8 @@ func TestSLOMonitor_IsHealthy(t *testing.T) {
 		{
 			name: "one warning",
 			statusUpdates: map[string]float64{
-				"availability_99_9":        99.95,
-				"latency_p95_500ms":        92.0, // Warning
+				"availability_99_9":          99.95,
+				"latency_p95_500ms":          92.0, // Warning
 				"error_rate_below_1_percent": 99.5,
 			},
 			expectedHealthy: false,
@@ -260,8 +260,8 @@ func TestSLOMonitor_IsHealthy(t *testing.T) {
 		{
 			name: "one critical",
 			statusUpdates: map[string]float64{
-				"availability_99_9":        98.0, // Critical
-				"latency_p95_500ms":        96.0,
+				"availability_99_9":          98.0, // Critical
+				"latency_p95_500ms":          96.0,
 				"error_rate_below_1_percent": 99.5,
 			},
 			expectedHealthy: false,
@@ -359,23 +359,23 @@ func TestSLOMonitor_ErrorBudgetCalculation(t *testing.T) {
 	monitor := NewSLOMonitor(config)
 
 	tests := []struct {
-		name          string
-		currentValue  float64
+		name           string
+		currentValue   float64
 		expectedBudget float64
 	}{
 		{
-			name:          "perfect performance",
-			currentValue:  100.0,
+			name:           "perfect performance",
+			currentValue:   100.0,
 			expectedBudget: 1.0, // (99.9 - 99.0)
 		},
 		{
-			name:          "at target",
-			currentValue:  99.9,
+			name:           "at target",
+			currentValue:   99.9,
 			expectedBudget: 0.9, // (99.9 - 99.0)
 		},
 		{
-			name:          "at critical",
-			currentValue:  99.0,
+			name:           "at critical",
+			currentValue:   99.0,
 			expectedBudget: 0.0, // (99.0 - 99.0)
 		},
 	}
@@ -427,4 +427,3 @@ func TestSLOMonitor_ConcurrentAccess(t *testing.T) {
 		t.Error("Expected non-nil status after concurrent updates")
 	}
 }
-

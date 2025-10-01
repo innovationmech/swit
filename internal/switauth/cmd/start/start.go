@@ -23,11 +23,12 @@ package start
 
 import (
 	"context"
-	"github.com/innovationmech/swit/internal/switauth"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
+
+	"github.com/innovationmech/swit/internal/switauth"
 
 	"github.com/innovationmech/swit/internal/switauth/config"
 	"github.com/innovationmech/swit/pkg/logger"

@@ -23,11 +23,12 @@ package serve
 
 import (
 	"context"
-	"github.com/innovationmech/swit/internal/switserve"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/innovationmech/swit/internal/switserve"
 
 	cfg "github.com/innovationmech/swit/pkg/config"
 	"github.com/innovationmech/swit/pkg/logger"
