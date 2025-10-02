@@ -22,6 +22,8 @@
 package saga
 
 import (
+	"math"
+	"math/rand"
 	"time"
 )
 
@@ -665,4 +667,343 @@ func (s *BasicEventSubscription) GetMetadata() map[string]interface{} {
 // SetActive sets the active state of the subscription.
 func (s *BasicEventSubscription) SetActive(active bool) {
 	s.Active = active
+}
+
+// mathRand provides a random number function for jitter calculation.
+func mathRand(float64) float64 {
+	return rand.Float64()
+}
+
+// ==========================
+// Strategy Implementations
+// ==========================
+
+// RetryPolicyType represents the type of retry policy.
+type RetryPolicyType string
+
+const (
+	// RetryPolicyFixedDelay uses a fixed delay between retries.
+	RetryPolicyFixedDelay RetryPolicyType = "fixed_delay"
+
+	// RetryPolicyExponentialBackoff uses exponential backoff with jitter.
+	RetryPolicyExponentialBackoff RetryPolicyType = "exponential_backoff"
+
+	// RetryPolicyLinearBackoff uses linear backoff.
+	RetryPolicyLinearBackoff RetryPolicyType = "linear_backoff"
+
+	// RetryPolicyNoRetry disables retries.
+	RetryPolicyNoRetry RetryPolicyType = "no_retry"
+)
+
+// FixedDelayRetryPolicy implements a retry policy with fixed delay between attempts.
+type FixedDelayRetryPolicy struct {
+	maxAttempts int
+	delay       time.Duration
+}
+
+// NewFixedDelayRetryPolicy creates a new fixed delay retry policy.
+func NewFixedDelayRetryPolicy(maxAttempts int, delay time.Duration) *FixedDelayRetryPolicy {
+	return &FixedDelayRetryPolicy{
+		maxAttempts: maxAttempts,
+		delay:       delay,
+	}
+}
+
+// ShouldRetry determines if an operation should be retried.
+func (p *FixedDelayRetryPolicy) ShouldRetry(err error, attempt int) bool {
+	return attempt < p.maxAttempts
+}
+
+// GetRetryDelay returns the fixed delay before the next retry.
+func (p *FixedDelayRetryPolicy) GetRetryDelay(attempt int) time.Duration {
+	return p.delay
+}
+
+// GetMaxAttempts returns the maximum number of retry attempts.
+func (p *FixedDelayRetryPolicy) GetMaxAttempts() int {
+	return p.maxAttempts
+}
+
+// ExponentialBackoffRetryPolicy implements exponential backoff with jitter.
+type ExponentialBackoffRetryPolicy struct {
+	maxAttempts int
+	baseDelay   time.Duration
+	maxDelay    time.Duration
+	multiplier  float64
+	jitter      bool
+	random      func(float64) float64 // For testing injection
+}
+
+// NewExponentialBackoffRetryPolicy creates a new exponential backoff retry policy.
+func NewExponentialBackoffRetryPolicy(maxAttempts int, baseDelay, maxDelay time.Duration) *ExponentialBackoffRetryPolicy {
+	return &ExponentialBackoffRetryPolicy{
+		maxAttempts: maxAttempts,
+		baseDelay:   baseDelay,
+		maxDelay:    maxDelay,
+		multiplier:  2.0,
+		jitter:      true,
+		random:      mathRand,
+	}
+}
+
+// ShouldRetry determines if an operation should be retried.
+func (p *ExponentialBackoffRetryPolicy) ShouldRetry(err error, attempt int) bool {
+	return attempt < p.maxAttempts
+}
+
+// GetRetryDelay returns exponential backoff delay with optional jitter.
+func (p *ExponentialBackoffRetryPolicy) GetRetryDelay(attempt int) time.Duration {
+	delay := time.Duration(float64(p.baseDelay) * math.Pow(p.multiplier, float64(attempt)))
+
+	// Cap at max delay
+	if delay > p.maxDelay {
+		delay = p.maxDelay
+	}
+
+	// Add jitter if enabled
+	if p.jitter {
+		// Add random jitter of ±25% of the delay
+		jitterAmount := float64(delay) * 0.25 * (p.random(0)*2 - 1)
+		delay = time.Duration(float64(delay) + jitterAmount)
+	}
+
+	return delay
+}
+
+// GetMaxAttempts returns the maximum number of retry attempts.
+func (p *ExponentialBackoffRetryPolicy) GetMaxAttempts() int {
+	return p.maxAttempts
+}
+
+// SetJitter enables or disables jitter for retry delays.
+func (p *ExponentialBackoffRetryPolicy) SetJitter(enabled bool) {
+	p.jitter = enabled
+}
+
+// SetMultiplier sets the backoff multiplier.
+func (p *ExponentialBackoffRetryPolicy) SetMultiplier(multiplier float64) {
+	p.multiplier = multiplier
+}
+
+// LinearBackoffRetryPolicy implements linear backoff retry policy.
+type LinearBackoffRetryPolicy struct {
+	maxAttempts int
+	baseDelay   time.Duration
+	increment   time.Duration
+	maxDelay    time.Duration
+}
+
+// NewLinearBackoffRetryPolicy creates a new linear backoff retry policy.
+func NewLinearBackoffRetryPolicy(maxAttempts int, baseDelay, increment, maxDelay time.Duration) *LinearBackoffRetryPolicy {
+	return &LinearBackoffRetryPolicy{
+		maxAttempts: maxAttempts,
+		baseDelay:   baseDelay,
+		increment:   increment,
+		maxDelay:    maxDelay,
+	}
+}
+
+// ShouldRetry determines if an operation should be retried.
+func (p *LinearBackoffRetryPolicy) ShouldRetry(err error, attempt int) bool {
+	return attempt < p.maxAttempts
+}
+
+// GetRetryDelay returns linear backoff delay.
+func (p *LinearBackoffRetryPolicy) GetRetryDelay(attempt int) time.Duration {
+	delay := p.baseDelay + time.Duration(attempt)*p.increment
+
+	// Cap at max delay
+	if delay > p.maxDelay {
+		delay = p.maxDelay
+	}
+
+	return delay
+}
+
+// GetMaxAttempts returns the maximum number of retry attempts.
+func (p *LinearBackoffRetryPolicy) GetMaxAttempts() int {
+	return p.maxAttempts
+}
+
+// NoRetryPolicy implements a retry policy that never retries.
+type NoRetryPolicy struct{}
+
+// NewNoRetryPolicy creates a new no retry policy.
+func NewNoRetryPolicy() *NoRetryPolicy {
+	return &NoRetryPolicy{}
+}
+
+// ShouldRetry always returns false.
+func (p *NoRetryPolicy) ShouldRetry(err error, attempt int) bool {
+	return false
+}
+
+// GetRetryDelay returns zero duration.
+func (p *NoRetryPolicy) GetRetryDelay(attempt int) time.Duration {
+	return 0
+}
+
+// GetMaxAttempts returns 1 (no retries).
+func (p *NoRetryPolicy) GetMaxAttempts() int {
+	return 1
+}
+
+// CompensationStrategyType represents the type of compensation strategy.
+type CompensationStrategyType string
+
+const (
+	// CompensationStrategySequential compensates steps in reverse order sequentially.
+	CompensationStrategySequential CompensationStrategyType = "sequential"
+
+	// CompensationStrategyParallel compensates all steps in parallel.
+	CompensationStrategyParallel CompensationStrategyType = "parallel"
+
+	// CompensationStrategyCustom allows custom compensation logic.
+	CompensationStrategyCustom CompensationStrategyType = "custom"
+
+	// CompensationStrategyBestEffort attempts to compensate all steps even if some fail.
+	CompensationStrategyBestEffort CompensationStrategyType = "best_effort"
+)
+
+// SequentialCompensationStrategy compensates steps in reverse sequential order.
+type SequentialCompensationStrategy struct {
+	timeout time.Duration
+}
+
+// NewSequentialCompensationStrategy creates a new sequential compensation strategy.
+func NewSequentialCompensationStrategy(timeout time.Duration) *SequentialCompensationStrategy {
+	return &SequentialCompensationStrategy{
+		timeout: timeout,
+	}
+}
+
+// ShouldCompensate determines if compensation should be performed.
+func (s *SequentialCompensationStrategy) ShouldCompensate(err *SagaError) bool {
+	// Compensate for all non-cancellation errors
+	return err != nil && err.Type != ErrorTypeBusiness
+}
+
+// GetCompensationOrder returns the steps in reverse order for sequential compensation.
+func (s *SequentialCompensationStrategy) GetCompensationOrder(completedSteps []SagaStep) []SagaStep {
+	// Return steps in reverse order
+	reversed := make([]SagaStep, len(completedSteps))
+	for i, step := range completedSteps {
+		reversed[len(completedSteps)-1-i] = step
+	}
+	return reversed
+}
+
+// GetCompensationTimeout returns the timeout for compensation operations.
+func (s *SequentialCompensationStrategy) GetCompensationTimeout() time.Duration {
+	return s.timeout
+}
+
+// ParallelCompensationStrategy compensates all steps in parallel.
+type ParallelCompensationStrategy struct {
+	timeout time.Duration
+}
+
+// NewParallelCompensationStrategy creates a new parallel compensation strategy.
+func NewParallelCompensationStrategy(timeout time.Duration) *ParallelCompensationStrategy {
+	return &ParallelCompensationStrategy{
+		timeout: timeout,
+	}
+}
+
+// ShouldCompensate determines if compensation should be performed.
+func (s *ParallelCompensationStrategy) ShouldCompensate(err *SagaError) bool {
+	// Compensate for all non-cancellation errors
+	return err != nil && err.Type != ErrorTypeBusiness
+}
+
+// GetCompensationOrder returns the steps in original order for parallel compensation.
+func (s *ParallelCompensationStrategy) GetCompensationOrder(completedSteps []SagaStep) []SagaStep {
+	// Return steps as-is for parallel execution
+	steps := make([]SagaStep, len(completedSteps))
+	copy(steps, completedSteps)
+	return steps
+}
+
+// GetCompensationTimeout returns the timeout for compensation operations.
+func (s *ParallelCompensationStrategy) GetCompensationTimeout() time.Duration {
+	return s.timeout
+}
+
+// BestEffortCompensationStrategy attempts to compensate all steps even if some fail.
+type BestEffortCompensationStrategy struct {
+	timeout time.Duration
+}
+
+// NewBestEffortCompensationStrategy creates a new best effort compensation strategy.
+func NewBestEffortCompensationStrategy(timeout time.Duration) *BestEffortCompensationStrategy {
+	return &BestEffortCompensationStrategy{
+		timeout: timeout,
+	}
+}
+
+// ShouldCompensate determines if compensation should be performed.
+func (s *BestEffortCompensationStrategy) ShouldCompensate(err *SagaError) bool {
+	// Always attempt compensation
+	return err != nil
+}
+
+// GetCompensationOrder returns the steps in reverse order for best effort compensation.
+func (s *BestEffortCompensationStrategy) GetCompensationOrder(completedSteps []SagaStep) []SagaStep {
+	// Return steps in reverse order
+	reversed := make([]SagaStep, len(completedSteps))
+	for i, step := range completedSteps {
+		reversed[len(completedSteps)-1-i] = step
+	}
+	return reversed
+}
+
+// GetCompensationTimeout returns the timeout for compensation operations.
+func (s *BestEffortCompensationStrategy) GetCompensationTimeout() time.Duration {
+	return s.timeout
+}
+
+// CustomCompensationStrategy allows custom compensation logic.
+type CustomCompensationStrategy struct {
+	timeout              time.Duration
+	shouldCompensateFunc func(err *SagaError) bool
+	getOrderFunc         func(completedSteps []SagaStep) []SagaStep
+}
+
+// NewCustomCompensationStrategy creates a new custom compensation strategy.
+func NewCustomCompensationStrategy(
+	timeout time.Duration,
+	shouldCompensateFunc func(err *SagaError) bool,
+	getOrderFunc func(completedSteps []SagaStep) []SagaStep,
+) *CustomCompensationStrategy {
+	return &CustomCompensationStrategy{
+		timeout:              timeout,
+		shouldCompensateFunc: shouldCompensateFunc,
+		getOrderFunc:         getOrderFunc,
+	}
+}
+
+// ShouldCompensate determines if compensation should be performed using custom logic.
+func (s *CustomCompensationStrategy) ShouldCompensate(err *SagaError) bool {
+	if s.shouldCompensateFunc != nil {
+		return s.shouldCompensateFunc(err)
+	}
+	return err != nil
+}
+
+// GetCompensationOrder returns the compensation order using custom logic.
+func (s *CustomCompensationStrategy) GetCompensationOrder(completedSteps []SagaStep) []SagaStep {
+	if s.getOrderFunc != nil {
+		return s.getOrderFunc(completedSteps)
+	}
+	// Default to reverse order
+	reversed := make([]SagaStep, len(completedSteps))
+	for i, step := range completedSteps {
+		reversed[len(completedSteps)-1-i] = step
+	}
+	return reversed
+}
+
+// GetCompensationTimeout returns the timeout for compensation operations.
+func (s *CustomCompensationStrategy) GetCompensationTimeout() time.Duration {
+	return s.timeout
 }
