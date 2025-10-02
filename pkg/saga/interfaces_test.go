@@ -80,8 +80,9 @@ type MockStateStorage struct {
 }
 
 type MockEventPublisher struct {
-	events []*SagaEvent
-	closed bool
+	events        []*SagaEvent
+	subscriptions map[string]*BasicEventSubscription
+	closed        bool
 }
 
 type MockRetryPolicy struct {
@@ -1052,5 +1053,447 @@ func TestStateStorage_MultipleSagas(t *testing.T) {
 	_, err = storage.GetSaga(ctx, "saga-2")
 	if err == nil {
 		t.Error("Expected saga2 to be cleaned up")
+	}
+}
+
+// MockEventPublisher implementation
+
+func NewMockEventPublisher() *MockEventPublisher {
+	return &MockEventPublisher{
+		events:        make([]*SagaEvent, 0),
+		subscriptions: make(map[string]*BasicEventSubscription),
+		closed:        false,
+	}
+}
+
+func (m *MockEventPublisher) PublishEvent(ctx context.Context, event *SagaEvent) error {
+	if m.closed {
+		return NewSagaError("PUBLISHER_CLOSED", "publisher closed", ErrorTypeSystem, false)
+	}
+	m.events = append(m.events, event)
+	return nil
+}
+
+func (m *MockEventPublisher) Subscribe(filter EventFilter, handler EventHandler) (EventSubscription, error) {
+	if m.closed {
+		return nil, NewSagaError("PUBLISHER_CLOSED", "publisher closed", ErrorTypeSystem, false)
+	}
+
+	subscription := &BasicEventSubscription{
+		ID:        "test-subscription-" + time.Now().Format("20060102150405"),
+		Filter:    filter,
+		Handler:   handler,
+		Active:    true,
+		CreatedAt: time.Now(),
+		Metadata:  make(map[string]interface{}),
+	}
+
+	m.subscriptions[subscription.GetID()] = subscription
+	return subscription, nil
+}
+
+func (m *MockEventPublisher) Unsubscribe(subscription EventSubscription) error {
+	if m.closed {
+		return NewSagaError("PUBLISHER_CLOSED", "publisher closed", ErrorTypeSystem, false)
+	}
+
+	delete(m.subscriptions, subscription.GetID())
+	return nil
+}
+
+func (m *MockEventPublisher) Close() error {
+	m.closed = true
+	m.subscriptions = make(map[string]*BasicEventSubscription)
+	return nil
+}
+
+// GetEvents returns all published events (for testing).
+func (m *MockEventPublisher) GetEvents() []*SagaEvent {
+	return m.events
+}
+
+// GetSubscriptionCount returns the number of active subscriptions (for testing).
+func (m *MockEventPublisher) GetSubscriptionCount() int {
+	return len(m.subscriptions)
+}
+
+// MockEventHandler is a mock implementation of EventHandler for testing.
+type MockEventHandler struct {
+	name   string
+	events []*SagaEvent
+	errors []error
+}
+
+// NewMockEventHandler creates a new mock event handler.
+func NewMockEventHandler(name string) *MockEventHandler {
+	return &MockEventHandler{
+		name:   name,
+		events: make([]*SagaEvent, 0),
+		errors: make([]error, 0),
+	}
+}
+
+// HandleEvent implements EventHandler.HandleEvent.
+func (h *MockEventHandler) HandleEvent(ctx context.Context, event *SagaEvent) error {
+	h.events = append(h.events, event)
+
+	// For testing purposes, we'll simulate an error for certain event types
+	if event.Type == EventSagaFailed {
+		h.errors = append(h.errors, NewSagaError("SIMULATED_ERROR", "simulated handling error", ErrorTypeSystem, false))
+		return h.errors[len(h.errors)-1]
+	}
+
+	return nil
+}
+
+// GetHandlerName implements EventHandler.GetHandlerName.
+func (h *MockEventHandler) GetHandlerName() string {
+	return h.name
+}
+
+// GetEvents returns all handled events (for testing).
+func (h *MockEventHandler) GetEvents() []*SagaEvent {
+	return h.events
+}
+
+// GetErrors returns all handling errors (for testing).
+func (h *MockEventHandler) GetErrors() []error {
+	return h.errors
+}
+
+// TestEventPublisher_Interface tests the EventPublisher interface methods.
+func TestEventPublisher_Interface(t *testing.T) {
+	// Test that EventPublisher interface includes all required methods
+	var _ EventPublisher = (*MockEventPublisher)(nil)
+}
+
+// TestEventTypeFilter tests the EventTypeFilter implementation.
+func TestEventTypeFilter(t *testing.T) {
+	tests := []struct {
+		name          string
+		filter        *EventTypeFilter
+		event         *SagaEvent
+		expectedMatch bool
+	}{
+		{
+			name:          "Empty filter matches all events",
+			filter:        &EventTypeFilter{},
+			event:         &SagaEvent{Type: EventSagaStarted},
+			expectedMatch: true,
+		},
+		{
+			name: "Filter with included types matches",
+			filter: &EventTypeFilter{
+				Types: []SagaEventType{EventSagaStarted, EventSagaCompleted},
+			},
+			event:         &SagaEvent{Type: EventSagaStarted},
+			expectedMatch: true,
+		},
+		{
+			name: "Filter with included types doesn't match",
+			filter: &EventTypeFilter{
+				Types: []SagaEventType{EventSagaCompleted},
+			},
+			event:         &SagaEvent{Type: EventSagaStarted},
+			expectedMatch: false,
+		},
+		{
+			name: "Filter with excluded types doesn't match",
+			filter: &EventTypeFilter{
+				ExcludedTypes: []SagaEventType{EventSagaFailed},
+			},
+			event:         &SagaEvent{Type: EventSagaFailed},
+			expectedMatch: false,
+		},
+		{
+			name: "Filter with included and excluded types matches",
+			filter: &EventTypeFilter{
+				Types:         []SagaEventType{EventSagaStarted, EventSagaFailed},
+				ExcludedTypes: []SagaEventType{EventSagaTimedOut},
+			},
+			event:         &SagaEvent{Type: EventSagaStarted},
+			expectedMatch: true,
+		},
+		{
+			name: "Filter with included but excluded type doesn't match",
+			filter: &EventTypeFilter{
+				Types:         []SagaEventType{EventSagaStarted, EventSagaFailed},
+				ExcludedTypes: []SagaEventType{EventSagaFailed},
+			},
+			event:         &SagaEvent{Type: EventSagaFailed},
+			expectedMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.filter.Match(tt.event)
+			if result != tt.expectedMatch {
+				t.Errorf("EventTypeFilter.Match() = %v, expected %v", result, tt.expectedMatch)
+			}
+		})
+	}
+}
+
+// TestSagaIDFilter tests the SagaIDFilter implementation.
+func TestSagaIDFilter(t *testing.T) {
+	tests := []struct {
+		name          string
+		filter        *SagaIDFilter
+		event         *SagaEvent
+		expectedMatch bool
+	}{
+		{
+			name:          "Empty filter matches all events",
+			filter:        &SagaIDFilter{},
+			event:         &SagaEvent{SagaID: "saga-123"},
+			expectedMatch: true,
+		},
+		{
+			name: "Filter with included Saga IDs matches",
+			filter: &SagaIDFilter{
+				SagaIDs: []string{"saga-123", "saga-456"},
+			},
+			event:         &SagaEvent{SagaID: "saga-123"},
+			expectedMatch: true,
+		},
+		{
+			name: "Filter with included Saga IDs doesn't match",
+			filter: &SagaIDFilter{
+				SagaIDs: []string{"saga-456"},
+			},
+			event:         &SagaEvent{SagaID: "saga-123"},
+			expectedMatch: false,
+		},
+		{
+			name: "Filter with excluded Saga IDs doesn't match",
+			filter: &SagaIDFilter{
+				ExcludeSagaIDs: []string{"saga-123"},
+			},
+			event:         &SagaEvent{SagaID: "saga-123"},
+			expectedMatch: false,
+		},
+		{
+			name: "Filter with included and excluded Saga IDs matches",
+			filter: &SagaIDFilter{
+				SagaIDs:        []string{"saga-123", "saga-456"},
+				ExcludeSagaIDs: []string{"saga-789"},
+			},
+			event:         &SagaEvent{SagaID: "saga-123"},
+			expectedMatch: true,
+		},
+		{
+			name: "Filter with included but excluded Saga ID doesn't match",
+			filter: &SagaIDFilter{
+				SagaIDs:        []string{"saga-123", "saga-456"},
+				ExcludeSagaIDs: []string{"saga-123"},
+			},
+			event:         &SagaEvent{SagaID: "saga-123"},
+			expectedMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.filter.Match(tt.event)
+			if result != tt.expectedMatch {
+				t.Errorf("SagaIDFilter.Match() = %v, expected %v", result, tt.expectedMatch)
+			}
+		})
+	}
+}
+
+// TestCompositeFilter tests the CompositeFilter implementation.
+func TestCompositeFilter(t *testing.T) {
+	eventTypeFilter := &EventTypeFilter{
+		Types: []SagaEventType{EventSagaStarted},
+	}
+	sagaIDFilter := &SagaIDFilter{
+		SagaIDs: []string{"saga-123"},
+	}
+
+	tests := []struct {
+		name          string
+		filter        *CompositeFilter
+		event         *SagaEvent
+		expectedMatch bool
+	}{
+		{
+			name:          "Empty composite filter matches all events",
+			filter:        &CompositeFilter{},
+			event:         &SagaEvent{Type: EventSagaStarted, SagaID: "saga-123"},
+			expectedMatch: true,
+		},
+		{
+			name: "AND filter matches when all filters match",
+			filter: &CompositeFilter{
+				Filters:   []EventFilter{eventTypeFilter, sagaIDFilter},
+				Operation: FilterOperationAND,
+			},
+			event:         &SagaEvent{Type: EventSagaStarted, SagaID: "saga-123"},
+			expectedMatch: true,
+		},
+		{
+			name: "AND filter doesn't match when one filter doesn't match",
+			filter: &CompositeFilter{
+				Filters:   []EventFilter{eventTypeFilter, sagaIDFilter},
+				Operation: FilterOperationAND,
+			},
+			event:         &SagaEvent{Type: EventSagaCompleted, SagaID: "saga-123"},
+			expectedMatch: false,
+		},
+		{
+			name: "OR filter matches when at least one filter matches",
+			filter: &CompositeFilter{
+				Filters:   []EventFilter{eventTypeFilter, sagaIDFilter},
+				Operation: FilterOperationOR,
+			},
+			event:         &SagaEvent{Type: EventSagaStarted, SagaID: "saga-456"},
+			expectedMatch: true,
+		},
+		{
+			name: "OR filter doesn't match when no filters match",
+			filter: &CompositeFilter{
+				Filters:   []EventFilter{eventTypeFilter, sagaIDFilter},
+				Operation: FilterOperationOR,
+			},
+			event:         &SagaEvent{Type: EventSagaCompleted, SagaID: "saga-456"},
+			expectedMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.filter.Match(tt.event)
+			if result != tt.expectedMatch {
+				t.Errorf("CompositeFilter.Match() = %v, expected %v", result, tt.expectedMatch)
+			}
+		})
+	}
+}
+
+// TestBasicEventSubscription tests the BasicEventSubscription implementation.
+func TestBasicEventSubscription(t *testing.T) {
+	filter := &EventTypeFilter{
+		Types: []SagaEventType{EventSagaStarted},
+	}
+	handler := NewMockEventHandler("test-handler")
+	metadata := map[string]interface{}{
+		"test-key": "test-value",
+	}
+
+	subscription := &BasicEventSubscription{
+		ID:        "test-subscription-1",
+		Filter:    filter,
+		Handler:   handler,
+		Active:    true,
+		CreatedAt: time.Now(),
+		Metadata:  metadata,
+	}
+
+	// Test getter methods
+	if subscription.GetID() != "test-subscription-1" {
+		t.Errorf("BasicEventSubscription.GetID() = %v, expected %v", subscription.GetID(), "test-subscription-1")
+	}
+
+	if subscription.GetFilter() != filter {
+		t.Errorf("BasicEventSubscription.GetFilter() returned different filter")
+	}
+
+	if subscription.GetHandler() != handler {
+		t.Errorf("BasicEventSubscription.GetHandler() returned different handler")
+	}
+
+	if !subscription.IsActive() {
+		t.Errorf("BasicEventSubscription.IsActive() = %v, expected %v", subscription.IsActive(), true)
+	}
+
+	if subscription.GetHandler().GetHandlerName() != "test-handler" {
+		t.Errorf("EventHandler.GetHandlerName() = %v, expected %v", subscription.GetHandler().GetHandlerName(), "test-handler")
+	}
+
+	if subscription.GetMetadata()["test-key"] != "test-value" {
+		t.Errorf("BasicEventSubscription.GetMetadata() = %v, expected %v", subscription.GetMetadata(), metadata)
+	}
+
+	// Test SetActive
+	subscription.SetActive(false)
+	if subscription.IsActive() {
+		t.Errorf("BasicEventSubscription.IsActive() after SetActive(false) = %v, expected %v", subscription.IsActive(), false)
+	}
+}
+
+// TestEventPublisherWorkflow tests a complete event publisher workflow.
+func TestEventPublisherWorkflow(t *testing.T) {
+	ctx := context.Background()
+	publisher := NewMockEventPublisher()
+	handler := NewMockEventHandler("workflow-test")
+	filter := &EventTypeFilter{
+		Types: []SagaEventType{EventSagaStarted, EventSagaCompleted},
+	}
+
+	// Test subscription
+	subscription, err := publisher.Subscribe(filter, handler)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+
+	if publisher.GetSubscriptionCount() != 1 {
+		t.Errorf("Expected 1 subscription, got %d", publisher.GetSubscriptionCount())
+	}
+
+	// Test publishing events that match the filter
+	event1 := &SagaEvent{
+		ID:        "event-1",
+		SagaID:    "saga-123",
+		Type:      EventSagaStarted,
+		Version:   "1.0",
+		Timestamp: time.Now(),
+	}
+
+	err = publisher.PublishEvent(ctx, event1)
+	if err != nil {
+		t.Errorf("PublishEvent() error = %v", err)
+	}
+
+	// Test publishing events that don't match the filter
+	event2 := &SagaEvent{
+		ID:        "event-2",
+		SagaID:    "saga-123",
+		Type:      EventSagaFailed,
+		Version:   "1.0",
+		Timestamp: time.Now(),
+	}
+
+	err = publisher.PublishEvent(ctx, event2)
+	if err != nil {
+		t.Errorf("PublishEvent() error = %v", err)
+	}
+
+	// Test unsubscribe
+	err = publisher.Unsubscribe(subscription)
+	if err != nil {
+		t.Errorf("Unsubscribe() error = %v", err)
+	}
+
+	if publisher.GetSubscriptionCount() != 0 {
+		t.Errorf("Expected 0 subscriptions after unsubscribe, got %d", publisher.GetSubscriptionCount())
+	}
+
+	// Test close
+	err = publisher.Close()
+	if err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+
+	// Test operations after close
+	_, err = publisher.Subscribe(filter, handler)
+	if err == nil {
+		t.Error("Expected error when subscribing after close")
+	}
+
+	err = publisher.PublishEvent(ctx, event1)
+	if err == nil {
+		t.Error("Expected error when publishing after close")
 	}
 }

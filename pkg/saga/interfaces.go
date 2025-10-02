@@ -224,6 +224,13 @@ type EventPublisher interface {
 	// PublishEvent publishes a Saga event to the configured message broker.
 	PublishEvent(ctx context.Context, event *SagaEvent) error
 
+	// Subscribe subscribes to Saga events that match the given filter.
+	// Returns a subscription handle that can be used to unsubscribe.
+	Subscribe(filter EventFilter, handler EventHandler) (EventSubscription, error)
+
+	// Unsubscribe cancels a previous subscription.
+	Unsubscribe(subscription EventSubscription) error
+
 	// Close gracefully shuts down the event publisher.
 	Close() error
 }
@@ -250,4 +257,47 @@ type CompensationStrategy interface {
 
 	// GetCompensationTimeout returns the timeout for compensation operations.
 	GetCompensationTimeout() time.Duration
+}
+
+// EventFilter defines the criteria for filtering Saga events.
+// It allows subscribers to receive only the events they are interested in.
+type EventFilter interface {
+	// Match determines if an event matches the filter criteria.
+	Match(event *SagaEvent) bool
+
+	// GetDescription returns a human-readable description of the filter.
+	GetDescription() string
+}
+
+// EventHandler defines the interface for handling Saga events.
+// Subscribers implement this interface to process events they receive.
+type EventHandler interface {
+	// HandleEvent processes a received Saga event.
+	// Returns an error if the event processing fails.
+	HandleEvent(ctx context.Context, event *SagaEvent) error
+
+	// GetHandlerName returns the name of the event handler.
+	GetHandlerName() string
+}
+
+// EventSubscription represents a subscription to Saga events.
+// It provides methods to control the subscription lifecycle.
+type EventSubscription interface {
+	// GetID returns the unique identifier of this subscription.
+	GetID() string
+
+	// GetFilter returns the filter associated with this subscription.
+	GetFilter() EventFilter
+
+	// GetHandler returns the event handler for this subscription.
+	GetHandler() EventHandler
+
+	// IsActive returns true if the subscription is currently active.
+	IsActive() bool
+
+	// GetCreatedAt returns the time when this subscription was created.
+	GetCreatedAt() time.Time
+
+	// GetMetadata returns the metadata associated with this subscription.
+	GetMetadata() map[string]interface{}
 }
