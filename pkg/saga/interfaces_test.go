@@ -602,3 +602,455 @@ func TestSagaStep_Interface(t *testing.T) {
 		t.Error("Expected step to be retryable")
 	}
 }
+
+// MockStateStorage implementation
+
+func NewMockStateStorage() *MockStateStorage {
+	return &MockStateStorage{
+		sagas:      make(map[string]SagaInstance),
+		stepStates: make(map[string][]*StepState),
+	}
+}
+
+func (m *MockStateStorage) SaveSaga(ctx context.Context, saga SagaInstance) error {
+	if saga == nil {
+		return NewValidationError("Saga instance cannot be nil")
+	}
+	m.sagas[saga.GetID()] = saga
+	return nil
+}
+
+func (m *MockStateStorage) GetSaga(ctx context.Context, sagaID string) (SagaInstance, error) {
+	if sagaID == "" {
+		return nil, NewValidationError("Saga ID cannot be empty")
+	}
+
+	saga, exists := m.sagas[sagaID]
+	if !exists {
+		return nil, NewSagaNotFoundError(sagaID)
+	}
+
+	return saga, nil
+}
+
+func (m *MockStateStorage) UpdateSagaState(ctx context.Context, sagaID string, state SagaState, metadata map[string]interface{}) error {
+	if sagaID == "" {
+		return NewValidationError("Saga ID cannot be empty")
+	}
+
+	_, exists := m.sagas[sagaID]
+	if !exists {
+		return NewSagaNotFoundError(sagaID)
+	}
+
+	// Update the saga state - note: this is a simplified implementation
+	// In a real implementation, we would need to update the underlying saga instance
+	// For now, we'll just store the state change in metadata
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+	metadata["state"] = state.String()
+	metadata["state_updated_at"] = time.Now()
+
+	return nil
+}
+
+func (m *MockStateStorage) DeleteSaga(ctx context.Context, sagaID string) error {
+	if sagaID == "" {
+		return NewValidationError("Saga ID cannot be empty")
+	}
+
+	if _, exists := m.sagas[sagaID]; !exists {
+		return NewSagaNotFoundError(sagaID)
+	}
+
+	delete(m.sagas, sagaID)
+	delete(m.stepStates, sagaID)
+
+	return nil
+}
+
+func (m *MockStateStorage) GetActiveSagas(ctx context.Context, filter *SagaFilter) ([]SagaInstance, error) {
+	var activeSagas []SagaInstance
+
+	for _, saga := range m.sagas {
+		if saga.IsActive() {
+			// Apply filter if provided
+			if filter != nil {
+				// Simple filtering logic - in real implementation would be more comprehensive
+				if len(filter.States) > 0 {
+					found := false
+					for _, state := range filter.States {
+						if saga.GetState() == state {
+							found = true
+							break
+						}
+					}
+					if !found {
+						continue
+					}
+				}
+			}
+			activeSagas = append(activeSagas, saga)
+		}
+	}
+
+	return activeSagas, nil
+}
+
+func (m *MockStateStorage) GetTimeoutSagas(ctx context.Context, before time.Time) ([]SagaInstance, error) {
+	var timeoutSagas []SagaInstance
+
+	for _, saga := range m.sagas {
+		if saga.IsActive() && saga.GetStartTime().Add(saga.GetTimeout()).Before(before) {
+			timeoutSagas = append(timeoutSagas, saga)
+		}
+	}
+
+	return timeoutSagas, nil
+}
+
+func (m *MockStateStorage) SaveStepState(ctx context.Context, sagaID string, step *StepState) error {
+	if sagaID == "" {
+		return NewValidationError("Saga ID cannot be empty")
+	}
+	if step == nil {
+		return NewValidationError("Step state cannot be nil")
+	}
+
+	if _, exists := m.sagas[sagaID]; !exists {
+		return NewSagaNotFoundError(sagaID)
+	}
+
+	if m.stepStates[sagaID] == nil {
+		m.stepStates[sagaID] = []*StepState{}
+	}
+
+	// Find existing step state and update, or append new one
+	for i, existingStep := range m.stepStates[sagaID] {
+		if existingStep.ID == step.ID {
+			m.stepStates[sagaID][i] = step
+			return nil
+		}
+	}
+
+	m.stepStates[sagaID] = append(m.stepStates[sagaID], step)
+	return nil
+}
+
+func (m *MockStateStorage) GetStepStates(ctx context.Context, sagaID string) ([]*StepState, error) {
+	if sagaID == "" {
+		return nil, NewValidationError("Saga ID cannot be empty")
+	}
+
+	if _, exists := m.sagas[sagaID]; !exists {
+		return nil, NewSagaNotFoundError(sagaID)
+	}
+
+	states := m.stepStates[sagaID]
+	if states == nil {
+		return []*StepState{}, nil
+	}
+
+	return states, nil
+}
+
+func (m *MockStateStorage) CleanupExpiredSagas(ctx context.Context, olderThan time.Time) error {
+	var sagasToDelete []string
+
+	for sagaID, saga := range m.sagas {
+		if saga.GetEndTime().Before(olderThan) && saga.IsTerminal() {
+			sagasToDelete = append(sagasToDelete, sagaID)
+		}
+	}
+
+	for _, sagaID := range sagasToDelete {
+		delete(m.sagas, sagaID)
+		delete(m.stepStates, sagaID)
+	}
+
+	return nil
+}
+
+// Test functions for StateStorage interface
+
+func TestStateStorage_Interface(t *testing.T) {
+	storage := NewMockStateStorage()
+
+	// Test that the mock implements StateStorage interface
+	var _ StateStorage = storage
+
+	// Create test saga instance
+	instance := &MockSagaInstance{
+		id:           "test-saga-id",
+		definitionID: "test-definition",
+		state:        StateRunning,
+		currentStep:  0,
+		startTime:    time.Now(),
+		createdAt:    time.Now(),
+		updatedAt:    time.Now(),
+		totalSteps:   3,
+		timeout:      30 * time.Minute,
+		metadata:     map[string]interface{}{"key": "value"},
+		traceID:      "test-trace",
+	}
+
+	ctx := context.Background()
+
+	// Test SaveSaga
+	err := storage.SaveSaga(ctx, instance)
+	if err != nil {
+		t.Fatalf("SaveSaga failed: %v", err)
+	}
+
+	// Test GetSaga
+	retrievedInstance, err := storage.GetSaga(ctx, "test-saga-id")
+	if err != nil {
+		t.Fatalf("GetSaga failed: %v", err)
+	}
+
+	if retrievedInstance.GetID() != "test-saga-id" {
+		t.Errorf("Expected 'test-saga-id', got '%s'", retrievedInstance.GetID())
+	}
+
+	// Test GetSaga with non-existent ID
+	_, err = storage.GetSaga(ctx, "non-existent-id")
+	if err == nil {
+		t.Error("Expected error for non-existent saga")
+	}
+	if !IsSagaNotFound(err) {
+		t.Errorf("Expected SagaNotFoundError, got %v", err)
+	}
+
+	// Test UpdateSagaState
+	err = storage.UpdateSagaState(ctx, "test-saga-id", StateCompleted, map[string]interface{}{"updated": true})
+	if err != nil {
+		t.Fatalf("UpdateSagaState failed: %v", err)
+	}
+
+	// Test GetActiveSagas
+	activeSagas, err := storage.GetActiveSagas(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetActiveSagas failed: %v", err)
+	}
+
+	if len(activeSagas) != 1 {
+		t.Errorf("Expected 1 active saga, got %d", len(activeSagas))
+	}
+
+	// Test GetActiveSagas with filter
+	filter := &SagaFilter{
+		States: []SagaState{StateRunning},
+	}
+	filteredSagas, err := storage.GetActiveSagas(ctx, filter)
+	if err != nil {
+		t.Fatalf("GetActiveSagas with filter failed: %v", err)
+	}
+
+	if len(filteredSagas) != 1 {
+		t.Errorf("Expected 1 filtered saga, got %d", len(filteredSagas))
+	}
+
+	// Test SaveStepState
+	stepState := &StepState{
+		ID:        "test-step-id",
+		SagaID:    "test-saga-id",
+		StepIndex: 0,
+		Name:      "Test Step",
+		State:     StepStateCompleted,
+		CreatedAt: time.Now(),
+	}
+
+	err = storage.SaveStepState(ctx, "test-saga-id", stepState)
+	if err != nil {
+		t.Fatalf("SaveStepState failed: %v", err)
+	}
+
+	// Test GetStepStates
+	stepStates, err := storage.GetStepStates(ctx, "test-saga-id")
+	if err != nil {
+		t.Fatalf("GetStepStates failed: %v", err)
+	}
+
+	if len(stepStates) != 1 {
+		t.Errorf("Expected 1 step state, got %d", len(stepStates))
+	}
+
+	if stepStates[0].ID != "test-step-id" {
+		t.Errorf("Expected 'test-step-id', got '%s'", stepStates[0].ID)
+	}
+
+	// Test GetTimeoutSagas (should return none since saga hasn't timed out)
+	timeoutSagas, err := storage.GetTimeoutSagas(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("GetTimeoutSagas failed: %v", err)
+	}
+
+	if len(timeoutSagas) != 0 {
+		t.Errorf("Expected 0 timeout sagas, got %d", len(timeoutSagas))
+	}
+
+	// Test CleanupExpiredSagas
+	err = storage.CleanupExpiredSagas(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("CleanupExpiredSagas failed: %v", err)
+	}
+
+	// Test DeleteSaga
+	err = storage.DeleteSaga(ctx, "test-saga-id")
+	if err != nil {
+		t.Fatalf("DeleteSaga failed: %v", err)
+	}
+
+	// Verify saga is deleted
+	_, err = storage.GetSaga(ctx, "test-saga-id")
+	if err == nil {
+		t.Error("Expected error for deleted saga")
+	}
+}
+
+func TestStateStorage_ErrorCases(t *testing.T) {
+	storage := NewMockStateStorage()
+	ctx := context.Background()
+
+	// Test SaveSaga with nil saga
+	err := storage.SaveSaga(ctx, nil)
+	if err == nil {
+		t.Error("Expected error for nil saga")
+	}
+
+	// Test GetSaga with empty ID
+	_, err = storage.GetSaga(ctx, "")
+	if err == nil {
+		t.Error("Expected error for empty saga ID")
+	}
+
+	// Test UpdateSagaState with empty ID
+	err = storage.UpdateSagaState(ctx, "", StateCompleted, nil)
+	if err == nil {
+		t.Error("Expected error for empty saga ID")
+	}
+
+	// Test DeleteSaga with empty ID
+	err = storage.DeleteSaga(ctx, "")
+	if err == nil {
+		t.Error("Expected error for empty saga ID")
+	}
+
+	// Test SaveStepState with empty saga ID
+	stepState := &StepState{ID: "test-step", SagaID: "test-saga"}
+	err = storage.SaveStepState(ctx, "", stepState)
+	if err == nil {
+		t.Error("Expected error for empty saga ID")
+	}
+
+	// Test SaveStepState with nil step
+	err = storage.SaveStepState(ctx, "test-saga-id", nil)
+	if err == nil {
+		t.Error("Expected error for nil step")
+	}
+
+	// Test GetStepStates with empty ID
+	_, err = storage.GetStepStates(ctx, "")
+	if err == nil {
+		t.Error("Expected error for empty saga ID")
+	}
+
+	// Test operations on non-existent saga
+	_, err = storage.GetStepStates(ctx, "non-existent-saga")
+	if err == nil {
+		t.Error("Expected error for non-existent saga")
+	}
+}
+
+func TestStateStorage_MultipleSagas(t *testing.T) {
+	storage := NewMockStateStorage()
+	ctx := context.Background()
+
+	// Create multiple test sagas
+	saga1 := &MockSagaInstance{
+		id:           "saga-1",
+		definitionID: "test-definition",
+		state:        StateRunning,
+		startTime:    time.Now().Add(-2 * time.Hour),
+		createdAt:    time.Now().Add(-2 * time.Hour),
+		updatedAt:    time.Now(),
+		totalSteps:   3,
+		timeout:      1 * time.Hour, // Will be timed out
+	}
+
+	saga2 := &MockSagaInstance{
+		id:           "saga-2",
+		definitionID: "test-definition",
+		state:        StateCompleted,
+		startTime:    time.Now().Add(-3 * time.Hour),
+		endTime:      time.Now().Add(-2 * time.Hour),
+		createdAt:    time.Now().Add(-3 * time.Hour),
+		updatedAt:    time.Now(),
+		totalSteps:   3,
+		timeout:      1 * time.Hour,
+	}
+
+	saga3 := &MockSagaInstance{
+		id:           "saga-3",
+		definitionID: "test-definition",
+		state:        StateRunning,
+		startTime:    time.Now().Add(-30 * time.Minute),
+		createdAt:    time.Now().Add(-30 * time.Minute),
+		updatedAt:    time.Now(),
+		totalSteps:   3,
+		timeout:      2 * time.Hour, // Not timed out
+	}
+
+	// Save all sagas
+	err := storage.SaveSaga(ctx, saga1)
+	if err != nil {
+		t.Fatalf("SaveSaga saga1 failed: %v", err)
+	}
+
+	err = storage.SaveSaga(ctx, saga2)
+	if err != nil {
+		t.Fatalf("SaveSaga saga2 failed: %v", err)
+	}
+
+	err = storage.SaveSaga(ctx, saga3)
+	if err != nil {
+		t.Fatalf("SaveSaga saga3 failed: %v", err)
+	}
+
+	// Test GetActiveSagas
+	activeSagas, err := storage.GetActiveSagas(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetActiveSagas failed: %v", err)
+	}
+
+	if len(activeSagas) != 2 {
+		t.Errorf("Expected 2 active sagas, got %d", len(activeSagas))
+	}
+
+	// Test GetTimeoutSagas - saga1 should be timed out
+	timeoutSagas, err := storage.GetTimeoutSagas(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("GetTimeoutSagas failed: %v", err)
+	}
+
+	if len(timeoutSagas) != 1 {
+		t.Errorf("Expected 1 timeout saga, got %d", len(timeoutSagas))
+	}
+
+	if timeoutSagas[0].GetID() != "saga-1" {
+		t.Errorf("Expected 'saga-1', got '%s'", timeoutSagas[0].GetID())
+	}
+
+	// Test CleanupExpiredSagas - saga2 is completed and old enough
+	err = storage.CleanupExpiredSagas(ctx, time.Now().Add(-1*time.Hour))
+	if err != nil {
+		t.Fatalf("CleanupExpiredSagas failed: %v", err)
+	}
+
+	// Verify saga2 was cleaned up
+	_, err = storage.GetSaga(ctx, "saga-2")
+	if err == nil {
+		t.Error("Expected saga2 to be cleaned up")
+	}
+}
