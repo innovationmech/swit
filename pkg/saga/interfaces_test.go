@@ -23,6 +23,7 @@ package saga
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -1495,5 +1496,328 @@ func TestEventPublisherWorkflow(t *testing.T) {
 	err = publisher.PublishEvent(ctx, event1)
 	if err == nil {
 		t.Error("Expected error when publishing after close")
+	}
+}
+
+// ==========================
+// Strategy Implementation Tests
+// ==========================
+
+// TestFixedDelayRetryPolicy tests the FixedDelayRetryPolicy implementation.
+func TestFixedDelayRetryPolicy(t *testing.T) {
+	policy := NewFixedDelayRetryPolicy(3, 100*time.Millisecond)
+
+	// Test ShouldRetry
+	if !policy.ShouldRetry(errors.New("test error"), 0) {
+		t.Error("ShouldRetry returned false for attempt 0")
+	}
+	if !policy.ShouldRetry(errors.New("test error"), 2) {
+		t.Error("ShouldRetry returned false for attempt 2")
+	}
+	if policy.ShouldRetry(errors.New("test error"), 3) {
+		t.Error("ShouldRetry returned true for attempt 3 (exceeds max)")
+	}
+
+	// Test GetRetryDelay
+	delay := policy.GetRetryDelay(1)
+	if delay != 100*time.Millisecond {
+		t.Errorf("GetRetryDelay returned %v, expected %v", delay, 100*time.Millisecond)
+	}
+
+	// Test GetMaxAttempts
+	if policy.GetMaxAttempts() != 3 {
+		t.Errorf("GetMaxAttempts returned %d, expected 3", policy.GetMaxAttempts())
+	}
+}
+
+// TestExponentialBackoffRetryPolicy tests the ExponentialBackoffRetryPolicy implementation.
+func TestExponentialBackoffRetryPolicy(t *testing.T) {
+	policy := NewExponentialBackoffRetryPolicy(5, 100*time.Millisecond, 10*time.Second)
+
+	// Test ShouldRetry
+	if !policy.ShouldRetry(errors.New("test error"), 0) {
+		t.Error("ShouldRetry returned false for attempt 0")
+	}
+	if policy.ShouldRetry(errors.New("test error"), 5) {
+		t.Error("ShouldRetry returned true for attempt 5 (exceeds max)")
+	}
+
+	// Test GetRetryDelay without jitter
+	policy.SetJitter(false)
+	delay1 := policy.GetRetryDelay(0) // baseDelay
+	delay2 := policy.GetRetryDelay(1) // baseDelay * 2
+	delay3 := policy.GetRetryDelay(2) // baseDelay * 4
+
+	if delay1 != 100*time.Millisecond {
+		t.Errorf("GetRetryDelay(0) returned %v, expected %v", delay1, 100*time.Millisecond)
+	}
+	if delay2 != 200*time.Millisecond {
+		t.Errorf("GetRetryDelay(1) returned %v, expected %v", delay2, 200*time.Millisecond)
+	}
+	if delay3 != 400*time.Millisecond {
+		t.Errorf("GetRetryDelay(2) returned %v, expected %v", delay3, 400*time.Millisecond)
+	}
+
+	// Test max delay cap
+	longDelay := policy.GetRetryDelay(10)
+	if longDelay > 10*time.Second {
+		t.Errorf("GetRetryDelay returned %v, should be capped at %v", longDelay, 10*time.Second)
+	}
+
+	// Test GetMaxAttempts
+	if policy.GetMaxAttempts() != 5 {
+		t.Errorf("GetMaxAttempts returned %d, expected 5", policy.GetMaxAttempts())
+	}
+}
+
+// TestLinearBackoffRetryPolicy tests the LinearBackoffRetryPolicy implementation.
+func TestLinearBackoffRetryPolicy(t *testing.T) {
+	policy := NewLinearBackoffRetryPolicy(4, 100*time.Millisecond, 50*time.Millisecond, 1*time.Second)
+
+	// Test ShouldRetry
+	if !policy.ShouldRetry(errors.New("test error"), 0) {
+		t.Error("ShouldRetry returned false for attempt 0")
+	}
+	if policy.ShouldRetry(errors.New("test error"), 4) {
+		t.Error("ShouldRetry returned true for attempt 4 (exceeds max)")
+	}
+
+	// Test GetRetryDelay
+	delay1 := policy.GetRetryDelay(0) // baseDelay
+	delay2 := policy.GetRetryDelay(1) // baseDelay + increment
+	delay3 := policy.GetRetryDelay(2) // baseDelay + 2*increment
+
+	if delay1 != 100*time.Millisecond {
+		t.Errorf("GetRetryDelay(0) returned %v, expected %v", delay1, 100*time.Millisecond)
+	}
+	if delay2 != 150*time.Millisecond {
+		t.Errorf("GetRetryDelay(1) returned %v, expected %v", delay2, 150*time.Millisecond)
+	}
+	if delay3 != 200*time.Millisecond {
+		t.Errorf("GetRetryDelay(2) returned %v, expected %v", delay3, 200*time.Millisecond)
+	}
+
+	// Test max delay cap
+	longDelay := policy.GetRetryDelay(100)
+	if longDelay > 1*time.Second {
+		t.Errorf("GetRetryDelay returned %v, should be capped at %v", longDelay, 1*time.Second)
+	}
+
+	// Test GetMaxAttempts
+	if policy.GetMaxAttempts() != 4 {
+		t.Errorf("GetMaxAttempts returned %d, expected 4", policy.GetMaxAttempts())
+	}
+}
+
+// TestNoRetryPolicy tests the NoRetryPolicy implementation.
+func TestNoRetryPolicy(t *testing.T) {
+	policy := NewNoRetryPolicy()
+
+	// Test ShouldRetry - should always return false
+	if policy.ShouldRetry(errors.New("test error"), 0) {
+		t.Error("ShouldRetry returned true for attempt 0")
+	}
+
+	// Test GetRetryDelay - should return 0
+	delay := policy.GetRetryDelay(1)
+	if delay != 0 {
+		t.Errorf("GetRetryDelay returned %v, expected 0", delay)
+	}
+
+	// Test GetMaxAttempts - should return 1
+	if policy.GetMaxAttempts() != 1 {
+		t.Errorf("GetMaxAttempts returned %d, expected 1", policy.GetMaxAttempts())
+	}
+}
+
+// TestSequentialCompensationStrategy tests the SequentialCompensationStrategy implementation.
+func TestSequentialCompensationStrategy(t *testing.T) {
+	strategy := NewSequentialCompensationStrategy(30 * time.Second)
+
+	// Test ShouldCompensate
+	testError := NewSagaError("TEST_ERROR", "test error", ErrorTypeSystem, false)
+	businessError := NewSagaError("BUSINESS_ERROR", "business error", ErrorTypeBusiness, false)
+
+	if !strategy.ShouldCompensate(testError) {
+		t.Error("ShouldCompensate returned false for system error")
+	}
+	if strategy.ShouldCompensate(businessError) {
+		t.Error("ShouldCompensate returned true for business error")
+	}
+	if strategy.ShouldCompensate(nil) {
+		t.Error("ShouldCompensate returned true for nil error")
+	}
+
+	// Test GetCompensationTimeout
+	timeout := strategy.GetCompensationTimeout()
+	if timeout != 30*time.Second {
+		t.Errorf("GetCompensationTimeout returned %v, expected %v", timeout, 30*time.Second)
+	}
+
+	// Test GetCompensationOrder - should return steps in reverse order
+	step1 := &MockSagaStep{id: "step1"}
+	step2 := &MockSagaStep{id: "step2"}
+	step3 := &MockSagaStep{id: "step3"}
+	steps := []SagaStep{step1, step2, step3}
+
+	order := strategy.GetCompensationOrder(steps)
+	if len(order) != 3 {
+		t.Errorf("GetCompensationOrder returned %d steps, expected 3", len(order))
+	}
+	if order[0].GetID() != "step3" || order[1].GetID() != "step2" || order[2].GetID() != "step1" {
+		t.Error("GetCompensationOrder did not return steps in reverse order")
+	}
+}
+
+// TestParallelCompensationStrategy tests the ParallelCompensationStrategy implementation.
+func TestParallelCompensationStrategy(t *testing.T) {
+	strategy := NewParallelCompensationStrategy(60 * time.Second)
+
+	// Test ShouldCompensate
+	testError := NewSagaError("TEST_ERROR", "test error", ErrorTypeSystem, false)
+	businessError := NewSagaError("BUSINESS_ERROR", "business error", ErrorTypeBusiness, false)
+
+	if !strategy.ShouldCompensate(testError) {
+		t.Error("ShouldCompensate returned false for system error")
+	}
+	if strategy.ShouldCompensate(businessError) {
+		t.Error("ShouldCompensate returned true for business error")
+	}
+
+	// Test GetCompensationTimeout
+	timeout := strategy.GetCompensationTimeout()
+	if timeout != 60*time.Second {
+		t.Errorf("GetCompensationTimeout returned %v, expected %v", timeout, 60*time.Second)
+	}
+
+	// Test GetCompensationOrder - should return steps in original order for parallel execution
+	step1 := &MockSagaStep{id: "step1"}
+	step2 := &MockSagaStep{id: "step2"}
+	step3 := &MockSagaStep{id: "step3"}
+	steps := []SagaStep{step1, step2, step3}
+
+	order := strategy.GetCompensationOrder(steps)
+	if len(order) != 3 {
+		t.Errorf("GetCompensationOrder returned %d steps, expected 3", len(order))
+	}
+	// For parallel, order should be preserved
+	if order[0].GetID() != "step1" || order[1].GetID() != "step2" || order[2].GetID() != "step3" {
+		t.Error("GetCompensationOrder did not preserve original order for parallel execution")
+	}
+}
+
+// TestBestEffortCompensationStrategy tests the BestEffortCompensationStrategy implementation.
+func TestBestEffortCompensationStrategy(t *testing.T) {
+	strategy := NewBestEffortCompensationStrategy(45 * time.Second)
+
+	// Test ShouldCompensate - should always return true for non-nil errors
+	testError := NewSagaError("TEST_ERROR", "test error", ErrorTypeSystem, false)
+	businessError := NewSagaError("BUSINESS_ERROR", "business error", ErrorTypeBusiness, false)
+
+	if !strategy.ShouldCompensate(testError) {
+		t.Error("ShouldCompensate returned false for system error")
+	}
+	if !strategy.ShouldCompensate(businessError) {
+		t.Error("ShouldCompensate returned false for business error (best effort should compensate)")
+	}
+	if strategy.ShouldCompensate(nil) {
+		t.Error("ShouldCompensate returned true for nil error")
+	}
+
+	// Test GetCompensationTimeout
+	timeout := strategy.GetCompensationTimeout()
+	if timeout != 45*time.Second {
+		t.Errorf("GetCompensationTimeout returned %v, expected %v", timeout, 45*time.Second)
+	}
+
+	// Test GetCompensationOrder - should return steps in reverse order
+	step1 := &MockSagaStep{id: "step1"}
+	step2 := &MockSagaStep{id: "step2"}
+	steps := []SagaStep{step1, step2}
+
+	order := strategy.GetCompensationOrder(steps)
+	if len(order) != 2 {
+		t.Errorf("GetCompensationOrder returned %d steps, expected 2", len(order))
+	}
+	if order[0].GetID() != "step2" || order[1].GetID() != "step1" {
+		t.Error("GetCompensationOrder did not return steps in reverse order")
+	}
+}
+
+// TestCustomCompensationStrategy tests the CustomCompensationStrategy implementation.
+func TestCustomCompensationStrategy(t *testing.T) {
+	// Custom function that only compensates for timeout errors
+	shouldCompensateFunc := func(err *SagaError) bool {
+		return err != nil && err.Type == ErrorTypeTimeout
+	}
+
+	// Custom function that returns steps in a specific order based on metadata
+	getOrderFunc := func(completedSteps []SagaStep) []SagaStep {
+		// For testing, return steps sorted by ID
+		sorted := make([]SagaStep, len(completedSteps))
+		copy(sorted, completedSteps)
+
+		// Simple bubble sort by ID (for testing purposes)
+		for i := 0; i < len(sorted)-1; i++ {
+			for j := 0; j < len(sorted)-i-1; j++ {
+				if sorted[j].GetID() > sorted[j+1].GetID() {
+					sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
+				}
+			}
+		}
+		return sorted
+	}
+
+	strategy := NewCustomCompensationStrategy(90*time.Second, shouldCompensateFunc, getOrderFunc)
+
+	// Test ShouldCompensate with custom logic
+	timeoutError := NewSagaError("TIMEOUT_ERROR", "timeout error", ErrorTypeTimeout, false)
+	systemError := NewSagaError("SYSTEM_ERROR", "system error", ErrorTypeSystem, false)
+
+	if !strategy.ShouldCompensate(timeoutError) {
+		t.Error("ShouldCompensate returned false for timeout error")
+	}
+	if strategy.ShouldCompensate(systemError) {
+		t.Error("ShouldCompensate returned true for system error (custom logic only allows timeout)")
+	}
+
+	// Test GetCompensationTimeout
+	timeout := strategy.GetCompensationTimeout()
+	if timeout != 90*time.Second {
+		t.Errorf("GetCompensationTimeout returned %v, expected %v", timeout, 90*time.Second)
+	}
+
+	// Test GetCompensationOrder with custom logic
+	step1 := &MockSagaStep{id: "zebra"}
+	step2 := &MockSagaStep{id: "alpha"}
+	step3 := &MockSagaStep{id: "beta"}
+	steps := []SagaStep{step1, step2, step3}
+
+	order := strategy.GetCompensationOrder(steps)
+	if len(order) != 3 {
+		t.Errorf("GetCompensationOrder returned %d steps, expected 3", len(order))
+	}
+	// Should be sorted alphabetically: alpha, beta, zebra
+	if order[0].GetID() != "alpha" || order[1].GetID() != "beta" || order[2].GetID() != "zebra" {
+		t.Error("GetCompensationOrder did not apply custom sorting logic")
+	}
+
+	// Test with nil custom functions (should use default behavior)
+	defaultStrategy := NewCustomCompensationStrategy(30*time.Second, nil, nil)
+	testError := NewSagaError("TEST_ERROR", "test error", ErrorTypeSystem, false)
+
+	if !defaultStrategy.ShouldCompensate(testError) {
+		t.Error("Default ShouldCompensate returned false")
+	}
+
+	defaultOrder := defaultStrategy.GetCompensationOrder(steps)
+	if len(defaultOrder) != 3 {
+		t.Errorf("Default GetCompensationOrder returned %d steps, expected 3", len(defaultOrder))
+	}
+	// Default should return reverse order (beta, alpha, zebra from zebra, alpha, beta)
+	if defaultOrder[0].GetID() != "beta" || defaultOrder[1].GetID() != "alpha" || defaultOrder[2].GetID() != "zebra" {
+		t.Logf("Original steps: %v, %v, %v", steps[0].GetID(), steps[1].GetID(), steps[2].GetID())
+		t.Logf("Default order IDs: %v, %v, %v", defaultOrder[0].GetID(), defaultOrder[1].GetID(), defaultOrder[2].GetID())
+		t.Errorf("Default GetCompensationOrder did not return reverse order")
 	}
 }
