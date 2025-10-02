@@ -412,3 +412,257 @@ type SagaFilter struct {
 	// Metadata filter - include only Sagas with matching metadata
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
+
+// EventTypeFilter filters events based on their type.
+type EventTypeFilter struct {
+	// Types specifies which event types to include.
+	Types []SagaEventType `json:"types,omitempty"`
+
+	// ExcludedTypes specifies which event types to exclude.
+	ExcludedTypes []SagaEventType `json:"excluded_types,omitempty"`
+}
+
+// Match determines if an event matches the event type filter criteria.
+func (f *EventTypeFilter) Match(event *SagaEvent) bool {
+	// If no types specified, include all events except excluded ones
+	if len(f.Types) == 0 {
+		for _, excludedType := range f.ExcludedTypes {
+			if event.Type == excludedType {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Check if event type is in the included types
+	for _, includedType := range f.Types {
+		if event.Type == includedType {
+			// Also check it's not in excluded types
+			for _, excludedType := range f.ExcludedTypes {
+				if event.Type == excludedType {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
+	return false
+}
+
+// GetDescription returns a human-readable description of the event type filter.
+func (f *EventTypeFilter) GetDescription() string {
+	if len(f.Types) == 0 && len(f.ExcludedTypes) == 0 {
+		return "all events"
+	}
+
+	desc := "events matching types: "
+	for i, eventType := range f.Types {
+		if i > 0 {
+			desc += ", "
+		}
+		desc += string(eventType)
+	}
+
+	if len(f.ExcludedTypes) > 0 {
+		desc += " (excluding: "
+		for i, excludedType := range f.ExcludedTypes {
+			if i > 0 {
+				desc += ", "
+			}
+			desc += string(excludedType)
+		}
+		desc += ")"
+	}
+
+	return desc
+}
+
+// SagaIDFilter filters events based on their Saga ID.
+type SagaIDFilter struct {
+	// SagaIDs specifies which Saga IDs to include.
+	SagaIDs []string `json:"saga_ids,omitempty"`
+
+	// ExcludeSagaIDs specifies which Saga IDs to exclude.
+	ExcludeSagaIDs []string `json:"exclude_saga_ids,omitempty"`
+}
+
+// Match determines if an event matches the Saga ID filter criteria.
+func (f *SagaIDFilter) Match(event *SagaEvent) bool {
+	// If no Saga IDs specified, include all events except excluded ones
+	if len(f.SagaIDs) == 0 {
+		for _, excludedID := range f.ExcludeSagaIDs {
+			if event.SagaID == excludedID {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Check if event Saga ID is in the included IDs
+	for _, includedID := range f.SagaIDs {
+		if event.SagaID == includedID {
+			// Also check it's not in excluded IDs
+			for _, excludedID := range f.ExcludeSagaIDs {
+				if event.SagaID == excludedID {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
+	return false
+}
+
+// GetDescription returns a human-readable description of the Saga ID filter.
+func (f *SagaIDFilter) GetDescription() string {
+	if len(f.SagaIDs) == 0 && len(f.ExcludeSagaIDs) == 0 {
+		return "all Sagas"
+	}
+
+	desc := "events for Sagas: "
+	for i, sagaID := range f.SagaIDs {
+		if i > 0 {
+			desc += ", "
+		}
+		desc += sagaID
+	}
+
+	if len(f.ExcludeSagaIDs) > 0 {
+		desc += " (excluding: "
+		for i, excludedID := range f.ExcludeSagaIDs {
+			if i > 0 {
+				desc += ", "
+			}
+			desc += excludedID
+		}
+		desc += ")"
+	}
+
+	return desc
+}
+
+// CompositeFilter combines multiple filters with logical AND/OR operations.
+type CompositeFilter struct {
+	// Filters are the individual filters to combine.
+	Filters []EventFilter `json:"filters,omitempty"`
+
+	// Operation specifies how to combine the filters (AND or OR).
+	Operation FilterOperation `json:"operation"`
+}
+
+// FilterOperation represents the logical operation for combining filters.
+type FilterOperation string
+
+const (
+	// FilterOperationAND requires all filters to match.
+	FilterOperationAND FilterOperation = "AND"
+
+	// FilterOperationOR requires at least one filter to match.
+	FilterOperationOR FilterOperation = "OR"
+)
+
+// Match determines if an event matches the composite filter criteria.
+func (f *CompositeFilter) Match(event *SagaEvent) bool {
+	if len(f.Filters) == 0 {
+		return true
+	}
+
+	switch f.Operation {
+	case FilterOperationAND:
+		// All filters must match
+		for _, filter := range f.Filters {
+			if !filter.Match(event) {
+				return false
+			}
+		}
+		return true
+
+	case FilterOperationOR:
+		// At least one filter must match
+		for _, filter := range f.Filters {
+			if filter.Match(event) {
+				return true
+			}
+		}
+		return false
+
+	default:
+		// Default to AND operation
+		for _, filter := range f.Filters {
+			if !filter.Match(event) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// GetDescription returns a human-readable description of the composite filter.
+func (f *CompositeFilter) GetDescription() string {
+	if len(f.Filters) == 0 {
+		return "all events"
+	}
+
+	operation := string(f.Operation)
+	if operation == "" {
+		operation = string(FilterOperationAND)
+	}
+
+	desc := "events matching ("
+	for i, filter := range f.Filters {
+		if i > 0 {
+			desc += " " + operation + " "
+		}
+		desc += filter.GetDescription()
+	}
+	desc += ")"
+
+	return desc
+}
+
+// BasicEventSubscription provides a basic implementation of EventSubscription.
+type BasicEventSubscription struct {
+	ID        string                 `json:"id"`
+	Filter    EventFilter            `json:"filter"`
+	Handler   EventHandler           `json:"-"`
+	Active    bool                   `json:"active"`
+	CreatedAt time.Time              `json:"created_at"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// GetID returns the unique identifier of this subscription.
+func (s *BasicEventSubscription) GetID() string {
+	return s.ID
+}
+
+// GetFilter returns the filter associated with this subscription.
+func (s *BasicEventSubscription) GetFilter() EventFilter {
+	return s.Filter
+}
+
+// GetHandler returns the event handler for this subscription.
+func (s *BasicEventSubscription) GetHandler() EventHandler {
+	return s.Handler
+}
+
+// IsActive returns true if the subscription is currently active.
+func (s *BasicEventSubscription) IsActive() bool {
+	return s.Active
+}
+
+// GetCreatedAt returns the time when this subscription was created.
+func (s *BasicEventSubscription) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetMetadata returns the metadata associated with this subscription.
+func (s *BasicEventSubscription) GetMetadata() map[string]interface{} {
+	return s.Metadata
+}
+
+// SetActive sets the active state of the subscription.
+func (s *BasicEventSubscription) SetActive(active bool) {
+	s.Active = active
+}
