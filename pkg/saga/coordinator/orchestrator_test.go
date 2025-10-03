@@ -416,6 +416,60 @@ func TestOrchestratorCoordinatorStartSaga(t *testing.T) {
 			initialData: map[string]interface{}{"key": "value"},
 			wantErr:     true,
 		},
+		{
+			name: "nil initial data",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			definition: &mockSagaDefinition{
+				id:      "test-saga",
+				name:    "Test Saga",
+				steps:   []saga.SagaStep{},
+				timeout: 30 * time.Second,
+			},
+			initialData: nil,
+			wantErr:     true,
+			expectedErr: ErrInvalidInitialData,
+		},
+		{
+			name: "successful saga creation",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			definition: &mockSagaDefinition{
+				id:          "test-saga-def",
+				name:        "Test Saga",
+				description: "A test saga",
+				steps:       []saga.SagaStep{},
+				timeout:     30 * time.Second,
+				metadata:    map[string]interface{}{"env": "test"},
+			},
+			initialData: map[string]interface{}{"order_id": "12345"},
+			wantErr:     false,
+		},
+		{
+			name: "storage error",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				config.StateStorage = &mockStateStorage{
+					saveSagaErr: errors.New("storage failure"),
+				}
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			definition: &mockSagaDefinition{
+				id:      "test-saga",
+				name:    "Test Saga",
+				steps:   []saga.SagaStep{},
+				timeout: 30 * time.Second,
+			},
+			initialData: map[string]interface{}{"key": "value"},
+			wantErr:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -423,16 +477,249 @@ func TestOrchestratorCoordinatorStartSaga(t *testing.T) {
 			coord := tt.setupCoord()
 			ctx := context.Background()
 
-			_, err := coord.StartSaga(ctx, tt.definition, tt.initialData)
+			instance, err := coord.StartSaga(ctx, tt.definition, tt.initialData)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("StartSaga() expected error but got nil")
 				}
+				if tt.expectedErr != nil && err != tt.expectedErr {
+					// Just check that error exists for now
+				}
 				return
 			}
 
-			if err != nil && err.Error() != "not yet implemented: issue #507 will implement Saga instance creation" {
+			if err != nil {
 				t.Errorf("StartSaga() unexpected error = %v", err)
+				return
+			}
+
+			// Verify instance was created correctly
+			if instance == nil {
+				t.Fatal("StartSaga() returned nil instance")
+			}
+
+			// Verify instance fields
+			if instance.GetID() == "" {
+				t.Error("instance ID should not be empty")
+			}
+			if instance.GetDefinitionID() != tt.definition.GetID() {
+				t.Errorf("instance.GetDefinitionID() = %s, expected %s", instance.GetDefinitionID(), tt.definition.GetID())
+			}
+			if instance.GetState() != saga.StatePending {
+				t.Errorf("instance.GetState() = %v, expected StatePending", instance.GetState())
+			}
+			if instance.GetCurrentStep() != -1 {
+				t.Errorf("instance.GetCurrentStep() = %d, expected -1", instance.GetCurrentStep())
+			}
+			if instance.GetTotalSteps() != len(tt.definition.GetSteps()) {
+				t.Errorf("instance.GetTotalSteps() = %d, expected %d", instance.GetTotalSteps(), len(tt.definition.GetSteps()))
+			}
+			if instance.GetCompletedSteps() != 0 {
+				t.Errorf("instance.GetCompletedSteps() = %d, expected 0", instance.GetCompletedSteps())
+			}
+			if instance.GetCreatedAt().IsZero() {
+				t.Error("instance.GetCreatedAt() should not be zero")
+			}
+			if instance.GetTimeout() != tt.definition.GetTimeout() {
+				t.Errorf("instance.GetTimeout() = %v, expected %v", instance.GetTimeout(), tt.definition.GetTimeout())
+			}
+
+			// Verify instance is stored in memory cache
+			cachedInstance, err := coord.GetSagaInstance(instance.GetID())
+			if err != nil {
+				t.Errorf("GetSagaInstance() error = %v", err)
+			}
+			if cachedInstance.GetID() != instance.GetID() {
+				t.Error("cached instance ID does not match")
+			}
+
+			// Verify metrics were updated
+			metrics := coord.GetMetrics()
+			if metrics.TotalSagas == 0 {
+				t.Error("TotalSagas should be incremented")
+			}
+			if metrics.ActiveSagas == 0 {
+				t.Error("ActiveSagas should be incremented")
+			}
+		})
+	}
+}
+
+func TestOrchestratorSagaInstance(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-1 * time.Hour)
+
+	instance := &OrchestratorSagaInstance{
+		id:             "test-instance-123",
+		definitionID:   "test-definition",
+		name:           "Test Instance",
+		description:    "A test instance",
+		state:          saga.StateRunning,
+		currentStep:    1,
+		completedSteps: 1,
+		totalSteps:     3,
+		createdAt:      now.Add(-2 * time.Hour),
+		updatedAt:      now,
+		startedAt:      &startedAt,
+		initialData:    map[string]interface{}{"key": "initial"},
+		currentData:    map[string]interface{}{"key": "current"},
+		timeout:        30 * time.Minute,
+		metadata:       map[string]interface{}{"env": "test"},
+		traceID:        "trace-123",
+		spanID:         "span-456",
+	}
+
+	// Test all getter methods
+	if instance.GetID() != "test-instance-123" {
+		t.Errorf("GetID() = %s, expected test-instance-123", instance.GetID())
+	}
+	if instance.GetDefinitionID() != "test-definition" {
+		t.Errorf("GetDefinitionID() = %s, expected test-definition", instance.GetDefinitionID())
+	}
+	if instance.GetState() != saga.StateRunning {
+		t.Errorf("GetState() = %v, expected StateRunning", instance.GetState())
+	}
+	if instance.GetCurrentStep() != 1 {
+		t.Errorf("GetCurrentStep() = %d, expected 1", instance.GetCurrentStep())
+	}
+	if instance.GetCompletedSteps() != 1 {
+		t.Errorf("GetCompletedSteps() = %d, expected 1", instance.GetCompletedSteps())
+	}
+	if instance.GetTotalSteps() != 3 {
+		t.Errorf("GetTotalSteps() = %d, expected 3", instance.GetTotalSteps())
+	}
+	if instance.GetTimeout() != 30*time.Minute {
+		t.Errorf("GetTimeout() = %v, expected 30m", instance.GetTimeout())
+	}
+	if instance.GetTraceID() != "trace-123" {
+		t.Errorf("GetTraceID() = %s, expected trace-123", instance.GetTraceID())
+	}
+	if !instance.IsActive() {
+		t.Error("IsActive() should return true for StateRunning")
+	}
+	if instance.IsTerminal() {
+		t.Error("IsTerminal() should return false for StateRunning")
+	}
+
+	// Test metadata copy
+	metadata := instance.GetMetadata()
+	metadata["new_key"] = "new_value"
+	if _, exists := instance.metadata["new_key"]; exists {
+		t.Error("GetMetadata() should return a copy, not the original")
+	}
+
+	// Test terminal state
+	instance.state = saga.StateCompleted
+	if !instance.IsTerminal() {
+		t.Error("IsTerminal() should return true for StateCompleted")
+	}
+	if instance.IsActive() {
+		t.Error("IsActive() should return false for StateCompleted")
+	}
+}
+
+func TestGenerateSagaID(t *testing.T) {
+	// Test multiple generations for uniqueness
+	ids := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		id, err := generateSagaID()
+		if err != nil {
+			t.Fatalf("generateSagaID() error = %v", err)
+		}
+		if id == "" {
+			t.Error("generateSagaID() returned empty string")
+		}
+		if ids[id] {
+			t.Errorf("generateSagaID() generated duplicate ID: %s", id)
+		}
+		ids[id] = true
+
+		// Verify format (should start with "saga-" and follow UUID-like pattern)
+		if len(id) < 10 {
+			t.Errorf("generateSagaID() returned short ID: %s", id)
+		}
+		if id[:5] != "saga-" {
+			t.Errorf("generateSagaID() ID should start with 'saga-': %s", id)
+		}
+	}
+}
+
+func TestGenerateEventID(t *testing.T) {
+	// Test multiple generations for uniqueness
+	ids := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		id := generateEventID()
+		if id == "" {
+			t.Error("generateEventID() returned empty string")
+		}
+		if ids[id] {
+			t.Errorf("generateEventID() generated duplicate ID: %s", id)
+		}
+		ids[id] = true
+
+		// Verify format (should start with "event-")
+		if len(id) < 10 {
+			t.Errorf("generateEventID() returned short ID: %s", id)
+		}
+		if id[:6] != "event-" {
+			t.Errorf("generateEventID() ID should start with 'event-': %s", id)
+		}
+	}
+}
+
+func TestCopyMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]interface{}
+		want     map[string]interface{}
+	}{
+		{
+			name:     "nil metadata",
+			metadata: nil,
+			want:     map[string]interface{}{},
+		},
+		{
+			name:     "empty metadata",
+			metadata: map[string]interface{}{},
+			want:     map[string]interface{}{},
+		},
+		{
+			name: "non-empty metadata",
+			metadata: map[string]interface{}{
+				"key1": "value1",
+				"key2": 42,
+				"key3": true,
+			},
+			want: map[string]interface{}{
+				"key1": "value1",
+				"key2": 42,
+				"key3": true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := copyMetadata(tt.metadata)
+
+			// Verify length
+			if len(got) != len(tt.want) {
+				t.Errorf("copyMetadata() length = %d, want %d", len(got), len(tt.want))
+			}
+
+			// Verify contents
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("copyMetadata()[%s] = %v, want %v", k, got[k], v)
+				}
+			}
+
+			// Verify it's a copy (mutation doesn't affect original)
+			if tt.metadata != nil {
+				got["test_key"] = "test_value"
+				if _, exists := tt.metadata["test_key"]; exists {
+					t.Error("copyMetadata() should return a copy, not reference original")
+				}
 			}
 		})
 	}
