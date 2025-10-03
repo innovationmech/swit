@@ -406,6 +406,7 @@ func (se *stepExecutor) handleContextCancellation(
 }
 
 // handleStepFailure handles a step execution failure.
+// It triggers compensation for all completed steps before the failure.
 func (se *stepExecutor) handleStepFailure(
 	ctx context.Context,
 	stepIndex int,
@@ -417,27 +418,8 @@ func (se *stepExecutor) handleStepFailure(
 	se.instance.sagaError = stepState.Error
 	se.instance.mu.Unlock()
 
-	// Update state to Failed
-	if updateErr := se.updateSagaState(ctx, saga.StateFailed); updateErr != nil {
-		logger.GetSugaredLogger().Errorf("Failed to update state to Failed: %v", updateErr)
-	}
-
-	// Update coordinator metrics
-	se.coordinator.mu.Lock()
-	se.coordinator.metrics.FailedSagas++
-	se.coordinator.metrics.ActiveSagas--
-	se.coordinator.metrics.LastUpdateTime = time.Now()
-	se.coordinator.mu.Unlock()
-
 	// Calculate duration
 	duration := time.Since(se.instance.GetStartTime())
-
-	// Record metrics
-	se.coordinator.metricsCollector.RecordSagaFailed(
-		se.definition.GetID(),
-		stepState.Error.Type,
-		duration,
-	)
 
 	// Publish Saga failed event
 	event := &saga.SagaEvent{
@@ -462,6 +444,41 @@ func (se *stepExecutor) handleStepFailure(
 
 	if pubErr := se.coordinator.eventPublisher.PublishEvent(ctx, event); pubErr != nil {
 		logger.GetSugaredLogger().Warnf("Failed to publish Saga failed event: %v", pubErr)
+	}
+
+	// Record metrics
+	se.coordinator.metricsCollector.RecordSagaFailed(
+		se.definition.GetID(),
+		stepState.Error.Type,
+		duration,
+	)
+
+	// Trigger compensation for completed steps
+	if stepIndex > 0 {
+		// Get completed steps up to the failed step
+		allSteps := se.definition.GetSteps()
+		completedSteps := allSteps[:stepIndex]
+
+		// Create compensation executor
+		compensationExecutor := newCompensationExecutor(se.coordinator, se.instance, se.definition)
+
+		// Execute compensation
+		if compErr := compensationExecutor.executeCompensation(ctx, completedSteps); compErr != nil {
+			logger.GetSugaredLogger().Errorf("Compensation execution failed: %v", compErr)
+			// Continue even if compensation fails - the saga is already failed
+		}
+	} else {
+		// No steps completed, just update state to Failed
+		if updateErr := se.updateSagaState(ctx, saga.StateFailed); updateErr != nil {
+			logger.GetSugaredLogger().Errorf("Failed to update state to Failed: %v", updateErr)
+		}
+
+		// Update coordinator metrics
+		se.coordinator.mu.Lock()
+		se.coordinator.metrics.FailedSagas++
+		se.coordinator.metrics.ActiveSagas--
+		se.coordinator.metrics.LastUpdateTime = time.Now()
+		se.coordinator.mu.Unlock()
 	}
 
 	return err

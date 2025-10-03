@@ -272,9 +272,12 @@ func TestStepExecutorExecuteStepsWithStepFailure(t *testing.T) {
 		t.Error("Expected error, got nil")
 	}
 
-	// Verify instance state
-	if instance.GetState() != saga.StateFailed {
-		t.Errorf("Expected state Failed, got: %s", instance.GetState())
+	// Verify instance state - should be Compensated after automatic compensation
+	// Note: After implementing compensation logic in #509, step failures now trigger
+	// automatic compensation, so the final state is Compensated instead of Failed
+	expectedState := saga.StateCompensated
+	if instance.GetState() != expectedState {
+		t.Errorf("Expected state %s, got: %s", expectedState, instance.GetState())
 	}
 
 	// Verify completed steps (only step 1 should complete)
@@ -287,9 +290,14 @@ func TestStepExecutorExecuteStepsWithStepFailure(t *testing.T) {
 		t.Error("Expected saga error to be set")
 	}
 
-	// Verify metrics
+	// Verify metrics - saga failed count should still be 1 (failure recorded before compensation)
 	if metrics.sagaFailedCount != 1 {
 		t.Errorf("Expected 1 saga failed, got: %d", metrics.sagaFailedCount)
+	}
+
+	// Verify compensation was executed for step 1
+	if metrics.compensationCount < 1 {
+		t.Errorf("Expected at least 1 compensation, got: %d", metrics.compensationCount)
 	}
 }
 
