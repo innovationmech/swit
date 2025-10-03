@@ -25,6 +25,8 @@ package coordinator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -245,9 +247,149 @@ func (oc *OrchestratorCoordinator) StartSaga(
 		return nil, fmt.Errorf("invalid Saga definition: %w", err)
 	}
 
-	// Create Saga instance placeholder
-	// TODO: Implementation will be completed in issue #507
-	return nil, errors.New("not yet implemented: issue #507 will implement Saga instance creation")
+	// Validate initial data (basic check)
+	if initialData == nil {
+		return nil, ErrInvalidInitialData
+	}
+
+	// Generate unique Saga ID
+	sagaID, err := generateSagaID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate Saga ID: %w", err)
+	}
+
+	// Extract tracing information from context if available
+	traceID := extractTraceID(ctx)
+	spanID := extractSpanID(ctx)
+
+	// Get retry policy (use definition's policy or coordinator's default)
+	retryPolicy := definition.GetRetryPolicy()
+	if retryPolicy == nil {
+		retryPolicy = oc.retryPolicy
+	}
+
+	// Create Saga instance
+	now := time.Now()
+	instance := &OrchestratorSagaInstance{
+		id:             sagaID,
+		definitionID:   definition.GetID(),
+		name:           definition.GetName(),
+		description:    definition.GetDescription(),
+		state:          saga.StatePending,
+		currentStep:    -1, // No step is currently executing
+		completedSteps: 0,
+		totalSteps:     len(definition.GetSteps()),
+		createdAt:      now,
+		updatedAt:      now,
+		startedAt:      &now,
+		initialData:    initialData,
+		currentData:    initialData,
+		timeout:        definition.GetTimeout(),
+		retryPolicy:    retryPolicy,
+		metadata:       copyMetadata(definition.GetMetadata()),
+		traceID:        traceID,
+		spanID:         spanID,
+	}
+
+	// Persist initial state to storage
+	if err := oc.stateStorage.SaveSaga(ctx, instance); err != nil {
+		return nil, saga.NewStorageError("SaveSaga", err)
+	}
+
+	// Store instance in memory cache
+	oc.instances.Store(sagaID, instance)
+
+	// Update coordinator metrics
+	oc.mu.Lock()
+	oc.metrics.TotalSagas++
+	oc.metrics.ActiveSagas++
+	oc.metrics.LastUpdateTime = time.Now()
+	oc.mu.Unlock()
+
+	// Record metrics
+	oc.metricsCollector.RecordSagaStarted(definition.GetID())
+
+	// Publish Saga started event
+	event := &saga.SagaEvent{
+		ID:        generateEventID(),
+		SagaID:    sagaID,
+		Type:      saga.EventSagaStarted,
+		Version:   "1.0",
+		Timestamp: now,
+		Data:      initialData,
+		NewState:  saga.StatePending,
+		TraceID:   traceID,
+		SpanID:    spanID,
+		Source:    "OrchestratorCoordinator",
+		Metadata:  instance.metadata,
+	}
+
+	if err := oc.eventPublisher.PublishEvent(ctx, event); err != nil {
+		// Log error but don't fail the Saga creation
+		// The Saga is already persisted, so we continue
+		_ = saga.NewEventPublishError(saga.EventSagaStarted, err)
+	}
+
+	// TODO: In future issues, we will implement asynchronous step execution here
+	// For now, the Saga is created and persisted in Pending state
+
+	return instance, nil
+}
+
+// generateSagaID generates a unique identifier for a Saga instance.
+// It uses crypto/rand to generate a random hex string in UUID-like format.
+func generateSagaID() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID if random generation fails
+		return fmt.Sprintf("saga-%016x", time.Now().UnixNano()), nil
+	}
+
+	// Format as UUID-like string with "saga-" prefix
+	return fmt.Sprintf("saga-%08x-%04x-%04x-%04x-%012x",
+		bytes[0:4],
+		bytes[4:6],
+		bytes[6:8],
+		bytes[8:10],
+		bytes[10:16]), nil
+}
+
+// generateEventID generates a unique identifier for an event.
+func generateEventID() string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID
+		return fmt.Sprintf("event-%016x", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("event-%s", hex.EncodeToString(bytes))
+}
+
+// extractTraceID extracts the trace ID from the context.
+// This is a placeholder implementation that can be enhanced with OpenTelemetry integration.
+func extractTraceID(ctx context.Context) string {
+	// TODO: Integrate with OpenTelemetry or other tracing systems
+	// For now, return empty string
+	return ""
+}
+
+// extractSpanID extracts the span ID from the context.
+// This is a placeholder implementation that can be enhanced with OpenTelemetry integration.
+func extractSpanID(ctx context.Context) string {
+	// TODO: Integrate with OpenTelemetry or other tracing systems
+	// For now, return empty string
+	return ""
+}
+
+// copyMetadata creates a deep copy of metadata map to prevent external mutation.
+func copyMetadata(metadata map[string]interface{}) map[string]interface{} {
+	if metadata == nil {
+		return make(map[string]interface{})
+	}
+	copy := make(map[string]interface{}, len(metadata))
+	for k, v := range metadata {
+		copy[k] = v
+	}
+	return copy
 }
 
 // GetSagaInstance retrieves the current state of a Saga instance by its ID.
@@ -400,6 +542,172 @@ func (oc *OrchestratorCoordinator) StopSaga(ctx context.Context, sagaID string) 
 
 	// TODO: Implementation will be completed in future issues
 	return errors.New("not yet implemented: stop logic pending")
+}
+
+// OrchestratorSagaInstance is the concrete implementation of saga.SagaInstance for orchestrator-based Sagas.
+// It holds all runtime state and metadata for a Saga instance managed by OrchestratorCoordinator.
+type OrchestratorSagaInstance struct {
+	// Basic information
+	id           string
+	definitionID string
+	name         string
+	description  string
+
+	// State information
+	state          saga.SagaState
+	currentStep    int
+	completedSteps int
+	totalSteps     int
+
+	// Timing information
+	createdAt   time.Time
+	updatedAt   time.Time
+	startedAt   *time.Time
+	completedAt *time.Time
+	timedOutAt  *time.Time
+
+	// Data
+	initialData interface{}
+	currentData interface{}
+	resultData  interface{}
+
+	// Error information
+	sagaError *saga.SagaError
+
+	// Configuration
+	timeout     time.Duration
+	retryPolicy saga.RetryPolicy
+
+	// Metadata
+	metadata map[string]interface{}
+
+	// Tracing
+	traceID string
+	spanID  string
+
+	// Internal state management
+	mu sync.RWMutex
+}
+
+// GetID returns the unique identifier of this Saga instance.
+func (o *OrchestratorSagaInstance) GetID() string {
+	return o.id
+}
+
+// GetDefinitionID returns the identifier of the Saga definition this instance follows.
+func (o *OrchestratorSagaInstance) GetDefinitionID() string {
+	return o.definitionID
+}
+
+// GetState returns the current state of the Saga instance.
+func (o *OrchestratorSagaInstance) GetState() saga.SagaState {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.state
+}
+
+// GetCurrentStep returns the index of the currently executing step.
+func (o *OrchestratorSagaInstance) GetCurrentStep() int {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.currentStep
+}
+
+// GetStartTime returns the time when the Saga instance was created.
+func (o *OrchestratorSagaInstance) GetStartTime() time.Time {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.startedAt != nil {
+		return *o.startedAt
+	}
+	return time.Time{}
+}
+
+// GetEndTime returns the time when the Saga instance reached a terminal state.
+func (o *OrchestratorSagaInstance) GetEndTime() time.Time {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.completedAt != nil {
+		return *o.completedAt
+	}
+	if o.timedOutAt != nil {
+		return *o.timedOutAt
+	}
+	return time.Time{}
+}
+
+// GetResult returns the final result data of the Saga execution.
+func (o *OrchestratorSagaInstance) GetResult() interface{} {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.resultData
+}
+
+// GetError returns the error that caused the Saga to fail.
+func (o *OrchestratorSagaInstance) GetError() *saga.SagaError {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.sagaError
+}
+
+// GetTotalSteps returns the total number of steps in the Saga definition.
+func (o *OrchestratorSagaInstance) GetTotalSteps() int {
+	return o.totalSteps
+}
+
+// GetCompletedSteps returns the number of steps that have completed successfully.
+func (o *OrchestratorSagaInstance) GetCompletedSteps() int {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.completedSteps
+}
+
+// GetCreatedAt returns the creation time of the Saga instance.
+func (o *OrchestratorSagaInstance) GetCreatedAt() time.Time {
+	return o.createdAt
+}
+
+// GetUpdatedAt returns the last update time of the Saga instance.
+func (o *OrchestratorSagaInstance) GetUpdatedAt() time.Time {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.updatedAt
+}
+
+// GetTimeout returns the timeout duration for this Saga instance.
+func (o *OrchestratorSagaInstance) GetTimeout() time.Duration {
+	return o.timeout
+}
+
+// GetMetadata returns the metadata associated with this Saga instance.
+func (o *OrchestratorSagaInstance) GetMetadata() map[string]interface{} {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	// Return a copy to prevent external mutation
+	metadata := make(map[string]interface{}, len(o.metadata))
+	for k, v := range o.metadata {
+		metadata[k] = v
+	}
+	return metadata
+}
+
+// GetTraceID returns the distributed tracing identifier for this Saga.
+func (o *OrchestratorSagaInstance) GetTraceID() string {
+	return o.traceID
+}
+
+// IsTerminal returns true if the Saga is in a terminal state.
+func (o *OrchestratorSagaInstance) IsTerminal() bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.state.IsTerminal()
+}
+
+// IsActive returns true if the Saga is currently active.
+func (o *OrchestratorSagaInstance) IsActive() bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.state.IsActive()
 }
 
 // noOpMetricsCollector is a no-op implementation of MetricsCollector.
