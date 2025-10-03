@@ -33,9 +33,10 @@ import (
 // stepExecutor encapsulates the logic for executing Saga steps sequentially.
 // It manages step execution, state tracking, data passing, retry logic, and event publishing.
 type stepExecutor struct {
-	coordinator *OrchestratorCoordinator
-	instance    *OrchestratorSagaInstance
-	definition  saga.SagaDefinition
+	coordinator  *OrchestratorCoordinator
+	instance     *OrchestratorSagaInstance
+	definition   saga.SagaDefinition
+	errorHandler *ErrorHandler
 }
 
 // newStepExecutor creates a new step executor for the given Saga instance.
@@ -45,9 +46,10 @@ func newStepExecutor(
 	definition saga.SagaDefinition,
 ) *stepExecutor {
 	return &stepExecutor{
-		coordinator: coordinator,
-		instance:    instance,
-		definition:  definition,
+		coordinator:  coordinator,
+		instance:     instance,
+		definition:   definition,
+		errorHandler: newErrorHandler(coordinator, instance),
 	}
 }
 
@@ -139,21 +141,16 @@ func (se *stepExecutor) executeStep(
 	// Log step execution start
 	logger.GetSugaredLogger().Infof("Starting step %d (%s) for Saga %s", stepIndex, step.GetName(), se.instance.id)
 
-	// Execute with retry logic
+	// Execute with retry logic using ErrorHandler
 	var outputData interface{}
 	var lastErr error
 
-	retryPolicy := step.GetRetryPolicy()
-	if retryPolicy == nil {
-		retryPolicy = se.coordinator.retryPolicy
-	}
-
-	maxAttempts := retryPolicy.GetMaxAttempts()
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	maxAttempts := se.errorHandler.GetMaxAttempts(step)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		// Update step state to running
 		startTime := time.Now()
 		stepState.State = saga.StepStateRunning
-		stepState.Attempts = attempt + 1
+		stepState.Attempts = attempt
 		stepState.StartedAt = &startTime
 		stepState.LastAttemptAt = &startTime
 
@@ -169,10 +166,13 @@ func (se *stepExecutor) executeStep(
 		result, err := step.Execute(stepCtx, inputData)
 		cancel()
 
-		duration := time.Since(startTime)
+		endTime := time.Now()
+		duration := endTime.Sub(startTime)
 
 		if err == nil {
 			// Step succeeded
+			se.errorHandler.RecordAttempt(step, attempt, startTime, endTime, nil, false)
+
 			completedTime := time.Now()
 			stepState.State = saga.StepStateCompleted
 			stepState.CompletedAt = &completedTime
@@ -197,38 +197,33 @@ func (se *stepExecutor) executeStep(
 			// Publish step completed event
 			se.publishStepCompletedEvent(ctx, step, stepIndex, result, duration)
 
-			// Log success
-			logger.GetSugaredLogger().Infof("Step %d (%s) completed successfully in %v", stepIndex, step.GetName(), duration)
-
 			outputData = result
 			break
 		}
 
-		// Step failed
+		// Step failed - use ErrorHandler to determine retry strategy
 		lastErr = err
-		logger.GetSugaredLogger().Warnf("Step %d (%s) attempt %d failed: %v", stepIndex, step.GetName(), attempt+1, err)
-
-		// Create SagaError
-		sagaError := se.createSagaError(err, step)
+		sagaError := se.errorHandler.ClassifyError(err, step)
 		stepState.Error = sagaError
 
-		// Check if we should retry
-		if attempt+1 < maxAttempts && retryPolicy.ShouldRetry(err, attempt+1) {
+		// Determine if we should retry
+		shouldRetry, retryDelay := se.errorHandler.HandleStepError(ctx, step, err, attempt)
+
+		// Record the attempt
+		se.errorHandler.RecordAttempt(step, attempt, startTime, endTime, err, shouldRetry)
+
+		if shouldRetry && attempt < maxAttempts {
 			// Record retry metrics
 			se.coordinator.metricsCollector.RecordStepRetried(
 				se.definition.GetID(),
 				step.GetID(),
-				attempt+1,
+				attempt,
 			)
-
-			// Calculate retry delay
-			retryDelay := retryPolicy.GetRetryDelay(attempt)
-			logger.GetSugaredLogger().Infof("Retrying step %d (%s) after %v (attempt %d/%d)",
-				stepIndex, step.GetName(), retryDelay, attempt+1, maxAttempts)
 
 			// Wait before retry
 			select {
 			case <-time.After(retryDelay):
+				// Continue to next attempt
 			case <-ctx.Done():
 				stepState.State = saga.StepStateFailed
 				return stepState, nil, ctx.Err()
@@ -245,8 +240,13 @@ func (se *stepExecutor) executeStep(
 				duration,
 			)
 
+			// Handle max retries exceeded
+			if attempt >= maxAttempts {
+				lastErr = se.errorHandler.HandleMaxRetriesExceeded(ctx, step, lastErr, attempt)
+			}
+
 			// Publish step failed event
-			se.publishStepFailedEvent(ctx, step, stepIndex, sagaError, attempt+1)
+			se.publishStepFailedEvent(ctx, step, stepIndex, sagaError, attempt)
 
 			// Persist final step state
 			if saveErr := se.coordinator.stateStorage.SaveStepState(ctx, se.instance.id, stepState); saveErr != nil {
@@ -276,37 +276,7 @@ func (se *stepExecutor) createStepContext(ctx context.Context, step saga.SagaSte
 
 // getMaxAttempts returns the maximum number of attempts for a step.
 func (se *stepExecutor) getMaxAttempts(step saga.SagaStep) int {
-	retryPolicy := step.GetRetryPolicy()
-	if retryPolicy == nil {
-		retryPolicy = se.coordinator.retryPolicy
-	}
-	return retryPolicy.GetMaxAttempts()
-}
-
-// createSagaError creates a SagaError from a standard error.
-func (se *stepExecutor) createSagaError(err error, step saga.SagaStep) *saga.SagaError {
-	// Determine error type and retryability
-	errorType := saga.ErrorTypeService
-	retryable := step.IsRetryable(err)
-
-	// Check for specific error types
-	if err == context.DeadlineExceeded {
-		errorType = saga.ErrorTypeTimeout
-	} else if err == context.Canceled {
-		errorType = saga.ErrorTypeSystem
-	}
-
-	return &saga.SagaError{
-		Code:      "STEP_EXECUTION_FAILED",
-		Message:   err.Error(),
-		Type:      errorType,
-		Retryable: retryable,
-		Timestamp: time.Now(),
-		Details: map[string]interface{}{
-			"step_id":   step.GetID(),
-			"step_name": step.GetName(),
-		},
-	}
+	return se.errorHandler.GetMaxAttempts(step)
 }
 
 // updateSagaState updates the Saga instance state and persists it.
