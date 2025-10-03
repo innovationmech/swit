@@ -330,10 +330,30 @@ func (oc *OrchestratorCoordinator) StartSaga(
 		_ = saga.NewEventPublishError(saga.EventSagaStarted, err)
 	}
 
-	// TODO: In future issues, we will implement asynchronous step execution here
-	// For now, the Saga is created and persisted in Pending state
+	// Start asynchronous step execution
+	go oc.executeStepsAsync(context.Background(), instance, definition)
 
 	return instance, nil
+}
+
+// executeStepsAsync executes Saga steps asynchronously in a goroutine.
+// This allows StartSaga to return immediately while steps execute in the background.
+func (oc *OrchestratorCoordinator) executeStepsAsync(
+	ctx context.Context,
+	instance *OrchestratorSagaInstance,
+	definition saga.SagaDefinition,
+) {
+	// Create step executor
+	executor := newStepExecutor(oc, instance, definition)
+
+	// Execute steps
+	if err := executor.executeSteps(ctx); err != nil {
+		// Steps failed, error already handled by executor
+		// Nothing more to do here
+		return
+	}
+
+	// Steps completed successfully, result already handled by executor
 }
 
 // generateSagaID generates a unique identifier for a Saga instance.
