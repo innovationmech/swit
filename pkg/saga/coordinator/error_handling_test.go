@@ -39,13 +39,13 @@ type mockStep struct {
 	executeFunc func(ctx context.Context, data interface{}) (interface{}, error)
 }
 
-func (m *mockStep) GetID() string                            { return m.id }
-func (m *mockStep) GetName() string                          { return m.name }
-func (m *mockStep) GetDescription() string                   { return "mock step" }
-func (m *mockStep) GetTimeout() time.Duration                { return 5 * time.Second }
-func (m *mockStep) GetRetryPolicy() saga.RetryPolicy         { return m.retryPolicy }
-func (m *mockStep) GetMetadata() map[string]interface{}      { return nil }
-func (m *mockStep) IsRetryable(err error) bool               { return m.retryable }
+func (m *mockStep) GetID() string                                          { return m.id }
+func (m *mockStep) GetName() string                                        { return m.name }
+func (m *mockStep) GetDescription() string                                 { return "mock step" }
+func (m *mockStep) GetTimeout() time.Duration                              { return 5 * time.Second }
+func (m *mockStep) GetRetryPolicy() saga.RetryPolicy                       { return m.retryPolicy }
+func (m *mockStep) GetMetadata() map[string]interface{}                    { return nil }
+func (m *mockStep) IsRetryable(err error) bool                             { return m.retryable }
 func (m *mockStep) Compensate(ctx context.Context, data interface{}) error { return nil }
 
 func (m *mockStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
@@ -119,7 +119,7 @@ func TestErrorHandler_ClassifyError(t *testing.T) {
 				name:      "Test Step",
 				retryable: tt.stepRetryable,
 			}
-			
+
 			sagaErr := eh.ClassifyError(tt.err, step)
 
 			if sagaErr == nil {
@@ -277,39 +277,39 @@ func TestErrorHandler_GetRetryDelay(t *testing.T) {
 	eh := newErrorHandler(coordinator, instance)
 
 	tests := []struct {
-		name         string
-		retryPolicy  saga.RetryPolicy
-		attempt      int
-		minDelay     time.Duration
-		maxDelay     time.Duration
+		name        string
+		retryPolicy saga.RetryPolicy
+		attempt     int
+		minDelay    time.Duration
+		maxDelay    time.Duration
 	}{
 		{
-			name:         "fixed delay policy",
-			retryPolicy:  saga.NewFixedDelayRetryPolicy(3, 2*time.Second),
-			attempt:      1,
-			minDelay:     2 * time.Second,
-			maxDelay:     2 * time.Second,
+			name:        "fixed delay policy",
+			retryPolicy: saga.NewFixedDelayRetryPolicy(3, 2*time.Second),
+			attempt:     1,
+			minDelay:    2 * time.Second,
+			maxDelay:    2 * time.Second,
 		},
 		{
-			name:         "exponential backoff - attempt 0",
-			retryPolicy:  saga.NewExponentialBackoffRetryPolicy(5, time.Second, 10*time.Second),
-			attempt:      0,
-			minDelay:     500 * time.Millisecond,
-			maxDelay:     2 * time.Second,
+			name:        "exponential backoff - attempt 0",
+			retryPolicy: saga.NewExponentialBackoffRetryPolicy(5, time.Second, 10*time.Second),
+			attempt:     0,
+			minDelay:    500 * time.Millisecond,
+			maxDelay:    2 * time.Second,
 		},
 		{
-			name:         "exponential backoff - attempt 2",
-			retryPolicy:  saga.NewExponentialBackoffRetryPolicy(5, time.Second, 10*time.Second),
-			attempt:      2,
-			minDelay:     2 * time.Second,
-			maxDelay:     6 * time.Second,
+			name:        "exponential backoff - attempt 2",
+			retryPolicy: saga.NewExponentialBackoffRetryPolicy(5, time.Second, 10*time.Second),
+			attempt:     2,
+			minDelay:    2 * time.Second,
+			maxDelay:    6 * time.Second,
 		},
 		{
-			name:         "linear backoff",
-			retryPolicy:  saga.NewLinearBackoffRetryPolicy(3, time.Second, 500*time.Millisecond, 5*time.Second),
-			attempt:      2,
-			minDelay:     2 * time.Second,
-			maxDelay:     2 * time.Second,
+			name:        "linear backoff",
+			retryPolicy: saga.NewLinearBackoffRetryPolicy(3, time.Second, 500*time.Millisecond, 5*time.Second),
+			attempt:     2,
+			minDelay:    2 * time.Second,
+			maxDelay:    2 * time.Second,
 		},
 	}
 
@@ -557,4 +557,3 @@ func createTestInstance() *OrchestratorSagaInstance {
 }
 
 // Mock implementations are reused from orchestrator_test.go
-
