@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/saga"
@@ -65,11 +66,15 @@ func main() {
 
 // setupCoordinator 初始化 Saga Coordinator
 func setupCoordinator() (saga.SagaCoordinator, error) {
-	// 创建内存状态存储（生产环境建议使用 Redis 或数据库）
-	stateStorage := coordinator.NewInMemoryStateStorage()
+	// 注意：本示例为演示目的使用了简化的内存实现
+	// 生产环境中，您需要实现自己的 StateStorage 和 EventPublisher
+	// 或使用基于 Redis/数据库的实现
 
-	// 创建内存事件发布器（生产环境建议使用 Kafka 或 RabbitMQ）
-	eventPublisher := coordinator.NewInMemoryEventPublisher()
+	// 创建内存状态存储（示例实现）
+	stateStorage := newInMemoryStateStorage()
+
+	// 创建内存事件发布器（示例实现）
+	eventPublisher := newInMemoryEventPublisher()
 
 	// 配置 Coordinator
 	config := &coordinator.OrchestratorConfig{
@@ -355,12 +360,12 @@ func NewCreateOrderStep() *CreateOrderStep {
 	return &CreateOrderStep{}
 }
 
-func (s *CreateOrderStep) GetID() string                     { return "create-order" }
-func (s *CreateOrderStep) GetName() string                   { return "创建订单" }
-func (s *CreateOrderStep) GetDescription() string            { return "在订单服务中创建新订单" }
-func (s *CreateOrderStep) GetTimeout() time.Duration         { return 5 * time.Second }
-func (s *CreateOrderStep) GetRetryPolicy() saga.RetryPolicy  { return nil }
-func (s *CreateOrderStep) IsRetryable(err error) bool        { return true }
+func (s *CreateOrderStep) GetID() string                       { return "create-order" }
+func (s *CreateOrderStep) GetName() string                     { return "创建订单" }
+func (s *CreateOrderStep) GetDescription() string              { return "在订单服务中创建新订单" }
+func (s *CreateOrderStep) GetTimeout() time.Duration           { return 5 * time.Second }
+func (s *CreateOrderStep) GetRetryPolicy() saga.RetryPolicy    { return nil }
+func (s *CreateOrderStep) IsRetryable(err error) bool          { return true }
 func (s *CreateOrderStep) GetMetadata() map[string]interface{} { return nil }
 
 func (s *CreateOrderStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
@@ -394,12 +399,12 @@ func NewReserveInventoryStep() *ReserveInventoryStep {
 	return &ReserveInventoryStep{}
 }
 
-func (s *ReserveInventoryStep) GetID() string                     { return "reserve-inventory" }
-func (s *ReserveInventoryStep) GetName() string                   { return "预留库存" }
-func (s *ReserveInventoryStep) GetDescription() string            { return "在库存服务中预留商品库存" }
-func (s *ReserveInventoryStep) GetTimeout() time.Duration         { return 5 * time.Second }
-func (s *ReserveInventoryStep) GetRetryPolicy() saga.RetryPolicy  { return nil }
-func (s *ReserveInventoryStep) IsRetryable(err error) bool        { return true }
+func (s *ReserveInventoryStep) GetID() string                       { return "reserve-inventory" }
+func (s *ReserveInventoryStep) GetName() string                     { return "预留库存" }
+func (s *ReserveInventoryStep) GetDescription() string              { return "在库存服务中预留商品库存" }
+func (s *ReserveInventoryStep) GetTimeout() time.Duration           { return 5 * time.Second }
+func (s *ReserveInventoryStep) GetRetryPolicy() saga.RetryPolicy    { return nil }
+func (s *ReserveInventoryStep) IsRetryable(err error) bool          { return true }
 func (s *ReserveInventoryStep) GetMetadata() map[string]interface{} { return nil }
 
 func (s *ReserveInventoryStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
@@ -435,12 +440,12 @@ func NewProcessPaymentStep(simulateFailure bool) *ProcessPaymentStep {
 	return &ProcessPaymentStep{simulateFailure: simulateFailure}
 }
 
-func (s *ProcessPaymentStep) GetID() string                     { return "process-payment" }
-func (s *ProcessPaymentStep) GetName() string                   { return "处理支付" }
-func (s *ProcessPaymentStep) GetDescription() string            { return "在支付服务中处理支付" }
-func (s *ProcessPaymentStep) GetTimeout() time.Duration         { return 10 * time.Second }
-func (s *ProcessPaymentStep) GetRetryPolicy() saga.RetryPolicy  { return nil }
-func (s *ProcessPaymentStep) IsRetryable(err error) bool        { return false }
+func (s *ProcessPaymentStep) GetID() string                       { return "process-payment" }
+func (s *ProcessPaymentStep) GetName() string                     { return "处理支付" }
+func (s *ProcessPaymentStep) GetDescription() string              { return "在支付服务中处理支付" }
+func (s *ProcessPaymentStep) GetTimeout() time.Duration           { return 10 * time.Second }
+func (s *ProcessPaymentStep) GetRetryPolicy() saga.RetryPolicy    { return nil }
+func (s *ProcessPaymentStep) IsRetryable(err error) bool          { return false }
 func (s *ProcessPaymentStep) GetMetadata() map[string]interface{} { return nil }
 
 func (s *ProcessPaymentStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
@@ -481,12 +486,12 @@ func NewConfirmOrderStep() *ConfirmOrderStep {
 	return &ConfirmOrderStep{}
 }
 
-func (s *ConfirmOrderStep) GetID() string                     { return "confirm-order" }
-func (s *ConfirmOrderStep) GetName() string                   { return "确认订单" }
-func (s *ConfirmOrderStep) GetDescription() string            { return "确认订单并准备发货" }
-func (s *ConfirmOrderStep) GetTimeout() time.Duration         { return 5 * time.Second }
-func (s *ConfirmOrderStep) GetRetryPolicy() saga.RetryPolicy  { return nil }
-func (s *ConfirmOrderStep) IsRetryable(err error) bool        { return true }
+func (s *ConfirmOrderStep) GetID() string                       { return "confirm-order" }
+func (s *ConfirmOrderStep) GetName() string                     { return "确认订单" }
+func (s *ConfirmOrderStep) GetDescription() string              { return "确认订单并准备发货" }
+func (s *ConfirmOrderStep) GetTimeout() time.Duration           { return 5 * time.Second }
+func (s *ConfirmOrderStep) GetRetryPolicy() saga.RetryPolicy    { return nil }
+func (s *ConfirmOrderStep) IsRetryable(err error) bool          { return true }
 func (s *ConfirmOrderStep) GetMetadata() map[string]interface{} { return nil }
 
 func (s *ConfirmOrderStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
@@ -513,3 +518,81 @@ func (s *ConfirmOrderStep) Compensate(ctx context.Context, data interface{}) err
 	return nil
 }
 
+// ==========================
+// 简单的内存实现（仅供示例使用）
+// 生产环境请使用 Redis 或数据库实现
+// ==========================
+
+type inMemoryStateStorage struct {
+	sagas sync.Map
+}
+
+func newInMemoryStateStorage() *inMemoryStateStorage {
+	return &inMemoryStateStorage{}
+}
+
+func (s *inMemoryStateStorage) SaveSaga(ctx context.Context, sagaInstance saga.SagaInstance) error {
+	s.sagas.Store(sagaInstance.GetID(), sagaInstance)
+	return nil
+}
+
+func (s *inMemoryStateStorage) GetSaga(ctx context.Context, sagaID string) (saga.SagaInstance, error) {
+	if instance, ok := s.sagas.Load(sagaID); ok {
+		return instance.(saga.SagaInstance), nil
+	}
+	return nil, fmt.Errorf("saga not found: %s", sagaID)
+}
+
+func (s *inMemoryStateStorage) UpdateSagaState(ctx context.Context, sagaID string, state saga.SagaState, metadata map[string]interface{}) error {
+	return nil
+}
+
+func (s *inMemoryStateStorage) DeleteSaga(ctx context.Context, sagaID string) error {
+	s.sagas.Delete(sagaID)
+	return nil
+}
+
+func (s *inMemoryStateStorage) GetActiveSagas(ctx context.Context, filter *saga.SagaFilter) ([]saga.SagaInstance, error) {
+	return []saga.SagaInstance{}, nil
+}
+
+func (s *inMemoryStateStorage) GetTimeoutSagas(ctx context.Context, before time.Time) ([]saga.SagaInstance, error) {
+	return []saga.SagaInstance{}, nil
+}
+
+func (s *inMemoryStateStorage) SaveStepState(ctx context.Context, sagaID string, step *saga.StepState) error {
+	return nil
+}
+
+func (s *inMemoryStateStorage) GetStepStates(ctx context.Context, sagaID string) ([]*saga.StepState, error) {
+	return []*saga.StepState{}, nil
+}
+
+func (s *inMemoryStateStorage) CleanupExpiredSagas(ctx context.Context, olderThan time.Time) error {
+	return nil
+}
+
+type inMemoryEventPublisher struct {
+	mu sync.RWMutex
+}
+
+func newInMemoryEventPublisher() *inMemoryEventPublisher {
+	return &inMemoryEventPublisher{}
+}
+
+func (p *inMemoryEventPublisher) PublishEvent(ctx context.Context, event *saga.SagaEvent) error {
+	// 在实际应用中，这里应该发送事件到消息队列
+	return nil
+}
+
+func (p *inMemoryEventPublisher) Subscribe(filter saga.EventFilter, handler saga.EventHandler) (saga.EventSubscription, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (p *inMemoryEventPublisher) Unsubscribe(subscription saga.EventSubscription) error {
+	return nil
+}
+
+func (p *inMemoryEventPublisher) Close() error {
+	return nil
+}
