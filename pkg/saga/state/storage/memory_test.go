@@ -1608,3 +1608,418 @@ func TestMemoryStateStorage_MaxCapacity(t *testing.T) {
 		t.Errorf("updating existing saga should be allowed: %v", err)
 	}
 }
+
+// TestMemoryStateStorage_UpdateSagaState_ContextCancellation tests UpdateSagaState with cancelled context.
+func TestMemoryStateStorage_UpdateSagaState_ContextCancellation(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := storage.UpdateSagaState(ctx, "saga-1", saga.StateCompleted, nil)
+	if err == nil {
+		t.Error("expected error when context is cancelled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+// TestMemoryStateStorage_GetActiveSagas_ContextCancellation tests GetActiveSagas with cancelled context.
+func TestMemoryStateStorage_GetActiveSagas_ContextCancellation(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := storage.GetActiveSagas(ctx, nil)
+	if err == nil {
+		t.Error("expected error when context is cancelled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+// TestMemoryStateStorage_GetTimeoutSagas_ContextCancellation tests GetTimeoutSagas with cancelled context.
+func TestMemoryStateStorage_GetTimeoutSagas_ContextCancellation(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := storage.GetTimeoutSagas(ctx, time.Now())
+	if err == nil {
+		t.Error("expected error when context is cancelled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+// TestMemoryStateStorage_CleanupExpiredSagas_ContextCancellation tests CleanupExpiredSagas with cancelled context.
+func TestMemoryStateStorage_CleanupExpiredSagas_ContextCancellation(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := storage.CleanupExpiredSagas(ctx, time.Now())
+	if err == nil {
+		t.Error("expected error when context is cancelled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+// TestMemoryStateStorage_SaveStepState_ContextCancellation tests SaveStepState with cancelled context.
+func TestMemoryStateStorage_SaveStepState_ContextCancellation(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	step := &saga.StepState{
+		ID:        "step-1",
+		SagaID:    "saga-1",
+		StepIndex: 0,
+		Name:      "Step 1",
+		State:     saga.StepStateCompleted,
+	}
+
+	err := storage.SaveStepState(ctx, "saga-1", step)
+	if err == nil {
+		t.Error("expected error when context is cancelled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+// TestMemoryStateStorage_GetStepStates_ContextCancellation tests GetStepStates with cancelled context.
+func TestMemoryStateStorage_GetStepStates_ContextCancellation(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := storage.GetStepStates(ctx, "saga-1")
+	if err == nil {
+		t.Error("expected error when context is cancelled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+// TestMemoryStateStorage_ClosedOperations tests operations on closed storage.
+func TestMemoryStateStorage_ClosedOperations(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	// Close the storage
+	if err := storage.Close(); err != nil {
+		t.Fatalf("failed to close storage: %v", err)
+	}
+
+	// Test all operations return ErrStorageClosed
+	operations := []struct {
+		name string
+		op   func() error
+	}{
+		{
+			name: "UpdateSagaState",
+			op: func() error {
+				return storage.UpdateSagaState(ctx, "saga-1", saga.StateCompleted, nil)
+			},
+		},
+		{
+			name: "GetActiveSagas",
+			op: func() error {
+				_, err := storage.GetActiveSagas(ctx, nil)
+				return err
+			},
+		},
+		{
+			name: "GetTimeoutSagas",
+			op: func() error {
+				_, err := storage.GetTimeoutSagas(ctx, time.Now())
+				return err
+			},
+		},
+		{
+			name: "CleanupExpiredSagas",
+			op: func() error {
+				return storage.CleanupExpiredSagas(ctx, time.Now())
+			},
+		},
+		{
+			name: "SaveStepState",
+			op: func() error {
+				step := &saga.StepState{
+					ID:        "step-1",
+					SagaID:    "saga-1",
+					StepIndex: 0,
+					Name:      "Step 1",
+					State:     saga.StepStateCompleted,
+				}
+				return storage.SaveStepState(ctx, "saga-1", step)
+			},
+		},
+		{
+			name: "GetStepStates",
+			op: func() error {
+				_, err := storage.GetStepStates(ctx, "saga-1")
+				return err
+			},
+		},
+	}
+
+	for _, test := range operations {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.op()
+			if !errors.Is(err, state.ErrStorageClosed) {
+				t.Errorf("expected ErrStorageClosed for %s after close, got %v", test.name, err)
+			}
+		})
+	}
+}
+
+// TestMemoryStateStorage_UpdateSagaState_WithNilMetadata tests UpdateSagaState with nil metadata.
+func TestMemoryStateStorage_UpdateSagaState_WithNilMetadata(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	// Pre-populate storage with a saga that has no metadata
+	testSaga := &mockSagaInstance{
+		id:           "saga-1",
+		definitionID: "def-1",
+		sagaState:    saga.StateRunning,
+		currentStep:  1,
+		totalSteps:   3,
+		createdAt:    time.Now(),
+		updatedAt:    time.Now(),
+		metadata:     nil, // No initial metadata
+	}
+
+	if err := storage.SaveSaga(ctx, testSaga); err != nil {
+		t.Fatalf("failed to save test saga: %v", err)
+	}
+
+	// Update with new metadata
+	newMetadata := map[string]interface{}{
+		"key1": "value1",
+		"key2": 123,
+	}
+
+	err := storage.UpdateSagaState(ctx, "saga-1", saga.StateCompleted, newMetadata)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Verify the metadata was added
+	instance, err := storage.GetSaga(ctx, "saga-1")
+	if err != nil {
+		t.Fatalf("failed to retrieve updated saga: %v", err)
+	}
+
+	if instance.GetMetadata() == nil {
+		t.Error("expected metadata to be initialized")
+	} else {
+		if instance.GetMetadata()["key1"] != "value1" {
+			t.Errorf("expected metadata[key1] = 'value1', got %v", instance.GetMetadata()["key1"])
+		}
+		if instance.GetMetadata()["key2"] != 123 {
+			t.Errorf("expected metadata[key2] = 123, got %v", instance.GetMetadata()["key2"])
+		}
+	}
+}
+
+// TestMemoryStateStorage_GetStepStates_EmptySteps tests GetStepStates for saga with no steps.
+func TestMemoryStateStorage_GetStepStates_EmptySteps(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	// Create a saga without step states
+	testSaga := &mockSagaInstance{
+		id:           "saga-empty",
+		definitionID: "def-1",
+		sagaState:    saga.StateRunning,
+		createdAt:    time.Now(),
+		updatedAt:    time.Now(),
+	}
+
+	if err := storage.SaveSaga(ctx, testSaga); err != nil {
+		t.Fatalf("failed to save test saga: %v", err)
+	}
+
+	steps, err := storage.GetStepStates(ctx, "saga-empty")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	if len(steps) != 0 {
+		t.Errorf("expected 0 steps, got %d", len(steps))
+	}
+}
+
+// TestMemoryStateStorage_GetTimeoutSagas_WithNonActiveStates tests GetTimeoutSagas filtering non-active sagas.
+func TestMemoryStateStorage_GetTimeoutSagas_WithNonActiveStates(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	now := time.Now()
+	past := now.Add(-10 * time.Minute)
+
+	// Create sagas with various states
+	sagas := []*mockSagaInstance{
+		{
+			id:           "saga-pending",
+			definitionID: "def-1",
+			sagaState:    saga.StatePending,
+			startTime:    past,
+			timeout:      5 * time.Minute,
+			createdAt:    past,
+			updatedAt:    past,
+		},
+		{
+			id:           "saga-completed",
+			definitionID: "def-1",
+			sagaState:    saga.StateCompleted,
+			startTime:    past,
+			timeout:      5 * time.Minute,
+			createdAt:    past,
+			updatedAt:    past,
+		},
+		{
+			id:           "saga-running-timedout",
+			definitionID: "def-1",
+			sagaState:    saga.StateRunning,
+			startTime:    past,
+			timeout:      5 * time.Minute,
+			createdAt:    past,
+			updatedAt:    past,
+		},
+	}
+
+	for _, s := range sagas {
+		if err := storage.SaveSaga(ctx, s); err != nil {
+			t.Fatalf("failed to save saga %s: %v", s.id, err)
+		}
+	}
+
+	// Only active sagas that timed out should be returned
+	instances, err := storage.GetTimeoutSagas(ctx, now)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Should only get the running saga that timed out
+	if len(instances) != 1 {
+		t.Errorf("expected 1 timed out saga, got %d", len(instances))
+	}
+
+	if len(instances) > 0 && instances[0].GetID() != "saga-running-timedout" {
+		t.Errorf("expected saga-running-timedout, got %s", instances[0].GetID())
+	}
+}
+
+// TestMemoryStateStorage_GetTimeoutSagas_WithoutStartTime tests GetTimeoutSagas with sagas without start time.
+func TestMemoryStateStorage_GetTimeoutSagas_WithoutStartTime(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	now := time.Now()
+
+	// Create saga without start time
+	testSaga := &mockSagaInstance{
+		id:           "saga-no-start",
+		definitionID: "def-1",
+		sagaState:    saga.StateRunning,
+		startTime:    time.Time{}, // Zero time
+		timeout:      5 * time.Minute,
+		createdAt:    now,
+		updatedAt:    now,
+	}
+
+	if err := storage.SaveSaga(ctx, testSaga); err != nil {
+		t.Fatalf("failed to save test saga: %v", err)
+	}
+
+	// Should not include sagas without start time
+	instances, err := storage.GetTimeoutSagas(ctx, now)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	if len(instances) != 0 {
+		t.Errorf("expected 0 timed out sagas (no start time), got %d", len(instances))
+	}
+}
+
+// TestMemoryStateStorage_FilterByMetadata_NoMatch tests filtering with no matching metadata.
+func TestMemoryStateStorage_FilterByMetadata_NoMatch(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	// Create saga with metadata
+	testSaga := &mockSagaInstance{
+		id:           "saga-1",
+		definitionID: "def-1",
+		sagaState:    saga.StateRunning,
+		createdAt:    time.Now(),
+		metadata: map[string]interface{}{
+			"environment": "production",
+		},
+	}
+
+	if err := storage.SaveSaga(ctx, testSaga); err != nil {
+		t.Fatalf("failed to save saga: %v", err)
+	}
+
+	// Filter by non-matching metadata
+	filter := &saga.SagaFilter{
+		Metadata: map[string]interface{}{
+			"environment": "staging", // Different value
+		},
+	}
+
+	instances, err := storage.GetActiveSagas(ctx, filter)
+	if err != nil {
+		t.Fatalf("failed to get active sagas: %v", err)
+	}
+
+	if len(instances) != 0 {
+		t.Errorf("expected 0 sagas with non-matching metadata, got %d", len(instances))
+	}
+}
+
+// TestMemoryStateStorage_FilterByMetadata_NoMetadata tests filtering against sagas without metadata.
+func TestMemoryStateStorage_FilterByMetadata_NoMetadata(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	// Create saga without metadata
+	testSaga := &mockSagaInstance{
+		id:           "saga-1",
+		definitionID: "def-1",
+		sagaState:    saga.StateRunning,
+		createdAt:    time.Now(),
+		metadata:     nil,
+	}
+
+	if err := storage.SaveSaga(ctx, testSaga); err != nil {
+		t.Fatalf("failed to save saga: %v", err)
+	}
+
+	// Filter by metadata
+	filter := &saga.SagaFilter{
+		Metadata: map[string]interface{}{
+			"environment": "production",
+		},
+	}
+
+	instances, err := storage.GetActiveSagas(ctx, filter)
+	if err != nil {
+		t.Fatalf("failed to get active sagas: %v", err)
+	}
+
+	if len(instances) != 0 {
+		t.Errorf("expected 0 sagas when filtering metadata against saga with no metadata, got %d", len(instances))
+	}
+}
