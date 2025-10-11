@@ -419,4 +419,3 @@ func (wp *WorkerPool) Close() error {
 func (wp *WorkerPool) Size() int {
 	return wp.size
 }
-
