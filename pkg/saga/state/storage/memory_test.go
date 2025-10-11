@@ -2023,3 +2023,162 @@ func TestMemoryStateStorage_FilterByMetadata_NoMetadata(t *testing.T) {
 		t.Errorf("expected 0 sagas when filtering metadata against saga with no metadata, got %d", len(instances))
 	}
 }
+
+// TestMemoryStateStorage_StepStateConcurrency tests concurrent step state operations.
+func TestMemoryStateStorage_StepStateConcurrency(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	// Create test sagas
+	numSagas := 10
+	for i := 0; i < numSagas; i++ {
+		sagaID := "saga-concurrent-" + string(rune('0'+i))
+		testSaga := &mockSagaInstance{
+			id:           sagaID,
+			definitionID: "def-1",
+			sagaState:    saga.StateRunning,
+			createdAt:    time.Now(),
+			updatedAt:    time.Now(),
+		}
+		if err := storage.SaveSaga(ctx, testSaga); err != nil {
+			t.Fatalf("failed to save saga %s: %v", sagaID, err)
+		}
+	}
+
+	// Number of concurrent operations per saga
+	numStepsPerSaga := 20
+	var wg sync.WaitGroup
+	wg.Add(numSagas * numStepsPerSaga * 2) // Save and Get operations
+
+	// Concurrent step state saves
+	for i := 0; i < numSagas; i++ {
+		sagaID := "saga-concurrent-" + string(rune('0'+i))
+		for j := 0; j < numStepsPerSaga; j++ {
+			go func(sID string, stepIdx int) {
+				defer wg.Done()
+				step := &saga.StepState{
+					ID:        sID + "-step-" + string(rune('0'+stepIdx)),
+					SagaID:    sID,
+					StepIndex: stepIdx,
+					Name:      "Step " + string(rune('0'+stepIdx)),
+					State:     saga.StepStateRunning,
+				}
+				_ = storage.SaveStepState(ctx, sID, step)
+			}(sagaID, j)
+		}
+	}
+
+	// Concurrent step state reads
+	for i := 0; i < numSagas; i++ {
+		sagaID := "saga-concurrent-" + string(rune('0'+i))
+		for j := 0; j < numStepsPerSaga; j++ {
+			go func(sID string) {
+				defer wg.Done()
+				_, _ = storage.GetStepStates(ctx, sID)
+			}(sagaID)
+		}
+	}
+
+	wg.Wait()
+
+	// Verify that all step states were saved correctly
+	for i := 0; i < numSagas; i++ {
+		sagaID := "saga-concurrent-" + string(rune('0'+i))
+		steps, err := storage.GetStepStates(ctx, sagaID)
+		if err != nil {
+			t.Errorf("failed to get step states for %s: %v", sagaID, err)
+		}
+		if len(steps) != numStepsPerSaga {
+			t.Errorf("expected %d steps for %s, got %d", numStepsPerSaga, sagaID, len(steps))
+		}
+	}
+}
+
+// TestMemoryStateStorage_SaveStepState_WithEmptySagaID tests SaveStepState with empty saga ID.
+func TestMemoryStateStorage_SaveStepState_WithEmptySagaID(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	step := &saga.StepState{
+		ID:        "step-1",
+		SagaID:    "saga-1",
+		StepIndex: 0,
+		Name:      "Step 1",
+		State:     saga.StepStateRunning,
+	}
+
+	err := storage.SaveStepState(ctx, "", step)
+	if !errors.Is(err, state.ErrInvalidSagaID) {
+		t.Errorf("expected ErrInvalidSagaID for empty saga ID, got %v", err)
+	}
+}
+
+// TestMemoryStateStorage_DeleteSaga_RemovesStepStates tests that deleting a saga also removes its step states.
+func TestMemoryStateStorage_DeleteSaga_RemovesStepStates(t *testing.T) {
+	storage := NewMemoryStateStorage()
+	ctx := context.Background()
+
+	// Create a saga with step states
+	sagaID := "saga-with-steps"
+	testSaga := &mockSagaInstance{
+		id:           sagaID,
+		definitionID: "def-1",
+		sagaState:    saga.StateRunning,
+		createdAt:    time.Now(),
+		updatedAt:    time.Now(),
+	}
+
+	if err := storage.SaveSaga(ctx, testSaga); err != nil {
+		t.Fatalf("failed to save saga: %v", err)
+	}
+
+	// Add step states
+	steps := []*saga.StepState{
+		{
+			ID:        "step-1",
+			SagaID:    sagaID,
+			StepIndex: 0,
+			Name:      "Step 1",
+			State:     saga.StepStateCompleted,
+		},
+		{
+			ID:        "step-2",
+			SagaID:    sagaID,
+			StepIndex: 1,
+			Name:      "Step 2",
+			State:     saga.StepStateRunning,
+		},
+	}
+
+	for _, step := range steps {
+		if err := storage.SaveStepState(ctx, sagaID, step); err != nil {
+			t.Fatalf("failed to save step state: %v", err)
+		}
+	}
+
+	// Verify step states exist
+	retrievedSteps, err := storage.GetStepStates(ctx, sagaID)
+	if err != nil {
+		t.Fatalf("failed to get step states: %v", err)
+	}
+	if len(retrievedSteps) != 2 {
+		t.Errorf("expected 2 step states, got %d", len(retrievedSteps))
+	}
+
+	// Delete the saga
+	if err := storage.DeleteSaga(ctx, sagaID); err != nil {
+		t.Fatalf("failed to delete saga: %v", err)
+	}
+
+	// Verify saga is deleted
+	_, err = storage.GetSaga(ctx, sagaID)
+	if !errors.Is(err, state.ErrSagaNotFound) {
+		t.Error("expected saga to be deleted")
+	}
+
+	// Verify step states are also deleted
+	_, err = storage.GetStepStates(ctx, sagaID)
+	if !errors.Is(err, state.ErrSagaNotFound) {
+		t.Error("expected step states to be deleted with saga")
+	}
+}
