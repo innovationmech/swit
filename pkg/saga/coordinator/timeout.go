@@ -35,13 +35,13 @@ import (
 // for both individual steps and entire Saga instances.
 type TimeoutDetector struct {
 	coordinator *OrchestratorCoordinator
-	
+
 	// stepTimeouts tracks ongoing step timeouts
 	stepTimeouts sync.Map // map[string]*stepTimeoutTracker
-	
+
 	// sagaTimeouts tracks ongoing Saga timeouts
 	sagaTimeouts sync.Map // map[string]*sagaTimeoutTracker
-	
+
 	// stopped indicates if the detector has been stopped
 	stopped bool
 	stopMu  sync.RWMutex
@@ -49,26 +49,26 @@ type TimeoutDetector struct {
 
 // stepTimeoutTracker tracks timeout information for a single step execution.
 type stepTimeoutTracker struct {
-	sagaID       string
-	stepIndex    int
-	stepName     string
-	startTime    time.Time
-	timeout      time.Duration
-	cancel       context.CancelFunc
-	timedOut     bool
-	timedOutAt   *time.Time
-	mu           sync.RWMutex
+	sagaID     string
+	stepIndex  int
+	stepName   string
+	startTime  time.Time
+	timeout    time.Duration
+	cancel     context.CancelFunc
+	timedOut   bool
+	timedOutAt *time.Time
+	mu         sync.RWMutex
 }
 
 // sagaTimeoutTracker tracks timeout information for an entire Saga instance.
 type sagaTimeoutTracker struct {
-	sagaID       string
-	startTime    time.Time
-	timeout      time.Duration
-	cancel       context.CancelFunc
-	timedOut     bool
-	timedOutAt   *time.Time
-	mu           sync.RWMutex
+	sagaID     string
+	startTime  time.Time
+	timeout    time.Duration
+	cancel     context.CancelFunc
+	timedOut   bool
+	timedOutAt *time.Time
+	mu         sync.RWMutex
 }
 
 // newTimeoutDetector creates a new timeout detector for the coordinator.
@@ -179,7 +179,7 @@ func (td *TimeoutDetector) handleSagaTimeout(
 	instance.state = saga.StateTimedOut
 	instance.timedOutAt = &now
 	instance.updatedAt = now
-	
+
 	// Create timeout error
 	instance.sagaError = &saga.SagaError{
 		Code:      "SAGA_TIMEOUT",
@@ -188,9 +188,9 @@ func (td *TimeoutDetector) handleSagaTimeout(
 		Retryable: false,
 		Timestamp: now,
 		Details: map[string]interface{}{
-			"timeout":     tracker.timeout.String(),
-			"elapsed":     time.Since(tracker.startTime).String(),
-			"saga_id":     tracker.sagaID,
+			"timeout": tracker.timeout.String(),
+			"elapsed": time.Since(tracker.startTime).String(),
+			"saga_id": tracker.sagaID,
 		},
 	}
 	instance.mu.Unlock()
@@ -492,4 +492,3 @@ func (td *TimeoutDetector) GetActiveSagaTimeouts() int {
 	})
 	return count
 }
-

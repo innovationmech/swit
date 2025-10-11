@@ -512,4 +512,3 @@ func createTimeoutTestInstance() *OrchestratorSagaInstance {
 		metadata:       make(map[string]interface{}),
 	}
 }
-

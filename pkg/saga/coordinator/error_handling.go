@@ -454,14 +454,14 @@ func (eh *ErrorHandler) HandleMaxRetriesExceeded(
 	)
 	retryExhaustedErr.Cause = sagaErr
 	retryExhaustedErr.WithDetails(map[string]interface{}{
-		"step_id":           step.GetID(),
-		"step_name":         step.GetName(),
-		"saga_id":           eh.instance.id,
-		"final_error":       sagaErr.Message,
-		"final_error_type":  sagaErr.Type,
-		"attempts":          attemptCount,
-		"max_attempts":      eh.GetMaxAttempts(step),
-		"retry_history":     eh.GetRetryHistory(step.GetID()),
+		"step_id":          step.GetID(),
+		"step_name":        step.GetName(),
+		"saga_id":          eh.instance.id,
+		"final_error":      sagaErr.Message,
+		"final_error_type": sagaErr.Type,
+		"attempts":         attemptCount,
+		"max_attempts":     eh.GetMaxAttempts(step),
+		"retry_history":    eh.GetRetryHistory(step.GetID()),
 	})
 
 	// Update instance error
@@ -526,4 +526,3 @@ func indexOf(s, substr string) int {
 	}
 	return -1
 }
-

@@ -67,7 +67,7 @@ func (se *stepExecutor) executeSteps(ctx context.Context) error {
 	if sagaTimeout <= 0 {
 		sagaTimeout = se.instance.GetTimeout()
 	}
-	
+
 	var sagaTimeoutCancel context.CancelFunc
 	if sagaTimeout > 0 {
 		ctx, sagaTimeoutCancel = se.coordinator.timeoutDetector.StartSagaTimeout(
@@ -283,7 +283,7 @@ func (se *stepExecutor) createStepContext(ctx context.Context, step saga.SagaSte
 		// Use default timeout from Saga definition
 		timeout = se.definition.GetTimeout()
 	}
-	
+
 	// Use timeout detector to track step timeout
 	stepIndex := se.instance.GetCurrentStep()
 	if timeout > 0 {
@@ -295,7 +295,7 @@ func (se *stepExecutor) createStepContext(ctx context.Context, step saga.SagaSte
 			timeout,
 		)
 	}
-	
+
 	// No timeout specified, return context without timeout
 	return context.WithCancel(ctx)
 }
