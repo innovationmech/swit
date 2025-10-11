@@ -84,6 +84,9 @@ type OrchestratorCoordinator struct {
 	// metricsCollector collects runtime metrics for monitoring.
 	metricsCollector MetricsCollector
 
+	// timeoutDetector detects and handles timeouts for Sagas and steps.
+	timeoutDetector *TimeoutDetector
+
 	// instances tracks active Saga instances.
 	instances sync.Map
 
@@ -196,7 +199,7 @@ func NewOrchestratorCoordinator(config *OrchestratorConfig) (*OrchestratorCoordi
 		metricsCollector = &noOpMetricsCollector{}
 	}
 
-	return &OrchestratorCoordinator{
+	coordinator := &OrchestratorCoordinator{
 		stateStorage:     config.StateStorage,
 		eventPublisher:   config.EventPublisher,
 		retryPolicy:      retryPolicy,
@@ -206,7 +209,12 @@ func NewOrchestratorCoordinator(config *OrchestratorConfig) (*OrchestratorCoordi
 			LastUpdateTime: time.Now(),
 		},
 		closed: false,
-	}, nil
+	}
+
+	// Initialize timeout detector
+	coordinator.timeoutDetector = newTimeoutDetector(coordinator)
+
+	return coordinator, nil
 }
 
 // StartSaga starts a new Saga instance with the given definition and initial data.
@@ -535,6 +543,11 @@ func (oc *OrchestratorCoordinator) Close() error {
 	}
 
 	oc.closed = true
+
+	// Clean up timeout detector
+	if oc.timeoutDetector != nil {
+		oc.timeoutDetector.CleanupTimeouts()
+	}
 
 	// TODO: Wait for in-flight Sagas to complete or timeout
 	// TODO: Close event publisher

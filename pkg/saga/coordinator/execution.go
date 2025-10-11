@@ -62,6 +62,22 @@ func (se *stepExecutor) executeSteps(ctx context.Context) error {
 		return fmt.Errorf("no steps defined in Saga definition")
 	}
 
+	// Start Saga-level timeout tracking
+	sagaTimeout := se.definition.GetTimeout()
+	if sagaTimeout <= 0 {
+		sagaTimeout = se.instance.GetTimeout()
+	}
+	
+	var sagaTimeoutCancel context.CancelFunc
+	if sagaTimeout > 0 {
+		ctx, sagaTimeoutCancel = se.coordinator.timeoutDetector.StartSagaTimeout(
+			ctx,
+			se.instance,
+			sagaTimeout,
+		)
+		defer sagaTimeoutCancel()
+	}
+
 	// Update state to Running
 	if err := se.updateSagaState(ctx, saga.StateRunning); err != nil {
 		return fmt.Errorf("failed to update Saga state to Running: %w", err)
@@ -267,11 +283,21 @@ func (se *stepExecutor) createStepContext(ctx context.Context, step saga.SagaSte
 		// Use default timeout from Saga definition
 		timeout = se.definition.GetTimeout()
 	}
-	if timeout == 0 {
-		// No timeout specified, return context without timeout
-		return context.WithCancel(ctx)
+	
+	// Use timeout detector to track step timeout
+	stepIndex := se.instance.GetCurrentStep()
+	if timeout > 0 {
+		return se.coordinator.timeoutDetector.StartStepTimeout(
+			ctx,
+			se.instance.GetID(),
+			stepIndex,
+			step.GetName(),
+			timeout,
+		)
 	}
-	return context.WithTimeout(ctx, timeout)
+	
+	// No timeout specified, return context without timeout
+	return context.WithCancel(ctx)
 }
 
 // getMaxAttempts returns the maximum number of attempts for a step.
