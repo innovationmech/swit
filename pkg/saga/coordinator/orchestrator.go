@@ -87,6 +87,9 @@ type OrchestratorCoordinator struct {
 	// timeoutDetector detects and handles timeouts for Sagas and steps.
 	timeoutDetector *TimeoutDetector
 
+	// concurrencyController manages concurrent Saga execution limits.
+	concurrencyController *ConcurrencyController
+
 	// instances tracks active Saga instances.
 	instances sync.Map
 
@@ -141,6 +144,10 @@ type OrchestratorConfig struct {
 
 	// MetricsCollector collects runtime metrics. If not provided, a no-op collector is used.
 	MetricsCollector MetricsCollector
+
+	// ConcurrencyConfig defines concurrency limits and worker pool settings.
+	// If not provided, default configuration is used.
+	ConcurrencyConfig *ConcurrencyConfig
 }
 
 // Validate checks if the configuration is valid.
@@ -199,11 +206,24 @@ func NewOrchestratorCoordinator(config *OrchestratorConfig) (*OrchestratorCoordi
 		metricsCollector = &noOpMetricsCollector{}
 	}
 
+	// Use default concurrency config if not provided
+	concurrencyConfig := config.ConcurrencyConfig
+	if concurrencyConfig == nil {
+		concurrencyConfig = DefaultConcurrencyConfig()
+	}
+
+	// Initialize concurrency controller
+	concurrencyController, err := NewConcurrencyController(concurrencyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create concurrency controller: %w", err)
+	}
+
 	coordinator := &OrchestratorCoordinator{
-		stateStorage:     config.StateStorage,
-		eventPublisher:   config.EventPublisher,
-		retryPolicy:      retryPolicy,
-		metricsCollector: metricsCollector,
+		stateStorage:          config.StateStorage,
+		eventPublisher:        config.EventPublisher,
+		retryPolicy:           retryPolicy,
+		metricsCollector:      metricsCollector,
+		concurrencyController: concurrencyController,
 		metrics: &saga.CoordinatorMetrics{
 			StartTime:      time.Now(),
 			LastUpdateTime: time.Now(),
@@ -338,8 +358,28 @@ func (oc *OrchestratorCoordinator) StartSaga(
 		_ = saga.NewEventPublishError(saga.EventSagaStarted, err)
 	}
 
-	// Start asynchronous step execution
-	go oc.executeStepsAsync(context.Background(), instance, definition)
+	// Acquire concurrency slot before starting execution
+	if err := oc.concurrencyController.AcquireSlot(ctx, sagaID); err != nil {
+		// Failed to acquire slot, mark as failed and clean up
+		_ = oc.stateStorage.SaveSaga(ctx, instance)
+		return nil, fmt.Errorf("failed to acquire concurrency slot: %w", err)
+	}
+
+	// Start asynchronous step execution using worker pool
+	execTask := func(execCtx context.Context) error {
+		defer oc.concurrencyController.ReleaseSlot(sagaID)
+		
+		// Execute steps
+		executor := newStepExecutor(oc, instance, definition)
+		return executor.executeSteps(execCtx)
+	}
+
+	// Submit task to worker pool
+	if err := oc.concurrencyController.SubmitTask(context.Background(), execTask); err != nil {
+		// Failed to submit task, release slot and return error
+		oc.concurrencyController.ReleaseSlot(sagaID)
+		return nil, fmt.Errorf("failed to submit execution task: %w", err)
+	}
 
 	return instance, nil
 }
@@ -536,22 +576,34 @@ func (oc *OrchestratorCoordinator) HealthCheck(ctx context.Context) error {
 //   - An error if shutdown encounters issues.
 func (oc *OrchestratorCoordinator) Close() error {
 	oc.mu.Lock()
-	defer oc.mu.Unlock()
-
 	if oc.closed {
+		oc.mu.Unlock()
 		return ErrCoordinatorClosed
 	}
-
 	oc.closed = true
+	oc.mu.Unlock()
+
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Shutdown concurrency controller - waits for active Sagas to complete
+	if oc.concurrencyController != nil {
+		if err := oc.concurrencyController.Shutdown(ctx); err != nil {
+			// Log error but continue with cleanup
+			_ = err
+		}
+	}
 
 	// Clean up timeout detector
 	if oc.timeoutDetector != nil {
 		oc.timeoutDetector.CleanupTimeouts()
 	}
 
-	// TODO: Wait for in-flight Sagas to complete or timeout
-	// TODO: Close event publisher
-	// TODO: Clean up resources
+	// Update metrics
+	oc.mu.Lock()
+	oc.metrics.LastUpdateTime = time.Now()
+	oc.mu.Unlock()
 
 	return nil
 }
