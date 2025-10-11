@@ -618,4 +618,3 @@ func TestConcurrencyController_SubmitTask(t *testing.T) {
 		t.Error("Task was not executed")
 	}
 }
-

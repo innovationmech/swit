@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/pkg/saga"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -84,6 +85,9 @@ type OrchestratorCoordinator struct {
 	// metricsCollector collects runtime metrics for monitoring.
 	metricsCollector MetricsCollector
 
+	// tracingManager manages distributed tracing with OpenTelemetry.
+	tracingManager TracingManager
+
 	// timeoutDetector detects and handles timeouts for Sagas and steps.
 	timeoutDetector *TimeoutDetector
 
@@ -131,6 +135,59 @@ type MetricsCollector interface {
 	RecordCompensationExecuted(definitionID, stepID string, success bool, duration time.Duration)
 }
 
+// TracingManager defines the interface for distributed tracing management.
+// It provides methods for creating and managing tracing spans for Saga operations.
+type TracingManager interface {
+	// StartSpan creates a new span with the given operation name.
+	// Returns the updated context containing the span and the span itself.
+	StartSpan(ctx context.Context, operationName string, opts ...SpanOption) (context.Context, Span)
+
+	// SpanFromContext retrieves the current span from the context.
+	SpanFromContext(ctx context.Context) Span
+}
+
+// Span defines the interface for a tracing span.
+// It provides methods for adding attributes, events, and status to spans.
+type Span interface {
+	// SetAttribute sets a single attribute on the span.
+	SetAttribute(key string, value interface{})
+
+	// AddEvent adds an event to the span.
+	AddEvent(name string)
+
+	// SetStatus sets the status of the span.
+	SetStatus(code int, description string)
+
+	// End ends the span.
+	End()
+
+	// RecordError records an error as an event on the span.
+	RecordError(err error)
+}
+
+// SpanOption represents an option for creating spans.
+type SpanOption interface{}
+
+// noOpTracingManager is a no-op implementation of TracingManager.
+type noOpTracingManager struct{}
+
+func (n *noOpTracingManager) StartSpan(ctx context.Context, operationName string, opts ...SpanOption) (context.Context, Span) {
+	return ctx, &noOpSpan{}
+}
+
+func (n *noOpTracingManager) SpanFromContext(ctx context.Context) Span {
+	return &noOpSpan{}
+}
+
+// noOpSpan is a no-op implementation of Span.
+type noOpSpan struct{}
+
+func (n *noOpSpan) SetAttribute(key string, value interface{}) {}
+func (n *noOpSpan) AddEvent(name string)                       {}
+func (n *noOpSpan) SetStatus(code int, description string)     {}
+func (n *noOpSpan) End()                                       {}
+func (n *noOpSpan) RecordError(err error)                      {}
+
 // OrchestratorConfig contains configuration options for the orchestrator coordinator.
 type OrchestratorConfig struct {
 	// StateStorage is required for persisting Saga state.
@@ -144,6 +201,9 @@ type OrchestratorConfig struct {
 
 	// MetricsCollector collects runtime metrics. If not provided, a no-op collector is used.
 	MetricsCollector MetricsCollector
+
+	// TracingManager manages distributed tracing. If not provided, a no-op manager is used.
+	TracingManager TracingManager
 
 	// ConcurrencyConfig defines concurrency limits and worker pool settings.
 	// If not provided, default configuration is used.
@@ -206,6 +266,12 @@ func NewOrchestratorCoordinator(config *OrchestratorConfig) (*OrchestratorCoordi
 		metricsCollector = &noOpMetricsCollector{}
 	}
 
+	// Use no-op tracing manager if not provided
+	tracingManager := config.TracingManager
+	if tracingManager == nil {
+		tracingManager = &noOpTracingManager{}
+	}
+
 	// Use default concurrency config if not provided
 	concurrencyConfig := config.ConcurrencyConfig
 	if concurrencyConfig == nil {
@@ -223,6 +289,7 @@ func NewOrchestratorCoordinator(config *OrchestratorConfig) (*OrchestratorCoordi
 		eventPublisher:        config.EventPublisher,
 		retryPolicy:           retryPolicy,
 		metricsCollector:      metricsCollector,
+		tracingManager:        tracingManager,
 		concurrencyController: concurrencyController,
 		metrics: &saga.CoordinatorMetrics{
 			StartTime:      time.Now(),
@@ -260,23 +327,36 @@ func (oc *OrchestratorCoordinator) StartSaga(
 	definition saga.SagaDefinition,
 	initialData interface{},
 ) (saga.SagaInstance, error) {
+	// Start tracing span for Saga execution
+	ctx, span := oc.tracingManager.StartSpan(ctx, "saga.start")
+	defer span.End()
+
 	oc.mu.RLock()
 	if oc.closed {
 		oc.mu.RUnlock()
+		span.SetStatus(2, "coordinator closed") // status code 2 = error
 		return nil, ErrCoordinatorClosed
 	}
 	oc.mu.RUnlock()
 
 	// Validate definition
 	if definition == nil {
+		span.SetStatus(2, "invalid definition")
 		return nil, ErrInvalidDefinition
 	}
+
+	// Set span attributes after validating definition is not nil
+	span.SetAttribute("saga.definition_id", definition.GetID())
+	span.SetAttribute("saga.definition_name", definition.GetName())
 	if err := definition.Validate(); err != nil {
+		span.SetStatus(2, fmt.Sprintf("invalid definition: %v", err))
+		span.RecordError(err)
 		return nil, fmt.Errorf("invalid Saga definition: %w", err)
 	}
 
 	// Validate initial data (basic check)
 	if initialData == nil {
+		span.SetStatus(2, "invalid initial data")
 		return nil, ErrInvalidInitialData
 	}
 
@@ -368,7 +448,7 @@ func (oc *OrchestratorCoordinator) StartSaga(
 	// Start asynchronous step execution using worker pool
 	execTask := func(execCtx context.Context) error {
 		defer oc.concurrencyController.ReleaseSlot(sagaID)
-		
+
 		// Execute steps
 		executor := newStepExecutor(oc, instance, definition)
 		return executor.executeSteps(execCtx)
@@ -378,8 +458,16 @@ func (oc *OrchestratorCoordinator) StartSaga(
 	if err := oc.concurrencyController.SubmitTask(context.Background(), execTask); err != nil {
 		// Failed to submit task, release slot and return error
 		oc.concurrencyController.ReleaseSlot(sagaID)
+		span.SetStatus(2, fmt.Sprintf("failed to submit task: %v", err))
+		span.RecordError(err)
 		return nil, fmt.Errorf("failed to submit execution task: %w", err)
 	}
+
+	// Mark span as successful
+	span.SetAttribute("saga.id", sagaID)
+	span.SetAttribute("saga.total_steps", instance.totalSteps)
+	span.SetStatus(1, "saga started successfully") // status code 1 = ok
+	span.AddEvent("saga_started")
 
 	return instance, nil
 }
@@ -432,20 +520,32 @@ func generateEventID() string {
 	return fmt.Sprintf("event-%s", hex.EncodeToString(bytes))
 }
 
-// extractTraceID extracts the trace ID from the context.
-// This is a placeholder implementation that can be enhanced with OpenTelemetry integration.
+// extractTraceID extracts the trace ID from the context using OpenTelemetry.
+// It retrieves the span context from the active span and returns the trace ID as a hex string.
 func extractTraceID(ctx context.Context) string {
-	// TODO: Integrate with OpenTelemetry or other tracing systems
-	// For now, return empty string
-	return ""
+	span := oteltrace.SpanFromContext(ctx)
+	if span == nil {
+		return ""
+	}
+	spanContext := span.SpanContext()
+	if !spanContext.IsValid() {
+		return ""
+	}
+	return spanContext.TraceID().String()
 }
 
-// extractSpanID extracts the span ID from the context.
-// This is a placeholder implementation that can be enhanced with OpenTelemetry integration.
+// extractSpanID extracts the span ID from the context using OpenTelemetry.
+// It retrieves the span context from the active span and returns the span ID as a hex string.
 func extractSpanID(ctx context.Context) string {
-	// TODO: Integrate with OpenTelemetry or other tracing systems
-	// For now, return empty string
-	return ""
+	span := oteltrace.SpanFromContext(ctx)
+	if span == nil {
+		return ""
+	}
+	spanContext := span.SpanContext()
+	if !spanContext.IsValid() {
+		return ""
+	}
+	return spanContext.SpanID().String()
 }
 
 // copyMetadata creates a deep copy of metadata map to prevent external mutation.

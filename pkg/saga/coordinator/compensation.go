@@ -55,13 +55,25 @@ func newCompensationExecutor(
 // It manages state transitions, error handling, retry logic, and event publishing.
 // Returns an error if compensation fails critically and cannot continue.
 func (ce *compensationExecutor) executeCompensation(ctx context.Context, completedSteps []saga.SagaStep) error {
+	// Start tracing span for compensation execution
+	ctx, span := ce.coordinator.tracingManager.StartSpan(ctx, "saga.execute_compensation")
+	defer span.End()
+
+	span.SetAttribute("saga.id", ce.instance.id)
+	span.SetAttribute("saga.definition_id", ce.definition.GetID())
+	span.SetAttribute("compensation.steps_count", len(completedSteps))
+
 	if len(completedSteps) == 0 {
 		logger.GetSugaredLogger().Infof("No completed steps to compensate for Saga %s", ce.instance.id)
+		span.SetStatus(1, "no steps to compensate")
+		span.AddEvent("compensation_skipped_no_steps")
 		return ce.handleCompensationCompletion(ctx)
 	}
 
 	// Update state to Compensating
 	if err := ce.updateSagaState(ctx, saga.StateCompensating); err != nil {
+		span.SetStatus(2, fmt.Sprintf("failed to update state: %v", err))
+		span.RecordError(err)
 		return fmt.Errorf("failed to update Saga state to Compensating: %w", err)
 	}
 
@@ -122,9 +134,14 @@ func (ce *compensationExecutor) executeCompensation(ctx context.Context, complet
 
 	// Handle compensation completion
 	if len(compensationErrors) > 0 {
+		span.SetAttribute("compensation.errors_count", len(compensationErrors))
+		span.SetStatus(2, fmt.Sprintf("compensation failed with %d errors", len(compensationErrors)))
+		span.AddEvent("compensation_failed")
 		return ce.handleCompensationFailure(ctx, compensationErrors)
 	}
 
+	span.SetStatus(1, "compensation completed successfully")
+	span.AddEvent("compensation_completed")
 	return ce.handleCompensationCompletion(ctx)
 }
 

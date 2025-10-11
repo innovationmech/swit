@@ -96,13 +96,14 @@ func (h *EndpointHandler) RegisterRoutes(router *gin.Engine) {
 }
 
 // HealthCheck handles the main health check endpoint
-// @Summary Health check
-// @Description Returns the overall health status of the service
-// @Tags health
-// @Produce json
-// @Success 200 {object} HealthResponse "Service is healthy"
-// @Failure 503 {object} HealthResponse "Service is unhealthy"
-// @Router /health [get]
+//
+//	@Summary		Health check
+//	@Description	Returns the overall health status of the service
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	HealthResponse	"Service is healthy"
+//	@Failure		503	{object}	HealthResponse	"Service is unhealthy"
+//	@Router			/health [get]
 func (h *EndpointHandler) HealthCheck(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -148,13 +149,14 @@ func (h *EndpointHandler) HealthCheck(c *gin.Context) {
 }
 
 // ReadinessCheck handles the readiness probe endpoint
-// @Summary Readiness check
-// @Description Returns whether the service is ready to accept traffic
-// @Tags health
-// @Produce json
-// @Success 200 {object} ReadinessResponse "Service is ready"
-// @Failure 503 {object} ReadinessResponse "Service is not ready"
-// @Router /health/ready [get]
+//
+//	@Summary		Readiness check
+//	@Description	Returns whether the service is ready to accept traffic
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	ReadinessResponse	"Service is ready"
+//	@Failure		503	{object}	ReadinessResponse	"Service is not ready"
+//	@Router			/health/ready [get]
 func (h *EndpointHandler) ReadinessCheck(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -184,13 +186,14 @@ func (h *EndpointHandler) ReadinessCheck(c *gin.Context) {
 }
 
 // LivenessCheck handles the liveness probe endpoint
-// @Summary Liveness check
-// @Description Returns whether the service is alive and should not be restarted
-// @Tags health
-// @Produce json
-// @Success 200 {object} LivenessResponse "Service is alive"
-// @Failure 503 {object} LivenessResponse "Service is not alive"
-// @Router /health/live [get]
+//
+//	@Summary		Liveness check
+//	@Description	Returns whether the service is alive and should not be restarted
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	LivenessResponse	"Service is alive"
+//	@Failure		503	{object}	LivenessResponse	"Service is not alive"
+//	@Router			/health/live [get]
 func (h *EndpointHandler) LivenessCheck(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -220,12 +223,13 @@ func (h *EndpointHandler) LivenessCheck(c *gin.Context) {
 }
 
 // DetailedHealthCheck handles the detailed health check endpoint
-// @Summary Detailed health check
-// @Description Returns detailed health status including all checks and their results
-// @Tags health
-// @Produce json
-// @Success 200 {object} map[string]interface{} "Detailed health status"
-// @Router /health/detailed [get]
+//
+//	@Summary		Detailed health check
+//	@Description	Returns detailed health status including all checks and their results
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}	"Detailed health status"
+//	@Router			/health/detailed [get]
 func (h *EndpointHandler) DetailedHealthCheck(c *gin.Context) {
 	ctx := c.Request.Context()
 

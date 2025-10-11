@@ -259,6 +259,7 @@ func TestCompensationExecutor_ExecuteCompensation_Success(t *testing.T) {
 		eventPublisher:   publisher,
 		retryPolicy:      saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
 		metricsCollector: collector,
+		tracingManager:   &noOpTracingManager{},
 		metrics:          &saga.CoordinatorMetrics{},
 	}
 
@@ -363,6 +364,7 @@ func TestCompensationExecutor_CompensationFailure(t *testing.T) {
 		eventPublisher:   publisher,
 		retryPolicy:      saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
 		metricsCollector: collector,
+		tracingManager:   &noOpTracingManager{},
 		metrics:          &saga.CoordinatorMetrics{},
 	}
 
@@ -454,6 +456,7 @@ func TestCompensationExecutor_NoCompletedSteps(t *testing.T) {
 		eventPublisher:   publisher,
 		retryPolicy:      saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
 		metricsCollector: collector,
+		tracingManager:   &noOpTracingManager{},
 		metrics:          &saga.CoordinatorMetrics{},
 	}
 
@@ -497,6 +500,7 @@ func TestCompensationExecutor_ContextCancellation(t *testing.T) {
 		eventPublisher:   publisher,
 		retryPolicy:      saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
 		metricsCollector: collector,
+		tracingManager:   &noOpTracingManager{},
 		metrics:          &saga.CoordinatorMetrics{},
 	}
 
@@ -581,6 +585,7 @@ func TestCompensationExecutor_ReverseOrder(t *testing.T) {
 		eventPublisher:   publisher,
 		retryPolicy:      saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
 		metricsCollector: collector,
+		tracingManager:   &noOpTracingManager{},
 		metrics:          &saga.CoordinatorMetrics{},
 	}
 
@@ -689,6 +694,7 @@ func TestCompensationExecutor_RetryOnFailure(t *testing.T) {
 		eventPublisher:   publisher,
 		retryPolicy:      saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
 		metricsCollector: collector,
+		tracingManager:   &noOpTracingManager{},
 		metrics:          &saga.CoordinatorMetrics{},
 	}
 

@@ -57,8 +57,17 @@ func newStepExecutor(
 // It manages state transitions, data passing between steps, retry logic,
 // and error handling. Returns an error if any step fails after all retries.
 func (se *stepExecutor) executeSteps(ctx context.Context) error {
+	// Start tracing span for Saga execution
+	ctx, span := se.coordinator.tracingManager.StartSpan(ctx, "saga.execute_steps")
+	defer span.End()
+
+	span.SetAttribute("saga.id", se.instance.id)
+	span.SetAttribute("saga.definition_id", se.definition.GetID())
+	span.SetAttribute("saga.total_steps", se.instance.totalSteps)
+
 	steps := se.definition.GetSteps()
 	if len(steps) == 0 {
+		span.SetStatus(2, "no steps defined")
 		return fmt.Errorf("no steps defined in Saga definition")
 	}
 
@@ -128,6 +137,15 @@ func (se *stepExecutor) executeStep(
 	stepIndex int,
 	inputData interface{},
 ) (*saga.StepState, interface{}, error) {
+	// Start tracing span for step execution
+	ctx, span := se.coordinator.tracingManager.StartSpan(ctx, "saga.execute_step")
+	defer span.End()
+
+	span.SetAttribute("saga.id", se.instance.id)
+	span.SetAttribute("step.index", stepIndex)
+	span.SetAttribute("step.id", step.GetID())
+	span.SetAttribute("step.name", step.GetName())
+
 	// Initialize step state
 	now := time.Now()
 	stepState := &saga.StepState{
@@ -210,6 +228,12 @@ func (se *stepExecutor) executeStep(
 				duration,
 			)
 
+			// Update tracing span
+			span.SetAttribute("step.attempts", attempt)
+			span.SetAttribute("step.duration_seconds", duration.Seconds())
+			span.SetStatus(1, "step completed successfully")
+			span.AddEvent("step_completed")
+
 			// Publish step completed event
 			se.publishStepCompletedEvent(ctx, step, stepIndex, result, duration)
 
@@ -255,6 +279,14 @@ func (se *stepExecutor) executeStep(
 				false,
 				duration,
 			)
+
+			// Update tracing span
+			span.SetAttribute("step.attempts", attempt)
+			span.SetAttribute("step.duration_seconds", duration.Seconds())
+			span.SetAttribute("step.error_type", string(sagaError.Type))
+			span.SetStatus(2, fmt.Sprintf("step failed: %v", lastErr))
+			span.RecordError(lastErr)
+			span.AddEvent("step_failed")
 
 			// Handle max retries exceeded
 			if attempt >= maxAttempts {
