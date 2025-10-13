@@ -350,3 +350,173 @@ func (jt JitterType) String() string {
 		return "Unknown"
 	}
 }
+
+// TestLinearBackoffPolicy_WithJitter tests linear backoff with jitter.
+func TestLinearBackoffPolicy_WithJitter(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  5,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     1 * time.Second,
+	}
+
+	increment := 50 * time.Millisecond
+	policy := NewLinearBackoffPolicy(config, increment, 0.3)
+
+	// With jitter, delays should vary but be reasonable
+	for attempt := 1; attempt <= 5; attempt++ {
+		delay := policy.GetRetryDelay(attempt)
+		if delay < 0 {
+			t.Errorf("GetRetryDelay(%d) returned negative delay: %v", attempt, delay)
+		}
+		// Allow some variance due to jitter
+		expectedBase := config.InitialDelay + (increment * time.Duration(attempt-1))
+		maxExpected := expectedBase + time.Duration(float64(expectedBase)*0.3)
+		if delay > maxExpected {
+			t.Logf("GetRetryDelay(%d) = %v (expected base: %v)", attempt, delay, expectedBase)
+		}
+	}
+}
+
+// TestFixedIntervalPolicy_WithJitter tests fixed interval with jitter.
+func TestFixedIntervalPolicy_WithJitter(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  5,
+		InitialDelay: 100 * time.Millisecond,
+	}
+
+	interval := 200 * time.Millisecond
+	policy := NewFixedIntervalPolicy(config, interval, 0.5)
+
+	// With jitter, delays should vary around the interval
+	for attempt := 1; attempt <= 5; attempt++ {
+		delay := policy.GetRetryDelay(attempt)
+		if delay < 0 {
+			t.Errorf("GetRetryDelay(%d) returned negative delay: %v", attempt, delay)
+		}
+		// With 50% jitter, delay can be in range [interval - 50%, interval + 50%]
+		minExpected := time.Duration(float64(interval) * 0.5)
+		maxExpected := time.Duration(float64(interval) * 1.5)
+		if delay < minExpected || delay > maxExpected {
+			t.Logf("GetRetryDelay(%d) = %v (expected range: %v - %v)", attempt, delay, minExpected, maxExpected)
+		}
+	}
+}
+
+// TestExponentialBackoffPolicy_ZeroAttempt tests edge case with zero/negative attempts.
+func TestExponentialBackoffPolicy_ZeroAttempt(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     1 * time.Second,
+	}
+
+	policy := NewExponentialBackoffPolicy(config, 2.0, 0)
+
+	tests := []struct {
+		name    string
+		attempt int
+		want    time.Duration
+	}{
+		{"zero attempt", 0, 0},
+		{"negative attempt", -1, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := policy.GetRetryDelay(tt.attempt)
+			if got != tt.want {
+				t.Errorf("GetRetryDelay(%d) = %v, want %v", tt.attempt, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLinearBackoffPolicy_ZeroAttempt tests edge case with zero/negative attempts.
+func TestLinearBackoffPolicy_ZeroAttempt(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     1 * time.Second,
+	}
+
+	policy := NewLinearBackoffPolicy(config, 50*time.Millisecond, 0)
+
+	tests := []struct {
+		name    string
+		attempt int
+		want    time.Duration
+	}{
+		{"zero attempt", 0, 0},
+		{"negative attempt", -1, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := policy.GetRetryDelay(tt.attempt)
+			if got != tt.want {
+				t.Errorf("GetRetryDelay(%d) = %v, want %v", tt.attempt, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestFixedIntervalPolicy_ZeroAttempt tests edge case with zero/negative attempts.
+func TestFixedIntervalPolicy_ZeroAttempt(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 100 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 200*time.Millisecond, 0)
+
+	tests := []struct {
+		name    string
+		attempt int
+		want    time.Duration
+	}{
+		{"zero attempt", 0, 0},
+		{"negative attempt", -1, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := policy.GetRetryDelay(tt.attempt)
+			if got != tt.want {
+				t.Errorf("GetRetryDelay(%d) = %v, want %v", tt.attempt, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExponentialBackoffPolicy_DifferentMultipliers tests different multiplier values.
+func TestExponentialBackoffPolicy_DifferentMultipliers(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  4,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     10 * time.Second,
+	}
+
+	tests := []struct {
+		name       string
+		multiplier float64
+		attempt    int
+		want       time.Duration
+	}{
+		{"multiplier 1.5", 1.5, 1, 100 * time.Millisecond},
+		{"multiplier 1.5", 1.5, 2, 150 * time.Millisecond},
+		{"multiplier 1.5", 1.5, 3, 225 * time.Millisecond},
+		{"multiplier 3.0", 3.0, 1, 100 * time.Millisecond},
+		{"multiplier 3.0", 3.0, 2, 300 * time.Millisecond},
+		{"multiplier 3.0", 3.0, 3, 900 * time.Millisecond},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := NewExponentialBackoffPolicy(config, tt.multiplier, 0)
+			got := policy.GetRetryDelay(tt.attempt)
+			if got != tt.want {
+				t.Errorf("GetRetryDelay(%d) with multiplier %.1f = %v, want %v", tt.attempt, tt.multiplier, got, tt.want)
+			}
+		})
+	}
+}
