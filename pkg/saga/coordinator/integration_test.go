@@ -59,8 +59,8 @@ func TestSagaEndToEndExecution(t *testing.T) {
 		description: "Tests complete Saga execution",
 		steps: []saga.SagaStep{
 			&testSagaStep{
-				id:      "step-1",
-				name:    "Reserve Inventory",
+				id:   "step-1",
+				name: "Reserve Inventory",
 				execute: func(ctx context.Context, data interface{}) (interface{}, error) {
 					orderData := data.(map[string]interface{})
 					orderData["inventory_reserved"] = true
@@ -71,8 +71,8 @@ func TestSagaEndToEndExecution(t *testing.T) {
 				},
 			},
 			&testSagaStep{
-				id:      "step-2",
-				name:    "Process Payment",
+				id:   "step-2",
+				name: "Process Payment",
 				execute: func(ctx context.Context, data interface{}) (interface{}, error) {
 					orderData := data.(map[string]interface{})
 					orderData["payment_processed"] = true
@@ -83,8 +83,8 @@ func TestSagaEndToEndExecution(t *testing.T) {
 				},
 			},
 			&testSagaStep{
-				id:      "step-3",
-				name:    "Confirm Order",
+				id:   "step-3",
+				name: "Confirm Order",
 				execute: func(ctx context.Context, data interface{}) (interface{}, error) {
 					orderData := data.(map[string]interface{})
 					orderData["order_confirmed"] = true
@@ -103,9 +103,9 @@ func TestSagaEndToEndExecution(t *testing.T) {
 	// Start Saga
 	ctx := context.Background()
 	initialData := map[string]interface{}{
-		"order_id":   "ORDER-001",
+		"order_id":    "ORDER-001",
 		"customer_id": "CUST-123",
-		"amount":     100.0,
+		"amount":      100.0,
 	}
 
 	instance, err := coordinator.StartSaga(ctx, definition, initialData)
@@ -164,7 +164,7 @@ func TestSagaEndToEndExecution(t *testing.T) {
 
 // TestSagaFailureAndCompensation tests that compensation executes correctly when a step fails.
 // It verifies that completed steps are compensated in reverse order.
-// Note: This test is skipped due to the async execution model. 
+// Note: This test is skipped due to the async execution model.
 // Compensation is tested in the unit tests (compensation_test.go).
 func TestSagaFailureAndCompensation(t *testing.T) {
 	t.Skip("Skipping due to async execution model - compensation tested in unit tests")
@@ -693,11 +693,11 @@ type testSagaStep struct {
 	isRetryable func(err error) bool
 }
 
-func (s *testSagaStep) GetID() string                     { return s.id }
-func (s *testSagaStep) GetName() string                   { return s.name }
-func (s *testSagaStep) GetDescription() string            { return s.description }
-func (s *testSagaStep) GetTimeout() time.Duration         { return s.timeout }
-func (s *testSagaStep) GetRetryPolicy() saga.RetryPolicy  { return s.retryPolicy }
+func (s *testSagaStep) GetID() string                       { return s.id }
+func (s *testSagaStep) GetName() string                     { return s.name }
+func (s *testSagaStep) GetDescription() string              { return s.description }
+func (s *testSagaStep) GetTimeout() time.Duration           { return s.timeout }
+func (s *testSagaStep) GetRetryPolicy() saga.RetryPolicy    { return s.retryPolicy }
 func (s *testSagaStep) GetMetadata() map[string]interface{} { return s.metadata }
 func (s *testSagaStep) IsRetryable(err error) bool {
 	if s.isRetryable != nil {
@@ -847,4 +847,3 @@ func (p *InMemoryEventPublisher) GetEvents() []saga.SagaEvent {
 	copy(events, p.events)
 	return events
 }
-
