@@ -344,4 +344,3 @@ func TestCircuitBreaker_SuccessInClosedState(t *testing.T) {
 		t.Errorf("after success, ConsecutiveFailures = %d, want 0", metrics.ConsecutiveFailures)
 	}
 }
-

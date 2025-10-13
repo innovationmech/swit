@@ -41,11 +41,11 @@ func TestExponentialBackoffPolicy_GetRetryDelay(t *testing.T) {
 		attempt int
 		want    time.Duration
 	}{
-		{"first retry", 1, 100 * time.Millisecond},        // 100ms * 2^0
-		{"second retry", 2, 200 * time.Millisecond},       // 100ms * 2^1
-		{"third retry", 3, 400 * time.Millisecond},        // 100ms * 2^2
-		{"fourth retry", 4, 800 * time.Millisecond},       // 100ms * 2^3
-		{"fifth retry", 5, 1600 * time.Millisecond},       // 100ms * 2^4
+		{"first retry", 1, 100 * time.Millisecond},           // 100ms * 2^0
+		{"second retry", 2, 200 * time.Millisecond},          // 100ms * 2^1
+		{"third retry", 3, 400 * time.Millisecond},           // 100ms * 2^2
+		{"fourth retry", 4, 800 * time.Millisecond},          // 100ms * 2^3
+		{"fifth retry", 5, 1600 * time.Millisecond},          // 100ms * 2^4
 		{"sixth retry (capped)", 6, 3200 * time.Millisecond}, // 100ms * 2^5
 	}
 
@@ -350,4 +350,3 @@ func (jt JitterType) String() string {
 		return "Unknown"
 	}
 }
-

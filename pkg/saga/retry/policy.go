@@ -179,4 +179,3 @@ type RetryContext struct {
 	// Metadata provides additional context for retry decisions.
 	Metadata map[string]interface{}
 }
-

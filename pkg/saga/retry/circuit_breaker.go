@@ -319,4 +319,3 @@ type CircuitBreakerMetrics struct {
 	LastStateChange      time.Time
 	LastFailureTime      time.Time
 }
-

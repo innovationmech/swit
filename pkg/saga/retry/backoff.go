@@ -321,4 +321,3 @@ func (p *FixedIntervalPolicy) applyJitter(baseDelay time.Duration) time.Duration
 
 	return time.Duration(delay)
 }
-

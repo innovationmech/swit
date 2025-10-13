@@ -238,4 +238,3 @@ func TestRetryContext(t *testing.T) {
 		t.Errorf("expected Metadata[key] = 'value', got %v", ctx.Metadata["key"])
 	}
 }
-

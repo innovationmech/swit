@@ -419,4 +419,3 @@ func TestExecutor_TotalDuration(t *testing.T) {
 		t.Errorf("TotalDuration = %v, want >= %v", result.TotalDuration, minExpected)
 	}
 }
-
