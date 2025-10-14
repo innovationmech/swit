@@ -57,6 +57,12 @@ type RedisConnection struct {
 	config *RedisConfig
 	client RedisClient
 	closed bool
+
+	// poolMonitor monitors connection pool statistics
+	poolMonitor *PoolMonitor
+
+	// clusterDiscovery discovers and monitors cluster topology (only for cluster mode)
+	clusterDiscovery *ClusterDiscovery
 }
 
 // NewRedisConnection creates and initializes a new Redis connection based on the configuration.
@@ -87,6 +93,20 @@ func NewRedisConnection(config *RedisConfig) (*RedisConnection, error) {
 	}
 
 	conn.client = client
+
+	// Initialize pool monitor if metrics are enabled
+	if config.EnableMetrics {
+		conn.poolMonitor = NewPoolMonitor(client, config)
+	}
+
+	// Initialize cluster discovery for cluster mode
+	if config.Mode == RedisModeCluster {
+		discovery, err := NewClusterDiscovery(client, config)
+		if err == nil {
+			conn.clusterDiscovery = discovery
+		}
+		// If cluster discovery fails, we continue without it (non-critical)
+	}
 
 	return conn, nil
 }
@@ -342,4 +362,46 @@ func (c *RedisConnection) GetConfig() RedisConfig {
 	}
 
 	return config
+}
+
+// GetPoolMonitor returns the pool monitor instance if available.
+func (c *RedisConnection) GetPoolMonitor() *PoolMonitor {
+	return c.poolMonitor
+}
+
+// GetClusterDiscovery returns the cluster discovery instance if available.
+func (c *RedisConnection) GetClusterDiscovery() *ClusterDiscovery {
+	return c.clusterDiscovery
+}
+
+// GetPoolStats returns current pool statistics.
+func (c *RedisConnection) GetPoolStats(ctx context.Context) (*PoolStats, error) {
+	if c.poolMonitor == nil {
+		return nil, fmt.Errorf("pool monitor not initialized")
+	}
+	return c.poolMonitor.CollectStats(ctx)
+}
+
+// GetClusterTopology returns current cluster topology.
+func (c *RedisConnection) GetClusterTopology(ctx context.Context) (*ClusterTopology, error) {
+	if c.clusterDiscovery == nil {
+		return nil, ErrNotClusterMode
+	}
+	return c.clusterDiscovery.DiscoverTopology(ctx)
+}
+
+// CheckPoolHealth performs a health check on the connection pool.
+func (c *RedisConnection) CheckPoolHealth(ctx context.Context) (*PoolHealthStatus, error) {
+	if c.poolMonitor == nil {
+		return nil, fmt.Errorf("pool monitor not initialized")
+	}
+	return c.poolMonitor.CheckHealth(ctx)
+}
+
+// CheckClusterHealth checks the health of the Redis cluster.
+func (c *RedisConnection) CheckClusterHealth(ctx context.Context) (bool, []string, error) {
+	if c.clusterDiscovery == nil {
+		return false, nil, ErrNotClusterMode
+	}
+	return c.clusterDiscovery.CheckClusterHealth(ctx)
 }
