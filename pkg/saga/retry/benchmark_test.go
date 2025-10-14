@@ -513,4 +513,3 @@ func BenchmarkCircuitBreakerStates(b *testing.B) {
 		})
 	}
 }
-
