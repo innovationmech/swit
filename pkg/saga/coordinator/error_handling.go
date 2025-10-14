@@ -23,6 +23,7 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -164,12 +165,18 @@ func (eh *ErrorHandler) determineErrorType(err error) saga.ErrorType {
 	// Check for specific error types
 	errStr := err.Error()
 
-	// Context errors
-	if err == context.DeadlineExceeded {
+	// Context errors - use errors.Is to handle wrapped errors
+	if errors.Is(err, context.DeadlineExceeded) {
 		return saga.ErrorTypeTimeout
 	}
-	if err == context.Canceled {
+	if errors.Is(err, context.Canceled) {
 		return saga.ErrorTypeSystem
+	}
+
+	// Also check the error string for timeout-related keywords
+	// This handles cases where the error is wrapped in a non-standard way
+	if containsAny(errStr, []string{"deadline exceeded", "context deadline exceeded"}) {
+		return saga.ErrorTypeTimeout
 	}
 
 	// Network errors (simple heuristic - can be enhanced)

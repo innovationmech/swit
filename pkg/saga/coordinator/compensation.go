@@ -28,6 +28,7 @@ import (
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/saga"
+	"github.com/innovationmech/swit/pkg/saga/retry"
 )
 
 // compensationExecutor encapsulates the logic for executing compensation in reverse order.
@@ -203,99 +204,105 @@ func (ce *compensationExecutor) compensateStep(
 	// Log compensation start
 	logger.GetSugaredLogger().Infof("Starting compensation for step %d (%s) in Saga %s", stepIndex, step.GetName(), ce.instance.id)
 
-	// Execute compensation with retry logic
-	var lastErr error
-	maxAttempts := stepState.CompensationState.MaxAttempts
+	// Create retry policy for compensation
+	retryPolicy := ce.getCompensationRetryPolicy(step)
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		stepState.CompensationState.Attempts = attempt + 1
+	// Create RetryExecutor for compensation with retry logic
+	retryExecutor := retry.NewExecutor(
+		retryPolicy,
+		retry.WithLogger(logger.GetLogger()),
+	)
+
+	// Set up callbacks for compensation retry events
+	retryExecutor.OnRetry(func(attempt int, err error, delay time.Duration) {
+		logger.GetSugaredLogger().Infof("Retrying compensation for step %d (%s) attempt %d after error: %v (delay: %v)",
+			stepIndex, step.GetName(), attempt, err, delay)
+
+		// Update compensation state with retry info
+		stepState.CompensationState.Attempts = attempt
+	})
+
+	// Execute compensation with retry logic
+	compensationStart := time.Now()
+	result, err := retryExecutor.Execute(ctx, func(retryCtx context.Context) (interface{}, error) {
+		// Update compensation attempts
+		stepState.CompensationState.Attempts++
 
 		// Create compensation context with timeout
-		compensationCtx, cancel := ce.createCompensationContext(ctx, step)
+		compensationCtx, cancel := ce.createCompensationContext(retryCtx, step)
+		defer cancel()
 
 		// Execute the compensation
-		err := step.Compensate(compensationCtx, stepState.OutputData)
-		cancel()
+		compErr := step.Compensate(compensationCtx, stepState.OutputData)
+		if compErr != nil {
+			return nil, compErr
+		}
+		return nil, nil // Return nil result on success
+	})
 
-		duration := time.Since(startTime)
+	totalDuration := time.Since(compensationStart)
 
-		if err == nil {
-			// Compensation succeeded
-			completedTime := time.Now()
-			stepState.State = saga.StepStateCompensated
-			stepState.CompensationState.State = saga.CompensationStateCompleted
-			stepState.CompensationState.CompletedAt = &completedTime
+	if err == nil {
+		// Compensation succeeded
+		completedTime := time.Now()
+		stepState.State = saga.StepStateCompensated
+		stepState.CompensationState.State = saga.CompensationStateCompleted
+		stepState.CompensationState.CompletedAt = &completedTime
 
-			// Persist final step state
-			if saveErr := ce.coordinator.stateStorage.SaveStepState(ctx, ce.instance.id, stepState); saveErr != nil {
-				logger.GetSugaredLogger().Warnf("Failed to save compensated step state: %v", saveErr)
-			}
-
-			// Record metrics
-			ce.coordinator.metricsCollector.RecordCompensationExecuted(
-				ce.definition.GetID(),
-				step.GetID(),
-				true,
-				duration,
-			)
-
-			// Publish compensation step completed event
-			ce.publishCompensationStepCompletedEvent(ctx, step, stepIndex, compensationIndex, duration)
-
-			// Log success
-			logger.GetSugaredLogger().Infof("Compensation for step %d (%s) completed successfully in %v", stepIndex, step.GetName(), duration)
-
-			return nil
+		// Persist final step state
+		if saveErr := ce.coordinator.stateStorage.SaveStepState(ctx, ce.instance.id, stepState); saveErr != nil {
+			logger.GetSugaredLogger().Warnf("Failed to save compensated step state: %v", saveErr)
 		}
 
-		// Compensation failed
-		lastErr = err
-		logger.GetSugaredLogger().Warnf("Compensation for step %d (%s) attempt %d failed: %v", stepIndex, step.GetName(), attempt+1, err)
+		// Record metrics
+		ce.coordinator.metricsCollector.RecordCompensationExecuted(
+			ce.definition.GetID(),
+			step.GetID(),
+			true,
+			totalDuration,
+		)
 
-		// Create SagaError
-		sagaError := ce.createCompensationError(err, step)
-		stepState.CompensationState.Error = sagaError
-
-		// Check if we should retry
-		if attempt+1 < maxAttempts {
-			// Calculate retry delay (use exponential backoff)
-			retryDelay := time.Duration(attempt+1) * time.Second
-			logger.GetSugaredLogger().Infof("Retrying compensation for step %d (%s) after %v (attempt %d/%d)",
-				stepIndex, step.GetName(), retryDelay, attempt+1, maxAttempts)
-
-			// Wait before retry
-			select {
-			case <-time.After(retryDelay):
-			case <-ctx.Done():
-				stepState.CompensationState.State = saga.CompensationStateFailed
-				return ctx.Err()
-			}
-		} else {
-			// No more retries, mark as failed
-			stepState.State = saga.StepStateCompensating // Keep in compensating state
-			stepState.CompensationState.State = saga.CompensationStateFailed
-
-			// Record metrics
-			ce.coordinator.metricsCollector.RecordCompensationExecuted(
-				ce.definition.GetID(),
-				step.GetID(),
-				false,
-				duration,
-			)
-
-			// Publish compensation step failed event
-			ce.publishCompensationStepFailedEvent(ctx, step, stepIndex, compensationIndex, sagaError, attempt+1)
-
-			// Persist final step state
-			if saveErr := ce.coordinator.stateStorage.SaveStepState(ctx, ce.instance.id, stepState); saveErr != nil {
-				logger.GetSugaredLogger().Warnf("Failed to save failed compensation step state: %v", saveErr)
-			}
-
-			return lastErr
+		// Publish compensation step completed event
+		attempts := stepState.CompensationState.Attempts
+		if result != nil {
+			attempts = result.Attempts
 		}
+		ce.publishCompensationStepCompletedEvent(ctx, step, stepIndex, compensationIndex, totalDuration)
+
+		// Log success
+		logger.GetSugaredLogger().Infof("Compensation for step %d (%s) completed successfully in %v (attempts: %d)",
+			stepIndex, step.GetName(), totalDuration, attempts)
+
+		return nil
 	}
 
-	return lastErr
+	// Compensation failed after all retries
+	sagaError := ce.createCompensationError(err, step)
+	stepState.CompensationState.Error = sagaError
+	stepState.State = saga.StepStateCompensating // Keep in compensating state
+	stepState.CompensationState.State = saga.CompensationStateFailed
+
+	// Record metrics
+	ce.coordinator.metricsCollector.RecordCompensationExecuted(
+		ce.definition.GetID(),
+		step.GetID(),
+		false,
+		totalDuration,
+	)
+
+	// Publish compensation step failed event
+	attempts := stepState.CompensationState.Attempts
+	if result != nil {
+		attempts = result.Attempts
+	}
+	ce.publishCompensationStepFailedEvent(ctx, step, stepIndex, compensationIndex, sagaError, attempts)
+
+	// Persist final step state
+	if saveErr := ce.coordinator.stateStorage.SaveStepState(ctx, ce.instance.id, stepState); saveErr != nil {
+		logger.GetSugaredLogger().Warnf("Failed to save failed compensation step state: %v", saveErr)
+	}
+
+	return err
 }
 
 // createCompensationContext creates a context with timeout for compensation execution.
@@ -320,6 +327,29 @@ func (ce *compensationExecutor) getMaxCompensationAttempts(step saga.SagaStep) i
 	// Default to 3 attempts for compensation
 	// This can be made configurable in the future
 	return 3
+}
+
+// getCompensationRetryPolicy returns the retry policy for compensation.
+// It creates a policy based on the step's retry policy or uses default values.
+func (ce *compensationExecutor) getCompensationRetryPolicy(step saga.SagaStep) retry.RetryPolicy {
+	// Try to get step-specific retry policy first
+	if stepPolicy := step.GetRetryPolicy(); stepPolicy != nil {
+		return stepPolicy
+	}
+
+	// Try Saga definition policy
+	if defPolicy := ce.definition.GetRetryPolicy(); defPolicy != nil {
+		return defPolicy
+	}
+
+	// Fall back to a default compensation retry policy
+	// Use exponential backoff with reasonable defaults for compensation
+	maxAttempts := ce.getMaxCompensationAttempts(step)
+	return saga.NewExponentialBackoffRetryPolicy(
+		maxAttempts,
+		1*time.Second,  // base delay
+		30*time.Second, // max delay
+	)
 }
 
 // findOriginalStepIndex finds the original index of a step in the completed steps list.
