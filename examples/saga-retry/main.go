@@ -35,13 +35,13 @@ import (
 
 // SimulatedService 模拟一个可能失败的外部服务
 type SimulatedService struct {
-	name          string
-	failureRate   float64 // 失败率 (0.0 - 1.0)
-	callCount     int
-	successCount  int
-	failureCount  int
-	avgLatency    time.Duration
-	logger        *zap.Logger
+	name         string
+	failureRate  float64 // 失败率 (0.0 - 1.0)
+	callCount    int
+	successCount int
+	failureCount int
+	avgLatency   time.Duration
+	logger       *zap.Logger
 }
 
 func NewSimulatedService(name string, failureRate float64, avgLatency time.Duration, logger *zap.Logger) *SimulatedService {
@@ -467,4 +467,3 @@ func init() {
 		fmt.Println("注意：在 CI 环境中运行，某些示例可能表现不同")
 	}
 }
-
