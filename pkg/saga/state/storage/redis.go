@@ -27,9 +27,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/saga"
 	"github.com/innovationmech/swit/pkg/saga/state"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 // Redis key naming conventions
@@ -76,6 +78,12 @@ type RedisStateStorage struct {
 	// serializer handles saga state serialization/deserialization
 	serializer *SagaSerializer
 
+	// healthChecker performs health checks
+	healthChecker *RedisHealthChecker
+
+	// metrics collects Prometheus metrics
+	metrics *RedisStorageMetrics
+
 	// closed indicates whether the storage has been closed
 	closed bool
 }
@@ -116,13 +124,23 @@ func NewRedisStateStorage(config *RedisConfig) (*RedisStateStorage, error) {
 		PrettyPrint:       false,
 	}
 
-	return &RedisStateStorage{
+	storage := &RedisStateStorage{
 		conn:       conn,
 		config:     config,
 		client:     client,
 		serializer: NewSagaSerializer(serializerOpts),
 		closed:     false,
-	}, nil
+	}
+
+	// Initialize health checker
+	storage.healthChecker = NewRedisHealthChecker(storage, nil)
+
+	// Initialize metrics if enabled
+	if config.EnableMetrics {
+		storage.metrics = NewRedisStorageMetrics(nil)
+	}
+
+	return storage, nil
 }
 
 // NewRedisStateStorageWithRetry creates a new Redis state storage with retry logic.
@@ -152,19 +170,44 @@ func NewRedisStateStorageWithRetry(ctx context.Context, config *RedisConfig, max
 		PrettyPrint:       false,
 	}
 
-	return &RedisStateStorage{
+	storage := &RedisStateStorage{
 		conn:       conn,
 		config:     config,
 		client:     client,
 		serializer: NewSagaSerializer(serializerOpts),
 		closed:     false,
-	}, nil
+	}
+
+	// Initialize health checker
+	storage.healthChecker = NewRedisHealthChecker(storage, nil)
+
+	// Initialize metrics if enabled
+	if config.EnableMetrics {
+		storage.metrics = NewRedisStorageMetrics(nil)
+	}
+
+	return storage, nil
 }
 
 // SaveSaga persists a Saga instance to Redis storage.
 // It serializes the Saga data to JSON and stores it with the configured TTL.
 // It also updates state and timeout indexes for efficient querying.
 func (r *RedisStateStorage) SaveSaga(ctx context.Context, instance saga.SagaInstance) error {
+	start := time.Now()
+	operation := "save_saga"
+
+	defer func() {
+		duration := time.Since(start)
+		if r.metrics != nil {
+			r.metrics.RecordOperation(operation, duration, nil)
+			r.metrics.RecordSagaOperation("save")
+			// Check for slow queries
+			if r.healthChecker != nil && r.healthChecker.config != nil {
+				r.metrics.RecordSlowQuery(operation, duration, r.healthChecker.config.SlowQueryThreshold)
+			}
+		}
+	}()
+
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -185,6 +228,9 @@ func (r *RedisStateStorage) SaveSaga(ctx context.Context, instance saga.SagaInst
 	// Serialize using the new serializer
 	jsonData, err := r.serializer.SerializeSagaInstance(instance)
 	if err != nil {
+		if r.metrics != nil {
+			r.metrics.RecordOperation(operation, time.Since(start), err)
+		}
 		return fmt.Errorf("failed to serialize saga: %w", err)
 	}
 
@@ -214,8 +260,21 @@ func (r *RedisStateStorage) SaveSaga(ctx context.Context, instance saga.SagaInst
 
 	// Execute pipeline
 	if _, err := pipe.Exec(ctx); err != nil {
+		if r.metrics != nil {
+			r.metrics.RecordOperation(operation, time.Since(start), err)
+		}
+		logger.Logger.Error("Failed to save saga to Redis",
+			zap.String("saga_id", sagaID),
+			zap.String("state", data.State.String()),
+			zap.Error(err),
+			zap.Duration("duration", time.Since(start)))
 		return fmt.Errorf("failed to save saga to redis: %w", err)
 	}
+
+	logger.Logger.Debug("Saved saga to Redis",
+		zap.String("saga_id", sagaID),
+		zap.String("state", data.State.String()),
+		zap.Duration("duration", time.Since(start)))
 
 	return nil
 }
@@ -674,7 +733,21 @@ func (r *RedisStateStorage) HealthCheck(ctx context.Context) error {
 		return state.ErrStorageClosed
 	}
 
+	if r.healthChecker != nil {
+		return r.healthChecker.Check(ctx)
+	}
+
 	return r.conn.HealthCheck(ctx)
+}
+
+// GetHealthChecker returns the Redis health checker.
+func (r *RedisStateStorage) GetHealthChecker() *RedisHealthChecker {
+	return r.healthChecker
+}
+
+// GetMetrics returns the Redis storage metrics collector.
+func (r *RedisStateStorage) GetMetrics() *RedisStorageMetrics {
+	return r.metrics
 }
 
 // getSagaKey returns the Redis key for a Saga instance.
