@@ -23,7 +23,6 @@ package storage
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -74,6 +73,9 @@ type RedisStateStorage struct {
 	// client is the underlying Redis client
 	client RedisClient
 
+	// serializer handles saga state serialization/deserialization
+	serializer *SagaSerializer
+
 	// closed indicates whether the storage has been closed
 	closed bool
 }
@@ -107,11 +109,19 @@ func NewRedisStateStorage(config *RedisConfig) (*RedisStateStorage, error) {
 		return nil, fmt.Errorf("failed to ping redis: %w", err)
 	}
 
+	// Create serializer with compression enabled for production use
+	serializerOpts := &SerializationOptions{
+		EnableCompression: true,
+		CompressionLevel:  -1, // Use default compression
+		PrettyPrint:       false,
+	}
+
 	return &RedisStateStorage{
-		conn:   conn,
-		config: config,
-		client: client,
-		closed: false,
+		conn:       conn,
+		config:     config,
+		client:     client,
+		serializer: NewSagaSerializer(serializerOpts),
+		closed:     false,
 	}, nil
 }
 
@@ -135,11 +145,19 @@ func NewRedisStateStorageWithRetry(ctx context.Context, config *RedisConfig, max
 		return nil, fmt.Errorf("failed to get redis client: %w", err)
 	}
 
+	// Create serializer with compression enabled for production use
+	serializerOpts := &SerializationOptions{
+		EnableCompression: true,
+		CompressionLevel:  -1, // Use default compression
+		PrettyPrint:       false,
+	}
+
 	return &RedisStateStorage{
-		conn:   conn,
-		config: config,
-		client: client,
-		closed: false,
+		conn:       conn,
+		config:     config,
+		client:     client,
+		serializer: NewSagaSerializer(serializerOpts),
+		closed:     false,
 	}, nil
 }
 
@@ -164,14 +182,14 @@ func (r *RedisStateStorage) SaveSaga(ctx context.Context, instance saga.SagaInst
 		return state.ErrInvalidSagaID
 	}
 
-	// Convert SagaInstance to SagaInstanceData
-	data := r.convertToSagaInstanceData(instance)
-
-	// Serialize to JSON
-	jsonData, err := json.Marshal(data)
+	// Serialize using the new serializer
+	jsonData, err := r.serializer.SerializeSagaInstance(instance)
 	if err != nil {
 		return fmt.Errorf("failed to serialize saga: %w", err)
 	}
+
+	// Convert SagaInstance to SagaInstanceData for indexing purposes
+	data := r.convertToSagaInstanceData(instance)
 
 	// Prepare Redis commands using pipeline for atomicity
 	pipe := r.client.Pipeline()
@@ -227,14 +245,14 @@ func (r *RedisStateStorage) GetSaga(ctx context.Context, sagaID string) (saga.Sa
 		return nil, fmt.Errorf("failed to get saga from redis: %w", err)
 	}
 
-	// Deserialize from JSON
-	var data saga.SagaInstanceData
-	if err := json.Unmarshal([]byte(jsonData), &data); err != nil {
+	// Deserialize using the new serializer
+	data, err := r.serializer.DeserializeSagaInstance([]byte(jsonData))
+	if err != nil {
 		return nil, fmt.Errorf("failed to deserialize saga: %w", err)
 	}
 
 	// Return wrapped instance
-	return &redisSagaInstance{data: &data}, nil
+	return &redisSagaInstance{data: data}, nil
 }
 
 // UpdateSagaState updates only the state of a Saga instance.
@@ -277,8 +295,11 @@ func (r *RedisStateStorage) UpdateSagaState(ctx context.Context, sagaID string, 
 		}
 	}
 
-	// Serialize updated data
-	jsonData, err := json.Marshal(data)
+	// Create a temporary instance for serialization
+	updatedInstance := &redisSagaInstance{data: data}
+
+	// Serialize updated data using the new serializer
+	jsonData, err := r.serializer.SerializeSagaInstance(updatedInstance)
 	if err != nil {
 		return fmt.Errorf("failed to serialize updated saga: %w", err)
 	}
@@ -492,8 +513,8 @@ func (r *RedisStateStorage) SaveStepState(ctx context.Context, sagaID string, st
 		return err
 	}
 
-	// Serialize step state
-	jsonData, err := json.Marshal(step)
+	// Serialize step state using the new serializer
+	jsonData, err := r.serializer.SerializeStepState(step)
 	if err != nil {
 		return fmt.Errorf("failed to serialize step state: %w", err)
 	}
@@ -565,12 +586,13 @@ func (r *RedisStateStorage) GetStepStates(ctx context.Context, sagaID string) ([
 			return nil, fmt.Errorf("failed to get step state: %w", err)
 		}
 
-		var step saga.StepState
-		if err := json.Unmarshal([]byte(jsonData), &step); err != nil {
+		// Deserialize step state using the new serializer
+		step, err := r.serializer.DeserializeStepState([]byte(jsonData))
+		if err != nil {
 			return nil, fmt.Errorf("failed to deserialize step state: %w", err)
 		}
 
-		result = append(result, &step)
+		result = append(result, step)
 	}
 
 	return result, nil
