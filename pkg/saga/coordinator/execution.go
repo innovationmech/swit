@@ -28,6 +28,7 @@ import (
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/saga"
+	"github.com/innovationmech/swit/pkg/saga/retry"
 )
 
 // stepExecutor encapsulates the logic for executing Saga steps sequentially.
@@ -175,137 +176,130 @@ func (se *stepExecutor) executeStep(
 	// Log step execution start
 	logger.GetSugaredLogger().Infof("Starting step %d (%s) for Saga %s", stepIndex, step.GetName(), se.instance.id)
 
-	// Execute with retry logic using ErrorHandler
-	var outputData interface{}
-	var lastErr error
+	// Create retry policy for this step
+	retryPolicy := se.getRetryPolicy(step)
 
-	maxAttempts := se.errorHandler.GetMaxAttempts(step)
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	// Create RetryExecutor with step-specific configuration
+	retryExecutor := retry.NewExecutor(
+		retryPolicy,
+		retry.WithLogger(logger.GetLogger()),
+	)
+
+	// Set up callbacks for retry events
+	retryExecutor.OnRetry(func(attempt int, err error, delay time.Duration) {
+		logger.GetSugaredLogger().Infof("Retrying step %d (%s) attempt %d after error: %v (delay: %v)",
+			stepIndex, step.GetName(), attempt, err, delay)
+
+		// Record retry metrics
+		se.coordinator.metricsCollector.RecordStepRetried(
+			se.definition.GetID(),
+			step.GetID(),
+			attempt,
+		)
+
+		// Update step state with retry info
+		stepState.Attempts = attempt
+		lastAttemptTime := time.Now()
+		stepState.LastAttemptAt = &lastAttemptTime
+		if saveErr := se.coordinator.stateStorage.SaveStepState(ctx, se.instance.id, stepState); saveErr != nil {
+			logger.GetSugaredLogger().Warnf("Failed to save step state during retry: %v", saveErr)
+		}
+	})
+
+	// Execute step with retry logic
+	executionStart := time.Now()
+	result, err := retryExecutor.Execute(ctx, func(retryCtx context.Context) (interface{}, error) {
 		// Update step state to running
 		startTime := time.Now()
 		stepState.State = saga.StepStateRunning
-		stepState.Attempts = attempt
+		stepState.Attempts++
 		stepState.StartedAt = &startTime
 		stepState.LastAttemptAt = &startTime
 
 		// Persist updated step state
-		if err := se.coordinator.stateStorage.SaveStepState(ctx, se.instance.id, stepState); err != nil {
-			logger.GetSugaredLogger().Warnf("Failed to save step state: %v", err)
+		if saveErr := se.coordinator.stateStorage.SaveStepState(retryCtx, se.instance.id, stepState); saveErr != nil {
+			logger.GetSugaredLogger().Warnf("Failed to save step state: %v", saveErr)
 		}
 
 		// Create step execution context with timeout
-		stepCtx, cancel := se.createStepContext(ctx, step)
+		stepCtx, cancel := se.createStepContext(retryCtx, step)
+		defer cancel()
 
 		// Execute the step
-		result, err := step.Execute(stepCtx, inputData)
-		cancel()
+		return step.Execute(stepCtx, inputData)
+	})
 
-		endTime := time.Now()
-		duration := endTime.Sub(startTime)
+	totalDuration := time.Since(executionStart)
 
-		if err == nil {
-			// Step succeeded
-			se.errorHandler.RecordAttempt(step, attempt, startTime, endTime, nil, false)
+	if err == nil && result != nil {
+		// Step succeeded
+		completedTime := time.Now()
+		stepState.State = saga.StepStateCompleted
+		stepState.CompletedAt = &completedTime
+		stepState.OutputData = result.Result
 
-			completedTime := time.Now()
-			stepState.State = saga.StepStateCompleted
-			stepState.CompletedAt = &completedTime
-			stepState.OutputData = result
-
-			// Persist final step state
-			if saveErr := se.coordinator.stateStorage.SaveStepState(ctx, se.instance.id, stepState); saveErr != nil {
-				logger.GetSugaredLogger().Warnf("Failed to save completed step state: %v", saveErr)
-			}
-
-			// Update instance metrics
-			se.incrementCompletedSteps()
-
-			// Record metrics
-			se.coordinator.metricsCollector.RecordStepExecuted(
-				se.definition.GetID(),
-				step.GetID(),
-				true,
-				duration,
-			)
-
-			// Update tracing span
-			span.SetAttribute("step.attempts", attempt)
-			span.SetAttribute("step.duration_seconds", duration.Seconds())
-			span.SetStatus(1, "step completed successfully")
-			span.AddEvent("step_completed")
-
-			// Publish step completed event
-			se.publishStepCompletedEvent(ctx, step, stepIndex, result, duration)
-
-			outputData = result
-			break
+		// Persist final step state
+		if saveErr := se.coordinator.stateStorage.SaveStepState(ctx, se.instance.id, stepState); saveErr != nil {
+			logger.GetSugaredLogger().Warnf("Failed to save completed step state: %v", saveErr)
 		}
 
-		// Step failed - use ErrorHandler to determine retry strategy
-		lastErr = err
-		sagaError := se.errorHandler.ClassifyError(err, step)
-		stepState.Error = sagaError
+		// Update instance metrics
+		se.incrementCompletedSteps()
 
-		// Determine if we should retry
-		shouldRetry, retryDelay := se.errorHandler.HandleStepError(ctx, step, err, attempt)
+		// Record metrics
+		se.coordinator.metricsCollector.RecordStepExecuted(
+			se.definition.GetID(),
+			step.GetID(),
+			true,
+			totalDuration,
+		)
 
-		// Record the attempt
-		se.errorHandler.RecordAttempt(step, attempt, startTime, endTime, err, shouldRetry)
+		// Update tracing span
+		span.SetAttribute("step.attempts", result.Attempts)
+		span.SetAttribute("step.duration_seconds", totalDuration.Seconds())
+		span.SetStatus(1, "step completed successfully")
+		span.AddEvent("step_completed")
 
-		if shouldRetry && attempt < maxAttempts {
-			// Record retry metrics
-			se.coordinator.metricsCollector.RecordStepRetried(
-				se.definition.GetID(),
-				step.GetID(),
-				attempt,
-			)
+		// Publish step completed event
+		se.publishStepCompletedEvent(ctx, step, stepIndex, result.Result, totalDuration)
 
-			// Wait before retry
-			select {
-			case <-time.After(retryDelay):
-				// Continue to next attempt
-			case <-ctx.Done():
-				stepState.State = saga.StepStateFailed
-				return stepState, nil, ctx.Err()
-			}
-		} else {
-			// No more retries, mark as failed
-			stepState.State = saga.StepStateFailed
-
-			// Record metrics
-			se.coordinator.metricsCollector.RecordStepExecuted(
-				se.definition.GetID(),
-				step.GetID(),
-				false,
-				duration,
-			)
-
-			// Update tracing span
-			span.SetAttribute("step.attempts", attempt)
-			span.SetAttribute("step.duration_seconds", duration.Seconds())
-			span.SetAttribute("step.error_type", string(sagaError.Type))
-			span.SetStatus(2, fmt.Sprintf("step failed: %v", lastErr))
-			span.RecordError(lastErr)
-			span.AddEvent("step_failed")
-
-			// Handle max retries exceeded
-			if attempt >= maxAttempts {
-				lastErr = se.errorHandler.HandleMaxRetriesExceeded(ctx, step, lastErr, attempt)
-			}
-
-			// Publish step failed event
-			se.publishStepFailedEvent(ctx, step, stepIndex, sagaError, attempt)
-
-			// Persist final step state
-			if saveErr := se.coordinator.stateStorage.SaveStepState(ctx, se.instance.id, stepState); saveErr != nil {
-				logger.GetSugaredLogger().Warnf("Failed to save failed step state: %v", saveErr)
-			}
-
-			return stepState, nil, lastErr
-		}
+		return stepState, result.Result, nil
 	}
 
-	return stepState, outputData, nil
+	// Step failed after all retries
+	sagaError := se.errorHandler.ClassifyError(err, step)
+	stepState.Error = sagaError
+	stepState.State = saga.StepStateFailed
+
+	// Record metrics
+	se.coordinator.metricsCollector.RecordStepExecuted(
+		se.definition.GetID(),
+		step.GetID(),
+		false,
+		totalDuration,
+	)
+
+	// Update tracing span
+	attempts := stepState.Attempts
+	if result != nil {
+		attempts = result.Attempts
+	}
+	span.SetAttribute("step.attempts", attempts)
+	span.SetAttribute("step.duration_seconds", totalDuration.Seconds())
+	span.SetAttribute("step.error_type", string(sagaError.Type))
+	span.SetStatus(2, fmt.Sprintf("step failed: %v", err))
+	span.RecordError(err)
+	span.AddEvent("step_failed")
+
+	// Publish step failed event
+	se.publishStepFailedEvent(ctx, step, stepIndex, sagaError, attempts)
+
+	// Persist final step state
+	if saveErr := se.coordinator.stateStorage.SaveStepState(ctx, se.instance.id, stepState); saveErr != nil {
+		logger.GetSugaredLogger().Warnf("Failed to save failed step state: %v", saveErr)
+	}
+
+	return stepState, nil, err
 }
 
 // createStepContext creates a context with timeout for step execution.
@@ -335,6 +329,24 @@ func (se *stepExecutor) createStepContext(ctx context.Context, step saga.SagaSte
 // getMaxAttempts returns the maximum number of attempts for a step.
 func (se *stepExecutor) getMaxAttempts(step saga.SagaStep) int {
 	return se.errorHandler.GetMaxAttempts(step)
+}
+
+// getRetryPolicy returns the retry policy for a step.
+// It uses the step's retry policy if defined, otherwise falls back to the Saga definition's policy,
+// and finally to the coordinator's default policy.
+func (se *stepExecutor) getRetryPolicy(step saga.SagaStep) retry.RetryPolicy {
+	// Try step-specific policy first
+	if stepPolicy := step.GetRetryPolicy(); stepPolicy != nil {
+		return stepPolicy
+	}
+
+	// Try Saga definition policy
+	if defPolicy := se.definition.GetRetryPolicy(); defPolicy != nil {
+		return defPolicy
+	}
+
+	// Fall back to coordinator default
+	return se.coordinator.retryPolicy
 }
 
 // updateSagaState updates the Saga instance state and persists it.
