@@ -419,3 +419,431 @@ func TestExecutor_TotalDuration(t *testing.T) {
 		t.Errorf("TotalDuration = %v, want >= %v", result.TotalDuration, minExpected)
 	}
 }
+
+// Test new features
+
+func TestExecutor_WithCircuitBreaker(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+
+	cbConfig := &CircuitBreakerConfig{
+		MaxFailures:         2,
+		ResetTimeout:        100 * time.Millisecond,
+		HalfOpenMaxRequests: 1,
+		SuccessThreshold:    1,
+	}
+
+	cb := NewCircuitBreaker(cbConfig, policy)
+	executor := NewExecutor(policy, WithCircuitBreaker(cb))
+
+	testErr := errors.New("error")
+	attemptCount := 0
+
+	// Function that always fails
+	fn := func(ctx context.Context) (interface{}, error) {
+		attemptCount++
+		return nil, testErr
+	}
+
+	// First execution should exhaust retries and open circuit
+	result, err := executor.Execute(context.Background(), fn)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	if result.Success {
+		t.Error("expected failure")
+	}
+
+	// Reset attempt count
+	attemptCount = 0
+
+	// Second execution should fail fast due to open circuit
+	result2, err2 := executor.Execute(context.Background(), fn)
+	if !errors.Is(err2, ErrCircuitBreakerOpen) {
+		t.Errorf("expected ErrCircuitBreakerOpen, got %v", err2)
+	}
+	if attemptCount > 0 {
+		t.Errorf("expected no attempts due to open circuit, got %d", attemptCount)
+	}
+	if result2.Attempts != 0 {
+		t.Errorf("expected 0 attempts, got %d", result2.Attempts)
+	}
+}
+
+type permanentError struct {
+	msg string
+}
+
+func (e *permanentError) Error() string {
+	return e.msg
+}
+
+type customErrorClassifier struct{}
+
+func (c *customErrorClassifier) IsRetryable(err error) bool {
+	_, ok := err.(*permanentError)
+	return !ok
+}
+
+func (c *customErrorClassifier) IsPermanent(err error) bool {
+	_, ok := err.(*permanentError)
+	return ok
+}
+
+func TestExecutor_WithErrorClassifier(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+	classifier := &customErrorClassifier{}
+	executor := NewExecutor(policy, WithErrorClassifier(classifier))
+
+	permErr := &permanentError{msg: "permanent failure"}
+	attemptCount := 0
+
+	// Function that returns permanent error
+	fn := func(ctx context.Context) (interface{}, error) {
+		attemptCount++
+		return nil, permErr
+	}
+
+	result, err := executor.Execute(context.Background(), fn)
+
+	// Should fail immediately without retries
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	if result.Success {
+		t.Error("expected failure")
+	}
+	if attemptCount != 1 {
+		t.Errorf("expected 1 attempt for permanent error, got %d", attemptCount)
+	}
+	if result.Attempts != 1 {
+		t.Errorf("expected 1 attempt in result, got %d", result.Attempts)
+	}
+}
+
+func TestExecutor_WithMetrics(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+
+	collector, err := NewRetryMetricsCollector("test", "retry", nil)
+	if err != nil {
+		t.Fatalf("failed to create metrics collector: %v", err)
+	}
+
+	executor := NewExecutor(policy, WithMetrics(collector))
+
+	// Test successful execution
+	fn := func(ctx context.Context) (interface{}, error) {
+		return "success", nil
+	}
+
+	result, err := executor.Execute(context.Background(), fn)
+	if err != nil {
+		t.Errorf("Execute() error = %v, want nil", err)
+	}
+	if !result.Success {
+		t.Error("expected success")
+	}
+
+	// Metrics should be recorded (we can't easily verify Prometheus metrics in tests,
+	// but we can verify no panics occurred)
+}
+
+func TestExecutor_WithLogger(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  2,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+
+	// Use the global logger (already initialized in tests)
+	executor := NewExecutor(policy)
+
+	testErr := errors.New("temporary error")
+	attemptCount := 0
+
+	fn := func(ctx context.Context) (interface{}, error) {
+		attemptCount++
+		if attemptCount < 2 {
+			return nil, testErr
+		}
+		return "success", nil
+	}
+
+	result, err := executor.Execute(context.Background(), fn)
+	if err != nil {
+		t.Errorf("Execute() error = %v, want nil", err)
+	}
+	if !result.Success {
+		t.Error("expected success")
+	}
+
+	// Logger should have logged without panicking
+}
+
+func TestExecuteWithResult_Success(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+	executor := NewExecutor(policy)
+
+	// Test with string type
+	fn := func(ctx context.Context) (string, error) {
+		return "typed result", nil
+	}
+
+	result, err := ExecuteWithResult(context.Background(), executor, fn)
+	if err != nil {
+		t.Errorf("ExecuteWithResult() error = %v, want nil", err)
+	}
+	if result != "typed result" {
+		t.Errorf("result = %v, want 'typed result'", result)
+	}
+}
+
+func TestExecuteWithResult_StructType(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+	executor := NewExecutor(policy)
+
+	type Response struct {
+		ID      int
+		Message string
+	}
+
+	// Test with struct type
+	fn := func(ctx context.Context) (*Response, error) {
+		return &Response{ID: 42, Message: "hello"}, nil
+	}
+
+	result, err := ExecuteWithResult(context.Background(), executor, fn)
+	if err != nil {
+		t.Errorf("ExecuteWithResult() error = %v, want nil", err)
+	}
+	if result.ID != 42 {
+		t.Errorf("result.ID = %v, want 42", result.ID)
+	}
+	if result.Message != "hello" {
+		t.Errorf("result.Message = %v, want 'hello'", result.Message)
+	}
+}
+
+func TestExecuteWithResult_WithRetry(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+	executor := NewExecutor(policy)
+
+	attemptCount := 0
+	testErr := errors.New("temporary error")
+
+	fn := func(ctx context.Context) (int, error) {
+		attemptCount++
+		if attemptCount < 3 {
+			return 0, testErr
+		}
+		return 42, nil
+	}
+
+	result, err := ExecuteWithResult(context.Background(), executor, fn)
+	if err != nil {
+		t.Errorf("ExecuteWithResult() error = %v, want nil", err)
+	}
+	if result != 42 {
+		t.Errorf("result = %v, want 42", result)
+	}
+	if attemptCount != 3 {
+		t.Errorf("attemptCount = %d, want 3", attemptCount)
+	}
+}
+
+func TestExecuteWithResult_Failure(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  2,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+	executor := NewExecutor(policy)
+
+	testErr := errors.New("persistent error")
+
+	fn := func(ctx context.Context) (string, error) {
+		return "", testErr
+	}
+
+	result, err := ExecuteWithResult(context.Background(), executor, fn)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	if !errors.Is(err, ErrMaxRetriesExceeded) {
+		t.Errorf("expected ErrMaxRetriesExceeded, got %v", err)
+	}
+	if result != "" {
+		t.Errorf("result = %v, want empty string", result)
+	}
+}
+
+func TestDefaultErrorClassifier_IsRetryable(t *testing.T) {
+	classifier := &DefaultErrorClassifier{}
+
+	// Nil error should not be retryable
+	if classifier.IsRetryable(nil) {
+		t.Error("expected nil error to not be retryable")
+	}
+
+	// Non-nil error should be retryable
+	err := errors.New("some error")
+	if !classifier.IsRetryable(err) {
+		t.Error("expected error to be retryable")
+	}
+}
+
+func TestDefaultErrorClassifier_IsPermanent(t *testing.T) {
+	classifier := &DefaultErrorClassifier{}
+
+	// Default classifier treats no errors as permanent
+	err := errors.New("some error")
+	if classifier.IsPermanent(err) {
+		t.Error("expected error to not be permanent")
+	}
+
+	if classifier.IsPermanent(nil) {
+		t.Error("expected nil error to not be permanent")
+	}
+}
+
+func TestRetryMetricsCollector_Creation(t *testing.T) {
+	// Test with default parameters
+	collector, err := NewRetryMetricsCollector("", "", nil)
+	if err != nil {
+		t.Fatalf("failed to create collector: %v", err)
+	}
+	if collector == nil {
+		t.Error("expected non-nil collector")
+	}
+	if collector.GetRegistry() == nil {
+		t.Error("expected non-nil registry")
+	}
+
+	// Test with custom parameters
+	collector2, err := NewRetryMetricsCollector("custom", "subsys", nil)
+	if err != nil {
+		t.Fatalf("failed to create collector: %v", err)
+	}
+	if collector2 == nil {
+		t.Error("expected non-nil collector")
+	}
+}
+
+func TestExecutor_CircuitBreakerPreventsExecution(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  5,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+
+	// Circuit breaker opens after 2 failures (it opens on the 2nd failure)
+	// So with MaxAttempts=5, we should get 2 actual executions before circuit opens
+	cbConfig := &CircuitBreakerConfig{
+		MaxFailures:         2,
+		ResetTimeout:        200 * time.Millisecond,
+		HalfOpenMaxRequests: 1,
+		SuccessThreshold:    1,
+	}
+
+	cb := NewCircuitBreaker(cbConfig, policy)
+	executor := NewExecutor(policy, WithCircuitBreaker(cb))
+
+	testErr := errors.New("error")
+	totalExecutions := 0
+
+	fn := func(ctx context.Context) (interface{}, error) {
+		totalExecutions++
+		return nil, testErr
+	}
+
+	// First execution - will try until circuit opens (after 2 failures)
+	executor.Execute(context.Background(), fn)
+
+	firstExecCount := totalExecutions
+	// Circuit breaker opens after recording 2 failures
+	if firstExecCount < 2 {
+		t.Errorf("expected at least 2 executions before circuit opens, got %d", firstExecCount)
+	}
+
+	// Second execution - should fail immediately due to open circuit
+	result, err := executor.Execute(context.Background(), fn)
+
+	if !errors.Is(err, ErrCircuitBreakerOpen) {
+		t.Errorf("expected ErrCircuitBreakerOpen, got %v", err)
+	}
+
+	if totalExecutions != firstExecCount {
+		t.Errorf("expected no additional executions due to open circuit, got %d total (was %d)",
+			totalExecutions, firstExecCount)
+	}
+
+	if result.Attempts != 0 {
+		t.Errorf("expected 0 attempts due to circuit breaker, got %d", result.Attempts)
+	}
+}
+
+func TestExecutor_ErrorClassifierStopsPermanentError(t *testing.T) {
+	config := &RetryConfig{
+		MaxAttempts:  5,
+		InitialDelay: 10 * time.Millisecond,
+	}
+
+	policy := NewFixedIntervalPolicy(config, 10*time.Millisecond, 0)
+	classifier := &customErrorClassifier{}
+	executor := NewExecutor(policy, WithErrorClassifier(classifier))
+
+	permErr := &permanentError{msg: "permanent"}
+	callCount := 0
+
+	fn := func(ctx context.Context) (interface{}, error) {
+		callCount++
+		return nil, permErr
+	}
+
+	result, err := executor.Execute(context.Background(), fn)
+
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+
+	// Should only call once for permanent error
+	if callCount != 1 {
+		t.Errorf("expected 1 call for permanent error, got %d", callCount)
+	}
+
+	if result.Attempts != 1 {
+		t.Errorf("expected 1 attempt, got %d", result.Attempts)
+	}
+}
