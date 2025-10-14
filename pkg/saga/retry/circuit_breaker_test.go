@@ -344,3 +344,220 @@ func TestCircuitBreaker_SuccessInClosedState(t *testing.T) {
 		t.Errorf("after success, ConsecutiveFailures = %d, want 0", metrics.ConsecutiveFailures)
 	}
 }
+
+func TestCircuitBreaker_GetRetryDelay(t *testing.T) {
+	basePolicy := NewFixedIntervalPolicy(DefaultRetryConfig(), 50*time.Millisecond, 0)
+	cb := NewCircuitBreaker(nil, basePolicy)
+
+	delay := cb.GetRetryDelay(1)
+	if delay != 50*time.Millisecond {
+		t.Errorf("GetRetryDelay(1) = %v, want 50ms", delay)
+	}
+
+	delay = cb.GetRetryDelay(5)
+	if delay != 50*time.Millisecond {
+		t.Errorf("GetRetryDelay(5) = %v, want 50ms", delay)
+	}
+}
+
+func TestCircuitBreaker_GetMaxAttempts(t *testing.T) {
+	retryConfig := &RetryConfig{
+		MaxAttempts:  15,
+		InitialDelay: 10 * time.Millisecond,
+	}
+	basePolicy := NewFixedIntervalPolicy(retryConfig, 10*time.Millisecond, 0)
+	cb := NewCircuitBreaker(nil, basePolicy)
+
+	maxAttempts := cb.GetMaxAttempts()
+	if maxAttempts != 15 {
+		t.Errorf("GetMaxAttempts() = %d, want 15", maxAttempts)
+	}
+}
+
+func TestCircuitBreaker_ConcurrentAccess(t *testing.T) {
+	config := &CircuitBreakerConfig{
+		MaxFailures:         10,
+		ResetTimeout:        100 * time.Millisecond,
+		HalfOpenMaxRequests: 5,
+		SuccessThreshold:    3,
+	}
+
+	basePolicy := NewFixedIntervalPolicy(DefaultRetryConfig(), 10*time.Millisecond, 0)
+	cb := NewCircuitBreaker(config, basePolicy)
+
+	testErr := errors.New("test error")
+
+	// Run concurrent operations
+	const numGoroutines = 50
+	done := make(chan bool, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer func() { done <- true }()
+
+			// Mix of successes and failures
+			if id%3 == 0 {
+				cb.ShouldRetry(nil, 1)
+			} else {
+				cb.ShouldRetry(testErr, 1)
+			}
+
+			// Query state
+			_ = cb.GetState()
+			_ = cb.GetMetrics()
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// Circuit should still be functional
+	state := cb.GetState()
+	if state != CircuitStateClosed && state != CircuitStateOpen && state != CircuitStateHalfOpen {
+		t.Errorf("invalid state after concurrent access: %v", state)
+	}
+}
+
+func TestCircuitBreaker_ConcurrentStateTransitions(t *testing.T) {
+	config := &CircuitBreakerConfig{
+		MaxFailures:         5,
+		ResetTimeout:        50 * time.Millisecond,
+		HalfOpenMaxRequests: 3,
+		SuccessThreshold:    2,
+	}
+
+	basePolicy := NewFixedIntervalPolicy(DefaultRetryConfig(), 10*time.Millisecond, 0)
+	cb := NewCircuitBreaker(config, basePolicy)
+
+	testErr := errors.New("test error")
+
+	// Concurrently try to open the circuit
+	const numGoroutines = 20
+	done := make(chan bool, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer func() { done <- true }()
+			cb.ShouldRetry(testErr, 1)
+		}()
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// Circuit should be open after many failures
+	state := cb.GetState()
+	if state != CircuitStateOpen {
+		t.Errorf("state = %v after concurrent failures, want %v", state, CircuitStateOpen)
+	}
+}
+
+func TestCircuitBreaker_ConcurrentReset(t *testing.T) {
+	config := &CircuitBreakerConfig{
+		MaxFailures:         3,
+		ResetTimeout:        100 * time.Millisecond,
+		HalfOpenMaxRequests: 2,
+		SuccessThreshold:    2,
+	}
+
+	basePolicy := NewFixedIntervalPolicy(DefaultRetryConfig(), 10*time.Millisecond, 0)
+	cb := NewCircuitBreaker(config, basePolicy)
+
+	testErr := errors.New("test error")
+
+	// Open the circuit
+	cb.ShouldRetry(testErr, 1)
+	cb.ShouldRetry(testErr, 2)
+	cb.ShouldRetry(testErr, 3)
+
+	// Concurrently reset and check state
+	const numGoroutines = 10
+	done := make(chan bool, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer func() { done <- true }()
+			cb.Reset()
+			_ = cb.GetState()
+		}()
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// Circuit should be closed after reset
+	state := cb.GetState()
+	if state != CircuitStateClosed {
+		t.Errorf("state = %v after concurrent reset, want %v", state, CircuitStateClosed)
+	}
+}
+
+func TestCircuitBreaker_MaxAttemptsExceeded(t *testing.T) {
+	retryConfig := &RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 10 * time.Millisecond,
+	}
+	basePolicy := NewFixedIntervalPolicy(retryConfig, 10*time.Millisecond, 0)
+	cb := NewCircuitBreaker(DefaultCircuitBreakerConfig(), basePolicy)
+
+	testErr := errors.New("test error")
+
+	// Should allow retries up to max attempts (0, 1, 2 are < 3)
+	for i := 0; i < 3; i++ {
+		shouldRetry := cb.ShouldRetry(testErr, i)
+		if !shouldRetry {
+			t.Errorf("attempt %d: ShouldRetry = false, want true", i)
+		}
+	}
+
+	// Should not retry after max attempts (attempt 3 >= MaxAttempts 3)
+	shouldRetry := cb.ShouldRetry(testErr, 3)
+	if shouldRetry {
+		t.Error("ShouldRetry = true after max attempts, want false")
+	}
+
+	// Circuit should not have opened (we didn't record the last failure)
+	if cb.GetState() != CircuitStateClosed {
+		t.Errorf("state = %v, want %v", cb.GetState(), CircuitStateClosed)
+	}
+}
+
+func TestCircuitBreaker_OpenStateTransitionOnTimeout(t *testing.T) {
+	config := &CircuitBreakerConfig{
+		MaxFailures:         2,
+		ResetTimeout:        100 * time.Millisecond,
+		HalfOpenMaxRequests: 2,
+		SuccessThreshold:    2,
+	}
+
+	basePolicy := NewFixedIntervalPolicy(DefaultRetryConfig(), 10*time.Millisecond, 0)
+	cb := NewCircuitBreaker(config, basePolicy)
+
+	testErr := errors.New("test error")
+
+	// Open the circuit
+	cb.ShouldRetry(testErr, 1)
+	cb.ShouldRetry(testErr, 2)
+
+	if cb.GetState() != CircuitStateOpen {
+		t.Errorf("state = %v, want %v", cb.GetState(), CircuitStateOpen)
+	}
+
+	// Wait for reset timeout
+	time.Sleep(150 * time.Millisecond)
+
+	// checkResetTimeout is called inside ShouldRetry when circuit is open
+	// First call with success will transition to half-open and stay there
+	cb.ShouldRetry(nil, 1)
+
+	// Circuit should be in half-open now after successful call
+	if cb.GetState() != CircuitStateHalfOpen {
+		t.Errorf("state = %v after timeout with success, want %v", cb.GetState(), CircuitStateHalfOpen)
+	}
+}
