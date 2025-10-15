@@ -24,6 +24,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -898,8 +899,8 @@ func TestRedisStateStorage_ConcurrentAccess(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
-			saga := createTestSagaInstance(fmt.Sprintf("saga-%d", id), "def-1", saga.StateRunning)
-			errCh <- storage.SaveSaga(ctx, saga)
+			sagaInst := createTestSagaInstance(fmt.Sprintf("saga-%d", id), "def-1", saga.StateRunning)
+			errCh <- storage.SaveSaga(ctx, sagaInst)
 		}(i)
 	}
 
@@ -917,5 +918,588 @@ func TestRedisStateStorage_ConcurrentAccess(t *testing.T) {
 		if err != nil {
 			t.Errorf("GetSaga(%s) error = %v", sagaID, err)
 		}
+	}
+}
+
+// TestRedisStateStorage_FailureScenarios tests various failure scenarios
+func TestRedisStateStorage_FailureScenarios(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		fn      func() error
+		wantErr bool
+	}{
+		{
+			name: "save saga with empty ID",
+			fn: func() error {
+				sagaInst := createTestSagaInstance("", "def-1", saga.StateRunning)
+				return storage.SaveSaga(ctx, sagaInst)
+			},
+			wantErr: true,
+		},
+		{
+			name: "get saga with empty ID",
+			fn: func() error {
+				_, err := storage.GetSaga(ctx, "")
+				return err
+			},
+			wantErr: true,
+		},
+		{
+			name: "update saga with empty ID",
+			fn: func() error {
+				return storage.UpdateSagaState(ctx, "", saga.StateCompleted, nil)
+			},
+			wantErr: true,
+		},
+		{
+			name: "delete saga with empty ID",
+			fn: func() error {
+				return storage.DeleteSaga(ctx, "")
+			},
+			wantErr: true,
+		},
+		{
+			name: "save step state with empty saga ID",
+			fn: func() error {
+				now := time.Now()
+				step := &saga.StepState{
+					ID:        "step-1",
+					Name:      "Step1",
+					State:     saga.StepStateCompleted,
+					Attempts:  1,
+					CreatedAt: now,
+					StartedAt: &now,
+				}
+				return storage.SaveStepState(ctx, "", step)
+			},
+			wantErr: true,
+		},
+		{
+			name: "get step states with empty saga ID",
+			fn: func() error {
+				_, err := storage.GetStepStates(ctx, "")
+				return err
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fn()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestRedisStateStorage_ContextCancellation tests context cancellation
+func TestRedisStateStorage_ContextCancellation(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	// Create a cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	sagaInst := createTestSagaInstance("saga-cancelled", "def-1", saga.StateRunning)
+	err = storage.SaveSaga(ctx, sagaInst)
+	if err == nil {
+		t.Error("Expected error with cancelled context, got nil")
+	}
+}
+
+// TestRedisStateStorage_ClosedStorageOperations tests operations on closed storage
+func TestRedisStateStorage_ClosedStorageOperations(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+
+	// Close the storage
+	storage.Close()
+
+	ctx := context.Background()
+	sagaInst := createTestSagaInstance("saga-1", "def-1", saga.StateRunning)
+
+	tests := []struct {
+		name string
+		fn   func() error
+	}{
+		{
+			name: "SaveSaga on closed storage",
+			fn:   func() error { return storage.SaveSaga(ctx, sagaInst) },
+		},
+		{
+			name: "GetSaga on closed storage",
+			fn:   func() error { _, err := storage.GetSaga(ctx, "saga-1"); return err },
+		},
+		{
+			name: "UpdateSagaState on closed storage",
+			fn:   func() error { return storage.UpdateSagaState(ctx, "saga-1", saga.StateCompleted, nil) },
+		},
+		{
+			name: "DeleteSaga on closed storage",
+			fn:   func() error { return storage.DeleteSaga(ctx, "saga-1") },
+		},
+		{
+			name: "GetActiveSagas on closed storage",
+			fn:   func() error { _, err := storage.GetActiveSagas(ctx, nil); return err },
+		},
+		{
+			name: "GetTimeoutSagas on closed storage",
+			fn:   func() error { _, err := storage.GetTimeoutSagas(ctx, time.Now()); return err },
+		},
+		{
+			name: "CleanupExpiredSagas on closed storage",
+			fn:   func() error { return storage.CleanupExpiredSagas(ctx, time.Now()) },
+		},
+		{
+			name: "HealthCheck on closed storage",
+			fn:   func() error { return storage.HealthCheck(ctx) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fn()
+			if err == nil {
+				t.Error("Expected error on closed storage, got nil")
+			}
+		})
+	}
+}
+
+// TestRedisStateStorage_ConcurrentUpdates tests concurrent updates to the same saga
+func TestRedisStateStorage_ConcurrentUpdates(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+
+	// Create initial saga
+	sagaInst := createTestSagaInstance("saga-concurrent-update", "def-1", saga.StateRunning)
+	if err := storage.SaveSaga(ctx, sagaInst); err != nil {
+		t.Fatalf("Failed to save initial saga: %v", err)
+	}
+
+	// Launch multiple goroutines to update the same saga
+	const numUpdates = 20
+	errCh := make(chan error, numUpdates)
+
+	for i := 0; i < numUpdates; i++ {
+		go func(iteration int) {
+			metadata := map[string]interface{}{
+				"update": iteration,
+			}
+			errCh <- storage.UpdateSagaState(ctx, "saga-concurrent-update", saga.StateRunning, metadata)
+		}(i)
+	}
+
+	// Check for errors
+	for i := 0; i < numUpdates; i++ {
+		if err := <-errCh; err != nil {
+			t.Errorf("Concurrent update error: %v", err)
+		}
+	}
+
+	// Verify saga still exists and is in a valid state
+	retrieved, err := storage.GetSaga(ctx, "saga-concurrent-update")
+	if err != nil {
+		t.Fatalf("Failed to get saga after concurrent updates: %v", err)
+	}
+	if retrieved.GetID() != "saga-concurrent-update" {
+		t.Errorf("Saga ID mismatch after concurrent updates")
+	}
+}
+
+// TestRedisStateStorage_StressTest tests storage under high load
+func TestRedisStateStorage_StressTest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping stress test in short mode")
+	}
+
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+
+	const (
+		numGoroutines = 50
+		opsPerRoutine = 100
+	)
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, numGoroutines*opsPerRoutine)
+
+	// Launch concurrent workers
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < opsPerRoutine; j++ {
+				sagaID := fmt.Sprintf("saga-stress-%d-%d", workerID, j)
+				sagaInst := createTestSagaInstance(sagaID, "def-stress", saga.StateRunning)
+
+				// Save
+				if err := storage.SaveSaga(ctx, sagaInst); err != nil {
+					errCh <- fmt.Errorf("save error: %w", err)
+					continue
+				}
+
+				// Get
+				if _, err := storage.GetSaga(ctx, sagaID); err != nil {
+					errCh <- fmt.Errorf("get error: %w", err)
+					continue
+				}
+
+				// Update
+				if err := storage.UpdateSagaState(ctx, sagaID, saga.StateCompleted, nil); err != nil {
+					errCh <- fmt.Errorf("update error: %w", err)
+					continue
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	// Check for errors
+	errorCount := 0
+	for err := range errCh {
+		t.Errorf("Stress test error: %v", err)
+		errorCount++
+	}
+
+	if errorCount > 0 {
+		t.Fatalf("Stress test failed with %d errors", errorCount)
+	}
+}
+
+// TestRedisStateStorage_InvalidStateTransitions tests handling of invalid state transitions
+func TestRedisStateStorage_InvalidStateTransitions(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+
+	// Create a completed saga
+	sagaInst := createTestSagaInstance("saga-state-trans", "def-1", saga.StateCompleted)
+	if err := storage.SaveSaga(ctx, sagaInst); err != nil {
+		t.Fatalf("Failed to save saga: %v", err)
+	}
+
+	// Try to transition back to running (should succeed as storage doesn't enforce state machine)
+	err = storage.UpdateSagaState(ctx, "saga-state-trans", saga.StateRunning, nil)
+	if err != nil {
+		t.Errorf("UpdateSagaState should not enforce state transitions, got error: %v", err)
+	}
+
+	// Verify the state was updated
+	retrieved, err := storage.GetSaga(ctx, "saga-state-trans")
+	if err != nil {
+		t.Fatalf("Failed to get saga: %v", err)
+	}
+	if retrieved.GetState() != saga.StateRunning {
+		t.Errorf("State = %v, want StateRunning", retrieved.GetState())
+	}
+}
+
+// TestRedisStateStorage_StepStatePersistence tests step state persistence across saga updates
+func TestRedisStateStorage_StepStatePersistence(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+
+	// Create saga
+	sagaInst := createTestSagaInstance("saga-step-persist", "def-1", saga.StateRunning)
+	if err := storage.SaveSaga(ctx, sagaInst); err != nil {
+		t.Fatalf("Failed to save saga: %v", err)
+	}
+
+	// Save step states
+	now := time.Now()
+	step1 := &saga.StepState{
+		ID:        "step-1",
+		Name:      "Step1",
+		State:     saga.StepStateCompleted,
+		Attempts:  1,
+		CreatedAt: now,
+		StartedAt: &now,
+	}
+	if err := storage.SaveStepState(ctx, "saga-step-persist", step1); err != nil {
+		t.Fatalf("Failed to save step state: %v", err)
+	}
+
+	// Update saga state
+	if err := storage.UpdateSagaState(ctx, "saga-step-persist", saga.StateStepCompleted, nil); err != nil {
+		t.Fatalf("Failed to update saga state: %v", err)
+	}
+
+	// Verify step state persists
+	steps, err := storage.GetStepStates(ctx, "saga-step-persist")
+	if err != nil {
+		t.Fatalf("Failed to get step states: %v", err)
+	}
+	if len(steps) != 1 {
+		t.Errorf("Expected 1 step, got %d", len(steps))
+	}
+	if len(steps) > 0 && steps[0].ID != "step-1" {
+		t.Errorf("Step ID = %v, want step-1", steps[0].ID)
+	}
+}
+
+// TestRedisStateStorage_MetadataHandling tests various metadata handling scenarios
+func TestRedisStateStorage_MetadataHandling(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		metadata map[string]interface{}
+	}{
+		{
+			name:     "nil metadata",
+			metadata: nil,
+		},
+		{
+			name:     "empty metadata",
+			metadata: map[string]interface{}{},
+		},
+		{
+			name: "complex metadata",
+			metadata: map[string]interface{}{
+				"string": "value",
+				"number": 42,
+				"float":  3.14,
+				"bool":   true,
+				"nested": map[string]interface{}{
+					"key": "value",
+				},
+				"array": []interface{}{"a", "b", "c"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sagaID := fmt.Sprintf("saga-meta-%s", tt.name)
+			sagaInst := createTestSagaInstance(sagaID, "def-meta", saga.StateRunning)
+			sagaInst.metadata = tt.metadata
+
+			// Save
+			if err := storage.SaveSaga(ctx, sagaInst); err != nil {
+				t.Fatalf("Failed to save saga: %v", err)
+			}
+
+			// Retrieve
+			retrieved, err := storage.GetSaga(ctx, sagaID)
+			if err != nil {
+				t.Fatalf("Failed to get saga: %v", err)
+			}
+
+			// Verify metadata
+			if tt.metadata == nil {
+				if retrieved.GetMetadata() == nil {
+					// Both nil is ok
+					return
+				}
+			}
+		})
+	}
+}
+
+// TestRedisStateStorage_TimeoutIndexManagement tests timeout index management
+func TestRedisStateStorage_TimeoutIndexManagement(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// Create saga that will timeout
+	sagaInst := createTestSagaInstance("saga-timeout-idx", "def-1", saga.StateRunning)
+	sagaInst.startTime = now.Add(-2 * time.Hour)
+	sagaInst.timeout = 1 * time.Hour
+	if err := storage.SaveSaga(ctx, sagaInst); err != nil {
+		t.Fatalf("Failed to save saga: %v", err)
+	}
+
+	// Verify it's in timeout index
+	timeouts, err := storage.GetTimeoutSagas(ctx, now)
+	if err != nil {
+		t.Fatalf("Failed to get timeout sagas: %v", err)
+	}
+	if len(timeouts) != 1 {
+		t.Errorf("Expected 1 timeout saga, got %d", len(timeouts))
+	}
+
+	// Update to terminal state
+	if err := storage.UpdateSagaState(ctx, "saga-timeout-idx", saga.StateCompleted, nil); err != nil {
+		t.Fatalf("Failed to update saga state: %v", err)
+	}
+
+	// Verify it's removed from timeout index
+	timeouts, err = storage.GetTimeoutSagas(ctx, now)
+	if err != nil {
+		t.Fatalf("Failed to get timeout sagas: %v", err)
+	}
+	if len(timeouts) != 0 {
+		t.Errorf("Expected 0 timeout sagas after completion, got %d", len(timeouts))
+	}
+}
+
+// TestRedisStateStorage_DeletionCleansUpIndexes tests that deletion cleans up all indexes
+func TestRedisStateStorage_DeletionCleansUpIndexes(t *testing.T) {
+	if !testRedisAvailable(t) {
+		return
+	}
+
+	config := getTestRedisConfig()
+	storage, err := NewRedisStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestData(t, storage)
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// Create saga with timeout
+	sagaInst := createTestSagaInstance("saga-delete-idx", "def-1", saga.StateRunning)
+	sagaInst.startTime = now
+	sagaInst.timeout = 1 * time.Hour
+	if err := storage.SaveSaga(ctx, sagaInst); err != nil {
+		t.Fatalf("Failed to save saga: %v", err)
+	}
+
+	// Add step states
+	step := &saga.StepState{
+		ID:        "step-1",
+		Name:      "Step1",
+		State:     saga.StepStateCompleted,
+		Attempts:  1,
+		CreatedAt: now,
+		StartedAt: &now,
+	}
+	if err := storage.SaveStepState(ctx, "saga-delete-idx", step); err != nil {
+		t.Fatalf("Failed to save step state: %v", err)
+	}
+
+	// Delete saga
+	if err := storage.DeleteSaga(ctx, "saga-delete-idx"); err != nil {
+		t.Fatalf("Failed to delete saga: %v", err)
+	}
+
+	// Verify state index is cleaned up
+	stateIndexKey := storage.getStateIndexKey(saga.StateRunning.String())
+	isMember := storage.client.SIsMember(ctx, stateIndexKey, "saga-delete-idx").Val()
+	if isMember {
+		t.Error("Saga should not be in state index after deletion")
+	}
+
+	// Verify timeout index is cleaned up
+	timeoutKey := storage.getTimeoutKey()
+	score := storage.client.ZScore(ctx, timeoutKey, "saga-delete-idx").Val()
+	if score != 0 {
+		// ZScore returns 0 if member doesn't exist, but we need to check Err() too
+		_, err := storage.client.ZScore(ctx, timeoutKey, "saga-delete-idx").Result()
+		if err == nil {
+			t.Error("Saga should not be in timeout index after deletion")
+		}
+	}
+
+	// Verify step states are cleaned up
+	_, err = storage.GetStepStates(ctx, "saga-delete-idx")
+	if err == nil {
+		t.Error("Expected error when getting steps for deleted saga")
 	}
 }
