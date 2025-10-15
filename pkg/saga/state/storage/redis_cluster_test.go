@@ -114,12 +114,12 @@ func TestParseClusterInfo(t *testing.T) {
 	discovery, _ := NewClusterDiscovery(clusterClient, config)
 
 	tests := []struct {
-		name            string
-		input           string
-		expectedState   string
+		name             string
+		input            string
+		expectedState    string
 		expectedAssigned int
-		expectedOk      int
-		expectedError   int
+		expectedOk       int
+		expectedError    int
 	}{
 		{
 			name: "healthy cluster",
@@ -128,10 +128,10 @@ cluster_slots_assigned:16384
 cluster_slots_ok:16384
 cluster_slots_pfail:0
 cluster_slots_fail:0`,
-			expectedState:   "ok",
+			expectedState:    "ok",
 			expectedAssigned: 16384,
-			expectedOk:      16384,
-			expectedError:   0,
+			expectedOk:       16384,
+			expectedError:    0,
 		},
 		{
 			name: "cluster with failures",
@@ -140,10 +140,10 @@ cluster_slots_assigned:16384
 cluster_slots_ok:10000
 cluster_slots_pfail:100
 cluster_slots_fail:200`,
-			expectedState:   "fail",
+			expectedState:    "fail",
 			expectedAssigned: 16384,
-			expectedOk:      10000,
-			expectedError:   300,
+			expectedOk:       10000,
+			expectedError:    300,
 		},
 		{
 			name: "partial assignment",
@@ -152,10 +152,10 @@ cluster_slots_assigned:8192
 cluster_slots_ok:8192
 cluster_slots_pfail:0
 cluster_slots_fail:0`,
-			expectedState:   "ok",
+			expectedState:    "ok",
 			expectedAssigned: 8192,
-			expectedOk:      8192,
-			expectedError:   0,
+			expectedOk:       8192,
+			expectedError:    0,
 		},
 	}
 
@@ -299,17 +299,17 @@ func TestCopyTopology(t *testing.T) {
 	original := &ClusterTopology{
 		Nodes: []*ClusterNodeInfo{
 			{
-				ID:   "node1",
-				Addr: "127.0.0.1:7000",
-				Role: "master",
+				ID:    "node1",
+				Addr:  "127.0.0.1:7000",
+				Role:  "master",
 				Flags: []string{"master"},
 				SlotRanges: []SlotRange{
 					{Start: 0, End: 5460},
 				},
 			},
 		},
-		Masters:          []*ClusterNodeInfo{},
-		Slaves:           []*ClusterNodeInfo{},
+		Masters: []*ClusterNodeInfo{},
+		Slaves:  []*ClusterNodeInfo{},
 		SlotDistribution: map[string][]SlotRange{
 			"node1": {{Start: 0, End: 5460}},
 		},
@@ -605,10 +605,10 @@ func TestGetSlavesForMaster(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		masterID       string
-		expectedCount  int
-		expectedIDs    []string
+		name          string
+		masterID      string
+		expectedCount int
+		expectedIDs   []string
 	}{
 		{
 			name:          "master with two slaves",
@@ -672,4 +672,3 @@ func TestGetSlavesForMaster_NoTopology(t *testing.T) {
 		t.Error("Expected nil when no topology available")
 	}
 }
-

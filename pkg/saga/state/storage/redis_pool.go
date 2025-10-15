@@ -353,4 +353,3 @@ func (m *PoolMonitor) GetUtilizationMetrics() map[string]interface{} {
 
 	return metrics
 }
-

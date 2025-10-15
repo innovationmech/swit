@@ -443,4 +443,3 @@ func TestPoolHealthStatus_HighUtilization(t *testing.T) {
 		t.Logf("Pool is healthy, warnings: %v", health.Warnings)
 	}
 }
-

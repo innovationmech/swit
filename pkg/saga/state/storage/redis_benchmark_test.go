@@ -632,4 +632,3 @@ func BenchmarkRedisStorage_Deserialization(b *testing.B) {
 		}
 	}
 }
-

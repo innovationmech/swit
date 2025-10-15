@@ -235,7 +235,7 @@ func TestRedisIntegration_TimeoutDetection(t *testing.T) {
 		startTime time.Time
 		timeout   time.Duration
 	}{
-		{"saga-timeout-1", now.Add(-2 * time.Hour), 1 * time.Hour},   // Should timeout
+		{"saga-timeout-1", now.Add(-2 * time.Hour), 1 * time.Hour},    // Should timeout
 		{"saga-timeout-2", now.Add(-90 * time.Minute), 1 * time.Hour}, // Should timeout
 		{"saga-timeout-3", now.Add(-30 * time.Minute), 1 * time.Hour}, // Should not timeout
 		{"saga-timeout-4", now.Add(-10 * time.Minute), 2 * time.Hour}, // Should not timeout
@@ -1009,4 +1009,3 @@ func TestRedisIntegration_FilterByMetadata(t *testing.T) {
 		t.Errorf("Expected saga-meta-1, got %s", filtered[0].GetID())
 	}
 }
-
