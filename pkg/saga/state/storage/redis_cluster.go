@@ -531,4 +531,3 @@ func (d *ClusterDiscovery) GetSlavesForMaster(masterID string) []*ClusterNodeInf
 
 	return slaves
 }
-
