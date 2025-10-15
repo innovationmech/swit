@@ -100,40 +100,40 @@ func TestPostgresStateStorage_ConvertToSagaInstanceData(t *testing.T) {
 	// This test doesn't require database connection
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config: config,
 		closed: false,
 	}
 
 	testInstance := createTestSagaInstance("test-saga-123", "payment-saga", saga.StateRunning)
-	
+
 	data := storage.convertToSagaInstanceData(testInstance)
-	
+
 	if data.ID != testInstance.id {
 		t.Errorf("Expected ID %s, got %s", testInstance.id, data.ID)
 	}
-	
+
 	if data.DefinitionID != testInstance.definitionID {
 		t.Errorf("Expected DefinitionID %s, got %s", testInstance.definitionID, data.DefinitionID)
 	}
-	
+
 	if data.State != testInstance.state {
 		t.Errorf("Expected State %v, got %v", testInstance.state, data.State)
 	}
-	
+
 	if data.CurrentStep != testInstance.currentStep {
 		t.Errorf("Expected CurrentStep %d, got %d", testInstance.currentStep, data.CurrentStep)
 	}
-	
+
 	if data.TotalSteps != testInstance.totalSteps {
 		t.Errorf("Expected TotalSteps %d, got %d", testInstance.totalSteps, data.TotalSteps)
 	}
-	
+
 	if data.TraceID != testInstance.traceID {
 		t.Errorf("Expected TraceID %s, got %s", testInstance.traceID, data.TraceID)
 	}
-	
+
 	if data.StartedAt == nil {
 		t.Error("Expected StartedAt to be set")
 	}
@@ -144,7 +144,7 @@ func TestPostgresStateStorage_ConvertToSagaInstanceData(t *testing.T) {
 func TestPostgresStateStorage_ConvertToSagaInstance(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config: config,
 		closed: false,
@@ -163,25 +163,25 @@ func TestPostgresStateStorage_ConvertToSagaInstance(t *testing.T) {
 		TraceID:      "trace-123",
 		Timeout:      5 * time.Minute,
 	}
-	
+
 	instance := storage.convertToSagaInstance(data)
-	
+
 	if instance.GetID() != data.ID {
 		t.Errorf("Expected ID %s, got %s", data.ID, instance.GetID())
 	}
-	
+
 	if instance.GetDefinitionID() != data.DefinitionID {
 		t.Errorf("Expected DefinitionID %s, got %s", data.DefinitionID, instance.GetDefinitionID())
 	}
-	
+
 	if instance.GetState() != data.State {
 		t.Errorf("Expected State %v, got %v", data.State, instance.GetState())
 	}
-	
+
 	if instance.GetCurrentStep() != data.CurrentStep {
 		t.Errorf("Expected CurrentStep %d, got %d", data.CurrentStep, instance.GetCurrentStep())
 	}
-	
+
 	if instance.GetTotalSteps() != data.TotalSteps {
 		t.Errorf("Expected TotalSteps %d, got %d", data.TotalSteps, instance.GetTotalSteps())
 	}
@@ -191,7 +191,7 @@ func TestPostgresStateStorage_ConvertToSagaInstance(t *testing.T) {
 func TestPostgresStateStorage_MarshalUnmarshalJSON(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config: config,
 		closed: false,
@@ -255,7 +255,7 @@ func TestPostgresStateStorage_MarshalUnmarshalJSON(t *testing.T) {
 func TestPostgresStateStorage_CheckClosed(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config: config,
 		closed: false,
@@ -279,7 +279,7 @@ func TestPostgresStateStorage_CheckClosed(t *testing.T) {
 func TestPostgresStateStorage_SaveSaga_InvalidInput(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config:         config,
 		closed:         false,
@@ -321,7 +321,7 @@ func TestPostgresStateStorage_SaveSaga_InvalidInput(t *testing.T) {
 func TestPostgresStateStorage_GetSaga_InvalidInput(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config:         config,
 		closed:         false,
@@ -342,7 +342,7 @@ func TestPostgresStateStorage_GetSaga_InvalidInput(t *testing.T) {
 func TestPostgresStateStorage_UpdateSagaState_InvalidInput(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config:         config,
 		closed:         false,
@@ -363,7 +363,7 @@ func TestPostgresStateStorage_UpdateSagaState_InvalidInput(t *testing.T) {
 func TestPostgresStateStorage_DeleteSaga_InvalidInput(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config:         config,
 		closed:         false,
@@ -384,7 +384,7 @@ func TestPostgresStateStorage_DeleteSaga_InvalidInput(t *testing.T) {
 func TestPostgresStateStorage_SaveStepState_InvalidInput(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config:     config,
 		closed:     false,
@@ -429,7 +429,7 @@ func TestPostgresStateStorage_SaveStepState_InvalidInput(t *testing.T) {
 func TestPostgresStateStorage_GetStepStates_InvalidInput(t *testing.T) {
 	config := DefaultPostgresConfig()
 	config.DSN = "postgres://test"
-	
+
 	storage := &PostgresStateStorage{
 		config:     config,
 		closed:     false,
