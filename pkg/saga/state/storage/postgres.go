@@ -497,7 +497,8 @@ func (p *PostgresStateStorage) DeleteSaga(ctx context.Context, sagaID string) er
 }
 
 // GetActiveSagas retrieves all active Saga instances based on the filter.
-// This method will be implemented in a future task.
+// It supports complex filtering by state, definition ID, time range, and metadata,
+// as well as pagination and sorting capabilities.
 func (p *PostgresStateStorage) GetActiveSagas(ctx context.Context, filter *saga.SagaFilter) ([]saga.SagaInstance, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -510,12 +511,31 @@ func (p *PostgresStateStorage) GetActiveSagas(ctx context.Context, filter *saga.
 		return nil, err
 	}
 
-	// TODO: Implement PostgreSQL query with filter logic
-	return nil, ErrNotImplemented
+	// Build the query with WHERE clause based on filter
+	query, args := p.buildListQuery(filter)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute query
+	rows, err := p.db.QueryContext(queryCtx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query active sagas: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	instances, err := p.scanSagaInstances(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan saga instances: %w", err)
+	}
+
+	return instances, nil
 }
 
 // GetTimeoutSagas retrieves Saga instances that have timed out before the specified time.
-// This method will be implemented in a future task.
+// It queries for Sagas in running states that have exceeded their timeout or have an explicit timeout timestamp.
 func (p *PostgresStateStorage) GetTimeoutSagas(ctx context.Context, before time.Time) ([]saga.SagaInstance, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -528,8 +548,46 @@ func (p *PostgresStateStorage) GetTimeoutSagas(ctx context.Context, before time.
 		return nil, err
 	}
 
-	// TODO: Implement PostgreSQL timeout query logic
-	return nil, ErrNotImplemented
+	// Query for Sagas that have timed out
+	// Check both explicitly set timed_out_at field and calculated timeouts
+	query := fmt.Sprintf(`
+		SELECT 
+			id, definition_id, name, description,
+			state, current_step, total_steps,
+			created_at, updated_at, started_at, completed_at, timed_out_at,
+			initial_data, current_data, result_data,
+			error, timeout_ms, retry_policy,
+			metadata, trace_id, span_id
+		FROM %s
+		WHERE (
+			timed_out_at IS NOT NULL AND timed_out_at < $1
+		) OR (
+			state IN (%d, %d, %d) 
+			AND started_at IS NOT NULL 
+			AND timeout_ms > 0
+			AND (started_at + (timeout_ms || ' milliseconds')::INTERVAL) < $1
+		)
+		ORDER BY created_at ASC
+	`, p.instancesTable, saga.StateRunning, saga.StateStepCompleted, saga.StateCompensating)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute query
+	rows, err := p.db.QueryContext(queryCtx, query, before)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query timeout sagas: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	instances, err := p.scanSagaInstances(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan saga instances: %w", err)
+	}
+
+	return instances, nil
 }
 
 // SaveStepState persists the state of a specific step within a Saga.
@@ -905,4 +963,314 @@ func (p *postgresSagaInstance) IsTerminal() bool {
 // IsActive returns true if the Saga is currently active.
 func (p *postgresSagaInstance) IsActive() bool {
 	return p.data.State.IsActive()
+}
+
+// ==========================
+// Query Builder Methods
+// ==========================
+
+// buildListQuery constructs a SQL query with WHERE clause based on the provided filter.
+// It returns the complete SQL query string and the corresponding arguments for parameterized execution.
+func (p *PostgresStateStorage) buildListQuery(filter *saga.SagaFilter) (string, []interface{}) {
+	// Base SELECT statement
+	baseQuery := fmt.Sprintf(`
+		SELECT 
+			id, definition_id, name, description,
+			state, current_step, total_steps,
+			created_at, updated_at, started_at, completed_at, timed_out_at,
+			initial_data, current_data, result_data,
+			error, timeout_ms, retry_policy,
+			metadata, trace_id, span_id
+		FROM %s`, p.instancesTable)
+
+	// Build WHERE clause and collect arguments
+	whereClauses, args := p.buildWhereClause(filter)
+
+	// Combine base query with WHERE clause
+	if len(whereClauses) > 0 {
+		baseQuery += "\nWHERE " + whereClauses
+	}
+
+	// Add ORDER BY clause
+	baseQuery += p.buildOrderByClause(filter)
+
+	// Add LIMIT and OFFSET for pagination
+	baseQuery, args = p.buildPaginationClause(baseQuery, args, filter)
+
+	return baseQuery, args
+}
+
+// buildWhereClause constructs the WHERE clause and arguments based on the filter.
+// Returns the WHERE clause string (without "WHERE" keyword) and the arguments slice.
+func (p *PostgresStateStorage) buildWhereClause(filter *saga.SagaFilter) (string, []interface{}) {
+	if filter == nil {
+		return "", nil
+	}
+
+	var conditions []string
+	var args []interface{}
+	argIndex := 1
+
+	// Filter by state
+	if len(filter.States) > 0 {
+		statePlaceholders := make([]string, len(filter.States))
+		for i, state := range filter.States {
+			statePlaceholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, int(state))
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("state IN (%s)", joinStrings(statePlaceholders, ", ")))
+	}
+
+	// Filter by definition ID
+	if len(filter.DefinitionIDs) > 0 {
+		defPlaceholders := make([]string, len(filter.DefinitionIDs))
+		for i, defID := range filter.DefinitionIDs {
+			defPlaceholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, defID)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("definition_id IN (%s)", joinStrings(defPlaceholders, ", ")))
+	}
+
+	// Filter by creation time range
+	if filter.CreatedAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", argIndex))
+		args = append(args, *filter.CreatedAfter)
+		argIndex++
+	}
+
+	if filter.CreatedBefore != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", argIndex))
+		args = append(args, *filter.CreatedBefore)
+		argIndex++
+	}
+
+	// Filter by metadata (JSONB containment)
+	if len(filter.Metadata) > 0 {
+		metadataJSON, err := json.Marshal(filter.Metadata)
+		if err == nil {
+			conditions = append(conditions, fmt.Sprintf("metadata @> $%d::jsonb", argIndex))
+			args = append(args, metadataJSON)
+			argIndex++
+		}
+	}
+
+	// Join all conditions with AND
+	if len(conditions) == 0 {
+		return "", args
+	}
+
+	return joinStrings(conditions, " AND "), args
+}
+
+// buildOrderByClause constructs the ORDER BY clause based on the filter.
+func (p *PostgresStateStorage) buildOrderByClause(filter *saga.SagaFilter) string {
+	if filter == nil || filter.SortBy == "" {
+		// Default sorting by created_at descending
+		return "\nORDER BY created_at DESC"
+	}
+
+	// Validate and sanitize sort field to prevent SQL injection
+	sortField := p.sanitizeSortField(filter.SortBy)
+	sortOrder := "DESC"
+	if filter.SortOrder == "asc" || filter.SortOrder == "ASC" {
+		sortOrder = "ASC"
+	}
+
+	return fmt.Sprintf("\nORDER BY %s %s", sortField, sortOrder)
+}
+
+// sanitizeSortField validates and returns a safe sort field name.
+// Only whitelisted fields are allowed to prevent SQL injection.
+func (p *PostgresStateStorage) sanitizeSortField(field string) string {
+	// Whitelist of allowed sort fields
+	allowedFields := map[string]string{
+		"id":            "id",
+		"created_at":    "created_at",
+		"updated_at":    "updated_at",
+		"started_at":    "started_at",
+		"completed_at":  "completed_at",
+		"state":         "state",
+		"definition_id": "definition_id",
+		"current_step":  "current_step",
+	}
+
+	if safeField, ok := allowedFields[field]; ok {
+		return safeField
+	}
+
+	// Default to created_at if invalid field specified
+	return "created_at"
+}
+
+// buildPaginationClause adds LIMIT and OFFSET to the query for pagination.
+func (p *PostgresStateStorage) buildPaginationClause(query string, args []interface{}, filter *saga.SagaFilter) (string, []interface{}) {
+	if filter == nil {
+		return query, args
+	}
+
+	argIndex := len(args) + 1
+
+	// Add LIMIT
+	if filter.Limit > 0 {
+		query += fmt.Sprintf("\nLIMIT $%d", argIndex)
+		args = append(args, filter.Limit)
+		argIndex++
+	}
+
+	// Add OFFSET
+	if filter.Offset > 0 {
+		query += fmt.Sprintf("\nOFFSET $%d", argIndex)
+		args = append(args, filter.Offset)
+	}
+
+	return query, args
+}
+
+// scanSagaInstances scans multiple Saga instances from SQL query results.
+func (p *PostgresStateStorage) scanSagaInstances(rows *sql.Rows) ([]saga.SagaInstance, error) {
+	var instances []saga.SagaInstance
+
+	for rows.Next() {
+		var data saga.SagaInstanceData
+		var stateInt int
+		var timeoutMs int64
+		var initialDataJSON, currentDataJSON, resultDataJSON []byte
+		var errorJSON, retryPolicyJSON, metadataJSON []byte
+
+		err := rows.Scan(
+			&data.ID, &data.DefinitionID, &data.Name, &data.Description,
+			&stateInt, &data.CurrentStep, &data.TotalSteps,
+			&data.CreatedAt, &data.UpdatedAt, &data.StartedAt, &data.CompletedAt, &data.TimedOutAt,
+			&initialDataJSON, &currentDataJSON, &resultDataJSON,
+			&errorJSON, &timeoutMs, &retryPolicyJSON,
+			&metadataJSON, &data.TraceID, &data.SpanID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan saga instance: %w", err)
+		}
+
+		// Convert state integer to SagaState
+		data.State = saga.SagaState(stateInt)
+
+		// Convert timeout from milliseconds
+		data.Timeout = time.Duration(timeoutMs) * time.Millisecond
+
+		// Unmarshal JSONB fields
+		if err := p.unmarshalJSON(initialDataJSON, &data.InitialData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal initial_data: %w", err)
+		}
+
+		if err := p.unmarshalJSON(currentDataJSON, &data.CurrentData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal current_data: %w", err)
+		}
+
+		if err := p.unmarshalJSON(resultDataJSON, &data.ResultData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal result_data: %w", err)
+		}
+
+		if err := p.unmarshalJSON(errorJSON, &data.Error); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal error: %w", err)
+		}
+
+		if err := p.unmarshalJSON(retryPolicyJSON, &data.RetryPolicy); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal retry_policy: %w", err)
+		}
+
+		if err := p.unmarshalJSON(metadataJSON, &data.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+
+		// Convert to SagaInstance and add to list
+		instances = append(instances, p.convertToSagaInstance(&data))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating saga instances: %w", err)
+	}
+
+	return instances, nil
+}
+
+// joinStrings joins a slice of strings with a separator.
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
+}
+
+// ==========================
+// Helper Query Methods
+// ==========================
+
+// ListSagas retrieves a list of Saga instances with filtering, sorting, and pagination.
+// This is a convenience wrapper around GetActiveSagas with a more intuitive name.
+func (p *PostgresStateStorage) ListSagas(ctx context.Context, filter *saga.SagaFilter) ([]saga.SagaInstance, error) {
+	return p.GetActiveSagas(ctx, filter)
+}
+
+// FindByStatus retrieves Saga instances filtered by their state.
+// It's a convenience method that creates a filter with only state criteria.
+func (p *PostgresStateStorage) FindByStatus(ctx context.Context, states []saga.SagaState, limit, offset int) ([]saga.SagaInstance, error) {
+	filter := &saga.SagaFilter{
+		States: states,
+		Limit:  limit,
+		Offset: offset,
+	}
+	return p.GetActiveSagas(ctx, filter)
+}
+
+// FindByTimeRange retrieves Saga instances created within a specified time range.
+// It's a convenience method that creates a filter with time range criteria.
+func (p *PostgresStateStorage) FindByTimeRange(ctx context.Context, after, before *time.Time, limit, offset int) ([]saga.SagaInstance, error) {
+	filter := &saga.SagaFilter{
+		CreatedAfter:  after,
+		CreatedBefore: before,
+		Limit:         limit,
+		Offset:        offset,
+	}
+	return p.GetActiveSagas(ctx, filter)
+}
+
+// CountSagas returns the total count of Saga instances matching the filter.
+// This is useful for implementing pagination with total count.
+func (p *PostgresStateStorage) CountSagas(ctx context.Context, filter *saga.SagaFilter) (int64, error) {
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if err := p.checkClosed(); err != nil {
+		return 0, err
+	}
+
+	// Build WHERE clause
+	whereClauses, args := p.buildWhereClause(filter)
+
+	// Build count query
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", p.instancesTable)
+	if len(whereClauses) > 0 {
+		query += "\nWHERE " + whereClauses
+	}
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute count query
+	var count int64
+	err := p.db.QueryRowContext(queryCtx, query, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count sagas: %w", err)
+	}
+
+	return count, nil
 }
