@@ -340,6 +340,10 @@ func (t *benchSagaInstance) IsTerminal() bool                          {
 	return t.sagaState == saga.StateCompleted || t.sagaState == saga.StateFailed ||
 		t.sagaState == saga.StateCancelled || t.sagaState == saga.StateTimedOut
 }
+func (t *benchSagaInstance) IsActive() bool                            {
+	return t.sagaState == saga.StateRunning || t.sagaState == saga.StateStepCompleted ||
+		t.sagaState == saga.StateCompensating
+}
 func (t *benchSagaInstance) SetState(state saga.SagaState)             { t.sagaState = state }
 func (t *benchSagaInstance) SetCurrentStep(step int)                   { t.currentStep = step }
 func (t *benchSagaInstance) SetUpdatedAt(ts time.Time)                 { t.updatedAt = ts }
