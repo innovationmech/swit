@@ -24,6 +24,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -167,7 +168,7 @@ func (p *PostgresStateStorage) checkClosed() error {
 }
 
 // SaveSaga persists a Saga instance to PostgreSQL storage.
-// This method will be implemented in a future task.
+// It uses INSERT ... ON CONFLICT DO UPDATE to handle both creation and update scenarios.
 func (p *PostgresStateStorage) SaveSaga(ctx context.Context, instance saga.SagaInstance) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -189,12 +190,99 @@ func (p *PostgresStateStorage) SaveSaga(ctx context.Context, instance saga.SagaI
 		return state.ErrInvalidSagaID
 	}
 
-	// TODO: Implement PostgreSQL insert/update logic
-	return ErrNotImplemented
+	// Convert SagaInstance to SagaInstanceData
+	data := p.convertToSagaInstanceData(instance)
+
+	// Serialize complex data fields to JSONB
+	initialDataJSON, err := p.marshalJSON(data.InitialData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal initial_data: %w", err)
+	}
+
+	currentDataJSON, err := p.marshalJSON(data.CurrentData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal current_data: %w", err)
+	}
+
+	resultDataJSON, err := p.marshalJSON(data.ResultData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal result_data: %w", err)
+	}
+
+	errorJSON, err := p.marshalJSON(data.Error)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error: %w", err)
+	}
+
+	retryPolicyJSON, err := p.marshalJSON(data.RetryPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal retry_policy: %w", err)
+	}
+
+	metadataJSON, err := p.marshalJSON(data.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Convert timeout to milliseconds
+	timeoutMs := data.Timeout.Milliseconds()
+
+	// Prepare SQL statement with upsert logic
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			id, definition_id, name, description,
+			state, current_step, total_steps,
+			created_at, updated_at, started_at, completed_at, timed_out_at,
+			initial_data, current_data, result_data,
+			error, timeout_ms, retry_policy,
+			metadata, trace_id, span_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		ON CONFLICT (id) DO UPDATE SET
+			definition_id = EXCLUDED.definition_id,
+			name = EXCLUDED.name,
+			description = EXCLUDED.description,
+			state = EXCLUDED.state,
+			current_step = EXCLUDED.current_step,
+			total_steps = EXCLUDED.total_steps,
+			updated_at = EXCLUDED.updated_at,
+			started_at = EXCLUDED.started_at,
+			completed_at = EXCLUDED.completed_at,
+			timed_out_at = EXCLUDED.timed_out_at,
+			initial_data = EXCLUDED.initial_data,
+			current_data = EXCLUDED.current_data,
+			result_data = EXCLUDED.result_data,
+			error = EXCLUDED.error,
+			timeout_ms = EXCLUDED.timeout_ms,
+			retry_policy = EXCLUDED.retry_policy,
+			metadata = EXCLUDED.metadata,
+			trace_id = EXCLUDED.trace_id,
+			span_id = EXCLUDED.span_id
+	`, p.instancesTable)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute the query
+	_, err = p.db.ExecContext(
+		queryCtx,
+		query,
+		data.ID, data.DefinitionID, data.Name, data.Description,
+		int(data.State), data.CurrentStep, data.TotalSteps,
+		data.CreatedAt, data.UpdatedAt, data.StartedAt, data.CompletedAt, data.TimedOutAt,
+		initialDataJSON, currentDataJSON, resultDataJSON,
+		errorJSON, timeoutMs, retryPolicyJSON,
+		metadataJSON, data.TraceID, data.SpanID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save saga instance: %w", err)
+	}
+
+	return nil
 }
 
 // GetSaga retrieves a Saga instance by its ID from PostgreSQL storage.
-// This method will be implemented in a future task.
+// Returns state.ErrSagaNotFound if the Saga does not exist.
 func (p *PostgresStateStorage) GetSaga(ctx context.Context, sagaID string) (saga.SagaInstance, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -211,12 +299,82 @@ func (p *PostgresStateStorage) GetSaga(ctx context.Context, sagaID string) (saga
 		return nil, state.ErrInvalidSagaID
 	}
 
-	// TODO: Implement PostgreSQL query logic
-	return nil, ErrNotImplemented
+	// Prepare query
+	query := fmt.Sprintf(`
+		SELECT 
+			id, definition_id, name, description,
+			state, current_step, total_steps,
+			created_at, updated_at, started_at, completed_at, timed_out_at,
+			initial_data, current_data, result_data,
+			error, timeout_ms, retry_policy,
+			metadata, trace_id, span_id
+		FROM %s
+		WHERE id = $1
+	`, p.instancesTable)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute query
+	var data saga.SagaInstanceData
+	var stateInt int
+	var timeoutMs int64
+	var initialDataJSON, currentDataJSON, resultDataJSON []byte
+	var errorJSON, retryPolicyJSON, metadataJSON []byte
+
+	err := p.db.QueryRowContext(queryCtx, query, sagaID).Scan(
+		&data.ID, &data.DefinitionID, &data.Name, &data.Description,
+		&stateInt, &data.CurrentStep, &data.TotalSteps,
+		&data.CreatedAt, &data.UpdatedAt, &data.StartedAt, &data.CompletedAt, &data.TimedOutAt,
+		&initialDataJSON, &currentDataJSON, &resultDataJSON,
+		&errorJSON, &timeoutMs, &retryPolicyJSON,
+		&metadataJSON, &data.TraceID, &data.SpanID,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, state.ErrSagaNotFound
+		}
+		return nil, fmt.Errorf("failed to query saga instance: %w", err)
+	}
+
+	// Convert state integer to SagaState
+	data.State = saga.SagaState(stateInt)
+
+	// Convert timeout from milliseconds
+	data.Timeout = time.Duration(timeoutMs) * time.Millisecond
+
+	// Unmarshal JSONB fields
+	if err := p.unmarshalJSON(initialDataJSON, &data.InitialData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal initial_data: %w", err)
+	}
+
+	if err := p.unmarshalJSON(currentDataJSON, &data.CurrentData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal current_data: %w", err)
+	}
+
+	if err := p.unmarshalJSON(resultDataJSON, &data.ResultData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result_data: %w", err)
+	}
+
+	if err := p.unmarshalJSON(errorJSON, &data.Error); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal error: %w", err)
+	}
+
+	if err := p.unmarshalJSON(retryPolicyJSON, &data.RetryPolicy); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal retry_policy: %w", err)
+	}
+
+	if err := p.unmarshalJSON(metadataJSON, &data.Metadata); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+
+	// Convert to SagaInstance
+	return p.convertToSagaInstance(&data), nil
 }
 
 // UpdateSagaState updates only the state of a Saga instance.
-// This method will be implemented in a future task.
+// This is a lightweight operation that doesn't require loading the entire Saga.
 func (p *PostgresStateStorage) UpdateSagaState(ctx context.Context, sagaID string, sagaState saga.SagaState, metadata map[string]interface{}) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -233,12 +391,69 @@ func (p *PostgresStateStorage) UpdateSagaState(ctx context.Context, sagaID strin
 		return state.ErrInvalidSagaID
 	}
 
-	// TODO: Implement PostgreSQL update logic
-	return ErrNotImplemented
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// If metadata is provided, merge it with existing metadata
+	if len(metadata) > 0 {
+		// Serialize new metadata
+		metadataJSON, err := p.marshalJSON(metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+
+		// Use JSONB concatenation to merge metadata
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET state = $1, 
+			    updated_at = $2,
+			    metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+			WHERE id = $4
+		`, p.instancesTable)
+
+		result, err := p.db.ExecContext(queryCtx, query, int(sagaState), time.Now(), metadataJSON, sagaID)
+		if err != nil {
+			return fmt.Errorf("failed to update saga state: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		if rowsAffected == 0 {
+			return state.ErrSagaNotFound
+		}
+	} else {
+		// No metadata to update, just update state
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET state = $1, updated_at = $2
+			WHERE id = $3
+		`, p.instancesTable)
+
+		result, err := p.db.ExecContext(queryCtx, query, int(sagaState), time.Now(), sagaID)
+		if err != nil {
+			return fmt.Errorf("failed to update saga state: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		if rowsAffected == 0 {
+			return state.ErrSagaNotFound
+		}
+	}
+
+	return nil
 }
 
 // DeleteSaga removes a Saga instance from PostgreSQL storage.
-// This method will be implemented in a future task.
+// Returns state.ErrSagaNotFound if the Saga does not exist.
+// Due to CASCADE constraints, this will also delete associated steps and events.
 func (p *PostgresStateStorage) DeleteSaga(ctx context.Context, sagaID string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -255,8 +470,30 @@ func (p *PostgresStateStorage) DeleteSaga(ctx context.Context, sagaID string) er
 		return state.ErrInvalidSagaID
 	}
 
-	// TODO: Implement PostgreSQL delete logic
-	return ErrNotImplemented
+	// Prepare delete query
+	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, p.instancesTable)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute delete
+	result, err := p.db.ExecContext(queryCtx, query, sagaID)
+	if err != nil {
+		return fmt.Errorf("failed to delete saga instance: %w", err)
+	}
+
+	// Check if saga was found and deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return state.ErrSagaNotFound
+	}
+
+	return nil
 }
 
 // GetActiveSagas retrieves all active Saga instances based on the filter.
@@ -296,7 +533,7 @@ func (p *PostgresStateStorage) GetTimeoutSagas(ctx context.Context, before time.
 }
 
 // SaveStepState persists the state of a specific step within a Saga.
-// This method will be implemented in a future task.
+// It uses INSERT ... ON CONFLICT DO UPDATE to handle both creation and update scenarios.
 func (p *PostgresStateStorage) SaveStepState(ctx context.Context, sagaID string, step *saga.StepState) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -317,12 +554,81 @@ func (p *PostgresStateStorage) SaveStepState(ctx context.Context, sagaID string,
 		return state.ErrInvalidState
 	}
 
-	// TODO: Implement PostgreSQL insert/update for step state
-	return ErrNotImplemented
+	// Serialize complex data fields to JSONB
+	inputDataJSON, err := p.marshalJSON(step.InputData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal input_data: %w", err)
+	}
+
+	outputDataJSON, err := p.marshalJSON(step.OutputData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal output_data: %w", err)
+	}
+
+	errorJSON, err := p.marshalJSON(step.Error)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error: %w", err)
+	}
+
+	compensationStateJSON, err := p.marshalJSON(step.CompensationState)
+	if err != nil {
+		return fmt.Errorf("failed to marshal compensation_state: %w", err)
+	}
+
+	metadataJSON, err := p.marshalJSON(step.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Prepare SQL statement with upsert logic
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			id, saga_id, step_index, name,
+			state, attempts, max_attempts,
+			created_at, started_at, completed_at, last_attempt_at,
+			input_data, output_data, error,
+			compensation_state, metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		ON CONFLICT (id) DO UPDATE SET
+			saga_id = EXCLUDED.saga_id,
+			step_index = EXCLUDED.step_index,
+			name = EXCLUDED.name,
+			state = EXCLUDED.state,
+			attempts = EXCLUDED.attempts,
+			max_attempts = EXCLUDED.max_attempts,
+			started_at = EXCLUDED.started_at,
+			completed_at = EXCLUDED.completed_at,
+			last_attempt_at = EXCLUDED.last_attempt_at,
+			input_data = EXCLUDED.input_data,
+			output_data = EXCLUDED.output_data,
+			error = EXCLUDED.error,
+			compensation_state = EXCLUDED.compensation_state,
+			metadata = EXCLUDED.metadata
+	`, p.stepsTable)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute the query
+	_, err = p.db.ExecContext(
+		queryCtx,
+		query,
+		step.ID, sagaID, step.StepIndex, step.Name,
+		int(step.State), step.Attempts, step.MaxAttempts,
+		step.CreatedAt, step.StartedAt, step.CompletedAt, step.LastAttemptAt,
+		inputDataJSON, outputDataJSON, errorJSON,
+		compensationStateJSON, metadataJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save step state: %w", err)
+	}
+
+	return nil
 }
 
 // GetStepStates retrieves all step states for a Saga instance.
-// This method will be implemented in a future task.
+// Returns an empty slice if no steps are found.
 func (p *PostgresStateStorage) GetStepStates(ctx context.Context, sagaID string) ([]*saga.StepState, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -339,8 +645,81 @@ func (p *PostgresStateStorage) GetStepStates(ctx context.Context, sagaID string)
 		return nil, state.ErrInvalidSagaID
 	}
 
-	// TODO: Implement PostgreSQL query for step states
-	return nil, ErrNotImplemented
+	// Prepare query
+	query := fmt.Sprintf(`
+		SELECT 
+			id, saga_id, step_index, name,
+			state, attempts, max_attempts,
+			created_at, started_at, completed_at, last_attempt_at,
+			input_data, output_data, error,
+			compensation_state, metadata
+		FROM %s
+		WHERE saga_id = $1
+		ORDER BY step_index ASC
+	`, p.stepsTable)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute query
+	rows, err := p.db.QueryContext(queryCtx, query, sagaID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query step states: %w", err)
+	}
+	defer rows.Close()
+
+	var steps []*saga.StepState
+
+	for rows.Next() {
+		var step saga.StepState
+		var stateInt int
+		var inputDataJSON, outputDataJSON, errorJSON []byte
+		var compensationStateJSON, metadataJSON []byte
+
+		err := rows.Scan(
+			&step.ID, &step.SagaID, &step.StepIndex, &step.Name,
+			&stateInt, &step.Attempts, &step.MaxAttempts,
+			&step.CreatedAt, &step.StartedAt, &step.CompletedAt, &step.LastAttemptAt,
+			&inputDataJSON, &outputDataJSON, &errorJSON,
+			&compensationStateJSON, &metadataJSON,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan step state: %w", err)
+		}
+
+		// Convert state integer to StepStateEnum
+		step.State = saga.StepStateEnum(stateInt)
+
+		// Unmarshal JSONB fields
+		if err := p.unmarshalJSON(inputDataJSON, &step.InputData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal input_data: %w", err)
+		}
+
+		if err := p.unmarshalJSON(outputDataJSON, &step.OutputData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal output_data: %w", err)
+		}
+
+		if err := p.unmarshalJSON(errorJSON, &step.Error); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal error: %w", err)
+		}
+
+		if err := p.unmarshalJSON(compensationStateJSON, &step.CompensationState); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal compensation_state: %w", err)
+		}
+
+		if err := p.unmarshalJSON(metadataJSON, &step.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+
+		steps = append(steps, &step)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating step states: %w", err)
+	}
+
+	return steps, nil
 }
 
 // CleanupExpiredSagas removes Saga instances that are older than the specified time.
@@ -359,4 +738,171 @@ func (p *PostgresStateStorage) CleanupExpiredSagas(ctx context.Context, olderTha
 
 	// TODO: Implement PostgreSQL cleanup logic for expired sagas
 	return ErrNotImplemented
+}
+
+// marshalJSON marshals a value to JSON bytes.
+// Returns nil bytes for nil values.
+func (p *PostgresStateStorage) marshalJSON(v interface{}) ([]byte, error) {
+	if v == nil {
+		return nil, nil
+	}
+	return json.Marshal(v)
+}
+
+// unmarshalJSON unmarshals JSON bytes to a value.
+// Skips unmarshaling for nil or empty bytes.
+func (p *PostgresStateStorage) unmarshalJSON(data []byte, v interface{}) error {
+	if len(data) == 0 {
+		return nil
+	}
+	return json.Unmarshal(data, v)
+}
+
+// convertToSagaInstanceData converts a SagaInstance to SagaInstanceData for storage.
+func (p *PostgresStateStorage) convertToSagaInstanceData(instance saga.SagaInstance) *saga.SagaInstanceData {
+	now := time.Now()
+	startTime := instance.GetStartTime()
+	endTime := instance.GetEndTime()
+
+	data := &saga.SagaInstanceData{
+		ID:           instance.GetID(),
+		DefinitionID: instance.GetDefinitionID(),
+		State:        instance.GetState(),
+		CurrentStep:  instance.GetCurrentStep(),
+		TotalSteps:   instance.GetTotalSteps(),
+		CreatedAt:    instance.GetCreatedAt(),
+		UpdatedAt:    instance.GetUpdatedAt(),
+		Timeout:      instance.GetTimeout(),
+		Metadata:     instance.GetMetadata(),
+		TraceID:      instance.GetTraceID(),
+		Error:        instance.GetError(),
+		ResultData:   instance.GetResult(),
+	}
+
+	// Set started time if available
+	if !startTime.IsZero() {
+		data.StartedAt = &startTime
+	}
+
+	// Set completed time if available
+	if !endTime.IsZero() {
+		if instance.GetState() == saga.StateTimedOut {
+			data.TimedOutAt = &endTime
+		} else {
+			data.CompletedAt = &endTime
+		}
+	}
+
+	// Update UpdatedAt if it's zero
+	if data.UpdatedAt.IsZero() {
+		data.UpdatedAt = now
+	}
+
+	return data
+}
+
+// convertToSagaInstance converts SagaInstanceData to a SagaInstance implementation.
+func (p *PostgresStateStorage) convertToSagaInstance(data *saga.SagaInstanceData) saga.SagaInstance {
+	return &postgresSagaInstance{
+		data: data,
+	}
+}
+
+// postgresSagaInstance is a PostgreSQL-backed implementation of saga.SagaInstance.
+type postgresSagaInstance struct {
+	data *saga.SagaInstanceData
+}
+
+// GetID returns the unique identifier of this Saga instance.
+func (p *postgresSagaInstance) GetID() string {
+	return p.data.ID
+}
+
+// GetDefinitionID returns the identifier of the Saga definition this instance follows.
+func (p *postgresSagaInstance) GetDefinitionID() string {
+	return p.data.DefinitionID
+}
+
+// GetState returns the current state of the Saga instance.
+func (p *postgresSagaInstance) GetState() saga.SagaState {
+	return p.data.State
+}
+
+// GetCurrentStep returns the index of the currently executing step.
+func (p *postgresSagaInstance) GetCurrentStep() int {
+	return p.data.CurrentStep
+}
+
+// GetStartTime returns the time when the Saga instance was created.
+func (p *postgresSagaInstance) GetStartTime() time.Time {
+	if p.data.StartedAt != nil {
+		return *p.data.StartedAt
+	}
+	return time.Time{}
+}
+
+// GetEndTime returns the time when the Saga instance reached a terminal state.
+func (p *postgresSagaInstance) GetEndTime() time.Time {
+	if p.data.CompletedAt != nil {
+		return *p.data.CompletedAt
+	}
+	if p.data.TimedOutAt != nil {
+		return *p.data.TimedOutAt
+	}
+	return time.Time{}
+}
+
+// GetResult returns the final result data of the Saga execution.
+func (p *postgresSagaInstance) GetResult() interface{} {
+	return p.data.ResultData
+}
+
+// GetError returns the error that caused the Saga to fail.
+func (p *postgresSagaInstance) GetError() *saga.SagaError {
+	return p.data.Error
+}
+
+// GetTotalSteps returns the total number of steps in the Saga definition.
+func (p *postgresSagaInstance) GetTotalSteps() int {
+	return p.data.TotalSteps
+}
+
+// GetCompletedSteps returns the number of steps that have completed successfully.
+func (p *postgresSagaInstance) GetCompletedSteps() int {
+	return p.data.CurrentStep
+}
+
+// GetCreatedAt returns the creation time of the Saga instance.
+func (p *postgresSagaInstance) GetCreatedAt() time.Time {
+	return p.data.CreatedAt
+}
+
+// GetUpdatedAt returns the last update time of the Saga instance.
+func (p *postgresSagaInstance) GetUpdatedAt() time.Time {
+	return p.data.UpdatedAt
+}
+
+// GetTimeout returns the timeout duration for this Saga instance.
+func (p *postgresSagaInstance) GetTimeout() time.Duration {
+	return p.data.Timeout
+}
+
+// GetMetadata returns the metadata associated with this Saga instance.
+func (p *postgresSagaInstance) GetMetadata() map[string]interface{} {
+	return p.data.Metadata
+}
+
+// GetTraceID returns the distributed tracing identifier for this Saga.
+func (p *postgresSagaInstance) GetTraceID() string {
+	return p.data.TraceID
+}
+
+// IsTerminal returns true if the Saga is in a terminal state.
+func (p *postgresSagaInstance) IsTerminal() bool {
+	return p.data.State.IsTerminal()
+}
+
+// IsActive returns true if the Saga is currently active.
+func (p *postgresSagaInstance) IsActive() bool {
+	return p.data.State.IsActive()
 }

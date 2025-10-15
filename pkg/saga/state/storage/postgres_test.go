@@ -94,6 +94,453 @@ func TestPostgresStateStorage_Close(t *testing.T) {
 	t.Skip("Requires PostgreSQL connection - testing close behavior requires valid connection")
 }
 
+// TestPostgresStateStorage_ConvertToSagaInstanceData tests the conversion
+// from SagaInstance to SagaInstanceData.
+func TestPostgresStateStorage_ConvertToSagaInstanceData(t *testing.T) {
+	// This test doesn't require database connection
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config: config,
+		closed: false,
+	}
+
+	testInstance := createTestSagaInstance("test-saga-123", "payment-saga", saga.StateRunning)
+
+	data := storage.convertToSagaInstanceData(testInstance)
+
+	if data.ID != testInstance.id {
+		t.Errorf("Expected ID %s, got %s", testInstance.id, data.ID)
+	}
+
+	if data.DefinitionID != testInstance.definitionID {
+		t.Errorf("Expected DefinitionID %s, got %s", testInstance.definitionID, data.DefinitionID)
+	}
+
+	if data.State != testInstance.state {
+		t.Errorf("Expected State %v, got %v", testInstance.state, data.State)
+	}
+
+	if data.CurrentStep != testInstance.currentStep {
+		t.Errorf("Expected CurrentStep %d, got %d", testInstance.currentStep, data.CurrentStep)
+	}
+
+	if data.TotalSteps != testInstance.totalSteps {
+		t.Errorf("Expected TotalSteps %d, got %d", testInstance.totalSteps, data.TotalSteps)
+	}
+
+	if data.TraceID != testInstance.traceID {
+		t.Errorf("Expected TraceID %s, got %s", testInstance.traceID, data.TraceID)
+	}
+
+	if data.StartedAt == nil {
+		t.Error("Expected StartedAt to be set")
+	}
+}
+
+// TestPostgresStateStorage_ConvertToSagaInstance tests the conversion
+// from SagaInstanceData to SagaInstance.
+func TestPostgresStateStorage_ConvertToSagaInstance(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config: config,
+		closed: false,
+	}
+
+	now := time.Now()
+	data := &saga.SagaInstanceData{
+		ID:           "test-saga-123",
+		DefinitionID: "payment-saga",
+		State:        saga.StateRunning,
+		CurrentStep:  1,
+		TotalSteps:   3,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		StartedAt:    &now,
+		TraceID:      "trace-123",
+		Timeout:      5 * time.Minute,
+	}
+
+	instance := storage.convertToSagaInstance(data)
+
+	if instance.GetID() != data.ID {
+		t.Errorf("Expected ID %s, got %s", data.ID, instance.GetID())
+	}
+
+	if instance.GetDefinitionID() != data.DefinitionID {
+		t.Errorf("Expected DefinitionID %s, got %s", data.DefinitionID, instance.GetDefinitionID())
+	}
+
+	if instance.GetState() != data.State {
+		t.Errorf("Expected State %v, got %v", data.State, instance.GetState())
+	}
+
+	if instance.GetCurrentStep() != data.CurrentStep {
+		t.Errorf("Expected CurrentStep %d, got %d", data.CurrentStep, instance.GetCurrentStep())
+	}
+
+	if instance.GetTotalSteps() != data.TotalSteps {
+		t.Errorf("Expected TotalSteps %d, got %d", data.TotalSteps, instance.GetTotalSteps())
+	}
+}
+
+// TestPostgresStateStorage_MarshalUnmarshalJSON tests JSON marshaling and unmarshaling.
+func TestPostgresStateStorage_MarshalUnmarshalJSON(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config: config,
+		closed: false,
+	}
+
+	tests := []struct {
+		name  string
+		value interface{}
+	}{
+		{
+			name:  "nil value",
+			value: nil,
+		},
+		{
+			name:  "simple map",
+			value: map[string]interface{}{"key": "value"},
+		},
+		{
+			name:  "nested structure",
+			value: map[string]interface{}{"nested": map[string]interface{}{"inner": "value"}},
+		},
+		{
+			name: "saga error",
+			value: &saga.SagaError{
+				Code:    "ERR001",
+				Message: "Test error",
+				Type:    saga.ErrorTypeTimeout,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Marshal
+			data, err := storage.marshalJSON(tt.value)
+			if err != nil {
+				t.Errorf("marshalJSON failed: %v", err)
+				return
+			}
+
+			if tt.value == nil && data != nil {
+				t.Error("Expected nil data for nil value")
+				return
+			}
+
+			if tt.value == nil {
+				return
+			}
+
+			// Unmarshal
+			var result interface{}
+			err = storage.unmarshalJSON(data, &result)
+			if err != nil {
+				t.Errorf("unmarshalJSON failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_CheckClosed tests the checkClosed method.
+func TestPostgresStateStorage_CheckClosed(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config: config,
+		closed: false,
+	}
+
+	// Should not return error when not closed
+	if err := storage.checkClosed(); err != nil {
+		t.Errorf("Expected no error when not closed, got %v", err)
+	}
+
+	// Should return error when closed
+	storage.closed = true
+	if err := storage.checkClosed(); err == nil {
+		t.Error("Expected error when closed")
+	} else if err != state.ErrStorageClosed {
+		t.Errorf("Expected ErrStorageClosed, got %v", err)
+	}
+}
+
+// TestPostgresStateStorage_SaveSaga_InvalidInput tests SaveSaga with invalid input.
+func TestPostgresStateStorage_SaveSaga_InvalidInput(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		instance  saga.SagaInstance
+		wantError error
+	}{
+		{
+			name:      "nil instance",
+			instance:  nil,
+			wantError: state.ErrInvalidSagaID,
+		},
+		{
+			name:      "empty saga ID",
+			instance:  createTestSagaInstance("", "payment-saga", saga.StateRunning),
+			wantError: state.ErrInvalidSagaID,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := storage.SaveSaga(ctx, tt.instance)
+			if err == nil {
+				t.Error("Expected error but got nil")
+			} else if err != tt.wantError {
+				t.Errorf("Expected error %v, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_GetSaga_InvalidInput tests GetSaga with invalid input.
+func TestPostgresStateStorage_GetSaga_InvalidInput(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	ctx := context.Background()
+
+	_, err := storage.GetSaga(ctx, "")
+	if err == nil {
+		t.Error("Expected error but got nil")
+	} else if err != state.ErrInvalidSagaID {
+		t.Errorf("Expected ErrInvalidSagaID, got %v", err)
+	}
+}
+
+// TestPostgresStateStorage_UpdateSagaState_InvalidInput tests UpdateSagaState with invalid input.
+func TestPostgresStateStorage_UpdateSagaState_InvalidInput(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	ctx := context.Background()
+
+	err := storage.UpdateSagaState(ctx, "", saga.StateRunning, nil)
+	if err == nil {
+		t.Error("Expected error but got nil")
+	} else if err != state.ErrInvalidSagaID {
+		t.Errorf("Expected ErrInvalidSagaID, got %v", err)
+	}
+}
+
+// TestPostgresStateStorage_DeleteSaga_InvalidInput tests DeleteSaga with invalid input.
+func TestPostgresStateStorage_DeleteSaga_InvalidInput(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	ctx := context.Background()
+
+	err := storage.DeleteSaga(ctx, "")
+	if err == nil {
+		t.Error("Expected error but got nil")
+	} else if err != state.ErrInvalidSagaID {
+		t.Errorf("Expected ErrInvalidSagaID, got %v", err)
+	}
+}
+
+// TestPostgresStateStorage_SaveStepState_InvalidInput tests SaveStepState with invalid input.
+func TestPostgresStateStorage_SaveStepState_InvalidInput(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:     config,
+		closed:     false,
+		stepsTable: "saga_steps",
+	}
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		sagaID    string
+		step      *saga.StepState
+		wantError error
+	}{
+		{
+			name:      "empty saga ID",
+			sagaID:    "",
+			step:      &saga.StepState{ID: "step-1"},
+			wantError: state.ErrInvalidSagaID,
+		},
+		{
+			name:      "nil step",
+			sagaID:    "saga-123",
+			step:      nil,
+			wantError: state.ErrInvalidState,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := storage.SaveStepState(ctx, tt.sagaID, tt.step)
+			if err == nil {
+				t.Error("Expected error but got nil")
+			} else if err != tt.wantError {
+				t.Errorf("Expected error %v, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_GetStepStates_InvalidInput tests GetStepStates with invalid input.
+func TestPostgresStateStorage_GetStepStates_InvalidInput(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:     config,
+		closed:     false,
+		stepsTable: "saga_steps",
+	}
+
+	ctx := context.Background()
+
+	_, err := storage.GetStepStates(ctx, "")
+	if err == nil {
+		t.Error("Expected error but got nil")
+	} else if err != state.ErrInvalidSagaID {
+		t.Errorf("Expected ErrInvalidSagaID, got %v", err)
+	}
+}
+
+// TestPostgresSagaInstance_Methods tests all methods of postgresSagaInstance.
+func TestPostgresSagaInstance_Methods(t *testing.T) {
+	now := time.Now()
+	startTime := now.Add(-1 * time.Hour)
+	endTime := now
+
+	data := &saga.SagaInstanceData{
+		ID:           "test-saga-123",
+		DefinitionID: "payment-saga",
+		State:        saga.StateCompleted,
+		CurrentStep:  3,
+		TotalSteps:   3,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		StartedAt:    &startTime,
+		CompletedAt:  &endTime,
+		ResultData:   map[string]interface{}{"result": "success"},
+		Error:        nil,
+		Timeout:      5 * time.Minute,
+		Metadata:     map[string]interface{}{"key": "value"},
+		TraceID:      "trace-123",
+	}
+
+	instance := &postgresSagaInstance{data: data}
+
+	// Test all getter methods
+	if instance.GetID() != data.ID {
+		t.Errorf("GetID: expected %s, got %s", data.ID, instance.GetID())
+	}
+
+	if instance.GetDefinitionID() != data.DefinitionID {
+		t.Errorf("GetDefinitionID: expected %s, got %s", data.DefinitionID, instance.GetDefinitionID())
+	}
+
+	if instance.GetState() != data.State {
+		t.Errorf("GetState: expected %v, got %v", data.State, instance.GetState())
+	}
+
+	if instance.GetCurrentStep() != data.CurrentStep {
+		t.Errorf("GetCurrentStep: expected %d, got %d", data.CurrentStep, instance.GetCurrentStep())
+	}
+
+	if instance.GetTotalSteps() != data.TotalSteps {
+		t.Errorf("GetTotalSteps: expected %d, got %d", data.TotalSteps, instance.GetTotalSteps())
+	}
+
+	if !instance.GetStartTime().Equal(startTime) {
+		t.Errorf("GetStartTime: expected %v, got %v", startTime, instance.GetStartTime())
+	}
+
+	if !instance.GetEndTime().Equal(endTime) {
+		t.Errorf("GetEndTime: expected %v, got %v", endTime, instance.GetEndTime())
+	}
+
+	if instance.GetResult() == nil {
+		t.Error("GetResult: expected non-nil result")
+	}
+
+	if instance.GetError() != nil {
+		t.Errorf("GetError: expected nil, got %v", instance.GetError())
+	}
+
+	if instance.GetCompletedSteps() != data.CurrentStep {
+		t.Errorf("GetCompletedSteps: expected %d, got %d", data.CurrentStep, instance.GetCompletedSteps())
+	}
+
+	if !instance.GetCreatedAt().Equal(data.CreatedAt) {
+		t.Errorf("GetCreatedAt: expected %v, got %v", data.CreatedAt, instance.GetCreatedAt())
+	}
+
+	if !instance.GetUpdatedAt().Equal(data.UpdatedAt) {
+		t.Errorf("GetUpdatedAt: expected %v, got %v", data.UpdatedAt, instance.GetUpdatedAt())
+	}
+
+	if instance.GetTimeout() != data.Timeout {
+		t.Errorf("GetTimeout: expected %v, got %v", data.Timeout, instance.GetTimeout())
+	}
+
+	if instance.GetMetadata() == nil {
+		t.Error("GetMetadata: expected non-nil metadata")
+	}
+
+	if instance.GetTraceID() != data.TraceID {
+		t.Errorf("GetTraceID: expected %s, got %s", data.TraceID, instance.GetTraceID())
+	}
+
+	if !instance.IsTerminal() {
+		t.Error("IsTerminal: expected true for completed state")
+	}
+
+	if instance.IsActive() {
+		t.Error("IsActive: expected false for completed state")
+	}
+}
+
 // TestPostgresStateStorage_SaveSaga_NotImplemented tests that SaveSaga returns
 // ErrNotImplemented since it's not yet implemented.
 func TestPostgresStateStorage_SaveSaga_NotImplemented(t *testing.T) {
