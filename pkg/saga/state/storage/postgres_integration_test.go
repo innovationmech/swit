@@ -1075,5 +1075,3 @@ func TestPostgresIntegration_QueryTimeout(t *testing.T) {
 // ==========================
 // Helper Functions (if needed - can reuse from test_helpers.go)
 // ==========================
-
-
