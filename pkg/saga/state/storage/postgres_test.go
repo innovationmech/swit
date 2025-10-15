@@ -1516,3 +1516,295 @@ func TestPostgresStateStorage_VersionIncrement(t *testing.T) {
 	
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
+
+// ==========================
+// Health Check and Monitoring Tests
+// ==========================
+
+// TestPostgresStateStorage_HealthCheck tests the HealthCheck method.
+func TestPostgresStateStorage_HealthCheck(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_HealthCheckWithRetry tests health check with retry.
+func TestPostgresStateStorage_HealthCheckWithRetry(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_GetPoolStats tests getting connection pool statistics.
+func TestPostgresStateStorage_GetPoolStats(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_DetectConnectionLeaks tests connection leak detection.
+func TestPostgresStateStorage_DetectConnectionLeaks(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_CalculateBackoff tests the backoff calculation.
+func TestPostgresStateStorage_CalculateBackoff(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+	config.RetryBackoff = 100 * time.Millisecond
+	config.MaxRetryBackoff = 5 * time.Second
+
+	// Create a mock storage to test the method
+	// Note: We can't fully initialize without DB connection, but we can test the logic
+	storage := &PostgresStateStorage{
+		config: config,
+	}
+
+	tests := []struct {
+		name           string
+		attempt        int
+		wantMin        time.Duration
+		wantMax        time.Duration
+		shouldBeCapped bool
+	}{
+		{
+			name:    "first retry",
+			attempt: 1,
+			wantMin: 100 * time.Millisecond,
+			wantMax: 100 * time.Millisecond,
+		},
+		{
+			name:    "second retry",
+			attempt: 2,
+			wantMin: 200 * time.Millisecond,
+			wantMax: 200 * time.Millisecond,
+		},
+		{
+			name:    "third retry",
+			attempt: 3,
+			wantMin: 400 * time.Millisecond,
+			wantMax: 400 * time.Millisecond,
+		},
+		{
+			name:           "large attempt (should be capped)",
+			attempt:        10,
+			wantMin:        5 * time.Second,
+			wantMax:        5 * time.Second,
+			shouldBeCapped: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backoff := storage.calculateBackoff(tt.attempt)
+
+			if backoff < tt.wantMin {
+				t.Errorf("calculateBackoff() = %v, want at least %v", backoff, tt.wantMin)
+			}
+			if backoff > tt.wantMax {
+				t.Errorf("calculateBackoff() = %v, want at most %v", backoff, tt.wantMax)
+			}
+
+			if tt.shouldBeCapped && backoff != config.MaxRetryBackoff {
+				t.Errorf("calculateBackoff() = %v, want capped at %v", backoff, config.MaxRetryBackoff)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_IsRetriableError tests error classification.
+func TestPostgresStateStorage_IsRetriableError(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config: config,
+	}
+
+	tests := []struct {
+		name          string
+		err           error
+		wantRetriable bool
+	}{
+		{
+			name:          "nil error",
+			err:           nil,
+			wantRetriable: false,
+		},
+		{
+			name:          "context canceled",
+			err:           context.Canceled,
+			wantRetriable: false,
+		},
+		{
+			name:          "context deadline exceeded",
+			err:           context.DeadlineExceeded,
+			wantRetriable: false,
+		},
+		{
+			name:          "connection refused",
+			err:           &testError{msg: "connection refused"},
+			wantRetriable: true,
+		},
+		{
+			name:          "connection reset",
+			err:           &testError{msg: "connection reset by peer"},
+			wantRetriable: true,
+		},
+		{
+			name:          "timeout error",
+			err:           &testError{msg: "timeout waiting for connection"},
+			wantRetriable: true,
+		},
+		{
+			name:          "deadlock error",
+			err:           &testError{msg: "deadlock detected"},
+			wantRetriable: true,
+		},
+		{
+			name:          "too many connections",
+			err:           &testError{msg: "too many connections"},
+			wantRetriable: true,
+		},
+		{
+			name:          "serialization error",
+			err:           &testError{msg: "could not serialize access due to concurrent update"},
+			wantRetriable: true,
+		},
+		{
+			name:          "non-retriable error",
+			err:           &testError{msg: "syntax error at or near SELECT"},
+			wantRetriable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := storage.isRetriableError(tt.err)
+			if got != tt.wantRetriable {
+				t.Errorf("isRetriableError() = %v, want %v for error: %v", got, tt.wantRetriable, tt.err)
+			}
+		})
+	}
+}
+
+// testError is a simple error type for testing.
+type testError struct {
+	msg string
+}
+
+func (e *testError) Error() string {
+	return e.msg
+}
+
+// TestPostgresStateStorage_Contains tests the string contains helper.
+func TestPostgresStateStorage_Contains(t *testing.T) {
+	tests := []struct {
+		name   string
+		s      string
+		substr string
+		want   bool
+	}{
+		{
+			name:   "exact match",
+			s:      "timeout",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "substring at start",
+			s:      "timeout error",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "substring in middle",
+			s:      "connection timeout error",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "substring at end",
+			s:      "connection timeout",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "not found",
+			s:      "connection error",
+			substr: "timeout",
+			want:   false,
+		},
+		{
+			name:   "empty substring",
+			s:      "any string",
+			substr: "",
+			want:   true,
+		},
+		{
+			name:   "empty string",
+			s:      "",
+			substr: "timeout",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := contains(tt.s, tt.substr)
+			if got != tt.want {
+				t.Errorf("contains(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_HealthCheck_ClosedStorage tests health check on closed storage.
+func TestPostgresStateStorage_HealthCheck_ClosedStorage(t *testing.T) {
+	// Create a mock closed storage
+	storage := &PostgresStateStorage{
+		closed: true,
+		config: DefaultPostgresConfig(),
+	}
+
+	ctx := context.Background()
+	err := storage.HealthCheck(ctx)
+
+	if err != state.ErrStorageClosed {
+		t.Errorf("HealthCheck() on closed storage = %v, want %v", err, state.ErrStorageClosed)
+	}
+}
+
+// TestPostgresStateStorage_GetPoolStats_ClosedStorage tests getting stats from closed storage.
+func TestPostgresStateStorage_GetPoolStats_ClosedStorage(t *testing.T) {
+	// Create a mock closed storage
+	storage := &PostgresStateStorage{
+		closed: true,
+		config: DefaultPostgresConfig(),
+	}
+
+	stats, err := storage.GetPoolStats()
+
+	if err != state.ErrStorageClosed {
+		t.Errorf("GetPoolStats() on closed storage error = %v, want %v", err, state.ErrStorageClosed)
+	}
+	if stats != nil {
+		t.Errorf("GetPoolStats() on closed storage = %v, want nil", stats)
+	}
+}
+
+// TestPostgresStateStorage_DetectConnectionLeaks_ClosedStorage tests leak detection on closed storage.
+func TestPostgresStateStorage_DetectConnectionLeaks_ClosedStorage(t *testing.T) {
+	// Create a mock closed storage
+	storage := &PostgresStateStorage{
+		closed: true,
+		config: DefaultPostgresConfig(),
+	}
+
+	leaked, msg, err := storage.DetectConnectionLeaks()
+
+	if err != state.ErrStorageClosed {
+		t.Errorf("DetectConnectionLeaks() on closed storage error = %v, want %v", err, state.ErrStorageClosed)
+	}
+	if leaked {
+		t.Errorf("DetectConnectionLeaks() leaked = %v, want false", leaked)
+	}
+	if msg != "" {
+		t.Errorf("DetectConnectionLeaks() msg = %q, want empty", msg)
+	}
+}
+
