@@ -102,23 +102,23 @@ type mockPostgresSaga struct {
 	traceID      string
 }
 
-func (m *mockPostgresSaga) GetID() string                         { return m.id }
-func (m *mockPostgresSaga) GetDefinitionID() string               { return m.definitionID }
-func (m *mockPostgresSaga) GetState() saga.SagaState              { return m.state }
-func (m *mockPostgresSaga) GetCurrentStep() int                   { return m.currentStep }
-func (m *mockPostgresSaga) GetTotalSteps() int                    { return m.totalSteps }
-func (m *mockPostgresSaga) GetCompletedSteps() int                { return m.currentStep }
-func (m *mockPostgresSaga) GetCreatedAt() time.Time               { return m.createdAt }
-func (m *mockPostgresSaga) GetUpdatedAt() time.Time               { return m.updatedAt }
-func (m *mockPostgresSaga) GetStartTime() time.Time               { return m.startTime }
-func (m *mockPostgresSaga) GetEndTime() time.Time                 { return m.endTime }
-func (m *mockPostgresSaga) GetResult() interface{}                { return m.result }
-func (m *mockPostgresSaga) GetError() *saga.SagaError             { return m.error }
-func (m *mockPostgresSaga) GetTimeout() time.Duration             { return m.timeout }
-func (m *mockPostgresSaga) GetMetadata() map[string]interface{}   { return m.metadata }
-func (m *mockPostgresSaga) GetTraceID() string                    { return m.traceID }
-func (m *mockPostgresSaga) IsTerminal() bool                      { return m.state.IsTerminal() }
-func (m *mockPostgresSaga) IsActive() bool                        { return m.state.IsActive() }
+func (m *mockPostgresSaga) GetID() string                       { return m.id }
+func (m *mockPostgresSaga) GetDefinitionID() string             { return m.definitionID }
+func (m *mockPostgresSaga) GetState() saga.SagaState            { return m.state }
+func (m *mockPostgresSaga) GetCurrentStep() int                 { return m.currentStep }
+func (m *mockPostgresSaga) GetTotalSteps() int                  { return m.totalSteps }
+func (m *mockPostgresSaga) GetCompletedSteps() int              { return m.currentStep }
+func (m *mockPostgresSaga) GetCreatedAt() time.Time             { return m.createdAt }
+func (m *mockPostgresSaga) GetUpdatedAt() time.Time             { return m.updatedAt }
+func (m *mockPostgresSaga) GetStartTime() time.Time             { return m.startTime }
+func (m *mockPostgresSaga) GetEndTime() time.Time               { return m.endTime }
+func (m *mockPostgresSaga) GetResult() interface{}              { return m.result }
+func (m *mockPostgresSaga) GetError() *saga.SagaError           { return m.error }
+func (m *mockPostgresSaga) GetTimeout() time.Duration           { return m.timeout }
+func (m *mockPostgresSaga) GetMetadata() map[string]interface{} { return m.metadata }
+func (m *mockPostgresSaga) GetTraceID() string                  { return m.traceID }
+func (m *mockPostgresSaga) IsTerminal() bool                    { return m.state.IsTerminal() }
+func (m *mockPostgresSaga) IsActive() bool                      { return m.state.IsActive() }
 
 // anyTime matcher for time.Time arguments in sqlmock.
 type anyTime struct{}
@@ -1161,4 +1161,3 @@ func TestPostgresStateStorage_CountSagas_Mock(t *testing.T) {
 		})
 	}
 }
-

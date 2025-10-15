@@ -41,7 +41,7 @@ func getTestDSN() string {
 
 func skipIfNoPostgres(b *testing.B) *PostgresStateStorage {
 	dsn := getTestDSN()
-	
+
 	config := &PostgresConfig{
 		DSN:               dsn,
 		MaxOpenConns:      25,
@@ -281,78 +281,77 @@ func cleanupBenchData(b *testing.B, storage *PostgresStateStorage, prefix string
 
 // benchSagaInstance is a minimal implementation for benchmarking
 type benchSagaInstance struct {
-	id            string
-	definitionID  string
-	name          string
-	description   string
-	sagaState     saga.SagaState
-	currentStep   int
-	totalSteps    int
-	createdAt     time.Time
-	updatedAt     time.Time
-	startedAt     *time.Time
-	completedAt   *time.Time
-	timedOutAt    *time.Time
-	initialData   map[string]interface{}
-	currentData   map[string]interface{}
-	resultData    map[string]interface{}
-	err           *saga.SagaError
-	timeout       time.Duration
-	retryPolicy   *saga.RetryPolicy
-	metadata      map[string]interface{}
-	traceID       string
-	spanID        string
-	version       int
+	id           string
+	definitionID string
+	name         string
+	description  string
+	sagaState    saga.SagaState
+	currentStep  int
+	totalSteps   int
+	createdAt    time.Time
+	updatedAt    time.Time
+	startedAt    *time.Time
+	completedAt  *time.Time
+	timedOutAt   *time.Time
+	initialData  map[string]interface{}
+	currentData  map[string]interface{}
+	resultData   map[string]interface{}
+	err          *saga.SagaError
+	timeout      time.Duration
+	retryPolicy  *saga.RetryPolicy
+	metadata     map[string]interface{}
+	traceID      string
+	spanID       string
+	version      int
 }
 
-func (t *benchSagaInstance) GetID() string                             { return t.id }
-func (t *benchSagaInstance) GetDefinitionID() string                   { return t.definitionID }
-func (t *benchSagaInstance) GetName() string                           { return t.name }
-func (t *benchSagaInstance) GetDescription() string                    { return t.description }
-func (t *benchSagaInstance) GetState() saga.SagaState                  { return t.sagaState }
-func (t *benchSagaInstance) GetCurrentStep() int                       { return t.currentStep }
-func (t *benchSagaInstance) GetTotalSteps() int                        { return t.totalSteps }
-func (t *benchSagaInstance) GetCompletedSteps() int                    { return t.currentStep }
-func (t *benchSagaInstance) GetCreatedAt() time.Time                   { return t.createdAt }
-func (t *benchSagaInstance) GetUpdatedAt() time.Time                   { return t.updatedAt }
-func (t *benchSagaInstance) GetStartTime() time.Time                   { return t.createdAt }
-func (t *benchSagaInstance) GetEndTime() time.Time                     {
+func (t *benchSagaInstance) GetID() string            { return t.id }
+func (t *benchSagaInstance) GetDefinitionID() string  { return t.definitionID }
+func (t *benchSagaInstance) GetName() string          { return t.name }
+func (t *benchSagaInstance) GetDescription() string   { return t.description }
+func (t *benchSagaInstance) GetState() saga.SagaState { return t.sagaState }
+func (t *benchSagaInstance) GetCurrentStep() int      { return t.currentStep }
+func (t *benchSagaInstance) GetTotalSteps() int       { return t.totalSteps }
+func (t *benchSagaInstance) GetCompletedSteps() int   { return t.currentStep }
+func (t *benchSagaInstance) GetCreatedAt() time.Time  { return t.createdAt }
+func (t *benchSagaInstance) GetUpdatedAt() time.Time  { return t.updatedAt }
+func (t *benchSagaInstance) GetStartTime() time.Time  { return t.createdAt }
+func (t *benchSagaInstance) GetEndTime() time.Time {
 	if t.completedAt != nil {
 		return *t.completedAt
 	}
 	return time.Time{}
 }
-func (t *benchSagaInstance) GetResult() interface{}                    { return t.resultData }
-func (t *benchSagaInstance) GetStartedAt() *time.Time                  { return t.startedAt }
-func (t *benchSagaInstance) GetCompletedAt() *time.Time                { return t.completedAt }
-func (t *benchSagaInstance) GetTimedOutAt() *time.Time                 { return t.timedOutAt }
-func (t *benchSagaInstance) GetInitialData() map[string]interface{}    { return t.initialData }
-func (t *benchSagaInstance) GetCurrentData() map[string]interface{}    { return t.currentData }
-func (t *benchSagaInstance) GetResultData() map[string]interface{}     { return t.resultData }
-func (t *benchSagaInstance) GetError() *saga.SagaError                 { return t.err }
-func (t *benchSagaInstance) GetTimeout() time.Duration                 { return t.timeout }
-func (t *benchSagaInstance) GetRetryPolicy() *saga.RetryPolicy         { return t.retryPolicy }
-func (t *benchSagaInstance) GetMetadata() map[string]interface{}       { return t.metadata }
-func (t *benchSagaInstance) GetTraceID() string                        { return t.traceID }
-func (t *benchSagaInstance) GetSpanID() string                         { return t.spanID }
-func (t *benchSagaInstance) GetVersion() int                           { return t.version }
-func (t *benchSagaInstance) IsTerminal() bool                          {
+func (t *benchSagaInstance) GetResult() interface{}                 { return t.resultData }
+func (t *benchSagaInstance) GetStartedAt() *time.Time               { return t.startedAt }
+func (t *benchSagaInstance) GetCompletedAt() *time.Time             { return t.completedAt }
+func (t *benchSagaInstance) GetTimedOutAt() *time.Time              { return t.timedOutAt }
+func (t *benchSagaInstance) GetInitialData() map[string]interface{} { return t.initialData }
+func (t *benchSagaInstance) GetCurrentData() map[string]interface{} { return t.currentData }
+func (t *benchSagaInstance) GetResultData() map[string]interface{}  { return t.resultData }
+func (t *benchSagaInstance) GetError() *saga.SagaError              { return t.err }
+func (t *benchSagaInstance) GetTimeout() time.Duration              { return t.timeout }
+func (t *benchSagaInstance) GetRetryPolicy() *saga.RetryPolicy      { return t.retryPolicy }
+func (t *benchSagaInstance) GetMetadata() map[string]interface{}    { return t.metadata }
+func (t *benchSagaInstance) GetTraceID() string                     { return t.traceID }
+func (t *benchSagaInstance) GetSpanID() string                      { return t.spanID }
+func (t *benchSagaInstance) GetVersion() int                        { return t.version }
+func (t *benchSagaInstance) IsTerminal() bool {
 	return t.sagaState == saga.StateCompleted || t.sagaState == saga.StateFailed ||
 		t.sagaState == saga.StateCancelled || t.sagaState == saga.StateTimedOut
 }
-func (t *benchSagaInstance) IsActive() bool                            {
+func (t *benchSagaInstance) IsActive() bool {
 	return t.sagaState == saga.StateRunning || t.sagaState == saga.StateStepCompleted ||
 		t.sagaState == saga.StateCompensating
 }
-func (t *benchSagaInstance) SetState(state saga.SagaState)             { t.sagaState = state }
-func (t *benchSagaInstance) SetCurrentStep(step int)                   { t.currentStep = step }
-func (t *benchSagaInstance) SetUpdatedAt(ts time.Time)                 { t.updatedAt = ts }
-func (t *benchSagaInstance) SetStartedAt(ts *time.Time)                { t.startedAt = ts }
-func (t *benchSagaInstance) SetCompletedAt(ts *time.Time)              { t.completedAt = ts }
-func (t *benchSagaInstance) SetTimedOutAt(ts *time.Time)               { t.timedOutAt = ts }
+func (t *benchSagaInstance) SetState(state saga.SagaState)              { t.sagaState = state }
+func (t *benchSagaInstance) SetCurrentStep(step int)                    { t.currentStep = step }
+func (t *benchSagaInstance) SetUpdatedAt(ts time.Time)                  { t.updatedAt = ts }
+func (t *benchSagaInstance) SetStartedAt(ts *time.Time)                 { t.startedAt = ts }
+func (t *benchSagaInstance) SetCompletedAt(ts *time.Time)               { t.completedAt = ts }
+func (t *benchSagaInstance) SetTimedOutAt(ts *time.Time)                { t.timedOutAt = ts }
 func (t *benchSagaInstance) SetCurrentData(data map[string]interface{}) { t.currentData = data }
-func (t *benchSagaInstance) SetResultData(data map[string]interface{}) { t.resultData = data }
-func (t *benchSagaInstance) SetError(err *saga.SagaError)              { t.err = err }
-func (t *benchSagaInstance) SetMetadata(m map[string]interface{})      { t.metadata = m }
-func (t *benchSagaInstance) SetVersion(v int)                          { t.version = v }
-
+func (t *benchSagaInstance) SetResultData(data map[string]interface{})  { t.resultData = data }
+func (t *benchSagaInstance) SetError(err *saga.SagaError)               { t.err = err }
+func (t *benchSagaInstance) SetMetadata(m map[string]interface{})       { t.metadata = m }
+func (t *benchSagaInstance) SetVersion(v int)                           { t.version = v }

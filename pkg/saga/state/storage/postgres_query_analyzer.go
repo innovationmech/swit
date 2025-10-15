@@ -557,15 +557,15 @@ func (qa *QueryAnalyzer) GetTableStats(ctx context.Context) ([]map[string]interf
 		}
 
 		result := map[string]interface{}{
-			"table":             tablename,
-			"live_tuples":       liveTuples.Int64,
-			"dead_tuples":       deadTuples.Int64,
-			"seq_scan":          seqScan.Int64,
-			"idx_scan":          idxScan.Int64,
-			"last_vacuum":       lastVacuum.Time,
-			"last_autovacuum":   lastAutovacuum.Time,
-			"last_analyze":      lastAnalyze.Time,
-			"last_autoanalyze":  lastAutoanalyze.Time,
+			"table":            tablename,
+			"live_tuples":      liveTuples.Int64,
+			"dead_tuples":      deadTuples.Int64,
+			"seq_scan":         seqScan.Int64,
+			"idx_scan":         idxScan.Int64,
+			"last_vacuum":      lastVacuum.Time,
+			"last_autovacuum":  lastAutovacuum.Time,
+			"last_analyze":     lastAnalyze.Time,
+			"last_autoanalyze": lastAutoanalyze.Time,
 		}
 		results = append(results, result)
 	}
@@ -576,4 +576,3 @@ func (qa *QueryAnalyzer) GetTableStats(ctx context.Context) ([]map[string]interf
 
 	return results, nil
 }
-
