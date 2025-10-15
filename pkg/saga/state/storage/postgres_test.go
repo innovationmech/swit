@@ -1270,3 +1270,249 @@ func containsSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+// ==========================
+// Transaction Tests
+// ==========================
+
+// TestPostgresStateStorage_TransactionBasics tests basic transaction operations.
+func TestPostgresStateStorage_TransactionBasics(t *testing.T) {
+	// Skip if no real database - transactions require actual PostgreSQL
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_TransactionCommit tests transaction commit behavior.
+func TestPostgresStateStorage_TransactionCommit(t *testing.T) {
+	// Test will verify:
+	// 1. BeginTransaction succeeds
+	// 2. Operations within transaction work
+	// 3. Commit makes changes permanent
+	// 4. Changes visible after commit
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_TransactionRollback tests transaction rollback behavior.
+func TestPostgresStateStorage_TransactionRollback(t *testing.T) {
+	// Test will verify:
+	// 1. BeginTransaction succeeds
+	// 2. Operations within transaction work
+	// 3. Rollback discards changes
+	// 4. Changes not visible after rollback
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_TransactionTimeout tests transaction timeout behavior.
+func TestPostgresStateStorage_TransactionTimeout(t *testing.T) {
+	// Test will verify:
+	// 1. Transaction timeout is enforced
+	// 2. Operations fail after timeout
+	// 3. Proper error returned on timeout
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_TransactionClosed tests operations on closed transactions.
+func TestPostgresStateStorage_TransactionClosed(t *testing.T) {
+	// Test will verify:
+	// 1. Operations fail on closed transaction
+	// 2. Proper error returned (ErrTransactionClosed)
+	// 3. Double commit/rollback is safe
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestSagaTransaction_SaveSaga tests SaveSaga within transaction.
+func TestSagaTransaction_SaveSaga(t *testing.T) {
+	// Test will verify:
+	// 1. SaveSaga works within transaction
+	// 2. Multiple sagas can be saved in one transaction
+	// 3. Changes are isolated until commit
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestSagaTransaction_SaveStepState tests SaveStepState within transaction.
+func TestSagaTransaction_SaveStepState(t *testing.T) {
+	// Test will verify:
+	// 1. SaveStepState works within transaction
+	// 2. Multiple steps can be saved in one transaction
+	// 3. Changes are isolated until commit
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestSagaTransaction_UpdateSagaState tests UpdateSagaState within transaction.
+func TestSagaTransaction_UpdateSagaState(t *testing.T) {
+	// Test will verify:
+	// 1. UpdateSagaState works within transaction
+	// 2. State updates are atomic
+	// 3. Metadata merging works correctly
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestSagaTransaction_DeleteSaga tests DeleteSaga within transaction.
+func TestSagaTransaction_DeleteSaga(t *testing.T) {
+	// Test will verify:
+	// 1. DeleteSaga works within transaction
+	// 2. Cascade delete works for steps
+	// 3. Rollback restores deleted saga
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestSagaTransaction_Exec tests custom SQL execution within transaction.
+func TestSagaTransaction_Exec(t *testing.T) {
+	// Test will verify:
+	// 1. Exec works within transaction
+	// 2. Custom queries can be executed
+	// 3. Changes are atomic with saga operations
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_BatchSaveSagas tests batch save operations.
+func TestPostgresStateStorage_BatchSaveSagas(t *testing.T) {
+	// Test will verify:
+	// 1. Multiple sagas saved atomically
+	// 2. All-or-nothing behavior on error
+	// 3. Timeout parameter works
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_BatchSaveStepStates tests batch step save operations.
+func TestPostgresStateStorage_BatchSaveStepStates(t *testing.T) {
+	// Test will verify:
+	// 1. Multiple steps saved atomically
+	// 2. All-or-nothing behavior on error
+	// 3. Timeout parameter works
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// ==========================
+// Optimistic Locking Tests
+// ==========================
+
+// TestPostgresStateStorage_OptimisticLocking tests optimistic locking with version.
+func TestPostgresStateStorage_OptimisticLocking(t *testing.T) {
+	// Test will verify:
+	// 1. Version field is tracked correctly
+	// 2. Concurrent updates detect conflicts
+	// 3. ErrOptimisticLockFailed returned on version mismatch
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_UpdateSagaWithOptimisticLock tests optimistic lock updates.
+func TestPostgresStateStorage_UpdateSagaWithOptimisticLock(t *testing.T) {
+	// Test will verify:
+	// 1. Update succeeds with correct version
+	// 2. Update fails with wrong version
+	// 3. Version is incremented on update
+	// 4. Proper error differentiation (not found vs version mismatch)
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock tests state update with locking.
+func TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock(t *testing.T) {
+	// Test will verify:
+	// 1. State update succeeds with correct version
+	// 2. State update fails with wrong version
+	// 3. Metadata merge works with version check
+	// 4. Version is incremented on update
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// ==========================
+// Concurrency Tests
+// ==========================
+
+// TestPostgresStateStorage_ConcurrentTransactions tests concurrent transaction handling.
+func TestPostgresStateStorage_ConcurrentTransactions(t *testing.T) {
+	// Test will verify:
+	// 1. Multiple transactions can run concurrently
+	// 2. Transaction isolation is maintained
+	// 3. No data corruption occurs
+	// 4. Performance is acceptable with concurrent load
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_ConcurrentOptimisticLocking tests concurrent optimistic locking.
+func TestPostgresStateStorage_ConcurrentOptimisticLocking(t *testing.T) {
+	// Test will verify:
+	// 1. Multiple goroutines attempting updates
+	// 2. Only one succeeds per version
+	// 3. Others get ErrOptimisticLockFailed
+	// 4. Retry logic can eventually succeed
+	// 5. No lost updates occur
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_ConcurrentMixedOperations tests mixed concurrent operations.
+func TestPostgresStateStorage_ConcurrentMixedOperations(t *testing.T) {
+	// Test will verify:
+	// 1. Mix of reads, writes, updates, deletes
+	// 2. Transaction and non-transaction operations
+	// 3. No deadlocks occur
+	// 4. Data consistency maintained
+	// 5. All operations complete successfully
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_TransactionDeadlockHandling tests deadlock scenarios.
+func TestPostgresStateStorage_TransactionDeadlockHandling(t *testing.T) {
+	// Test will verify:
+	// 1. Deadlock detection and handling
+	// 2. Proper error reporting
+	// 3. Retry mechanism can resolve deadlocks
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// ==========================
+// Integration Test Scenarios
+// ==========================
+
+// TestPostgresStateStorage_TransactionScenario_OrderProcessing tests a realistic scenario.
+func TestPostgresStateStorage_TransactionScenario_OrderProcessing(t *testing.T) {
+	// Simulates order processing saga:
+	// 1. Create order saga
+	// 2. Save multiple step states (inventory check, payment, shipping)
+	// 3. Update saga state as steps complete
+	// 4. All operations in transaction
+	// 5. Commit on success or rollback on failure
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_TransactionScenario_Compensation tests compensation flow.
+func TestPostgresStateStorage_TransactionScenario_Compensation(t *testing.T) {
+	// Simulates compensation scenario:
+	// 1. Saga progresses through multiple steps
+	// 2. A step fails mid-way
+	// 3. Compensation steps are executed
+	// 4. State updates tracked transactionally
+	// 5. Final state reflects compensation
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_VersionIncrement tests version field behavior.
+func TestPostgresStateStorage_VersionIncrement(t *testing.T) {
+	// Test will verify:
+	// 1. Version starts at 1 for new sagas
+	// 2. Version increments on each update
+	// 3. Version is correctly read back
+	// 4. Database trigger increments version
+	
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}

@@ -264,6 +264,9 @@ type SagaInstanceData struct {
 	// Tracing information
 	TraceID string `json:"trace_id,omitempty"`
 	SpanID  string `json:"span_id,omitempty"`
+
+	// Optimistic locking
+	Version int `json:"version"`
 }
 
 // StepState represents the state of an individual step within a Saga.
