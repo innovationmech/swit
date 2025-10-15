@@ -195,7 +195,7 @@ func runMigrate(ctx context.Context, migrator *migrations.Migrator) error {
 }
 
 func runStatus(ctx context.Context, migrator *migrations.Migrator) error {
-	fmt.Println("Checking migration status...\n")
+	fmt.Println("Checking migration status...")
 
 	// Get current version
 	currentVersion, err := migrator.GetCurrentVersion(ctx)
