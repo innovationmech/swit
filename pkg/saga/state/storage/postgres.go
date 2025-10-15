@@ -235,7 +235,7 @@ func (p *PostgresStateStorage) HealthCheckWithRetry(ctx context.Context) error {
 		if attempt > 0 {
 			// Calculate backoff duration with exponential backoff
 			backoff := p.calculateBackoff(attempt)
-			
+
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -339,7 +339,7 @@ func (p *PostgresStateStorage) DetectConnectionLeaks() (bool, string, error) {
 		if stats.WaitCount > 0 {
 			avgWaitTime = stats.WaitDuration / time.Duration(stats.WaitCount)
 		}
-		
+
 		if avgWaitTime > time.Second {
 			msg := fmt.Sprintf(
 				"Potential connection leak detected: high average wait time %.2fs per acquisition",
@@ -384,7 +384,7 @@ func (p *PostgresStateStorage) isRetriableError(err error) bool {
 	// PostgreSQL error codes that indicate transient failures
 	// These are common errors that may resolve on retry
 	errMsg := err.Error()
-	
+
 	// Connection errors
 	if errors.Is(err, sql.ErrConnDone) {
 		return true
@@ -424,7 +424,7 @@ func (p *PostgresStateStorage) executeWithRetry(ctx context.Context, operation f
 
 			// Calculate and wait for backoff
 			backoff := p.calculateBackoff(attempt)
-			
+
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -448,9 +448,9 @@ func (p *PostgresStateStorage) executeWithRetry(ctx context.Context, operation f
 
 // contains checks if a string contains a substring (case-insensitive).
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && 
-		(s == substr || len(substr) == 0 || 
-		 containsHelper(s, substr))
+	return len(s) >= len(substr) &&
+		(s == substr || len(substr) == 0 ||
+			containsHelper(s, substr))
 }
 
 func containsHelper(s, substr string) bool {
