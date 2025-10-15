@@ -1109,34 +1109,34 @@ func TestPostgresStateStorage_SanitizeSortField(t *testing.T) {
 // TestPostgresStateStorage_JoinStrings tests the string joining utility.
 func TestPostgresStateStorage_JoinStrings(t *testing.T) {
 	tests := []struct {
-		name   string
-		strs   []string
-		sep    string
-		want   string
+		name string
+		strs []string
+		sep  string
+		want string
 	}{
 		{
-			name:   "empty slice",
-			strs:   []string{},
-			sep:    ", ",
-			want:   "",
+			name: "empty slice",
+			strs: []string{},
+			sep:  ", ",
+			want: "",
 		},
 		{
-			name:   "single element",
-			strs:   []string{"one"},
-			sep:    ", ",
-			want:   "one",
+			name: "single element",
+			strs: []string{"one"},
+			sep:  ", ",
+			want: "one",
 		},
 		{
-			name:   "multiple elements",
-			strs:   []string{"one", "two", "three"},
-			sep:    ", ",
-			want:   "one, two, three",
+			name: "multiple elements",
+			strs: []string{"one", "two", "three"},
+			sep:  ", ",
+			want: "one, two, three",
 		},
 		{
-			name:   "different separator",
-			strs:   []string{"a", "b", "c"},
-			sep:    " AND ",
-			want:   "a AND b AND c",
+			name: "different separator",
+			strs: []string{"a", "b", "c"},
+			sep:  " AND ",
+			want: "a AND b AND c",
 		},
 	}
 
@@ -1256,9 +1256,9 @@ func timePtr(t time.Time) *time.Time {
 
 // containsString checks if a string contains a substring.
 func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || 
-		containsSubstring(s, substr)))
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
+		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+			containsSubstring(s, substr)))
 }
 
 // containsSubstring checks if substr exists within s.
