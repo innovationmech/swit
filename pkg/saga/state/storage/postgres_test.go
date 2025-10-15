@@ -794,3 +794,479 @@ func TestPostgresStateStorage_InvalidInputs(t *testing.T) {
 		}
 	})
 }
+
+// ==========================
+// Complex Query Tests
+// ==========================
+
+// TestPostgresStateStorage_BuildWhereClause tests the WHERE clause builder with various filters.
+func TestPostgresStateStorage_BuildWhereClause(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	tests := []struct {
+		name          string
+		filter        *saga.SagaFilter
+		wantCondition bool // whether WHERE clause should be present
+		wantArgCount  int
+	}{
+		{
+			name:          "nil filter",
+			filter:        nil,
+			wantCondition: false,
+			wantArgCount:  0,
+		},
+		{
+			name: "filter by single state",
+			filter: &saga.SagaFilter{
+				States: []saga.SagaState{saga.StateRunning},
+			},
+			wantCondition: true,
+			wantArgCount:  1,
+		},
+		{
+			name: "filter by multiple states",
+			filter: &saga.SagaFilter{
+				States: []saga.SagaState{saga.StateRunning, saga.StateCompleted, saga.StateFailed},
+			},
+			wantCondition: true,
+			wantArgCount:  3,
+		},
+		{
+			name: "filter by definition IDs",
+			filter: &saga.SagaFilter{
+				DefinitionIDs: []string{"payment-saga", "order-saga"},
+			},
+			wantCondition: true,
+			wantArgCount:  2,
+		},
+		{
+			name: "filter by time range",
+			filter: &saga.SagaFilter{
+				CreatedAfter:  timePtr(time.Now().Add(-24 * time.Hour)),
+				CreatedBefore: timePtr(time.Now()),
+			},
+			wantCondition: true,
+			wantArgCount:  2,
+		},
+		{
+			name: "filter by metadata",
+			filter: &saga.SagaFilter{
+				Metadata: map[string]interface{}{
+					"tenant": "test-tenant",
+					"region": "us-east-1",
+				},
+			},
+			wantCondition: true,
+			wantArgCount:  1, // metadata is marshaled as one JSONB argument
+		},
+		{
+			name: "combined filters",
+			filter: &saga.SagaFilter{
+				States:        []saga.SagaState{saga.StateRunning, saga.StateCompleted},
+				DefinitionIDs: []string{"payment-saga"},
+				CreatedAfter:  timePtr(time.Now().Add(-24 * time.Hour)),
+			},
+			wantCondition: true,
+			wantArgCount:  4, // 2 states + 1 definition + 1 time
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			whereClause, args := storage.buildWhereClause(tt.filter)
+
+			if tt.wantCondition {
+				if whereClause == "" {
+					t.Error("Expected WHERE clause but got empty string")
+				}
+			} else {
+				if whereClause != "" {
+					t.Errorf("Expected empty WHERE clause but got: %s", whereClause)
+				}
+			}
+
+			if len(args) != tt.wantArgCount {
+				t.Errorf("Expected %d arguments, got %d", tt.wantArgCount, len(args))
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_BuildOrderByClause tests the ORDER BY clause builder.
+func TestPostgresStateStorage_BuildOrderByClause(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	tests := []struct {
+		name         string
+		filter       *saga.SagaFilter
+		wantContains string
+	}{
+		{
+			name:         "nil filter - default sorting",
+			filter:       nil,
+			wantContains: "created_at DESC",
+		},
+		{
+			name: "sort by created_at asc",
+			filter: &saga.SagaFilter{
+				SortBy:    "created_at",
+				SortOrder: "asc",
+			},
+			wantContains: "created_at ASC",
+		},
+		{
+			name: "sort by updated_at desc",
+			filter: &saga.SagaFilter{
+				SortBy:    "updated_at",
+				SortOrder: "desc",
+			},
+			wantContains: "updated_at DESC",
+		},
+		{
+			name: "sort by state",
+			filter: &saga.SagaFilter{
+				SortBy:    "state",
+				SortOrder: "asc",
+			},
+			wantContains: "state ASC",
+		},
+		{
+			name: "invalid sort field - fallback to created_at",
+			filter: &saga.SagaFilter{
+				SortBy:    "invalid_field",
+				SortOrder: "asc",
+			},
+			wantContains: "created_at ASC",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orderBy := storage.buildOrderByClause(tt.filter)
+
+			if orderBy == "" {
+				t.Error("Expected ORDER BY clause but got empty string")
+			}
+
+			if !containsString(orderBy, tt.wantContains) {
+				t.Errorf("Expected ORDER BY clause to contain '%s', got: %s", tt.wantContains, orderBy)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_BuildPaginationClause tests pagination clause builder.
+func TestPostgresStateStorage_BuildPaginationClause(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	tests := []struct {
+		name         string
+		baseQuery    string
+		baseArgs     []interface{}
+		filter       *saga.SagaFilter
+		wantLimit    bool
+		wantOffset   bool
+		wantArgCount int
+	}{
+		{
+			name:         "nil filter",
+			baseQuery:    "SELECT * FROM saga_instances",
+			baseArgs:     []interface{}{},
+			filter:       nil,
+			wantLimit:    false,
+			wantOffset:   false,
+			wantArgCount: 0,
+		},
+		{
+			name:      "with limit only",
+			baseQuery: "SELECT * FROM saga_instances",
+			baseArgs:  []interface{}{},
+			filter: &saga.SagaFilter{
+				Limit: 10,
+			},
+			wantLimit:    true,
+			wantOffset:   false,
+			wantArgCount: 1,
+		},
+		{
+			name:      "with limit and offset",
+			baseQuery: "SELECT * FROM saga_instances",
+			baseArgs:  []interface{}{},
+			filter: &saga.SagaFilter{
+				Limit:  10,
+				Offset: 20,
+			},
+			wantLimit:    true,
+			wantOffset:   true,
+			wantArgCount: 2,
+		},
+		{
+			name:      "with existing args",
+			baseQuery: "SELECT * FROM saga_instances WHERE state = $1",
+			baseArgs:  []interface{}{saga.StateRunning},
+			filter: &saga.SagaFilter{
+				Limit:  5,
+				Offset: 10,
+			},
+			wantLimit:    true,
+			wantOffset:   true,
+			wantArgCount: 3, // 1 existing + 2 new
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query, args := storage.buildPaginationClause(tt.baseQuery, tt.baseArgs, tt.filter)
+
+			if tt.wantLimit && !containsString(query, "LIMIT") {
+				t.Error("Expected query to contain LIMIT")
+			}
+
+			if tt.wantOffset && !containsString(query, "OFFSET") {
+				t.Error("Expected query to contain OFFSET")
+			}
+
+			if len(args) != tt.wantArgCount {
+				t.Errorf("Expected %d arguments, got %d", tt.wantArgCount, len(args))
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_SanitizeSortField tests sort field sanitization.
+func TestPostgresStateStorage_SanitizeSortField(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config: config,
+		closed: false,
+	}
+
+	tests := []struct {
+		name      string
+		field     string
+		wantField string
+	}{
+		{
+			name:      "valid field - id",
+			field:     "id",
+			wantField: "id",
+		},
+		{
+			name:      "valid field - created_at",
+			field:     "created_at",
+			wantField: "created_at",
+		},
+		{
+			name:      "valid field - state",
+			field:     "state",
+			wantField: "state",
+		},
+		{
+			name:      "invalid field - SQL injection attempt",
+			field:     "id; DROP TABLE saga_instances;--",
+			wantField: "created_at", // should fallback to default
+		},
+		{
+			name:      "invalid field - random string",
+			field:     "invalid_column",
+			wantField: "created_at", // should fallback to default
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := storage.sanitizeSortField(tt.field)
+			if result != tt.wantField {
+				t.Errorf("Expected field %s, got %s", tt.wantField, result)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_JoinStrings tests the string joining utility.
+func TestPostgresStateStorage_JoinStrings(t *testing.T) {
+	tests := []struct {
+		name   string
+		strs   []string
+		sep    string
+		want   string
+	}{
+		{
+			name:   "empty slice",
+			strs:   []string{},
+			sep:    ", ",
+			want:   "",
+		},
+		{
+			name:   "single element",
+			strs:   []string{"one"},
+			sep:    ", ",
+			want:   "one",
+		},
+		{
+			name:   "multiple elements",
+			strs:   []string{"one", "two", "three"},
+			sep:    ", ",
+			want:   "one, two, three",
+		},
+		{
+			name:   "different separator",
+			strs:   []string{"a", "b", "c"},
+			sep:    " AND ",
+			want:   "a AND b AND c",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := joinStrings(tt.strs, tt.sep)
+			if result != tt.want {
+				t.Errorf("Expected '%s', got '%s'", tt.want, result)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_BuildListQuery tests the complete query builder.
+func TestPostgresStateStorage_BuildListQuery(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config:         config,
+		closed:         false,
+		instancesTable: "saga_instances",
+	}
+
+	tests := []struct {
+		name            string
+		filter          *saga.SagaFilter
+		wantContains    []string
+		wantNotContains []string
+		wantArgCount    int
+	}{
+		{
+			name:   "empty filter - default query",
+			filter: &saga.SagaFilter{},
+			wantContains: []string{
+				"SELECT",
+				"FROM saga_instances",
+				"ORDER BY created_at DESC",
+			},
+			wantNotContains: []string{"WHERE", "LIMIT", "OFFSET"},
+			wantArgCount:    0,
+		},
+		{
+			name: "filter with states and pagination",
+			filter: &saga.SagaFilter{
+				States: []saga.SagaState{saga.StateRunning, saga.StateCompleted},
+				Limit:  10,
+				Offset: 5,
+			},
+			wantContains: []string{
+				"SELECT",
+				"WHERE",
+				"state IN",
+				"LIMIT",
+				"OFFSET",
+			},
+			wantArgCount: 4, // 2 states + limit + offset
+		},
+		{
+			name: "complex filter with all options",
+			filter: &saga.SagaFilter{
+				States:        []saga.SagaState{saga.StateRunning},
+				DefinitionIDs: []string{"payment-saga"},
+				CreatedAfter:  timePtr(time.Now().Add(-24 * time.Hour)),
+				SortBy:        "updated_at",
+				SortOrder:     "asc",
+				Limit:         20,
+			},
+			wantContains: []string{
+				"SELECT",
+				"WHERE",
+				"state IN",
+				"definition_id IN",
+				"created_at >=",
+				"ORDER BY updated_at ASC",
+				"LIMIT",
+			},
+			wantArgCount: 4, // 1 state + 1 definition + 1 time + limit
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query, args := storage.buildListQuery(tt.filter)
+
+			if query == "" {
+				t.Error("Expected non-empty query")
+			}
+
+			for _, want := range tt.wantContains {
+				if !containsString(query, want) {
+					t.Errorf("Expected query to contain '%s', got: %s", want, query)
+				}
+			}
+
+			for _, notWant := range tt.wantNotContains {
+				if containsString(query, notWant) {
+					t.Errorf("Expected query NOT to contain '%s', got: %s", notWant, query)
+				}
+			}
+
+			if len(args) != tt.wantArgCount {
+				t.Errorf("Expected %d arguments, got %d", tt.wantArgCount, len(args))
+			}
+		})
+	}
+}
+
+// ==========================
+// Helper Functions for Tests
+// ==========================
+
+// timePtr returns a pointer to a time.Time value.
+func timePtr(t time.Time) *time.Time {
+	return &t
+}
+
+// containsString checks if a string contains a substring.
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
+		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || 
+		containsSubstring(s, substr)))
+}
+
+// containsSubstring checks if substr exists within s.
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
