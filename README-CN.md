@@ -130,6 +130,31 @@ make build
 ./bin/swit-serve    # 用户管理 (HTTP: 9000, gRPC: 10000)
 ./bin/swit-auth     # 身份验证 (HTTP: 9001, gRPC: 50051)
 ./bin/switctl --help # CLI 工具
+./bin/saga-migrate --help # 数据库迁移工具
+```
+
+### 数据库迁移（Saga 存储）
+
+`saga-migrate` 工具用于管理 Saga 数据库 schema 迁移：
+
+```bash
+# 应用所有迁移
+saga-migrate -dsn 'postgres://localhost/saga' -action migrate
+
+# 检查迁移状态
+saga-migrate -dsn 'postgres://localhost/saga' -action status
+
+# 应用特定版本
+saga-migrate -dsn 'postgres://localhost/saga' -action apply -version 2
+
+# 回滚迁移
+saga-migrate -dsn 'postgres://localhost/saga' -action rollback -version 2
+
+# 验证 schema 版本
+saga-migrate -dsn 'postgres://localhost/saga' -action validate -version 2
+
+# 查看完整文档
+cat docs/saga-database-migrations.md
 ```
 
 ## 开发

@@ -45,6 +45,7 @@ SERVICES=(
     "swit-serve:cmd/swit-serve/swit-serve.go"
     "swit-auth:cmd/swit-auth/swit-auth.go"
     "switctl:cmd/switctl/switctl.go"
+    "saga-migrate:cmd/saga-migrate/main.go"
 )
 
 # 构建标志

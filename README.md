@@ -130,6 +130,31 @@ make build
 ./bin/swit-serve    # User management (HTTP: 9000, gRPC: 10000)
 ./bin/swit-auth     # Authentication (HTTP: 9001, gRPC: 50051)
 ./bin/switctl --help # CLI tool
+./bin/saga-migrate --help # Database migration tool
+```
+
+### Database Migrations (Saga Storage)
+
+The `saga-migrate` tool manages Saga database schema migrations:
+
+```bash
+# Apply all migrations
+saga-migrate -dsn 'postgres://localhost/saga' -action migrate
+
+# Check migration status
+saga-migrate -dsn 'postgres://localhost/saga' -action status
+
+# Apply specific version
+saga-migrate -dsn 'postgres://localhost/saga' -action apply -version 2
+
+# Rollback migration
+saga-migrate -dsn 'postgres://localhost/saga' -action rollback -version 2
+
+# Validate schema version
+saga-migrate -dsn 'postgres://localhost/saga' -action validate -version 2
+
+# See full documentation
+cat docs/saga-database-migrations.md
 ```
 
 ## Development
