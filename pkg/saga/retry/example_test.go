@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/pkg/saga/retry"
+	"go.uber.org/zap"
 )
 
 // ExampleExponentialBackoffPolicy demonstrates using exponential backoff retry.
@@ -199,7 +200,8 @@ func ExampleExecutor_ExecuteWithTimeout() {
 	}
 
 	policy := retry.NewFixedIntervalPolicy(config, 100*time.Millisecond, 0)
-	executor := retry.NewExecutor(policy)
+	// Use nop logger to suppress log output in example test
+	executor := retry.NewExecutor(policy, retry.WithLogger(zap.NewNop()))
 
 	ctx := context.Background()
 
