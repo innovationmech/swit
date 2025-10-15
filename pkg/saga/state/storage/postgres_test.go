@@ -1288,7 +1288,7 @@ func TestPostgresStateStorage_TransactionCommit(t *testing.T) {
 	// 2. Operations within transaction work
 	// 3. Commit makes changes permanent
 	// 4. Changes visible after commit
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1299,7 +1299,7 @@ func TestPostgresStateStorage_TransactionRollback(t *testing.T) {
 	// 2. Operations within transaction work
 	// 3. Rollback discards changes
 	// 4. Changes not visible after rollback
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1309,7 +1309,7 @@ func TestPostgresStateStorage_TransactionTimeout(t *testing.T) {
 	// 1. Transaction timeout is enforced
 	// 2. Operations fail after timeout
 	// 3. Proper error returned on timeout
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1319,7 +1319,7 @@ func TestPostgresStateStorage_TransactionClosed(t *testing.T) {
 	// 1. Operations fail on closed transaction
 	// 2. Proper error returned (ErrTransactionClosed)
 	// 3. Double commit/rollback is safe
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1329,7 +1329,7 @@ func TestSagaTransaction_SaveSaga(t *testing.T) {
 	// 1. SaveSaga works within transaction
 	// 2. Multiple sagas can be saved in one transaction
 	// 3. Changes are isolated until commit
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1339,7 +1339,7 @@ func TestSagaTransaction_SaveStepState(t *testing.T) {
 	// 1. SaveStepState works within transaction
 	// 2. Multiple steps can be saved in one transaction
 	// 3. Changes are isolated until commit
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1349,7 +1349,7 @@ func TestSagaTransaction_UpdateSagaState(t *testing.T) {
 	// 1. UpdateSagaState works within transaction
 	// 2. State updates are atomic
 	// 3. Metadata merging works correctly
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1359,7 +1359,7 @@ func TestSagaTransaction_DeleteSaga(t *testing.T) {
 	// 1. DeleteSaga works within transaction
 	// 2. Cascade delete works for steps
 	// 3. Rollback restores deleted saga
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1369,7 +1369,7 @@ func TestSagaTransaction_Exec(t *testing.T) {
 	// 1. Exec works within transaction
 	// 2. Custom queries can be executed
 	// 3. Changes are atomic with saga operations
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1379,7 +1379,7 @@ func TestPostgresStateStorage_BatchSaveSagas(t *testing.T) {
 	// 1. Multiple sagas saved atomically
 	// 2. All-or-nothing behavior on error
 	// 3. Timeout parameter works
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1389,7 +1389,7 @@ func TestPostgresStateStorage_BatchSaveStepStates(t *testing.T) {
 	// 1. Multiple steps saved atomically
 	// 2. All-or-nothing behavior on error
 	// 3. Timeout parameter works
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1403,7 +1403,7 @@ func TestPostgresStateStorage_OptimisticLocking(t *testing.T) {
 	// 1. Version field is tracked correctly
 	// 2. Concurrent updates detect conflicts
 	// 3. ErrOptimisticLockFailed returned on version mismatch
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1414,7 +1414,7 @@ func TestPostgresStateStorage_UpdateSagaWithOptimisticLock(t *testing.T) {
 	// 2. Update fails with wrong version
 	// 3. Version is incremented on update
 	// 4. Proper error differentiation (not found vs version mismatch)
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1425,7 +1425,7 @@ func TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock(t *testing.T) {
 	// 2. State update fails with wrong version
 	// 3. Metadata merge works with version check
 	// 4. Version is incremented on update
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1440,7 +1440,7 @@ func TestPostgresStateStorage_ConcurrentTransactions(t *testing.T) {
 	// 2. Transaction isolation is maintained
 	// 3. No data corruption occurs
 	// 4. Performance is acceptable with concurrent load
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1452,7 +1452,7 @@ func TestPostgresStateStorage_ConcurrentOptimisticLocking(t *testing.T) {
 	// 3. Others get ErrOptimisticLockFailed
 	// 4. Retry logic can eventually succeed
 	// 5. No lost updates occur
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1464,7 +1464,7 @@ func TestPostgresStateStorage_ConcurrentMixedOperations(t *testing.T) {
 	// 3. No deadlocks occur
 	// 4. Data consistency maintained
 	// 5. All operations complete successfully
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1474,7 +1474,7 @@ func TestPostgresStateStorage_TransactionDeadlockHandling(t *testing.T) {
 	// 1. Deadlock detection and handling
 	// 2. Proper error reporting
 	// 3. Retry mechanism can resolve deadlocks
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1490,7 +1490,7 @@ func TestPostgresStateStorage_TransactionScenario_OrderProcessing(t *testing.T) 
 	// 3. Update saga state as steps complete
 	// 4. All operations in transaction
 	// 5. Commit on success or rollback on failure
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1502,7 +1502,7 @@ func TestPostgresStateStorage_TransactionScenario_Compensation(t *testing.T) {
 	// 3. Compensation steps are executed
 	// 4. State updates tracked transactionally
 	// 5. Final state reflects compensation
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
 }
 
@@ -1513,6 +1513,297 @@ func TestPostgresStateStorage_VersionIncrement(t *testing.T) {
 	// 2. Version increments on each update
 	// 3. Version is correctly read back
 	// 4. Database trigger increments version
-	
+
 	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// ==========================
+// Health Check and Monitoring Tests
+// ==========================
+
+// TestPostgresStateStorage_HealthCheck tests the HealthCheck method.
+func TestPostgresStateStorage_HealthCheck(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_HealthCheckWithRetry tests health check with retry.
+func TestPostgresStateStorage_HealthCheckWithRetry(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_GetPoolStats tests getting connection pool statistics.
+func TestPostgresStateStorage_GetPoolStats(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_DetectConnectionLeaks tests connection leak detection.
+func TestPostgresStateStorage_DetectConnectionLeaks(t *testing.T) {
+	t.Skip("Requires PostgreSQL connection - will be tested in integration tests")
+}
+
+// TestPostgresStateStorage_CalculateBackoff tests the backoff calculation.
+func TestPostgresStateStorage_CalculateBackoff(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+	config.RetryBackoff = 100 * time.Millisecond
+	config.MaxRetryBackoff = 5 * time.Second
+
+	// Create a mock storage to test the method
+	// Note: We can't fully initialize without DB connection, but we can test the logic
+	storage := &PostgresStateStorage{
+		config: config,
+	}
+
+	tests := []struct {
+		name           string
+		attempt        int
+		wantMin        time.Duration
+		wantMax        time.Duration
+		shouldBeCapped bool
+	}{
+		{
+			name:    "first retry",
+			attempt: 1,
+			wantMin: 100 * time.Millisecond,
+			wantMax: 100 * time.Millisecond,
+		},
+		{
+			name:    "second retry",
+			attempt: 2,
+			wantMin: 200 * time.Millisecond,
+			wantMax: 200 * time.Millisecond,
+		},
+		{
+			name:    "third retry",
+			attempt: 3,
+			wantMin: 400 * time.Millisecond,
+			wantMax: 400 * time.Millisecond,
+		},
+		{
+			name:           "large attempt (should be capped)",
+			attempt:        10,
+			wantMin:        5 * time.Second,
+			wantMax:        5 * time.Second,
+			shouldBeCapped: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backoff := storage.calculateBackoff(tt.attempt)
+
+			if backoff < tt.wantMin {
+				t.Errorf("calculateBackoff() = %v, want at least %v", backoff, tt.wantMin)
+			}
+			if backoff > tt.wantMax {
+				t.Errorf("calculateBackoff() = %v, want at most %v", backoff, tt.wantMax)
+			}
+
+			if tt.shouldBeCapped && backoff != config.MaxRetryBackoff {
+				t.Errorf("calculateBackoff() = %v, want capped at %v", backoff, config.MaxRetryBackoff)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_IsRetriableError tests error classification.
+func TestPostgresStateStorage_IsRetriableError(t *testing.T) {
+	config := DefaultPostgresConfig()
+	config.DSN = "postgres://test"
+
+	storage := &PostgresStateStorage{
+		config: config,
+	}
+
+	tests := []struct {
+		name          string
+		err           error
+		wantRetriable bool
+	}{
+		{
+			name:          "nil error",
+			err:           nil,
+			wantRetriable: false,
+		},
+		{
+			name:          "context canceled",
+			err:           context.Canceled,
+			wantRetriable: false,
+		},
+		{
+			name:          "context deadline exceeded",
+			err:           context.DeadlineExceeded,
+			wantRetriable: false,
+		},
+		{
+			name:          "connection refused",
+			err:           &testError{msg: "connection refused"},
+			wantRetriable: true,
+		},
+		{
+			name:          "connection reset",
+			err:           &testError{msg: "connection reset by peer"},
+			wantRetriable: true,
+		},
+		{
+			name:          "timeout error",
+			err:           &testError{msg: "timeout waiting for connection"},
+			wantRetriable: true,
+		},
+		{
+			name:          "deadlock error",
+			err:           &testError{msg: "deadlock detected"},
+			wantRetriable: true,
+		},
+		{
+			name:          "too many connections",
+			err:           &testError{msg: "too many connections"},
+			wantRetriable: true,
+		},
+		{
+			name:          "serialization error",
+			err:           &testError{msg: "could not serialize access due to concurrent update"},
+			wantRetriable: true,
+		},
+		{
+			name:          "non-retriable error",
+			err:           &testError{msg: "syntax error at or near SELECT"},
+			wantRetriable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := storage.isRetriableError(tt.err)
+			if got != tt.wantRetriable {
+				t.Errorf("isRetriableError() = %v, want %v for error: %v", got, tt.wantRetriable, tt.err)
+			}
+		})
+	}
+}
+
+// testError is a simple error type for testing.
+type testError struct {
+	msg string
+}
+
+func (e *testError) Error() string {
+	return e.msg
+}
+
+// TestPostgresStateStorage_Contains tests the string contains helper.
+func TestPostgresStateStorage_Contains(t *testing.T) {
+	tests := []struct {
+		name   string
+		s      string
+		substr string
+		want   bool
+	}{
+		{
+			name:   "exact match",
+			s:      "timeout",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "substring at start",
+			s:      "timeout error",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "substring in middle",
+			s:      "connection timeout error",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "substring at end",
+			s:      "connection timeout",
+			substr: "timeout",
+			want:   true,
+		},
+		{
+			name:   "not found",
+			s:      "connection error",
+			substr: "timeout",
+			want:   false,
+		},
+		{
+			name:   "empty substring",
+			s:      "any string",
+			substr: "",
+			want:   true,
+		},
+		{
+			name:   "empty string",
+			s:      "",
+			substr: "timeout",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := contains(tt.s, tt.substr)
+			if got != tt.want {
+				t.Errorf("contains(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPostgresStateStorage_HealthCheck_ClosedStorage tests health check on closed storage.
+func TestPostgresStateStorage_HealthCheck_ClosedStorage(t *testing.T) {
+	// Create a mock closed storage
+	storage := &PostgresStateStorage{
+		closed: true,
+		config: DefaultPostgresConfig(),
+	}
+
+	ctx := context.Background()
+	err := storage.HealthCheck(ctx)
+
+	if err != state.ErrStorageClosed {
+		t.Errorf("HealthCheck() on closed storage = %v, want %v", err, state.ErrStorageClosed)
+	}
+}
+
+// TestPostgresStateStorage_GetPoolStats_ClosedStorage tests getting stats from closed storage.
+func TestPostgresStateStorage_GetPoolStats_ClosedStorage(t *testing.T) {
+	// Create a mock closed storage
+	storage := &PostgresStateStorage{
+		closed: true,
+		config: DefaultPostgresConfig(),
+	}
+
+	stats, err := storage.GetPoolStats()
+
+	if err != state.ErrStorageClosed {
+		t.Errorf("GetPoolStats() on closed storage error = %v, want %v", err, state.ErrStorageClosed)
+	}
+	if stats != nil {
+		t.Errorf("GetPoolStats() on closed storage = %v, want nil", stats)
+	}
+}
+
+// TestPostgresStateStorage_DetectConnectionLeaks_ClosedStorage tests leak detection on closed storage.
+func TestPostgresStateStorage_DetectConnectionLeaks_ClosedStorage(t *testing.T) {
+	// Create a mock closed storage
+	storage := &PostgresStateStorage{
+		closed: true,
+		config: DefaultPostgresConfig(),
+	}
+
+	leaked, msg, err := storage.DetectConnectionLeaks()
+
+	if err != state.ErrStorageClosed {
+		t.Errorf("DetectConnectionLeaks() on closed storage error = %v, want %v", err, state.ErrStorageClosed)
+	}
+	if leaked {
+		t.Errorf("DetectConnectionLeaks() leaked = %v, want false", leaked)
+	}
+	if msg != "" {
+		t.Errorf("DetectConnectionLeaks() msg = %q, want empty", msg)
+	}
 }

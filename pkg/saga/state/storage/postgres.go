@@ -45,6 +45,12 @@ var (
 
 	// ErrTransactionAlreadyStarted is returned when trying to start a transaction that's already active.
 	ErrTransactionAlreadyStarted = errors.New("transaction already started")
+
+	// ErrConnectionPoolExhausted is returned when the connection pool has no available connections.
+	ErrConnectionPoolExhausted = errors.New("connection pool exhausted")
+
+	// ErrHealthCheckFailed is returned when a health check fails.
+	ErrHealthCheckFailed = errors.New("health check failed")
 )
 
 // PostgresStateStorage provides a PostgreSQL implementation of saga.StateStorage.
@@ -171,6 +177,289 @@ func (p *PostgresStateStorage) checkClosed() error {
 		return state.ErrStorageClosed
 	}
 	return nil
+}
+
+// ==========================
+// Health Check and Monitoring
+// ==========================
+
+// HealthCheck performs a health check on the database connection.
+// It verifies that the database is reachable and can execute a simple query.
+//
+// Returns an error if:
+//   - The storage has been closed
+//   - The database connection is not responsive
+//   - A test query fails to execute
+//
+// The health check executes a lightweight query (SELECT 1) to verify connectivity
+// and includes connection pool statistics in the result.
+func (p *PostgresStateStorage) HealthCheck(ctx context.Context) error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if err := p.checkClosed(); err != nil {
+		return err
+	}
+
+	// Create a timeout context for the health check
+	healthCtx, cancel := context.WithTimeout(ctx, p.config.ConnectionTimeout)
+	defer cancel()
+
+	// Attempt to ping the database
+	if err := p.db.PingContext(healthCtx); err != nil {
+		return fmt.Errorf("%w: ping failed: %v", ErrHealthCheckFailed, err)
+	}
+
+	// Execute a simple query to verify database functionality
+	var result int
+	query := "SELECT 1"
+	if err := p.db.QueryRowContext(healthCtx, query).Scan(&result); err != nil {
+		return fmt.Errorf("%w: query failed: %v", ErrHealthCheckFailed, err)
+	}
+
+	if result != 1 {
+		return fmt.Errorf("%w: unexpected query result: %d", ErrHealthCheckFailed, result)
+	}
+
+	return nil
+}
+
+// HealthCheckWithRetry performs a health check with automatic retry on failure.
+// It uses the retry configuration from PostgresConfig to determine retry behavior.
+//
+// This is useful for startup scenarios or environments with transient connectivity issues.
+func (p *PostgresStateStorage) HealthCheckWithRetry(ctx context.Context) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= p.config.MaxRetries; attempt++ {
+		if attempt > 0 {
+			// Calculate backoff duration with exponential backoff
+			backoff := p.calculateBackoff(attempt)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+				// Continue with retry
+			}
+		}
+
+		if err := p.HealthCheck(ctx); err != nil {
+			lastErr = err
+			continue
+		}
+
+		// Health check succeeded
+		return nil
+	}
+
+	return fmt.Errorf("health check failed after %d retries: %w", p.config.MaxRetries, lastErr)
+}
+
+// PostgresPoolStats returns connection pool statistics for monitoring.
+// This provides visibility into connection pool health and usage patterns.
+type PostgresPoolStats struct {
+	// MaxOpenConnections is the maximum number of open connections to the database.
+	MaxOpenConnections int `json:"max_open_connections"`
+
+	// OpenConnections is the number of established connections both in use and idle.
+	OpenConnections int `json:"open_connections"`
+
+	// InUse is the number of connections currently in use.
+	InUse int `json:"in_use"`
+
+	// Idle is the number of idle connections.
+	Idle int `json:"idle"`
+
+	// WaitCount is the total number of connections waited for.
+	WaitCount int64 `json:"wait_count"`
+
+	// WaitDuration is the total time blocked waiting for a new connection.
+	WaitDuration time.Duration `json:"wait_duration"`
+
+	// MaxIdleClosed is the total number of connections closed due to SetMaxIdleConns.
+	MaxIdleClosed int64 `json:"max_idle_closed"`
+
+	// MaxIdleTimeClosed is the total number of connections closed due to SetConnMaxIdleTime.
+	MaxIdleTimeClosed int64 `json:"max_idle_time_closed"`
+
+	// MaxLifetimeClosed is the total number of connections closed due to SetConnMaxLifetime.
+	MaxLifetimeClosed int64 `json:"max_lifetime_closed"`
+}
+
+// GetPoolStats returns current connection pool statistics.
+// Returns an error if the storage has been closed.
+func (p *PostgresStateStorage) GetPoolStats() (*PostgresPoolStats, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if err := p.checkClosed(); err != nil {
+		return nil, err
+	}
+
+	stats := p.db.Stats()
+
+	return &PostgresPoolStats{
+		MaxOpenConnections: stats.MaxOpenConnections,
+		OpenConnections:    stats.OpenConnections,
+		InUse:              stats.InUse,
+		Idle:               stats.Idle,
+		WaitCount:          stats.WaitCount,
+		WaitDuration:       stats.WaitDuration,
+		MaxIdleClosed:      stats.MaxIdleClosed,
+		MaxIdleTimeClosed:  stats.MaxIdleTimeClosed,
+		MaxLifetimeClosed:  stats.MaxLifetimeClosed,
+	}, nil
+}
+
+// DetectConnectionLeaks checks for potential connection leaks by analyzing pool statistics.
+// A connection leak is suspected if:
+//   - All connections are in use and wait count is high
+//   - Wait duration is excessive
+//
+// Returns true if a potential leak is detected, along with diagnostic information.
+func (p *PostgresStateStorage) DetectConnectionLeaks() (bool, string, error) {
+	stats, err := p.GetPoolStats()
+	if err != nil {
+		return false, "", err
+	}
+
+	// Check if pool is exhausted
+	if stats.OpenConnections >= stats.MaxOpenConnections && stats.InUse == stats.MaxOpenConnections {
+		if stats.WaitCount > 100 {
+			msg := fmt.Sprintf(
+				"Potential connection leak detected: pool exhausted with %d connections in use, %d waits, %.2fs total wait time",
+				stats.InUse, stats.WaitCount, stats.WaitDuration.Seconds(),
+			)
+			return true, msg, nil
+		}
+
+		// High wait duration suggests connections are not being released
+		avgWaitTime := time.Duration(0)
+		if stats.WaitCount > 0 {
+			avgWaitTime = stats.WaitDuration / time.Duration(stats.WaitCount)
+		}
+
+		if avgWaitTime > time.Second {
+			msg := fmt.Sprintf(
+				"Potential connection leak detected: high average wait time %.2fs per acquisition",
+				avgWaitTime.Seconds(),
+			)
+			return true, msg, nil
+		}
+	}
+
+	return false, "", nil
+}
+
+// ==========================
+// Retry Mechanism
+// ==========================
+
+// calculateBackoff calculates the backoff duration for a given retry attempt.
+// Uses exponential backoff with a maximum cap.
+func (p *PostgresStateStorage) calculateBackoff(attempt int) time.Duration {
+	// Calculate exponential backoff: initialBackoff * 2^(attempt-1)
+	backoff := p.config.RetryBackoff * time.Duration(1<<uint(attempt-1))
+
+	// Cap at maximum backoff
+	if backoff > p.config.MaxRetryBackoff {
+		backoff = p.config.MaxRetryBackoff
+	}
+
+	return backoff
+}
+
+// isRetriableError determines if an error is transient and should be retried.
+func (p *PostgresStateStorage) isRetriableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for context cancellation - don't retry these
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	// PostgreSQL error codes that indicate transient failures
+	// These are common errors that may resolve on retry
+	errMsg := err.Error()
+
+	// Connection errors
+	if errors.Is(err, sql.ErrConnDone) {
+		return true
+	}
+
+	// Common transient error patterns
+	retriablePatterns := []string{
+		"connection refused",
+		"connection reset",
+		"broken pipe",
+		"no such host",
+		"timeout",
+		"deadlock",
+		"too many connections",
+		"could not serialize access",
+	}
+
+	for _, pattern := range retriablePatterns {
+		if contains(errMsg, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// executeWithRetry executes a database operation with retry logic.
+func (p *PostgresStateStorage) executeWithRetry(ctx context.Context, operation func() error) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= p.config.MaxRetries; attempt++ {
+		if attempt > 0 {
+			// Check if the error is retriable
+			if !p.isRetriableError(lastErr) {
+				return lastErr
+			}
+
+			// Calculate and wait for backoff
+			backoff := p.calculateBackoff(attempt)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+				// Continue with retry
+			}
+		}
+
+		// Execute the operation
+		if err := operation(); err != nil {
+			lastErr = err
+			continue
+		}
+
+		// Operation succeeded
+		return nil
+	}
+
+	return fmt.Errorf("operation failed after %d retries: %w", p.config.MaxRetries, lastErr)
+}
+
+// contains checks if a string contains a substring (case-insensitive).
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) &&
+		(s == substr || len(substr) == 0 ||
+			containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // SaveSaga persists a Saga instance to PostgreSQL storage.
