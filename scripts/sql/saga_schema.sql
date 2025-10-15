@@ -53,10 +53,14 @@ CREATE TABLE IF NOT EXISTS saga_instances (
     trace_id VARCHAR(255),
     span_id VARCHAR(255),
     
+    -- Optimistic locking
+    version INTEGER NOT NULL DEFAULT 1,
+    
     -- Constraints
     CONSTRAINT chk_state CHECK (state >= 0 AND state <= 8),
     CONSTRAINT chk_current_step CHECK (current_step >= 0),
-    CONSTRAINT chk_total_steps CHECK (total_steps >= 0)
+    CONSTRAINT chk_total_steps CHECK (total_steps >= 0),
+    CONSTRAINT chk_version CHECK (version > 0)
 );
 
 -- Indexes for saga_instances

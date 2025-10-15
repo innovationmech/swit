@@ -39,6 +39,12 @@ import (
 var (
 	// ErrNotImplemented is returned when a method is not yet implemented.
 	ErrNotImplemented = errors.New("not implemented")
+
+	// ErrTransactionClosed is returned when an operation is attempted on a closed transaction.
+	ErrTransactionClosed = errors.New("transaction is closed")
+
+	// ErrTransactionAlreadyStarted is returned when trying to start a transaction that's already active.
+	ErrTransactionAlreadyStarted = errors.New("transaction already started")
 )
 
 // PostgresStateStorage provides a PostgreSQL implementation of saga.StateStorage.
@@ -235,8 +241,8 @@ func (p *PostgresStateStorage) SaveSaga(ctx context.Context, instance saga.SagaI
 			created_at, updated_at, started_at, completed_at, timed_out_at,
 			initial_data, current_data, result_data,
 			error, timeout_ms, retry_policy,
-			metadata, trace_id, span_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+			metadata, trace_id, span_id, version
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 		ON CONFLICT (id) DO UPDATE SET
 			definition_id = EXCLUDED.definition_id,
 			name = EXCLUDED.name,
@@ -256,12 +262,18 @@ func (p *PostgresStateStorage) SaveSaga(ctx context.Context, instance saga.SagaI
 			retry_policy = EXCLUDED.retry_policy,
 			metadata = EXCLUDED.metadata,
 			trace_id = EXCLUDED.trace_id,
-			span_id = EXCLUDED.span_id
+			span_id = EXCLUDED.span_id,
+			version = EXCLUDED.version
 	`, p.instancesTable)
 
 	// Apply query timeout
 	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
 	defer cancel()
+
+	// Set version to 1 if not set
+	if data.Version == 0 {
+		data.Version = 1
+	}
 
 	// Execute the query
 	_, err = p.db.ExecContext(
@@ -272,7 +284,7 @@ func (p *PostgresStateStorage) SaveSaga(ctx context.Context, instance saga.SagaI
 		data.CreatedAt, data.UpdatedAt, data.StartedAt, data.CompletedAt, data.TimedOutAt,
 		initialDataJSON, currentDataJSON, resultDataJSON,
 		errorJSON, timeoutMs, retryPolicyJSON,
-		metadataJSON, data.TraceID, data.SpanID,
+		metadataJSON, data.TraceID, data.SpanID, data.Version,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save saga instance: %w", err)
@@ -307,7 +319,7 @@ func (p *PostgresStateStorage) GetSaga(ctx context.Context, sagaID string) (saga
 			created_at, updated_at, started_at, completed_at, timed_out_at,
 			initial_data, current_data, result_data,
 			error, timeout_ms, retry_policy,
-			metadata, trace_id, span_id
+			metadata, trace_id, span_id, version
 		FROM %s
 		WHERE id = $1
 	`, p.instancesTable)
@@ -329,7 +341,7 @@ func (p *PostgresStateStorage) GetSaga(ctx context.Context, sagaID string) (saga
 		&data.CreatedAt, &data.UpdatedAt, &data.StartedAt, &data.CompletedAt, &data.TimedOutAt,
 		&initialDataJSON, &currentDataJSON, &resultDataJSON,
 		&errorJSON, &timeoutMs, &retryPolicyJSON,
-		&metadataJSON, &data.TraceID, &data.SpanID,
+		&metadataJSON, &data.TraceID, &data.SpanID, &data.Version,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -557,7 +569,7 @@ func (p *PostgresStateStorage) GetTimeoutSagas(ctx context.Context, before time.
 			created_at, updated_at, started_at, completed_at, timed_out_at,
 			initial_data, current_data, result_data,
 			error, timeout_ms, retry_policy,
-			metadata, trace_id, span_id
+			metadata, trace_id, span_id, version
 		FROM %s
 		WHERE (
 			timed_out_at IS NOT NULL AND timed_out_at < $1
@@ -980,7 +992,7 @@ func (p *PostgresStateStorage) buildListQuery(filter *saga.SagaFilter) (string, 
 			created_at, updated_at, started_at, completed_at, timed_out_at,
 			initial_data, current_data, result_data,
 			error, timeout_ms, retry_policy,
-			metadata, trace_id, span_id
+			metadata, trace_id, span_id, version
 		FROM %s`, p.instancesTable)
 
 	// Build WHERE clause and collect arguments
@@ -1145,7 +1157,7 @@ func (p *PostgresStateStorage) scanSagaInstances(rows *sql.Rows) ([]saga.SagaIns
 			&data.CreatedAt, &data.UpdatedAt, &data.StartedAt, &data.CompletedAt, &data.TimedOutAt,
 			&initialDataJSON, &currentDataJSON, &resultDataJSON,
 			&errorJSON, &timeoutMs, &retryPolicyJSON,
-			&metadataJSON, &data.TraceID, &data.SpanID,
+			&metadataJSON, &data.TraceID, &data.SpanID, &data.Version,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan saga instance: %w", err)
@@ -1273,4 +1285,838 @@ func (p *PostgresStateStorage) CountSagas(ctx context.Context, filter *saga.Saga
 	}
 
 	return count, nil
+}
+
+// ==========================
+// Transaction Support
+// ==========================
+
+// SagaTransaction represents a database transaction for atomic Saga operations.
+// It allows multiple Saga and step state operations to be grouped together
+// and committed or rolled back atomically, ensuring data consistency.
+//
+// The transaction is not thread-safe and should be used from a single goroutine.
+type SagaTransaction struct {
+	// tx is the underlying SQL transaction
+	tx *sql.Tx
+
+	// storage is the parent storage instance
+	storage *PostgresStateStorage
+
+	// closed indicates whether the transaction has been committed or rolled back
+	closed bool
+
+	// mu protects transaction state
+	mu sync.Mutex
+
+	// timeout is the transaction timeout duration
+	timeout time.Duration
+
+	// startTime records when the transaction was started
+	startTime time.Time
+}
+
+// BeginTransaction starts a new database transaction with the specified timeout.
+// Returns a SagaTransaction that can be used to perform multiple operations atomically.
+//
+// The transaction must be explicitly committed using Commit() or rolled back using Rollback().
+// Failure to do so will leak database connections.
+//
+// Example:
+//
+//	tx, err := storage.BeginTransaction(ctx, 30*time.Second)
+//	if err != nil {
+//	    return err
+//	}
+//	defer tx.Rollback(ctx) // Ensure rollback on error
+//
+//	if err := tx.SaveSaga(ctx, saga1); err != nil {
+//	    return err
+//	}
+//	if err := tx.SaveSaga(ctx, saga2); err != nil {
+//	    return err
+//	}
+//
+//	return tx.Commit(ctx)
+func (p *PostgresStateStorage) BeginTransaction(ctx context.Context, timeout time.Duration) (*SagaTransaction, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if err := p.checkClosed(); err != nil {
+		return nil, err
+	}
+
+	// Use default timeout if not specified
+	if timeout <= 0 {
+		timeout = p.config.QueryTimeout
+	}
+
+	// Create transaction context with timeout
+	txCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Begin SQL transaction
+	tx, err := p.db.BeginTx(txCtx, &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+		ReadOnly:  false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	return &SagaTransaction{
+		tx:        tx,
+		storage:   p,
+		closed:    false,
+		timeout:   timeout,
+		startTime: time.Now(),
+	}, nil
+}
+
+// checkClosed returns an error if the transaction has been closed.
+func (st *SagaTransaction) checkClosed() error {
+	if st.closed {
+		return ErrTransactionClosed
+	}
+	return nil
+}
+
+// checkTimeout returns an error if the transaction has exceeded its timeout.
+func (st *SagaTransaction) checkTimeout() error {
+	if time.Since(st.startTime) > st.timeout {
+		return fmt.Errorf("transaction timeout exceeded: %v", st.timeout)
+	}
+	return nil
+}
+
+// Commit commits the transaction, making all changes permanent.
+// After commit, the transaction is closed and cannot be used anymore.
+//
+// Returns an error if:
+//   - The transaction is already closed
+//   - The transaction has timed out
+//   - The commit operation fails
+func (st *SagaTransaction) Commit(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if err := st.checkClosed(); err != nil {
+		return err
+	}
+
+	if err := st.checkTimeout(); err != nil {
+		// Rollback on timeout
+		_ = st.tx.Rollback()
+		st.closed = true
+		return err
+	}
+
+	// Commit the transaction
+	if err := st.tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	st.closed = true
+	return nil
+}
+
+// Rollback rolls back the transaction, discarding all changes.
+// After rollback, the transaction is closed and cannot be used anymore.
+//
+// Returns an error if:
+//   - The transaction is already closed
+//   - The rollback operation fails
+//
+// Note: Rollback is idempotent and safe to call multiple times.
+func (st *SagaTransaction) Rollback(ctx context.Context) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if st.closed {
+		// Already closed, no-op
+		return nil
+	}
+
+	// Rollback the transaction
+	if err := st.tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		return fmt.Errorf("failed to rollback transaction: %w", err)
+	}
+
+	st.closed = true
+	return nil
+}
+
+// SaveSaga persists a Saga instance within the transaction.
+// It uses INSERT ... ON CONFLICT DO UPDATE to handle both creation and update scenarios.
+func (st *SagaTransaction) SaveSaga(ctx context.Context, instance saga.SagaInstance) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if err := st.checkClosed(); err != nil {
+		return err
+	}
+
+	if err := st.checkTimeout(); err != nil {
+		return err
+	}
+
+	if instance == nil {
+		return state.ErrInvalidSagaID
+	}
+
+	sagaID := instance.GetID()
+	if sagaID == "" {
+		return state.ErrInvalidSagaID
+	}
+
+	// Convert SagaInstance to SagaInstanceData
+	data := st.storage.convertToSagaInstanceData(instance)
+
+	// Serialize complex data fields to JSONB
+	initialDataJSON, err := st.storage.marshalJSON(data.InitialData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal initial_data: %w", err)
+	}
+
+	currentDataJSON, err := st.storage.marshalJSON(data.CurrentData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal current_data: %w", err)
+	}
+
+	resultDataJSON, err := st.storage.marshalJSON(data.ResultData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal result_data: %w", err)
+	}
+
+	errorJSON, err := st.storage.marshalJSON(data.Error)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error: %w", err)
+	}
+
+	retryPolicyJSON, err := st.storage.marshalJSON(data.RetryPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal retry_policy: %w", err)
+	}
+
+	metadataJSON, err := st.storage.marshalJSON(data.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Convert timeout to milliseconds
+	timeoutMs := data.Timeout.Milliseconds()
+
+	// Set version to 1 if not set
+	if data.Version == 0 {
+		data.Version = 1
+	}
+
+	// Prepare SQL statement with upsert logic
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			id, definition_id, name, description,
+			state, current_step, total_steps,
+			created_at, updated_at, started_at, completed_at, timed_out_at,
+			initial_data, current_data, result_data,
+			error, timeout_ms, retry_policy,
+			metadata, trace_id, span_id, version
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		ON CONFLICT (id) DO UPDATE SET
+			definition_id = EXCLUDED.definition_id,
+			name = EXCLUDED.name,
+			description = EXCLUDED.description,
+			state = EXCLUDED.state,
+			current_step = EXCLUDED.current_step,
+			total_steps = EXCLUDED.total_steps,
+			updated_at = EXCLUDED.updated_at,
+			started_at = EXCLUDED.started_at,
+			completed_at = EXCLUDED.completed_at,
+			timed_out_at = EXCLUDED.timed_out_at,
+			initial_data = EXCLUDED.initial_data,
+			current_data = EXCLUDED.current_data,
+			result_data = EXCLUDED.result_data,
+			error = EXCLUDED.error,
+			timeout_ms = EXCLUDED.timeout_ms,
+			retry_policy = EXCLUDED.retry_policy,
+			metadata = EXCLUDED.metadata,
+			trace_id = EXCLUDED.trace_id,
+			span_id = EXCLUDED.span_id,
+			version = EXCLUDED.version
+	`, st.storage.instancesTable)
+
+	// Execute the query within transaction
+	_, err = st.tx.ExecContext(
+		ctx,
+		query,
+		data.ID, data.DefinitionID, data.Name, data.Description,
+		int(data.State), data.CurrentStep, data.TotalSteps,
+		data.CreatedAt, data.UpdatedAt, data.StartedAt, data.CompletedAt, data.TimedOutAt,
+		initialDataJSON, currentDataJSON, resultDataJSON,
+		errorJSON, timeoutMs, retryPolicyJSON,
+		metadataJSON, data.TraceID, data.SpanID, data.Version,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save saga instance in transaction: %w", err)
+	}
+
+	return nil
+}
+
+// SaveStepState persists the state of a specific step within a Saga in the transaction.
+// It uses INSERT ... ON CONFLICT DO UPDATE to handle both creation and update scenarios.
+func (st *SagaTransaction) SaveStepState(ctx context.Context, sagaID string, step *saga.StepState) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if err := st.checkClosed(); err != nil {
+		return err
+	}
+
+	if err := st.checkTimeout(); err != nil {
+		return err
+	}
+
+	if sagaID == "" {
+		return state.ErrInvalidSagaID
+	}
+
+	if step == nil {
+		return state.ErrInvalidState
+	}
+
+	// Serialize complex data fields to JSONB
+	inputDataJSON, err := st.storage.marshalJSON(step.InputData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal input_data: %w", err)
+	}
+
+	outputDataJSON, err := st.storage.marshalJSON(step.OutputData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal output_data: %w", err)
+	}
+
+	errorJSON, err := st.storage.marshalJSON(step.Error)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error: %w", err)
+	}
+
+	compensationStateJSON, err := st.storage.marshalJSON(step.CompensationState)
+	if err != nil {
+		return fmt.Errorf("failed to marshal compensation_state: %w", err)
+	}
+
+	metadataJSON, err := st.storage.marshalJSON(step.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Prepare SQL statement with upsert logic
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			id, saga_id, step_index, name,
+			state, attempts, max_attempts,
+			created_at, started_at, completed_at, last_attempt_at,
+			input_data, output_data, error,
+			compensation_state, metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		ON CONFLICT (id) DO UPDATE SET
+			saga_id = EXCLUDED.saga_id,
+			step_index = EXCLUDED.step_index,
+			name = EXCLUDED.name,
+			state = EXCLUDED.state,
+			attempts = EXCLUDED.attempts,
+			max_attempts = EXCLUDED.max_attempts,
+			started_at = EXCLUDED.started_at,
+			completed_at = EXCLUDED.completed_at,
+			last_attempt_at = EXCLUDED.last_attempt_at,
+			input_data = EXCLUDED.input_data,
+			output_data = EXCLUDED.output_data,
+			error = EXCLUDED.error,
+			compensation_state = EXCLUDED.compensation_state,
+			metadata = EXCLUDED.metadata
+	`, st.storage.stepsTable)
+
+	// Execute the query within transaction
+	_, err = st.tx.ExecContext(
+		ctx,
+		query,
+		step.ID, sagaID, step.StepIndex, step.Name,
+		int(step.State), step.Attempts, step.MaxAttempts,
+		step.CreatedAt, step.StartedAt, step.CompletedAt, step.LastAttemptAt,
+		inputDataJSON, outputDataJSON, errorJSON,
+		compensationStateJSON, metadataJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save step state in transaction: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateSagaState updates only the state of a Saga instance within the transaction.
+// This is a lightweight operation that doesn't require loading the entire Saga.
+func (st *SagaTransaction) UpdateSagaState(ctx context.Context, sagaID string, sagaState saga.SagaState, metadata map[string]interface{}) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if err := st.checkClosed(); err != nil {
+		return err
+	}
+
+	if err := st.checkTimeout(); err != nil {
+		return err
+	}
+
+	if sagaID == "" {
+		return state.ErrInvalidSagaID
+	}
+
+	// If metadata is provided, merge it with existing metadata
+	if len(metadata) > 0 {
+		// Serialize new metadata
+		metadataJSON, err := st.storage.marshalJSON(metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+
+		// Use JSONB concatenation to merge metadata
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET state = $1, 
+			    updated_at = $2,
+			    metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+			WHERE id = $4
+		`, st.storage.instancesTable)
+
+		result, err := st.tx.ExecContext(ctx, query, int(sagaState), time.Now(), metadataJSON, sagaID)
+		if err != nil {
+			return fmt.Errorf("failed to update saga state in transaction: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		if rowsAffected == 0 {
+			return state.ErrSagaNotFound
+		}
+	} else {
+		// No metadata to update, just update state
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET state = $1, updated_at = $2
+			WHERE id = $3
+		`, st.storage.instancesTable)
+
+		result, err := st.tx.ExecContext(ctx, query, int(sagaState), time.Now(), sagaID)
+		if err != nil {
+			return fmt.Errorf("failed to update saga state in transaction: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		if rowsAffected == 0 {
+			return state.ErrSagaNotFound
+		}
+	}
+
+	return nil
+}
+
+// DeleteSaga removes a Saga instance from storage within the transaction.
+// Due to CASCADE constraints, this will also delete associated steps and events.
+func (st *SagaTransaction) DeleteSaga(ctx context.Context, sagaID string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if err := st.checkClosed(); err != nil {
+		return err
+	}
+
+	if err := st.checkTimeout(); err != nil {
+		return err
+	}
+
+	if sagaID == "" {
+		return state.ErrInvalidSagaID
+	}
+
+	// Prepare delete query
+	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, st.storage.instancesTable)
+
+	// Execute delete within transaction
+	result, err := st.tx.ExecContext(ctx, query, sagaID)
+	if err != nil {
+		return fmt.Errorf("failed to delete saga instance in transaction: %w", err)
+	}
+
+	// Check if saga was found and deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return state.ErrSagaNotFound
+	}
+
+	return nil
+}
+
+// Exec executes a custom SQL query within the transaction.
+// This allows performing additional database operations atomically with Saga operations.
+//
+// Returns the number of rows affected and any error encountered.
+func (st *SagaTransaction) Exec(ctx context.Context, query string, args ...interface{}) (int64, error) {
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if err := st.checkClosed(); err != nil {
+		return 0, err
+	}
+
+	if err := st.checkTimeout(); err != nil {
+		return 0, err
+	}
+
+	result, err := st.tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute query in transaction: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+// ==========================
+// Batch Operations with Transactions
+// ==========================
+
+// BatchSaveSagas saves multiple Saga instances atomically within a single transaction.
+// All Sagas are saved or none are saved.
+//
+// This is a convenience method that wraps BeginTransaction, multiple SaveSaga calls,
+// and Commit/Rollback.
+func (p *PostgresStateStorage) BatchSaveSagas(ctx context.Context, instances []saga.SagaInstance, timeout time.Duration) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	if len(instances) == 0 {
+		return nil
+	}
+
+	// Begin transaction
+	tx, err := p.BeginTransaction(ctx, timeout)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Save all instances
+	for _, instance := range instances {
+		if err := tx.SaveSaga(ctx, instance); err != nil {
+			return fmt.Errorf("failed to save saga %s in batch: %w", instance.GetID(), err)
+		}
+	}
+
+	// Commit transaction
+	return tx.Commit(ctx)
+}
+
+// BatchSaveStepStates saves multiple step states for a Saga atomically within a single transaction.
+// All steps are saved or none are saved.
+func (p *PostgresStateStorage) BatchSaveStepStates(ctx context.Context, sagaID string, steps []*saga.StepState, timeout time.Duration) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	if sagaID == "" {
+		return state.ErrInvalidSagaID
+	}
+
+	if len(steps) == 0 {
+		return nil
+	}
+
+	// Begin transaction
+	tx, err := p.BeginTransaction(ctx, timeout)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Save all steps
+	for _, step := range steps {
+		if err := tx.SaveStepState(ctx, sagaID, step); err != nil {
+			return fmt.Errorf("failed to save step %s in batch: %w", step.ID, err)
+		}
+	}
+
+	// Commit transaction
+	return tx.Commit(ctx)
+}
+
+// ==========================
+// Optimistic Locking Support
+// ==========================
+
+// UpdateSagaWithOptimisticLock updates a Saga instance with optimistic locking.
+// It checks that the current version in the database matches the expected version,
+// and only updates if they match. This prevents lost updates in concurrent scenarios.
+//
+// Returns ErrOptimisticLockFailed if the version doesn't match (someone else modified the Saga).
+// Returns state.ErrSagaNotFound if the Saga doesn't exist.
+func (p *PostgresStateStorage) UpdateSagaWithOptimisticLock(ctx context.Context, instance saga.SagaInstance, expectedVersion int) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if err := p.checkClosed(); err != nil {
+		return err
+	}
+
+	if instance == nil {
+		return state.ErrInvalidSagaID
+	}
+
+	sagaID := instance.GetID()
+	if sagaID == "" {
+		return state.ErrInvalidSagaID
+	}
+
+	// Convert SagaInstance to SagaInstanceData
+	data := p.convertToSagaInstanceData(instance)
+
+	// Serialize complex data fields to JSONB
+	initialDataJSON, err := p.marshalJSON(data.InitialData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal initial_data: %w", err)
+	}
+
+	currentDataJSON, err := p.marshalJSON(data.CurrentData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal current_data: %w", err)
+	}
+
+	resultDataJSON, err := p.marshalJSON(data.ResultData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal result_data: %w", err)
+	}
+
+	errorJSON, err := p.marshalJSON(data.Error)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error: %w", err)
+	}
+
+	retryPolicyJSON, err := p.marshalJSON(data.RetryPolicy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal retry_policy: %w", err)
+	}
+
+	metadataJSON, err := p.marshalJSON(data.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Convert timeout to milliseconds
+	timeoutMs := data.Timeout.Milliseconds()
+
+	// Increment version for update
+	newVersion := expectedVersion + 1
+
+	// Prepare UPDATE statement with optimistic lock check
+	query := fmt.Sprintf(`
+		UPDATE %s SET
+			definition_id = $1,
+			name = $2,
+			description = $3,
+			state = $4,
+			current_step = $5,
+			total_steps = $6,
+			updated_at = $7,
+			started_at = $8,
+			completed_at = $9,
+			timed_out_at = $10,
+			initial_data = $11,
+			current_data = $12,
+			result_data = $13,
+			error = $14,
+			timeout_ms = $15,
+			retry_policy = $16,
+			metadata = $17,
+			trace_id = $18,
+			span_id = $19,
+			version = $20
+		WHERE id = $21 AND version = $22
+	`, p.instancesTable)
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	// Execute the update with version check
+	result, err := p.db.ExecContext(
+		queryCtx,
+		query,
+		data.DefinitionID, data.Name, data.Description,
+		int(data.State), data.CurrentStep, data.TotalSteps,
+		time.Now(), data.StartedAt, data.CompletedAt, data.TimedOutAt,
+		initialDataJSON, currentDataJSON, resultDataJSON,
+		errorJSON, timeoutMs, retryPolicyJSON,
+		metadataJSON, data.TraceID, data.SpanID,
+		newVersion, sagaID, expectedVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update saga instance with optimistic lock: %w", err)
+	}
+
+	// Check if the update affected any rows
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		// Check if saga exists to provide better error message
+		var exists bool
+		checkQuery := fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1)", p.instancesTable)
+		if err := p.db.QueryRowContext(queryCtx, checkQuery, sagaID).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check saga existence: %w", err)
+		}
+
+		if !exists {
+			return state.ErrSagaNotFound
+		}
+
+		// Saga exists but version didn't match
+		return ErrOptimisticLockFailed
+	}
+
+	return nil
+}
+
+// UpdateSagaStateWithOptimisticLock updates only the state of a Saga instance with optimistic locking.
+// This is a lightweight operation that doesn't require loading the entire Saga.
+func (p *PostgresStateStorage) UpdateSagaStateWithOptimisticLock(ctx context.Context, sagaID string, sagaState saga.SagaState, expectedVersion int, metadata map[string]interface{}) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if err := p.checkClosed(); err != nil {
+		return err
+	}
+
+	if sagaID == "" {
+		return state.ErrInvalidSagaID
+	}
+
+	// Increment version for update
+	newVersion := expectedVersion + 1
+
+	// Apply query timeout
+	queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+	defer cancel()
+
+	var result sql.Result
+	var err error
+
+	// If metadata is provided, merge it with existing metadata
+	if len(metadata) > 0 {
+		// Serialize new metadata
+		metadataJSON, err := p.marshalJSON(metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+
+		// Use JSONB concatenation to merge metadata
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET state = $1, 
+			    updated_at = $2,
+			    metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+			    version = $4
+			WHERE id = $5 AND version = $6
+		`, p.instancesTable)
+
+		result, err = p.db.ExecContext(queryCtx, query, int(sagaState), time.Now(), metadataJSON, newVersion, sagaID, expectedVersion)
+	} else {
+		// No metadata to update, just update state
+		query := fmt.Sprintf(`
+			UPDATE %s
+			SET state = $1, updated_at = $2, version = $3
+			WHERE id = $4 AND version = $5
+		`, p.instancesTable)
+
+		result, err = p.db.ExecContext(queryCtx, query, int(sagaState), time.Now(), newVersion, sagaID, expectedVersion)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to update saga state with optimistic lock: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		// Check if saga exists to provide better error message
+		var exists bool
+		checkQuery := fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1)", p.instancesTable)
+		if err := p.db.QueryRowContext(queryCtx, checkQuery, sagaID).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check saga existence: %w", err)
+		}
+
+		if !exists {
+			return state.ErrSagaNotFound
+		}
+
+		// Saga exists but version didn't match
+		return ErrOptimisticLockFailed
+	}
+
+	return nil
 }
