@@ -463,12 +463,37 @@ func (rm *RecoveryManager) performRecoveryCheck(ctx context.Context) error {
 	rm.stats.LastCheckTime = checkStart
 	rm.statsMu.Unlock()
 
-	// This is a stub implementation - actual recovery logic will be added in subsequent tasks
-	// For now, we just log that the check completed
+	// Perform fault detection
+	detectionResults, err := rm.performDetection(ctx)
+	if err != nil {
+		rm.logger.Error("detection failed", zap.Error(err))
+		rm.emitEvent(&RecoveryEvent{
+			Type:      RecoveryEventCheckFailed,
+			Timestamp: time.Now(),
+			Message:   "Recovery check failed during detection",
+			Error:     err,
+		})
+		return fmt.Errorf("detection failed: %w", err)
+	}
+
+	// Log detection results
+	detectionStats := make(map[string]int)
+	for _, result := range detectionResults {
+		detectionStats[string(result.Type)]++
+	}
+
+	rm.logger.Info("detection completed",
+		zap.Int("total_detected", len(detectionResults)),
+		zap.Any("by_type", detectionStats),
+	)
+
+	// TODO: In #595, this will trigger actual recovery for detected Sagas
+	// For now, we just log what we found
 
 	checkDuration := time.Since(checkStart)
 	rm.logger.Debug("recovery check completed",
 		zap.Duration("duration", checkDuration),
+		zap.Int("detected_sagas", len(detectionResults)),
 	)
 
 	rm.emitEvent(&RecoveryEvent{
@@ -476,7 +501,9 @@ func (rm *RecoveryManager) performRecoveryCheck(ctx context.Context) error {
 		Timestamp: time.Now(),
 		Message:   "Recovery check completed",
 		Metadata: map[string]interface{}{
-			"duration_ms": checkDuration.Milliseconds(),
+			"duration_ms":     checkDuration.Milliseconds(),
+			"detected_count":  len(detectionResults),
+			"detection_stats": detectionStats,
 		},
 	})
 
