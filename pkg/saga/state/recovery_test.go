@@ -439,15 +439,15 @@ func TestRecoverSaga(t *testing.T) {
 	sagaID := "test-saga-001"
 	now := time.Now()
 	sagaInstance := &mockSagaInstance{
-		id:          sagaID,
+		id:           sagaID,
 		definitionID: "test-definition",
-		state:       saga.StateRunning,
-		currentStep: 1,
-		totalSteps:  3,
-		startTime:   now,
-		createdAt:   now,
-		updatedAt:   now,
-		timeout:     5 * time.Minute,
+		state:        saga.StateRunning,
+		currentStep:  1,
+		totalSteps:   3,
+		startTime:    now,
+		createdAt:    now,
+		updatedAt:    now,
+		timeout:      5 * time.Minute,
 	}
 	if err := stateStorage.SaveSaga(ctx, sagaInstance); err != nil {
 		t.Fatalf("failed to save saga: %v", err)
@@ -596,15 +596,15 @@ func TestRecoverSagaInProgress(t *testing.T) {
 	// Create a saga instance for recovery
 	now := time.Now()
 	sagaInstance := &mockSagaInstance{
-		id:          sagaID,
+		id:           sagaID,
 		definitionID: "test-definition",
-		state:       saga.StateRunning,
-		currentStep: 1,
-		totalSteps:  3,
-		startTime:   now,
-		createdAt:   now,
-		updatedAt:   now,
-		timeout:     5 * time.Minute,
+		state:        saga.StateRunning,
+		currentStep:  1,
+		totalSteps:   3,
+		startTime:    now,
+		createdAt:    now,
+		updatedAt:    now,
+		timeout:      5 * time.Minute,
 	}
 	if err := stateStorage.SaveSaga(ctx, sagaInstance); err != nil {
 		t.Fatalf("failed to save saga: %v", err)
