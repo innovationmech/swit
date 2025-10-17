@@ -366,11 +366,12 @@ func (rm *RecoveryManager) RecoverSaga(ctx context.Context, sagaID string) error
 		return fmt.Errorf("%w: saga %s", ErrRecoveryInProgress, sagaID)
 	}
 
-	// Mark as recovering
+	// Mark as recovering - use attemptCount 1 for new attempts
+	// The actual attempt tracking happens in recordRecoveryAttempt
 	rm.recovering[sagaID] = &recoveryAttempt{
 		sagaID:       sagaID,
 		startTime:    time.Now(),
-		attemptCount: 1,
+		attemptCount: 0, // Will be incremented in recordRecoveryAttempt
 		lastAttempt:  time.Now(),
 	}
 	rm.recoveringMu.Unlock()

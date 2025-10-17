@@ -98,29 +98,28 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 		return ErrRecoverySkipped
 	}
 
-	// Check if Saga is being recovered by another instance
-	if rm.isAlreadyRecovering(sagaID) {
-		rm.logger.Debug("saga is already being recovered",
-			zap.String("saga_id", sagaID),
-		)
-		return ErrRecoveryInProgress
-	}
+	// Note: RecoverSaga already checks if the saga is being recovered,
+	// so we don't need to check again here
 
-	// Get recovery attempt history
-	history := rm.getRecoveryHistory(sagaID)
-	if history != nil && history.attemptCount >= rm.config.MaxRecoveryAttempts {
+	// Get recovery attempt from the recovering map (set by RecoverSaga)
+	// Check if this exceeds max attempts
+	rm.recoveringMu.Lock()
+	attempt, exists := rm.recovering[sagaID]
+	if exists && attempt.attemptCount > rm.config.MaxRecoveryAttempts {
+		rm.recoveringMu.Unlock()
 		rm.logger.Warn("max recovery attempts exceeded for saga",
 			zap.String("saga_id", sagaID),
-			zap.Int("attempts", history.attemptCount),
+			zap.Int("attempts", attempt.attemptCount),
 		)
 		// Mark as failed
 		return rm.markSagaAsFailed(ctx, sagaInst, ErrMaxRecoveryAttemptsExceeded)
 	}
 
 	// Check recovery backoff
-	if history != nil && !history.lastAttempt.IsZero() {
-		timeSinceLastAttempt := time.Since(history.lastAttempt)
+	if exists && !attempt.lastAttempt.IsZero() && attempt.attemptCount > 1 {
+		timeSinceLastAttempt := time.Since(attempt.lastAttempt)
 		if timeSinceLastAttempt < rm.config.RecoveryBackoff {
+			rm.recoveringMu.Unlock()
 			rm.logger.Debug("recovery backoff not elapsed, skipping",
 				zap.String("saga_id", sagaID),
 				zap.Duration("time_since_last_attempt", timeSinceLastAttempt),
@@ -129,6 +128,7 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 			return ErrRecoverySkipped
 		}
 	}
+	rm.recoveringMu.Unlock()
 
 	// Select recovery strategy
 	strategySelector := NewRecoveryStrategySelector()
