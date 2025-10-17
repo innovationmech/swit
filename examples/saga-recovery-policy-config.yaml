@@ -1,0 +1,142 @@
+# Saga Recovery Policy Configuration Example
+# 
+# This file demonstrates how to configure recovery policies for the Saga recovery system.
+# It supports:
+# - Global default recovery policy
+# - Per-definition (Saga type) policies
+# - Per-error-type policies
+# - Policy priority and override mechanisms
+
+recovery:
+  # Enable automatic recovery
+  enabled: true
+  
+  # Check interval for automatic recovery checks
+  check_interval: 30s
+  
+  # Maximum number of concurrent recovery operations
+  max_concurrent_recoveries: 10
+  
+  # Recovery timeout for a single operation
+  recovery_timeout: 5m
+  
+  # Minimum age of a Saga before it's considered for recovery
+  min_recovery_age: 1m
+  
+  # Maximum recovery attempts before marking as failed
+  max_recovery_attempts: 3
+  
+  # Backoff duration between recovery attempts
+  recovery_backoff: 1m
+  
+  # Batch size for recovery operations
+  recovery_batch_size: 100
+  
+  # Enable recovery metrics collection
+  enable_metrics: true
+  
+  # Recovery policy configuration
+  policies:
+    # Default policy applied to all Sagas unless overridden
+    default:
+      strategy: retry
+      max_retry_attempts: 3
+      retry_delay: 5s
+      timeout: 5m
+      requires_manual_intervention: false
+    
+    # Policies by Saga definition ID
+    # These override the default policy for specific Saga types
+    by_definition:
+      # Order processing Saga - use compensation on failures
+      order-saga:
+        strategy: compensate
+        timeout: 10m
+        requires_manual_intervention: false
+      
+      # Payment Saga - retry with more attempts
+      payment-saga:
+        strategy: retry
+        max_retry_attempts: 5
+        retry_delay: 10s
+        timeout: 3m
+        requires_manual_intervention: false
+      
+      # Critical business Saga - requires manual intervention
+      critical-saga:
+        strategy: manual
+        requires_manual_intervention: true
+      
+      # Inventory Saga - continue from next step
+      inventory-saga:
+        strategy: continue
+        timeout: 5m
+        requires_manual_intervention: false
+    
+    # Policies by error type
+    # These are applied based on the error that caused the Saga to fail
+    by_error_type:
+      # Transient errors - retry
+      timeout:
+        strategy: retry
+        max_retry_attempts: 5
+        retry_delay: 10s
+        timeout: 5m
+        requires_manual_intervention: false
+      
+      network:
+        strategy: retry
+        max_retry_attempts: 5
+        retry_delay: 15s
+        timeout: 5m
+        requires_manual_intervention: false
+      
+      service:
+        strategy: retry
+        max_retry_attempts: 3
+        retry_delay: 5s
+        timeout: 3m
+        requires_manual_intervention: false
+      
+      # Business logic errors - trigger compensation
+      business:
+        strategy: compensate
+        timeout: 10m
+        requires_manual_intervention: false
+      
+      validation:
+        strategy: compensate
+        timeout: 5m
+        requires_manual_intervention: false
+      
+      # Data consistency issues - require manual review
+      data_consistency:
+        strategy: manual
+        requires_manual_intervention: true
+      
+      # Unknown errors - mark as failed for investigation
+      unknown:
+        strategy: mark_failed
+        requires_manual_intervention: true
+    
+    # Enable policy override
+    # If true, definition policies take precedence over error type policies
+    # If false, error type policies take precedence
+    enable_policy_override: true
+
+# Available recovery strategies:
+# - retry: Retry the failed step execution
+# - compensate: Trigger compensation for completed steps
+# - continue: Continue execution from the next step
+# - mark_failed: Mark the Saga as failed without further action
+# - manual: Requires manual intervention (no automatic recovery)
+
+# Available error types:
+# - timeout: Operation timeout
+# - network: Network connectivity issues
+# - service: Service unavailability
+# - business: Business logic errors
+# - validation: Data validation errors
+# - data: Data consistency issues
+# - unknown: Unknown errors
+

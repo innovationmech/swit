@@ -177,6 +177,9 @@ type RecoveryManager struct {
 	healthCheckHistory    []*HealthReport
 	healthCheckHistoryMu  sync.RWMutex
 	maxHealthCheckHistory int
+
+	// policyManager manages recovery policies.
+	policyManager *PolicyManager
 }
 
 // recoveryAttempt tracks a single recovery attempt.
@@ -427,6 +430,20 @@ func (rm *RecoveryManager) AddEventListener(listener RecoveryEventListener) {
 	defer rm.listenersMu.Unlock()
 
 	rm.eventListeners = append(rm.eventListeners, listener)
+}
+
+// SetPolicyManager sets the policy manager for the recovery manager.
+// This allows for dynamic policy configuration.
+//
+// Parameters:
+//   - policyManager: The policy manager to use.
+func (rm *RecoveryManager) SetPolicyManager(policyManager *PolicyManager) {
+	rm.recoveringMu.Lock()
+	defer rm.recoveringMu.Unlock()
+
+	rm.policyManager = policyManager
+
+	rm.logger.Info("policy manager set")
 }
 
 // CheckSagaHealth performs a health check on a specific Saga instance.
