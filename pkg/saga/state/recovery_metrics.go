@@ -49,13 +49,13 @@ type RecoveryMetrics struct {
 	manualInterventions int64
 
 	// Detected failures by type
-	detectedTimeouts      int64
-	detectedStuck         int64
-	detectedCompensating  int64
-	detectedInconsistent  int64
+	detectedTimeouts     int64
+	detectedStuck        int64
+	detectedCompensating int64
+	detectedInconsistent int64
 
 	// Recovery timing statistics
-	recoveryDurations []time.Duration
+	recoveryDurations    []time.Duration
 	maxRecordedDurations int
 
 	// Prometheus metrics
@@ -68,9 +68,9 @@ type RecoveryMetrics struct {
 // RecoveryPrometheusMetrics holds Prometheus metrics for recovery operations.
 type RecoveryPrometheusMetrics struct {
 	// Recovery attempt counters
-	recoveryAttemptsTotal   *prometheus.CounterVec
-	recoverySuccessTotal    *prometheus.CounterVec
-	recoveryFailureTotal    *prometheus.CounterVec
+	recoveryAttemptsTotal *prometheus.CounterVec
+	recoverySuccessTotal  *prometheus.CounterVec
+	recoveryFailureTotal  *prometheus.CounterVec
 
 	// Recovery duration histogram
 	recoveryDuration *prometheus.HistogramVec
@@ -382,15 +382,15 @@ func (rm *RecoveryMetrics) GetSnapshot() RecoveryMetricsSnapshot {
 	defer rm.mu.RUnlock()
 
 	snapshot := RecoveryMetricsSnapshot{
-		TotalAttempts:         rm.totalAttempts,
-		SuccessfulRecoveries:  rm.successfulRecoveries,
-		FailedRecoveries:      rm.failedRecoveries,
-		CurrentlyRecovering:   rm.currentlyRecovering,
-		ManualInterventions:   rm.manualInterventions,
-		DetectedTimeouts:      rm.detectedTimeouts,
-		DetectedStuck:         rm.detectedStuck,
-		DetectedCompensating:  rm.detectedCompensating,
-		DetectedInconsistent:  rm.detectedInconsistent,
+		TotalAttempts:        rm.totalAttempts,
+		SuccessfulRecoveries: rm.successfulRecoveries,
+		FailedRecoveries:     rm.failedRecoveries,
+		CurrentlyRecovering:  rm.currentlyRecovering,
+		ManualInterventions:  rm.manualInterventions,
+		DetectedTimeouts:     rm.detectedTimeouts,
+		DetectedStuck:        rm.detectedStuck,
+		DetectedCompensating: rm.detectedCompensating,
+		DetectedInconsistent: rm.detectedInconsistent,
 	}
 
 	// Calculate statistics from recorded durations
@@ -502,4 +502,3 @@ func (rm *RecoveryMetrics) Reset() {
 
 	// Note: Prometheus metrics cannot be reset, they are cumulative
 }
-

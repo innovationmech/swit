@@ -328,4 +328,3 @@ func TestRecoveryMetrics_ConcurrentAccess(t *testing.T) {
 	assert.Equal(t, int64(operations), snapshot.SuccessfulRecoveries)
 	assert.Equal(t, int64(operations), snapshot.DetectedTimeouts)
 }
-

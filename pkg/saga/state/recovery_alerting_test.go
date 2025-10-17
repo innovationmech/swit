@@ -34,8 +34,8 @@ import (
 
 // mockAlertNotifier is a mock implementation of AlertNotifier for testing.
 type mockAlertNotifier struct {
-	mu       sync.Mutex
-	alerts   []*RecoveryAlert
+	mu         sync.Mutex
+	alerts     []*RecoveryAlert
 	shouldFail bool
 }
 
@@ -452,4 +452,3 @@ func TestRecoveryAlertingManager_CustomRule(t *testing.T) {
 	}
 	assert.True(t, found, "CustomRule alert should be triggered")
 }
-

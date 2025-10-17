@@ -126,32 +126,32 @@ type RecoveryAlertingConfig struct {
 // DefaultRecoveryAlertingConfig returns default alerting configuration.
 func DefaultRecoveryAlertingConfig() *RecoveryAlertingConfig {
 	return &RecoveryAlertingConfig{
-		Enabled:                     true,
-		CheckInterval:               30 * time.Second,
-		DeduplicationWindow:         5 * time.Minute,
-		MaxAlertsPerMinute:          10,
-		HighFailureRateThreshold:    0.1,  // 10% failure rate
-		TooManyStuckSagasThreshold:  10,   // 10 stuck Sagas
-		SlowRecoveryThreshold:       30 * time.Second,
+		Enabled:                    true,
+		CheckInterval:              30 * time.Second,
+		DeduplicationWindow:        5 * time.Minute,
+		MaxAlertsPerMinute:         10,
+		HighFailureRateThreshold:   0.1, // 10% failure rate
+		TooManyStuckSagasThreshold: 10,  // 10 stuck Sagas
+		SlowRecoveryThreshold:      30 * time.Second,
 	}
 }
 
 // RecoveryAlertingManager manages alerts for the recovery system.
 type RecoveryAlertingManager struct {
-	config     *RecoveryAlertingConfig
-	rules      []*AlertRule
-	notifiers  []AlertNotifier
-	metrics    *RecoveryMetrics
-	logger     *zap.Logger
+	config    *RecoveryAlertingConfig
+	rules     []*AlertRule
+	notifiers []AlertNotifier
+	metrics   *RecoveryMetrics
+	logger    *zap.Logger
 
 	// Alert deduplication
 	recentAlerts map[string]time.Time
 	alertMu      sync.RWMutex
 
 	// Rate limiting
-	alertCounts    map[string]int // minute -> count
-	alertCountsMu  sync.Mutex
-	lastMinute     time.Time
+	alertCounts   map[string]int // minute -> count
+	alertCountsMu sync.Mutex
+	lastMinute    time.Time
 
 	// Alert history
 	alertHistory    []*RecoveryAlert
@@ -519,4 +519,3 @@ func (n *LogAlertNotifier) Notify(ctx context.Context, alert *RecoveryAlert) err
 
 	return nil
 }
-
