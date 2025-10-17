@@ -77,6 +77,14 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 		rm.statsMu.Unlock()
 	}()
 
+	// Record metrics - will be updated with actual strategy later
+	strategy := "unknown"
+	sagaType := "unknown"
+	if rm.metrics != nil {
+		rm.metrics.IncrementRecoveringInProgress(strategy)
+		defer rm.metrics.DecrementRecoveringInProgress(strategy)
+	}
+
 	// Get Saga instance from storage
 	sagaInst, err := rm.stateStorage.GetSaga(ctx, sagaID)
 	if err != nil {
@@ -111,6 +119,19 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 			zap.String("saga_id", sagaID),
 			zap.Int("attempts", attempt.attemptCount),
 		)
+
+		// Emit manual intervention required event
+		rm.emitEvent(&RecoveryEvent{
+			Type:      RecoveryEventManualInterventionRequired,
+			Timestamp: time.Now(),
+			SagaID:    sagaID,
+			Message:   "Max recovery attempts exceeded, manual intervention required",
+			Metadata: map[string]interface{}{
+				"attempts": attempt.attemptCount,
+				"max":      rm.config.MaxRecoveryAttempts,
+			},
+		})
+
 		// Mark as failed
 		return rm.markSagaAsFailed(ctx, sagaInst, ErrMaxRecoveryAttemptsExceeded)
 	}
@@ -132,8 +153,8 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 
 	// Select recovery strategy
 	strategySelector := NewRecoveryStrategySelector()
-	strategy := strategySelector.SelectStrategy(sagaInst)
-	if strategy == nil {
+	selectedStrategy := strategySelector.SelectStrategy(sagaInst)
+	if selectedStrategy == nil {
 		rm.logger.Warn("no recovery strategy available for saga",
 			zap.String("saga_id", sagaID),
 			zap.String("state", sagaInst.GetState().String()),
@@ -142,17 +163,26 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 		return ErrNoStrategyAvailable
 	}
 
+	// Update strategy and saga type for metrics
+	strategy = string(selectedStrategy.GetStrategyType())
+	sagaType = sagaInst.GetDefinitionID()
+
+	// Record metrics for recovery attempt
+	if rm.metrics != nil {
+		rm.metrics.RecordRecoveryAttempt(strategy, sagaType)
+	}
+
 	rm.logger.Info("selected recovery strategy",
 		zap.String("saga_id", sagaID),
-		zap.String("strategy", string(strategy.GetStrategyType())),
-		zap.String("description", strategy.GetDescription()),
+		zap.String("strategy", strategy),
+		zap.String("description", selectedStrategy.GetDescription()),
 	)
 
 	// Execute recovery based on strategy and Saga state
 	var recoveryErr error
 	switch sagaInst.GetState() {
 	case saga.StateRunning, saga.StateStepCompleted:
-		recoveryErr = rm.recoverRunningSaga(ctx, sagaInst, strategy)
+		recoveryErr = rm.recoverRunningSaga(ctx, sagaInst, selectedStrategy)
 	case saga.StateCompensating:
 		recoveryErr = rm.recoverCompensatingSaga(ctx, sagaInst)
 	default:
@@ -166,17 +196,32 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 	duration := time.Since(startTime)
 
 	// Record recovery attempt
-	rm.recordRecoveryAttempt(sagaID, strategy.GetStrategyType(), recoveryErr, duration)
+	rm.recordRecoveryAttempt(sagaID, selectedStrategy.GetStrategyType(), recoveryErr, duration)
 
 	if recoveryErr != nil {
 		rm.logger.Error("saga recovery failed",
 			zap.String("saga_id", sagaID),
-			zap.String("strategy", string(strategy.GetStrategyType())),
+			zap.String("strategy", strategy),
 			zap.Duration("duration", duration),
 			zap.Error(recoveryErr),
 		)
 
 		rm.recordFailedRecovery(sagaID, startTime, recoveryErr)
+
+		// Record metrics for failure
+		if rm.metrics != nil {
+			errorType := "unknown"
+			if errors.Is(recoveryErr, ErrMaxRecoveryAttemptsExceeded) {
+				errorType = "max_attempts_exceeded"
+			} else if errors.Is(recoveryErr, ErrNoStrategyAvailable) {
+				errorType = "no_strategy"
+			} else if errors.Is(recoveryErr, context.DeadlineExceeded) {
+				errorType = "timeout"
+			} else {
+				errorType = "execution_error"
+			}
+			rm.metrics.RecordRecoveryFailure(strategy, sagaType, errorType, duration)
+		}
 
 		rm.emitEvent(&RecoveryEvent{
 			Type:      RecoveryEventSagaRecoveryFailed,
@@ -185,7 +230,7 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 			Message:   "Saga recovery failed",
 			Error:     recoveryErr,
 			Metadata: map[string]interface{}{
-				"strategy":    string(strategy.GetStrategyType()),
+				"strategy":    strategy,
 				"duration_ms": duration.Milliseconds(),
 			},
 		})
@@ -196,9 +241,14 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 	// Recovery succeeded
 	rm.recordSuccessfulRecovery(sagaID, startTime)
 
+	// Record metrics for success
+	if rm.metrics != nil {
+		rm.metrics.RecordRecoverySuccess(strategy, sagaType, duration)
+	}
+
 	rm.logger.Info("saga recovery completed successfully",
 		zap.String("saga_id", sagaID),
-		zap.String("strategy", string(strategy.GetStrategyType())),
+		zap.String("strategy", strategy),
 		zap.Duration("duration", duration),
 	)
 
@@ -208,7 +258,7 @@ func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID strin
 		SagaID:    sagaID,
 		Message:   "Saga recovered successfully",
 		Metadata: map[string]interface{}{
-			"strategy":    string(strategy.GetStrategyType()),
+			"strategy":    strategy,
 			"duration_ms": duration.Milliseconds(),
 		},
 	})
