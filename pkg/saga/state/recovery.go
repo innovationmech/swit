@@ -134,6 +134,9 @@ type RecoveryManager struct {
 	// logger is the structured logger for recovery operations.
 	logger *zap.Logger
 
+	// healthChecker performs health checks on Saga instances.
+	healthChecker *HealthChecker
+
 	// stats holds recovery statistics.
 	stats *RecoveryStats
 
@@ -169,6 +172,11 @@ type RecoveryManager struct {
 
 	// listenersMu protects access to eventListeners.
 	listenersMu sync.RWMutex
+
+	// healthCheckHistory stores recent health check reports.
+	healthCheckHistory    []*HealthReport
+	healthCheckHistoryMu  sync.RWMutex
+	maxHealthCheckHistory int
 }
 
 // recoveryAttempt tracks a single recovery attempt.
@@ -224,16 +232,19 @@ func NewRecoveryManager(
 	}
 
 	rm := &RecoveryManager{
-		config:         config,
-		stateStorage:   stateStorage,
-		coordinator:    coordinator,
-		logger:         logger.With(zap.String("component", "recovery_manager")),
-		stats:          &RecoveryStats{},
-		recovering:     make(map[string]*recoveryAttempt),
-		semaphore:      make(chan struct{}, config.MaxConcurrentRecoveries),
-		stopCh:         make(chan struct{}),
-		doneCh:         make(chan struct{}),
-		eventListeners: make([]RecoveryEventListener, 0),
+		config:                config,
+		stateStorage:          stateStorage,
+		coordinator:           coordinator,
+		logger:                logger.With(zap.String("component", "recovery_manager")),
+		healthChecker:         NewHealthChecker(stateStorage, logger),
+		stats:                 &RecoveryStats{},
+		recovering:            make(map[string]*recoveryAttempt),
+		semaphore:             make(chan struct{}, config.MaxConcurrentRecoveries),
+		stopCh:                make(chan struct{}),
+		doneCh:                make(chan struct{}),
+		eventListeners:        make([]RecoveryEventListener, 0),
+		healthCheckHistory:    make([]*HealthReport, 0),
+		maxHealthCheckHistory: 100, // Keep last 100 health check reports
 	}
 
 	rm.logger.Info("recovery manager created",
@@ -416,6 +427,117 @@ func (rm *RecoveryManager) AddEventListener(listener RecoveryEventListener) {
 	defer rm.listenersMu.Unlock()
 
 	rm.eventListeners = append(rm.eventListeners, listener)
+}
+
+// CheckSagaHealth performs a health check on a specific Saga instance.
+// This method can be called at any time, regardless of whether the manager is started.
+//
+// Parameters:
+//   - ctx: Context for cancellation.
+//   - sagaID: The ID of the Saga to check.
+//
+// Returns:
+//   - *HealthReport: The health check report.
+//   - error: An error if the check fails.
+func (rm *RecoveryManager) CheckSagaHealth(ctx context.Context, sagaID string) (*HealthReport, error) {
+	if rm.closed.Load() {
+		return nil, ErrRecoveryManagerClosed
+	}
+
+	rm.logger.Debug("performing health check", zap.String("saga_id", sagaID))
+
+	report, err := rm.healthChecker.CheckSagaHealth(ctx, sagaID)
+	if err != nil {
+		return nil, fmt.Errorf("health check failed: %w", err)
+	}
+
+	// Store in history
+	rm.addToHealthCheckHistory(report)
+
+	// Log if issues are found
+	if report.HasIssues() {
+		rm.logger.Warn("health check found issues",
+			zap.String("saga_id", sagaID),
+			zap.String("status", string(report.Status)),
+			zap.Int("issues_count", len(report.Issues)),
+		)
+
+		// Trigger alert for critical issues
+		if report.HasCriticalIssues() {
+			rm.logger.Error("critical health issues detected",
+				zap.String("saga_id", sagaID),
+				zap.Int("critical_issues", len(report.GetIssuesBySeverity(SeverityCritical))),
+			)
+		}
+	}
+
+	return report, nil
+}
+
+// CheckSystemHealth performs a system-wide health check.
+//
+// Parameters:
+//   - ctx: Context for cancellation.
+//   - filter: Filter for selecting Sagas to check. If nil, checks all active Sagas.
+//
+// Returns:
+//   - *SystemHealthReport: The system-wide health check report.
+//   - error: An error if the check fails.
+func (rm *RecoveryManager) CheckSystemHealth(ctx context.Context, filter *saga.SagaFilter) (*SystemHealthReport, error) {
+	if rm.closed.Load() {
+		return nil, ErrRecoveryManagerClosed
+	}
+
+	rm.logger.Info("performing system health check")
+
+	report, err := rm.healthChecker.CheckSystemHealth(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("system health check failed: %w", err)
+	}
+
+	rm.logger.Info("system health check completed",
+		zap.Int("total_sagas", len(report.Reports)),
+		zap.Any("summary", report.Summary),
+	)
+
+	return report, nil
+}
+
+// GetHealthCheckHistory returns recent health check reports.
+//
+// Parameters:
+//   - limit: Maximum number of reports to return. If 0 or negative, returns all.
+//
+// Returns:
+//   - []*HealthReport: A slice of recent health check reports.
+func (rm *RecoveryManager) GetHealthCheckHistory(limit int) []*HealthReport {
+	rm.healthCheckHistoryMu.RLock()
+	defer rm.healthCheckHistoryMu.RUnlock()
+
+	if limit <= 0 || limit > len(rm.healthCheckHistory) {
+		limit = len(rm.healthCheckHistory)
+	}
+
+	// Return most recent reports
+	result := make([]*HealthReport, limit)
+	startIdx := len(rm.healthCheckHistory) - limit
+	copy(result, rm.healthCheckHistory[startIdx:])
+
+	return result
+}
+
+// addToHealthCheckHistory adds a health check report to the history.
+func (rm *RecoveryManager) addToHealthCheckHistory(report *HealthReport) {
+	rm.healthCheckHistoryMu.Lock()
+	defer rm.healthCheckHistoryMu.Unlock()
+
+	rm.healthCheckHistory = append(rm.healthCheckHistory, report)
+
+	// Trim history if it exceeds max size
+	if len(rm.healthCheckHistory) > rm.maxHealthCheckHistory {
+		// Remove oldest entries
+		rm.healthCheckHistory = rm.healthCheckHistory[len(rm.healthCheckHistory)-rm.maxHealthCheckHistory:]
+	}
 }
 
 // recoveryLoop is the main loop that periodically checks for and recovers failed Sagas.
