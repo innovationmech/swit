@@ -30,11 +30,32 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/saga"
 	"github.com/innovationmech/swit/pkg/saga/coordinator"
 	"github.com/innovationmech/swit/pkg/saga/state"
+	"github.com/innovationmech/swit/pkg/saga/state/storage"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
+
+// noopEventPublisher is a simple no-op event publisher for the example.
+type noopEventPublisher struct{}
+
+func (p *noopEventPublisher) PublishEvent(ctx context.Context, event *saga.SagaEvent) error {
+	return nil
+}
+
+func (p *noopEventPublisher) Subscribe(filter saga.EventFilter, handler saga.EventHandler) (saga.EventSubscription, error) {
+	return nil, nil
+}
+
+func (p *noopEventPublisher) Unsubscribe(subscription saga.EventSubscription) error {
+	return nil
+}
+
+func (p *noopEventPublisher) Close() error {
+	return nil
+}
 
 func main() {
 	// 初始化日志
@@ -44,17 +65,21 @@ func main() {
 	logger.Info("Starting Saga Recovery Example")
 
 	// 创建状态存储（使用内存存储作为示例）
-	stateStorage := state.NewMemoryStateStorage()
+	stateStorage := storage.NewMemoryStateStorage()
+
+	// 创建一个简单的事件发布器（no-op 实现）
+	eventPublisher := &noopEventPublisher{}
 
 	// 创建 Saga 协调器
-	orchestrator := coordinator.NewOrchestrator(
+	orchestrator, err := coordinator.NewOrchestratorCoordinator(
 		&coordinator.OrchestratorConfig{
-			Name:       "example-coordinator",
-			MaxWorkers: 10,
+			StateStorage:   stateStorage,
+			EventPublisher: eventPublisher,
 		},
-		stateStorage,
-		logger,
 	)
+	if err != nil {
+		logger.Fatal("Failed to create orchestrator", zap.Error(err))
+	}
 
 	// 创建恢复管理器配置
 	recoveryConfig := state.DefaultRecoveryConfig()
@@ -97,20 +122,20 @@ func main() {
 	// 启动 Prometheus 指标端点
 	go func() {
 		mux := http.NewServeMux()
-		
+
 		// 添加恢复指标
 		if metrics := recoveryManager.GetMetrics(); metrics != nil {
 			if registry := metrics.GetRegistry(); registry != nil {
 				mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 			}
 		}
-		
+
 		// 添加健康检查端点
 		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("OK"))
 		})
-		
+
 		// 添加恢复统计端点
 		mux.HandleFunc("/recovery/stats", func(w http.ResponseWriter, r *http.Request) {
 			if snapshot := recoveryManager.GetMetricsSnapshot(); snapshot != nil {
@@ -162,4 +187,3 @@ func main() {
 
 	logger.Info("Shutdown complete")
 }
-
