@@ -265,6 +265,57 @@ func (s *MarkFailedStrategy) GetDescription() string {
 	return "Mark Saga as failed without further recovery attempts"
 }
 
+// ContinueRecoveryStrategy continues Saga execution from the next step.
+// This is suitable for when a Saga is stuck but can be continued without retry or compensation.
+type ContinueRecoveryStrategy struct {
+	// continuableStates are the Saga states that can be continued.
+	continuableStates []saga.SagaState
+}
+
+// NewContinueRecoveryStrategy creates a new continue recovery strategy.
+func NewContinueRecoveryStrategy() *ContinueRecoveryStrategy {
+	return &ContinueRecoveryStrategy{
+		continuableStates: []saga.SagaState{
+			saga.StateRunning,
+			saga.StateStepCompleted,
+			saga.StateCompensating,
+		},
+	}
+}
+
+// GetStrategyType returns the type of this recovery strategy.
+func (s *ContinueRecoveryStrategy) GetStrategyType() RecoveryStrategyType {
+	return RecoveryStrategyContinue
+}
+
+// CanRecover determines if this strategy can recover the given Saga.
+func (s *ContinueRecoveryStrategy) CanRecover(sagaInst saga.SagaInstance) bool {
+	// Check if Saga state can be continued
+	state := sagaInst.GetState()
+	for _, continuableState := range s.continuableStates {
+		if state == continuableState {
+			return true
+		}
+	}
+	return false
+}
+
+// Recover attempts to recover the Saga by continuing execution.
+func (s *ContinueRecoveryStrategy) Recover(ctx context.Context, sagaInst saga.SagaInstance, coordinator saga.SagaCoordinator) error {
+	// Continue execution - this will be handled by the recovery execution logic
+	return nil
+}
+
+// GetDescription returns a human-readable description of this strategy.
+func (s *ContinueRecoveryStrategy) GetDescription() string {
+	return "Continue Saga execution from the next step"
+}
+
+// NewMarkFailedRecoveryStrategy is an alias for NewMarkFailedStrategy for backward compatibility.
+func NewMarkFailedRecoveryStrategy() *MarkFailedStrategy {
+	return NewMarkFailedStrategy()
+}
+
 // RecoveryStrategySelector selects the appropriate recovery strategy based on Saga state and error.
 type RecoveryStrategySelector struct {
 	strategies []RecoveryStrategy
