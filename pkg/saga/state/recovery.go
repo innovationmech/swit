@@ -366,11 +366,12 @@ func (rm *RecoveryManager) RecoverSaga(ctx context.Context, sagaID string) error
 		return fmt.Errorf("%w: saga %s", ErrRecoveryInProgress, sagaID)
 	}
 
-	// Mark as recovering
+	// Mark as recovering - use attemptCount 1 for new attempts
+	// The actual attempt tracking happens in recordRecoveryAttempt
 	rm.recovering[sagaID] = &recoveryAttempt{
 		sagaID:       sagaID,
 		startTime:    time.Now(),
-		attemptCount: 1,
+		attemptCount: 0, // Will be incremented in recordRecoveryAttempt
 		lastAttempt:  time.Now(),
 	}
 	rm.recoveringMu.Unlock()
@@ -487,8 +488,13 @@ func (rm *RecoveryManager) performRecoveryCheck(ctx context.Context) error {
 		zap.Any("by_type", detectionStats),
 	)
 
-	// TODO: In #595, this will trigger actual recovery for detected Sagas
-	// For now, we just log what we found
+	// Trigger recovery for detected Sagas
+	if len(detectionResults) > 0 {
+		if err := rm.performRecoveryBatch(ctx, detectionResults); err != nil {
+			rm.logger.Error("recovery batch failed", zap.Error(err))
+			// Don't fail the entire check if batch recovery fails
+		}
+	}
 
 	checkDuration := time.Since(checkStart)
 	rm.logger.Debug("recovery check completed",
@@ -510,58 +516,7 @@ func (rm *RecoveryManager) performRecoveryCheck(ctx context.Context) error {
 	return nil
 }
 
-// recoverSagaInstance attempts to recover a specific Saga instance.
-// This is a stub implementation that will be completed in subsequent tasks.
-func (rm *RecoveryManager) recoverSagaInstance(ctx context.Context, sagaID string) error {
-	startTime := time.Now()
-
-	rm.logger.Info("attempting to recover saga", zap.String("saga_id", sagaID))
-
-	// Update stats
-	rm.statsMu.Lock()
-	rm.stats.TotalRecoveryAttempts++
-	rm.stats.CurrentlyRecovering++
-	rm.statsMu.Unlock()
-
-	defer func() {
-		rm.statsMu.Lock()
-		rm.stats.CurrentlyRecovering--
-		rm.statsMu.Unlock()
-	}()
-
-	// Stub implementation - actual recovery logic will be added in #480-2 and #480-3
-	// For now, we just return success
-
-	duration := time.Since(startTime)
-
-	rm.statsMu.Lock()
-	rm.stats.SuccessfulRecoveries++
-	rm.stats.LastRecoveryTime = time.Now()
-
-	// Update average duration
-	if rm.stats.SuccessfulRecoveries > 0 {
-		totalDuration := rm.stats.AverageRecoveryDuration * time.Duration(rm.stats.SuccessfulRecoveries-1)
-		rm.stats.AverageRecoveryDuration = (totalDuration + duration) / time.Duration(rm.stats.SuccessfulRecoveries)
-	}
-	rm.statsMu.Unlock()
-
-	rm.logger.Info("saga recovery completed",
-		zap.String("saga_id", sagaID),
-		zap.Duration("duration", duration),
-	)
-
-	rm.emitEvent(&RecoveryEvent{
-		Type:      RecoveryEventSagaRecovered,
-		Timestamp: time.Now(),
-		SagaID:    sagaID,
-		Message:   "Saga recovered successfully",
-		Metadata: map[string]interface{}{
-			"duration_ms": duration.Milliseconds(),
-		},
-	})
-
-	return nil
-}
+// Note: recoverSagaInstance is now implemented in recovery_execution.go
 
 // emitEvent notifies all registered listeners about a recovery event.
 func (rm *RecoveryManager) emitEvent(event *RecoveryEvent) {

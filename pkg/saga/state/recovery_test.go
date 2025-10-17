@@ -76,9 +76,22 @@ func (m *mockStateStorage) UpdateSagaState(ctx context.Context, sagaID string, s
 	if m.closed {
 		return errors.New("storage closed")
 	}
-	_, exists := m.sagas[sagaID]
+	sagaInst, exists := m.sagas[sagaID]
 	if !exists {
 		return errors.New("saga not found")
+	}
+	// Update the saga state if it's a mockSagaInstance
+	if mockInst, ok := sagaInst.(*mockSagaInstance); ok {
+		mockInst.state = state
+		mockInst.updatedAt = time.Now()
+		if metadata != nil {
+			if mockInst.metadata == nil {
+				mockInst.metadata = make(map[string]interface{})
+			}
+			for k, v := range metadata {
+				mockInst.metadata[k] = v
+			}
+		}
 	}
 	return nil
 }
@@ -422,8 +435,38 @@ func TestRecoverSaga(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Test manual recovery
+	// Create a saga instance for recovery
 	sagaID := "test-saga-001"
+	now := time.Now()
+	sagaInstance := &mockSagaInstance{
+		id:          sagaID,
+		definitionID: "test-definition",
+		state:       saga.StateRunning,
+		currentStep: 1,
+		totalSteps:  3,
+		startTime:   now,
+		createdAt:   now,
+		updatedAt:   now,
+		timeout:     5 * time.Minute,
+	}
+	if err := stateStorage.SaveSaga(ctx, sagaInstance); err != nil {
+		t.Fatalf("failed to save saga: %v", err)
+	}
+
+	// Create a step state
+	stepState := &saga.StepState{
+		ID:        sagaID + "-step-1",
+		SagaID:    sagaID,
+		StepIndex: 1,
+		Name:      "test-step",
+		State:     saga.StepStatePending,
+		CreatedAt: now,
+	}
+	if err := stateStorage.SaveStepState(ctx, sagaID, stepState); err != nil {
+		t.Fatalf("failed to save step state: %v", err)
+	}
+
+	// Test manual recovery
 	if err := rm.RecoverSaga(ctx, sagaID); err != nil {
 		t.Errorf("RecoverSaga() error = %v", err)
 	}
@@ -549,6 +592,36 @@ func TestRecoverSagaInProgress(t *testing.T) {
 
 	ctx := context.Background()
 	sagaID := "test-saga-concurrent"
+
+	// Create a saga instance for recovery
+	now := time.Now()
+	sagaInstance := &mockSagaInstance{
+		id:          sagaID,
+		definitionID: "test-definition",
+		state:       saga.StateRunning,
+		currentStep: 1,
+		totalSteps:  3,
+		startTime:   now,
+		createdAt:   now,
+		updatedAt:   now,
+		timeout:     5 * time.Minute,
+	}
+	if err := stateStorage.SaveSaga(ctx, sagaInstance); err != nil {
+		t.Fatalf("failed to save saga: %v", err)
+	}
+
+	// Create a step state
+	stepState := &saga.StepState{
+		ID:        sagaID + "-step-1",
+		SagaID:    sagaID,
+		StepIndex: 1,
+		Name:      "test-step",
+		State:     saga.StepStatePending,
+		CreatedAt: now,
+	}
+	if err := stateStorage.SaveStepState(ctx, sagaID, stepState); err != nil {
+		t.Fatalf("failed to save step state: %v", err)
+	}
 
 	// Since the recovery implementation is a stub that completes immediately,
 	// we test that concurrent calls to RecoverSaga with the same ID
