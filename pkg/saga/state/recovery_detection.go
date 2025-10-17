@@ -191,6 +191,11 @@ func (rm *RecoveryManager) detectTimeoutSagas(ctx context.Context) ([]*Detection
 		// Determine priority based on how much the timeout was exceeded
 		priority := rm.calculateTimeoutPriority(timeSinceStart, sagaInst.GetTimeout())
 
+		// Record metrics for detected failure
+		if rm.metrics != nil {
+			rm.metrics.RecordDetectedFailure("timeout")
+		}
+
 		result := &DetectionResult{
 			SagaID:          sagaInst.GetID(),
 			Type:            DetectionTypeTimeout,
@@ -279,6 +284,11 @@ func (rm *RecoveryManager) detectStuckSagas(ctx context.Context) ([]*DetectionRe
 		// Determine priority based on how long it's been stuck
 		priority := rm.calculateStuckPriority(timeSinceUpdate, stuckThreshold)
 
+		// Record metrics for detected failure
+		if rm.metrics != nil {
+			rm.metrics.RecordDetectedFailure("stuck")
+		}
+
 		result := &DetectionResult{
 			SagaID:          sagaInst.GetID(),
 			Type:            DetectionTypeStuck,
@@ -363,6 +373,11 @@ func (rm *RecoveryManager) detectInconsistentSagas(ctx context.Context) ([]*Dete
 		if len(inconsistencies) > 0 {
 			// Calculate time since last update
 			timeSinceUpdate := now.Sub(sagaInst.GetUpdatedAt())
+
+			// Record metrics for detected failure
+			if rm.metrics != nil {
+				rm.metrics.RecordDetectedFailure("inconsistent")
+			}
 
 			result := &DetectionResult{
 				SagaID:          sagaInst.GetID(),

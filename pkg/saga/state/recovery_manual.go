@@ -253,6 +253,11 @@ func (rm *RecoveryManager) ForceCompensate(ctx context.Context, sagaID string, r
 
 	rm.recordManualOperation(op)
 
+	// Record manual intervention metric
+	if rm.metrics != nil {
+		rm.metrics.RecordManualIntervention()
+	}
+
 	rm.logger.Info("force compensate completed",
 		zap.String("saga_id", sagaID),
 		zap.Duration("duration", op.Duration),
@@ -321,6 +326,11 @@ func (rm *RecoveryManager) MarkAsFailed(ctx context.Context, sagaID string, reas
 	}
 
 	rm.recordManualOperation(op)
+
+	// Record manual intervention metric
+	if rm.metrics != nil {
+		rm.metrics.RecordManualIntervention()
+	}
 
 	rm.logger.Info("mark as failed completed",
 		zap.String("saga_id", sagaID),
@@ -425,6 +435,11 @@ func (rm *RecoveryManager) RetrySaga(ctx context.Context, sagaID string, fromSte
 	op.Success = true
 
 	rm.recordManualOperation(op)
+
+	// Record manual intervention metric
+	if rm.metrics != nil {
+		rm.metrics.RecordManualIntervention()
+	}
 
 	rm.logger.Info("retry saga completed",
 		zap.String("saga_id", sagaID),

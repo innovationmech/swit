@@ -1,0 +1,288 @@
+# Prometheus Alerting Rules for Saga Recovery System
+# This file contains alerting rules for monitoring Saga recovery operations
+
+groups:
+  - name: saga_recovery
+    interval: 30s
+    rules:
+      # ======================================
+      # High Failure Rate Alerts
+      # ======================================
+      
+      - alert: SagaRecoveryHighFailureRate
+        expr: |
+          (
+            rate(saga_recovery_failure_total[5m])
+            /
+            rate(saga_recovery_attempts_total[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复失败率过高"
+          description: "过去5分钟恢复失败率超过 10%: {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.example.com/runbooks/saga-recovery-high-failure-rate"
+
+      - alert: SagaRecoveryCriticalFailureRate
+        expr: |
+          (
+            rate(saga_recovery_failure_total[5m])
+            /
+            rate(saga_recovery_attempts_total[5m])
+          ) > 0.3
+        for: 3m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复失败率严重过高"
+          description: "过去5分钟恢复失败率超过 30%: {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.example.com/runbooks/saga-recovery-critical-failure-rate"
+
+      # ======================================
+      # Stuck Sagas Alerts
+      # ======================================
+
+      - alert: SagaTooManyStuckSagas
+        expr: saga_recovery_detected_failures_total{failure_type="stuck"} > 10
+        for: 10m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "卡住的 Saga 数量过多"
+          description: "当前有 {{ $value }} 个 Saga 处于卡住状态，可能需要手动干预"
+          runbook_url: "https://wiki.example.com/runbooks/saga-stuck"
+
+      - alert: SagaTimeoutIncreasing
+        expr: |
+          increase(saga_recovery_detected_failures_total{failure_type="timeout"}[30m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 超时数量持续增长"
+          description: "过去30分钟超时的 Saga 数量增加了 {{ $value }} 个"
+
+      # ======================================
+      # Performance Alerts
+      # ======================================
+
+      - alert: SagaRecoverySlowPerformance
+        expr: |
+          (
+            rate(saga_recovery_duration_seconds_sum[5m])
+            /
+            rate(saga_recovery_duration_seconds_count[5m])
+          ) > 30
+        for: 10m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复性能下降"
+          description: "平均恢复时间超过 30 秒: {{ $value | humanizeDuration }}"
+          runbook_url: "https://wiki.example.com/runbooks/saga-recovery-slow"
+
+      - alert: SagaRecoveryP95Slow
+        expr: |
+          histogram_quantile(0.95,
+            rate(saga_recovery_duration_seconds_bucket[5m])
+          ) > 60
+        for: 10m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复 P95 时间过长"
+          description: "P95 恢复时间超过 60 秒: {{ $value | humanizeDuration }}"
+
+      - alert: SagaRecoveryP99Critical
+        expr: |
+          histogram_quantile(0.99,
+            rate(saga_recovery_duration_seconds_bucket[5m])
+          ) > 120
+        for: 15m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复 P99 时间严重过长"
+          description: "P99 恢复时间超过 120 秒: {{ $value | humanizeDuration }}"
+
+      # ======================================
+      # Capacity Alerts
+      # ======================================
+
+      - alert: SagaTooManyRecovering
+        expr: saga_recovery_in_progress > 50
+        for: 15m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "同时恢复的 Saga 过多"
+          description: "当前有 {{ $value }} 个 Saga 正在恢复，可能超出系统处理能力"
+          runbook_url: "https://wiki.example.com/runbooks/saga-recovery-capacity"
+
+      - alert: SagaRecoveryAtCapacity
+        expr: saga_recovery_in_progress >= 100
+        for: 5m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复系统达到容量上限"
+          description: "当前有 {{ $value }} 个 Saga 正在恢复，已达到或接近最大并发限制"
+
+      # ======================================
+      # Manual Intervention Alerts
+      # ======================================
+
+      - alert: SagaHighManualInterventionRate
+        expr: |
+          (
+            rate(saga_recovery_manual_interventions_total[1h])
+            /
+            rate(saga_recovery_attempts_total[1h])
+          ) > 0.2
+        for: 1h
+        labels:
+          severity: info
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "手动干预率过高"
+          description: "过去1小时手动干预率超过 20%: {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.example.com/runbooks/saga-manual-intervention"
+
+      - alert: SagaFrequentManualInterventions
+        expr: increase(saga_recovery_manual_interventions_total[1h]) > 10
+        for: 30m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "手动干预频繁"
+          description: "过去1小时进行了 {{ $value }} 次手动干预"
+
+      # ======================================
+      # Error Type Specific Alerts
+      # ======================================
+
+      - alert: SagaRecoveryMaxAttemptsExceeded
+        expr: |
+          rate(saga_recovery_failure_total{error_type="max_attempts_exceeded"}[10m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "大量 Saga 超过最大恢复尝试次数"
+          description: "每分钟有 {{ $value }} 个 Saga 超过最大恢复尝试次数"
+
+      - alert: SagaRecoveryNoStrategyAvailable
+        expr: |
+          rate(saga_recovery_failure_total{error_type="no_strategy"}[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复缺少可用策略"
+          description: "每分钟有 {{ $value }} 个 Saga 因缺少恢复策略而失败，可能是配置问题"
+
+      # ======================================
+      # Recovery System Health Alerts
+      # ======================================
+
+      - alert: SagaRecoveryChecksFailing
+        expr: |
+          rate(saga_recovery_check_failed_total[10m]) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复检查频繁失败"
+          description: "恢复检查失败率过高，每分钟失败 {{ $value }} 次"
+
+      - alert: SagaRecoverySystemDown
+        expr: up{job="saga-recovery"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复系统不可用"
+          description: "Saga 恢复系统已停止响应"
+
+      # ======================================
+      # Success Rate Degradation Alerts
+      # ======================================
+
+      - alert: SagaRecoverySuccessRateDegrading
+        expr: |
+          (
+            rate(saga_recovery_success_total[5m])
+            /
+            rate(saga_recovery_attempts_total[5m])
+          ) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复成功率下降"
+          description: "恢复成功率低于 80%: {{ $value | humanizePercentage }}"
+
+      - alert: SagaRecoverySuccessRateCritical
+        expr: |
+          (
+            rate(saga_recovery_success_total[5m])
+            /
+            rate(saga_recovery_attempts_total[5m])
+          ) < 0.5
+        for: 5m
+        labels:
+          severity: critical
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "Saga 恢复成功率严重下降"
+          description: "恢复成功率低于 50%: {{ $value | humanizePercentage }}"
+
+      # ======================================
+      # Inconsistency Alerts
+      # ======================================
+
+      - alert: SagaInconsistenciesDetected
+        expr: increase(saga_recovery_detected_failures_total{failure_type="inconsistent"}[1h]) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: saga_recovery
+          team: backend
+        annotations:
+          summary: "检测到 Saga 状态不一致"
+          description: "过去1小时检测到 {{ $value }} 个状态不一致的 Saga"
+          runbook_url: "https://wiki.example.com/runbooks/saga-inconsistency"
+

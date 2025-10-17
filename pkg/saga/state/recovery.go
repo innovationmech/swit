@@ -78,6 +78,9 @@ const (
 	// RecoveryEventSagaRecoveryFailed is emitted when Saga recovery fails.
 	RecoveryEventSagaRecoveryFailed RecoveryEventType = "recovery.saga.failed"
 
+	// RecoveryEventManualInterventionRequired is emitted when manual intervention is needed.
+	RecoveryEventManualInterventionRequired RecoveryEventType = "recovery.manual_intervention_required"
+
 	// RecoveryEventStopped is emitted when recovery is stopped.
 	RecoveryEventStopped RecoveryEventType = "recovery.stopped"
 )
@@ -180,6 +183,12 @@ type RecoveryManager struct {
 
 	// policyManager manages recovery policies.
 	policyManager *PolicyManager
+
+	// metrics tracks recovery operation metrics.
+	metrics *RecoveryMetrics
+
+	// alertingManager manages recovery alerts.
+	alertingManager *RecoveryAlertingManager
 }
 
 // recoveryAttempt tracks a single recovery attempt.
@@ -234,6 +243,17 @@ func NewRecoveryManager(
 		logger = zap.NewNop()
 	}
 
+	// Initialize metrics
+	metrics, err := NewRecoveryMetrics(nil)
+	if err != nil {
+		logger.Warn("failed to initialize recovery metrics", zap.Error(err))
+		// Continue without metrics, it's not critical
+		metrics = nil
+	}
+
+	// Initialize alerting manager
+	alertingManager := NewRecoveryAlertingManager(nil, metrics, logger)
+
 	rm := &RecoveryManager{
 		config:                config,
 		stateStorage:          stateStorage,
@@ -248,6 +268,8 @@ func NewRecoveryManager(
 		eventListeners:        make([]RecoveryEventListener, 0),
 		healthCheckHistory:    make([]*HealthReport, 0),
 		maxHealthCheckHistory: 100, // Keep last 100 health check reports
+		metrics:               metrics,
+		alertingManager:       alertingManager,
 	}
 
 	rm.logger.Info("recovery manager created",
@@ -280,6 +302,11 @@ func (rm *RecoveryManager) Start(ctx context.Context) error {
 		Timestamp: time.Now(),
 		Message:   "Recovery manager started",
 	})
+
+	// Start alerting manager
+	if rm.alertingManager != nil {
+		rm.alertingManager.Start()
+	}
 
 	// If auto-recovery is disabled, just mark as started
 	if !rm.config.EnableAutoRecovery {
@@ -318,6 +345,11 @@ func (rm *RecoveryManager) Stop() error {
 	}
 
 	rm.started.Store(false)
+
+	// Stop alerting manager
+	if rm.alertingManager != nil {
+		rm.alertingManager.Stop()
+	}
 
 	rm.emitEvent(&RecoveryEvent{
 		Type:      RecoveryEventStopped,
@@ -415,6 +447,44 @@ func (rm *RecoveryManager) GetRecoveryStats() *RecoveryStats {
 	// Return a copy to prevent external modification
 	statsCopy := *rm.stats
 	return &statsCopy
+}
+
+// GetMetrics returns the recovery metrics instance.
+//
+// Returns:
+//   - *RecoveryMetrics: The metrics instance, or nil if metrics are not enabled.
+func (rm *RecoveryManager) GetMetrics() *RecoveryMetrics {
+	return rm.metrics
+}
+
+// GetMetricsSnapshot returns a snapshot of current metrics.
+//
+// Returns:
+//   - *RecoveryMetricsSnapshot: A snapshot of current metrics, or nil if metrics are not enabled.
+func (rm *RecoveryManager) GetMetricsSnapshot() *RecoveryMetricsSnapshot {
+	if rm.metrics == nil {
+		return nil
+	}
+	snapshot := rm.metrics.GetSnapshot()
+	return &snapshot
+}
+
+// GetAlertingManager returns the alerting manager instance.
+//
+// Returns:
+//   - *RecoveryAlertingManager: The alerting manager, or nil if alerting is not enabled.
+func (rm *RecoveryManager) GetAlertingManager() *RecoveryAlertingManager {
+	return rm.alertingManager
+}
+
+// AddAlertNotifier registers a new alert notifier.
+//
+// Parameters:
+//   - notifier: The alert notifier to register.
+func (rm *RecoveryManager) AddAlertNotifier(notifier AlertNotifier) {
+	if rm.alertingManager != nil {
+		rm.alertingManager.AddNotifier(notifier)
+	}
 }
 
 // AddEventListener registers a listener for recovery events.
