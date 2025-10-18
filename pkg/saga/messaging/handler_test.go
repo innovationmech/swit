@@ -22,6 +22,8 @@
 package messaging
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -695,6 +697,782 @@ func TestEventTypeMetrics(t *testing.T) {
 	}
 	if metrics.AverageProcessingTime != 50*time.Millisecond {
 		t.Errorf("AverageProcessingTime = %v, want %v", metrics.AverageProcessingTime, 50*time.Millisecond)
+	}
+}
+
+// mockCoordinator is a mock implementation of saga.SagaCoordinator for testing.
+type mockCoordinator struct {
+	healthCheckErr error
+}
+
+func (m *mockCoordinator) StartSaga(ctx context.Context, definition saga.SagaDefinition, initialData interface{}) (saga.SagaInstance, error) {
+	return nil, nil
+}
+
+func (m *mockCoordinator) GetSagaInstance(sagaID string) (saga.SagaInstance, error) {
+	return nil, nil
+}
+
+func (m *mockCoordinator) CancelSaga(ctx context.Context, sagaID string, reason string) error {
+	return nil
+}
+
+func (m *mockCoordinator) GetActiveSagas(filter *saga.SagaFilter) ([]saga.SagaInstance, error) {
+	return nil, nil
+}
+
+func (m *mockCoordinator) GetMetrics() *saga.CoordinatorMetrics {
+	return nil
+}
+
+func (m *mockCoordinator) HealthCheck(ctx context.Context) error {
+	return m.healthCheckErr
+}
+
+func (m *mockCoordinator) Close() error {
+	return nil
+}
+
+// mockEventPublisher is a mock implementation of saga.EventPublisher for testing.
+type mockEventPublisher struct{}
+
+func (m *mockEventPublisher) PublishEvent(ctx context.Context, event *saga.SagaEvent) error {
+	return nil
+}
+
+func (m *mockEventPublisher) Subscribe(filter saga.EventFilter, handler saga.EventHandler) (saga.EventSubscription, error) {
+	return nil, nil
+}
+
+func (m *mockEventPublisher) Unsubscribe(subscription saga.EventSubscription) error {
+	return nil
+}
+
+func (m *mockEventPublisher) Close() error {
+	return nil
+}
+
+// TestNewSagaEventHandler tests the NewSagaEventHandler constructor.
+func TestNewSagaEventHandler(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *HandlerConfig
+		opts        []HandlerOption
+		expectError bool
+		expectedErr error
+	}{
+		{
+			name:        "nil config",
+			config:      nil,
+			expectError: true,
+			expectedErr: ErrInvalidContext,
+		},
+		{
+			name: "invalid config - no handler ID",
+			config: &HandlerConfig{
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			expectError: true,
+			expectedErr: ErrInvalidHandlerID,
+		},
+		{
+			name: "missing coordinator",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			expectError: true,
+			expectedErr: ErrHandlerNotInitialized,
+		},
+		{
+			name: "valid config with coordinator",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			opts: []HandlerOption{
+				WithCoordinator(&mockCoordinator{}),
+			},
+			expectError: false,
+		},
+		{
+			name: "valid config with coordinator and publisher",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			opts: []HandlerOption{
+				WithCoordinator(&mockCoordinator{}),
+				WithEventPublisher(&mockEventPublisher{}),
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, err := NewSagaEventHandler(tt.config, tt.opts...)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				if tt.expectedErr != nil && err != tt.expectedErr {
+					t.Errorf("expected error %v, got %v", tt.expectedErr, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if handler == nil {
+					t.Error("expected handler, got nil")
+				}
+			}
+		})
+	}
+}
+
+// TestHandlerStartStop tests the Start and Stop lifecycle methods.
+func TestHandlerStartStop(t *testing.T) {
+	tests := []struct {
+		name                 string
+		setupHandler         func() SagaEventHandler
+		operationSequence    []string
+		expectStartError     bool
+		expectStopError      bool
+		coordinatorUnhealthy bool
+	}{
+		{
+			name: "normal start and stop",
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			operationSequence: []string{"start", "stop"},
+			expectStartError:  false,
+			expectStopError:   false,
+		},
+		{
+			name: "start twice",
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			operationSequence: []string{"start", "start"},
+			expectStartError:  true,
+		},
+		{
+			name: "stop without start",
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			operationSequence: []string{"stop"},
+			expectStopError:   true,
+		},
+		{
+			name: "stop twice",
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			operationSequence: []string{"start", "stop", "stop"},
+			expectStopError:   true,
+		},
+		{
+			name: "start with unhealthy coordinator",
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{
+					healthCheckErr: errors.New("coordinator unhealthy"),
+				}))
+				return handler
+			},
+			operationSequence:    []string{"start"},
+			expectStartError:     true,
+			coordinatorUnhealthy: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := tt.setupHandler()
+			ctx := context.Background()
+
+			var lastStartErr, lastStopErr error
+
+			for _, op := range tt.operationSequence {
+				switch op {
+				case "start":
+					// Type assertion to access Start method
+					if h, ok := handler.(*defaultSagaEventHandler); ok {
+						lastStartErr = h.Start(ctx)
+					}
+				case "stop":
+					// Type assertion to access Stop method
+					if h, ok := handler.(*defaultSagaEventHandler); ok {
+						lastStopErr = h.Stop(ctx)
+					}
+				}
+			}
+
+			if tt.expectStartError && lastStartErr == nil && tt.operationSequence[len(tt.operationSequence)-1] == "start" {
+				t.Error("expected start error, got nil")
+			}
+
+			if tt.expectStopError && lastStopErr == nil && tt.operationSequence[len(tt.operationSequence)-1] == "stop" {
+				t.Error("expected stop error, got nil")
+			}
+
+			if !tt.expectStartError && !tt.expectStopError && !tt.coordinatorUnhealthy {
+				if lastStartErr != nil {
+					t.Errorf("unexpected start error: %v", lastStartErr)
+				}
+				if lastStopErr != nil {
+					t.Errorf("unexpected stop error: %v", lastStopErr)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleSagaEvent tests the HandleSagaEvent method.
+func TestHandleSagaEvent(t *testing.T) {
+	tests := []struct {
+		name        string
+		handler     func() SagaEventHandler
+		event       *saga.SagaEvent
+		handlerCtx  *EventHandlerContext
+		startFirst  bool
+		expectError bool
+	}{
+		{
+			name: "valid event processing",
+			handler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				h, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return h
+			},
+			event: &saga.SagaEvent{
+				Type:   saga.EventSagaStepCompleted,
+				SagaID: "saga-1",
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-1",
+				Topic:     "test-topic",
+			},
+			startFirst:  true,
+			expectError: false,
+		},
+		{
+			name: "nil event",
+			handler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				h, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return h
+			},
+			event: nil,
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-1",
+			},
+			startFirst:  true,
+			expectError: true,
+		},
+		{
+			name: "nil handler context",
+			handler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				h, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return h
+			},
+			event: &saga.SagaEvent{
+				Type:   saga.EventSagaStepCompleted,
+				SagaID: "saga-1",
+			},
+			handlerCtx:  nil,
+			startFirst:  true,
+			expectError: true,
+		},
+		{
+			name: "handler not started",
+			handler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+				}
+				h, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return h
+			},
+			event: &saga.SagaEvent{
+				Type:   saga.EventSagaStepCompleted,
+				SagaID: "saga-1",
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-1",
+			},
+			startFirst:  false,
+			expectError: true,
+		},
+		{
+			name: "filtered event",
+			handler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-handler",
+					HandlerName: "Test Handler",
+					Topics:      []string{"test-topic"},
+					FilterConfig: &FilterConfig{
+						IncludeEventTypes: []SagaEventType{EventTypeSagaStarted},
+					},
+				}
+				h, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return h
+			},
+			event: &saga.SagaEvent{
+				Type:   saga.EventSagaStepCompleted,
+				SagaID: "saga-1",
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-1",
+			},
+			startFirst:  true,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := tt.handler()
+			ctx := context.Background()
+
+			if tt.startFirst {
+				if h, ok := handler.(*defaultSagaEventHandler); ok {
+					if err := h.Start(ctx); err != nil {
+						t.Fatalf("failed to start handler: %v", err)
+					}
+					defer h.Stop(ctx)
+				}
+			}
+
+			err := handler.HandleSagaEvent(ctx, tt.event, tt.handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandlerGetSupportedEventTypes tests the GetSupportedEventTypes method.
+func TestHandlerGetSupportedEventTypes(t *testing.T) {
+	tests := []struct {
+		name          string
+		config        *HandlerConfig
+		expectedCount int
+		expectedTypes []SagaEventType
+	}{
+		{
+			name: "no filter - all types",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			expectedCount: 17, // All event types
+		},
+		{
+			name: "include specific types",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+				FilterConfig: &FilterConfig{
+					IncludeEventTypes: []SagaEventType{
+						EventTypeSagaStepCompleted,
+						EventTypeSagaStepFailed,
+					},
+				},
+			},
+			expectedCount: 2,
+			expectedTypes: []SagaEventType{
+				EventTypeSagaStepCompleted,
+				EventTypeSagaStepFailed,
+			},
+		},
+		{
+			name: "exclude specific types",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+				FilterConfig: &FilterConfig{
+					ExcludeEventTypes: []SagaEventType{
+						EventTypeSagaStepFailed,
+					},
+				},
+			},
+			expectedCount: 16, // All types except one
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, err := NewSagaEventHandler(tt.config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			types := handler.GetSupportedEventTypes()
+
+			if len(types) != tt.expectedCount {
+				t.Errorf("expected %d types, got %d", tt.expectedCount, len(types))
+			}
+
+			if tt.expectedTypes != nil {
+				for _, expectedType := range tt.expectedTypes {
+					found := false
+					for _, actualType := range types {
+						if actualType == expectedType {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("expected type %v not found in supported types", expectedType)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestHandlerCanHandle tests the CanHandle method.
+func TestHandlerCanHandle(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   *HandlerConfig
+		event    *saga.SagaEvent
+		expected bool
+	}{
+		{
+			name: "can handle supported event",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			event: &saga.SagaEvent{
+				Type:   saga.EventSagaStepCompleted,
+				SagaID: "saga-1",
+			},
+			expected: true,
+		},
+		{
+			name: "nil event",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			event:    nil,
+			expected: false,
+		},
+		{
+			name: "filtered out event",
+			config: &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+				FilterConfig: &FilterConfig{
+					ExcludeEventTypes: []SagaEventType{EventTypeSagaStepCompleted},
+				},
+			},
+			event: &saga.SagaEvent{
+				Type:   saga.EventSagaStepCompleted,
+				SagaID: "saga-1",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, err := NewSagaEventHandler(tt.config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			result := handler.CanHandle(tt.event)
+
+			if result != tt.expected {
+				t.Errorf("CanHandle() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestHandlerGetConfiguration tests the GetConfiguration method.
+func TestHandlerGetConfiguration(t *testing.T) {
+	config := &HandlerConfig{
+		HandlerID:   "test-handler",
+		HandlerName: "Test Handler",
+		Topics:      []string{"test-topic"},
+	}
+
+	handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	retrievedConfig := handler.GetConfiguration()
+
+	if retrievedConfig.HandlerID != config.HandlerID {
+		t.Errorf("HandlerID = %v, want %v", retrievedConfig.HandlerID, config.HandlerID)
+	}
+	if retrievedConfig.HandlerName != config.HandlerName {
+		t.Errorf("HandlerName = %v, want %v", retrievedConfig.HandlerName, config.HandlerName)
+	}
+}
+
+// TestHandlerGetMetrics tests the GetMetrics method.
+func TestHandlerGetMetrics(t *testing.T) {
+	config := &HandlerConfig{
+		HandlerID:   "test-handler",
+		HandlerName: "Test Handler",
+		Topics:      []string{"test-topic"},
+	}
+
+	handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	metrics := handler.GetMetrics()
+
+	if metrics == nil {
+		t.Fatal("expected metrics, got nil")
+	}
+
+	if metrics.HandlerID != config.HandlerID {
+		t.Errorf("HandlerID = %v, want %v", metrics.HandlerID, config.HandlerID)
+	}
+
+	if metrics.EventTypeMetrics == nil {
+		t.Error("EventTypeMetrics should not be nil")
+	}
+
+	if !metrics.IsHealthy {
+		t.Error("IsHealthy should be true for new handler")
+	}
+}
+
+// TestHandlerHealthCheck tests the HealthCheck method.
+func TestHandlerHealthCheck(t *testing.T) {
+	tests := []struct {
+		name         string
+		coordinator  *mockCoordinator
+		startHandler bool
+		expectError  bool
+	}{
+		{
+			name:         "healthy handler",
+			coordinator:  &mockCoordinator{},
+			startHandler: true,
+			expectError:  false,
+		},
+		{
+			name:         "handler not started",
+			coordinator:  &mockCoordinator{},
+			startHandler: false,
+			expectError:  true,
+		},
+		{
+			name: "unhealthy coordinator",
+			coordinator: &mockCoordinator{
+				healthCheckErr: errors.New("coordinator unhealthy"),
+			},
+			startHandler: true,
+			expectError:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(tt.coordinator))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+
+			if tt.startHandler {
+				if h, ok := handler.(*defaultSagaEventHandler); ok {
+					// Ignore start error for unhealthy coordinator test
+					h.Start(ctx)
+					defer h.Stop(ctx)
+				}
+			}
+
+			err = handler.HealthCheck(ctx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandlerUpdateConfiguration tests the UpdateConfiguration method.
+func TestHandlerUpdateConfiguration(t *testing.T) {
+	tests := []struct {
+		name        string
+		newConfig   *HandlerConfig
+		startFirst  bool
+		expectError bool
+	}{
+		{
+			name: "valid configuration update",
+			newConfig: &HandlerConfig{
+				HandlerID:         "test-handler",
+				HandlerName:       "Test Handler Updated",
+				Topics:            []string{"test-topic"},
+				ProcessingTimeout: 60 * time.Second,
+			},
+			startFirst:  true,
+			expectError: false,
+		},
+		{
+			name:        "nil configuration",
+			newConfig:   nil,
+			startFirst:  true,
+			expectError: true,
+		},
+		{
+			name: "invalid configuration",
+			newConfig: &HandlerConfig{
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			},
+			startFirst:  true,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+
+			if tt.startFirst {
+				if h, ok := handler.(*defaultSagaEventHandler); ok {
+					if err := h.Start(ctx); err != nil {
+						t.Fatalf("failed to start handler: %v", err)
+					}
+					defer h.Stop(ctx)
+				}
+			}
+
+			err = handler.UpdateConfiguration(tt.newConfig)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandlerPriority tests the GetPriority method.
+func TestHandlerPriority(t *testing.T) {
+	config := &HandlerConfig{
+		HandlerID:   "test-handler",
+		HandlerName: "Test Handler",
+		Topics:      []string{"test-topic"},
+	}
+
+	handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	priority := handler.GetPriority()
+
+	// Default priority should be 0
+	if priority != 0 {
+		t.Errorf("expected priority 0, got %d", priority)
 	}
 }
 
