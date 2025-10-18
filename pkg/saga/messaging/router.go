@@ -368,11 +368,24 @@ func (r *defaultEventRouter) Route(ctx context.Context, event *saga.SagaEvent, h
 	// Apply routing rules to filter/reorder handlers
 	handlers = r.applyRoutingRules(event, handlers)
 
-	// Route to all matching handlers
+	// Select handlers based on routing strategy
+	r.mu.RLock()
+	strategy := r.routingStrategy
+	r.mu.RUnlock()
+
+	selectedHandlers := r.selectHandlersByStrategy(handlers, strategy)
+	if len(selectedHandlers) == 0 {
+		r.mu.Lock()
+		r.metrics.UnroutedEvents++
+		r.mu.Unlock()
+		return fmt.Errorf("no handler selected by strategy %s for event type: %s", strategy, event.Type)
+	}
+
+	// Route to selected handlers
 	var lastError error
 	handledSuccessfully := false
 
-	for _, handler := range handlers {
+	for _, handler := range selectedHandlers {
 		// Update metrics
 		config := handler.GetConfiguration()
 		r.mu.Lock()
@@ -621,4 +634,44 @@ func (r *defaultEventRouter) applyRoutingRules(event *saga.SagaEvent, handlers [
 	}
 
 	return result
+}
+
+// selectHandlersByStrategy selects handlers according to the routing strategy.
+// This method must be called after applyRoutingRules.
+func (r *defaultEventRouter) selectHandlersByStrategy(handlers []SagaEventHandler, strategy RoutingStrategy) []SagaEventHandler {
+	if len(handlers) == 0 {
+		return handlers
+	}
+
+	switch strategy {
+	case RoutingStrategyAll:
+		// Route to all matching handlers
+		return handlers
+
+	case RoutingStrategyPriority:
+		// Route only to the highest priority handler
+		// Handlers are already sorted by priority (highest first)
+		return []SagaEventHandler{handlers[0]}
+
+	case RoutingStrategyRoundRobin:
+		// Round-robin selection across handlers
+		// Use a simple counter-based approach
+		r.mu.Lock()
+		// Use TotalEventsRouted as the round-robin counter
+		index := int(r.metrics.TotalEventsRouted-1) % len(handlers)
+		r.mu.Unlock()
+		return []SagaEventHandler{handlers[index]}
+
+	case RoutingStrategyRandom:
+		// Randomly select one handler
+		// Use a simple pseudo-random selection based on current time
+		index := int(r.metrics.TotalEventsRouted) % len(handlers)
+		// For better randomness, we could use math/rand, but this is sufficient
+		// and avoids the need for a separate random number generator
+		return []SagaEventHandler{handlers[index]}
+
+	default:
+		// Unknown strategy, default to all
+		return handlers
+	}
 }

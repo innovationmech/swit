@@ -24,6 +24,7 @@ package messaging
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -441,6 +442,136 @@ func TestEventRouter_RoutingStrategy(t *testing.T) {
 	strategy = router.GetRoutingStrategy()
 	if strategy != RoutingStrategyRoundRobin {
 		t.Errorf("Expected strategy 'round_robin', got '%s'", strategy)
+	}
+}
+
+func TestEventRouter_RoutingStrategy_Priority(t *testing.T) {
+	router := NewDefaultEventRouter(WithRoutingStrategy(RoutingStrategyPriority))
+
+	// Register handlers with different priorities
+	handler1 := newMockHandler("handler-1", 5, saga.EventSagaStarted)
+	handler2 := newMockHandler("handler-2", 10, saga.EventSagaStarted) // Highest priority
+	handler3 := newMockHandler("handler-3", 1, saga.EventSagaStarted)
+
+	_ = router.RegisterHandler(handler1)
+	_ = router.RegisterHandler(handler2)
+	_ = router.RegisterHandler(handler3)
+
+	ctx := context.Background()
+	event := &saga.SagaEvent{
+		ID:        "event-1",
+		SagaID:    "saga-1",
+		Type:      saga.EventSagaStarted,
+		Timestamp: time.Now(),
+	}
+	handlerCtx := &EventHandlerContext{
+		MessageID: "msg-1",
+		Topic:     "saga.events",
+		Timestamp: time.Now(),
+	}
+
+	err := router.RouteEvent(ctx, event, handlerCtx)
+	if err != nil {
+		t.Fatalf("RouteEvent failed: %v", err)
+	}
+
+	// Only the highest priority handler (handler2) should have processed the event
+	if len(handler1.handledEvents) != 0 {
+		t.Errorf("Handler1 should not have processed event, got %d events", len(handler1.handledEvents))
+	}
+	if len(handler2.handledEvents) != 1 {
+		t.Errorf("Handler2 should have processed event, got %d events", len(handler2.handledEvents))
+	}
+	if len(handler3.handledEvents) != 0 {
+		t.Errorf("Handler3 should not have processed event, got %d events", len(handler3.handledEvents))
+	}
+}
+
+func TestEventRouter_RoutingStrategy_RoundRobin(t *testing.T) {
+	router := NewDefaultEventRouter(WithRoutingStrategy(RoutingStrategyRoundRobin))
+
+	// Register multiple handlers
+	handler1 := newMockHandler("handler-1", 5, saga.EventSagaStarted)
+	handler2 := newMockHandler("handler-2", 5, saga.EventSagaStarted)
+	handler3 := newMockHandler("handler-3", 5, saga.EventSagaStarted)
+
+	_ = router.RegisterHandler(handler1)
+	_ = router.RegisterHandler(handler2)
+	_ = router.RegisterHandler(handler3)
+
+	ctx := context.Background()
+	handlerCtx := &EventHandlerContext{
+		MessageID: "msg-1",
+		Topic:     "saga.events",
+		Timestamp: time.Now(),
+	}
+
+	// Send 6 events - each handler should get 2 events
+	for i := 0; i < 6; i++ {
+		event := &saga.SagaEvent{
+			ID:        fmt.Sprintf("event-%d", i),
+			SagaID:    "saga-1",
+			Type:      saga.EventSagaStarted,
+			Timestamp: time.Now(),
+		}
+		err := router.RouteEvent(ctx, event, handlerCtx)
+		if err != nil {
+			t.Fatalf("RouteEvent %d failed: %v", i, err)
+		}
+	}
+
+	// Each event should be handled by exactly one handler
+	totalHandled := len(handler1.handledEvents) + len(handler2.handledEvents) + len(handler3.handledEvents)
+	if totalHandled != 6 {
+		t.Errorf("Expected 6 total handled events, got %d", totalHandled)
+	}
+
+	// Each handler should have handled at least one event (round-robin distribution)
+	if len(handler1.handledEvents) == 0 {
+		t.Error("Handler1 should have handled at least one event")
+	}
+	if len(handler2.handledEvents) == 0 {
+		t.Error("Handler2 should have handled at least one event")
+	}
+	if len(handler3.handledEvents) == 0 {
+		t.Error("Handler3 should have handled at least one event")
+	}
+}
+
+func TestEventRouter_RoutingStrategy_All(t *testing.T) {
+	router := NewDefaultEventRouter(WithRoutingStrategy(RoutingStrategyAll))
+
+	// Register multiple handlers
+	handler1 := newMockHandler("handler-1", 5, saga.EventSagaStarted)
+	handler2 := newMockHandler("handler-2", 10, saga.EventSagaStarted)
+
+	_ = router.RegisterHandler(handler1)
+	_ = router.RegisterHandler(handler2)
+
+	ctx := context.Background()
+	event := &saga.SagaEvent{
+		ID:        "event-1",
+		SagaID:    "saga-1",
+		Type:      saga.EventSagaStarted,
+		Timestamp: time.Now(),
+	}
+	handlerCtx := &EventHandlerContext{
+		MessageID: "msg-1",
+		Topic:     "saga.events",
+		Timestamp: time.Now(),
+	}
+
+	err := router.RouteEvent(ctx, event, handlerCtx)
+	if err != nil {
+		t.Fatalf("RouteEvent failed: %v", err)
+	}
+
+	// Both handlers should have processed the event
+	if len(handler1.handledEvents) != 1 {
+		t.Errorf("Handler1 should have processed event, got %d events", len(handler1.handledEvents))
+	}
+	if len(handler2.handledEvents) != 1 {
+		t.Errorf("Handler2 should have processed event, got %d events", len(handler2.handledEvents))
 	}
 }
 
