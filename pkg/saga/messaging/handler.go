@@ -852,8 +852,14 @@ func (h *defaultSagaEventHandler) HandleSagaEvent(ctx context.Context, event *sa
 	h.metrics.TotalEventsReceived++
 	h.mu.Unlock()
 
+	// Read configuration safely
+	h.mu.RLock()
+	filterConfig := h.config.FilterConfig
+	processingTimeout := h.config.ProcessingTimeout
+	h.mu.RUnlock()
+
 	// Apply filters
-	if h.config.FilterConfig != nil && !h.config.FilterConfig.ShouldProcess(event) {
+	if filterConfig != nil && !filterConfig.ShouldProcess(event) {
 		h.mu.Lock()
 		h.metrics.TotalEventsFiltered++
 		h.mu.Unlock()
@@ -866,9 +872,9 @@ func (h *defaultSagaEventHandler) HandleSagaEvent(ctx context.Context, event *sa
 	}
 
 	// Apply processing timeout
-	if h.config.ProcessingTimeout > 0 {
+	if processingTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, h.config.ProcessingTimeout)
+		ctx, cancel = context.WithTimeout(ctx, processingTimeout)
 		defer cancel()
 	}
 
@@ -928,7 +934,11 @@ func (h *defaultSagaEventHandler) handleFailureAction(ctx context.Context, event
 
 	case FailureActionDeadLetter:
 		// Send to dead-letter queue if configured
-		if h.config.DeadLetterConfig != nil && h.config.DeadLetterConfig.Enabled {
+		h.mu.RLock()
+		dlqConfig := h.config.DeadLetterConfig
+		h.mu.RUnlock()
+
+		if dlqConfig != nil && dlqConfig.Enabled {
 			if err := h.sendToDeadLetterQueue(ctx, event, handlerCtx, originalErr); err != nil {
 				return fmt.Errorf("failed to send to DLQ: %w (original error: %v)", err, originalErr)
 			}
