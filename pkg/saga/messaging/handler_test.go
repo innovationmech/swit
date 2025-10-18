@@ -1531,3 +1531,490 @@ func TestDeadLetterConfig(t *testing.T) {
 		t.Error("IncludeErrorDetails should be true")
 	}
 }
+
+// TestHandleStepCompleted tests the step completed event handling
+func TestHandleStepCompleted(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       *saga.SagaEvent
+		expectError bool
+	}{
+		{
+			name: "valid step completed event",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepCompleted,
+				SagaID:    "saga-1",
+				StepID:    "step-1",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			handlerCtx := &EventHandlerContext{
+				MessageID: "msg-1",
+				Timestamp: time.Now(),
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleStepFailed tests the step failed event handling
+func TestHandleStepFailed(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       *saga.SagaEvent
+		expectError bool
+	}{
+		{
+			name: "valid step failed event",
+			event: &saga.SagaEvent{
+				Type:   EventTypeSagaStepFailed,
+				SagaID: "saga-1",
+				StepID: "step-1",
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeService,
+					Message: "service unavailable",
+				},
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			handlerCtx := &EventHandlerContext{
+				MessageID: "msg-1",
+				Timestamp: time.Now(),
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleCompensationEvents tests compensation event handling
+func TestHandleCompensationEvents(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       *saga.SagaEvent
+		expectError bool
+	}{
+		{
+			name: "compensation started",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStarted,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "compensation step completed",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStepCompleted,
+				SagaID:    "saga-1",
+				StepID:    "step-2",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "compensation step failed",
+			event: &saga.SagaEvent{
+				Type:   EventTypeCompensationStepFailed,
+				SagaID: "saga-1",
+				StepID: "step-1",
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeCompensation,
+					Message: "compensation failed",
+				},
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "compensation completed",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationCompleted,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			handlerCtx := &EventHandlerContext{
+				MessageID: "msg-1",
+				Timestamp: time.Now(),
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleSagaLifecycleEvents tests saga lifecycle event handling
+func TestHandleSagaLifecycleEvents(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       *saga.SagaEvent
+		expectError bool
+	}{
+		{
+			name: "saga started",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStarted,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "saga completed",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "saga failed",
+			event: &saga.SagaEvent{
+				Type:   EventTypeSagaFailed,
+				SagaID: "saga-1",
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeService,
+					Message: "saga failed",
+				},
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "saga cancelled",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaCancelled,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "saga timed out",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaTimedOut,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			handlerCtx := &EventHandlerContext{
+				MessageID: "msg-1",
+				Timestamp: time.Now(),
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleRetryEvents tests retry event handling
+func TestHandleRetryEvents(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       *saga.SagaEvent
+		retryCount  int
+		expectError bool
+	}{
+		{
+			name: "retry attempted",
+			event: &saga.SagaEvent{
+				Type:      EventTypeRetryAttempted,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			retryCount:  1,
+			expectError: false,
+		},
+		{
+			name: "retry exhausted",
+			event: &saga.SagaEvent{
+				Type:      EventTypeRetryExhausted,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			retryCount:  3,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-handler",
+				HandlerName: "Test Handler",
+				Topics:      []string{"test-topic"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			handlerCtx := &EventHandlerContext{
+				MessageID:  "msg-1",
+				Timestamp:  time.Now(),
+				RetryCount: tt.retryCount,
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestEventProcessingWithFilters tests event processing with filter configuration
+func TestEventProcessingWithFilters(t *testing.T) {
+	tests := []struct {
+		name            string
+		filterConfig    *FilterConfig
+		event           *saga.SagaEvent
+		expectFiltered  bool
+	}{
+		{
+			name: "event passes include filter",
+			filterConfig: &FilterConfig{
+				IncludeEventTypes: []SagaEventType{EventTypeSagaCompleted},
+			},
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectFiltered: false,
+		},
+		{
+			name: "event filtered by include filter",
+			filterConfig: &FilterConfig{
+				IncludeEventTypes: []SagaEventType{EventTypeSagaCompleted},
+			},
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaFailed,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectFiltered: true,
+		},
+		{
+			name: "event filtered by exclude filter",
+			filterConfig: &FilterConfig{
+				ExcludeEventTypes: []SagaEventType{EventTypeSagaFailed},
+			},
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaFailed,
+				SagaID:    "saga-1",
+				Timestamp: time.Now(),
+			},
+			expectFiltered: true,
+		},
+		{
+			name: "event filtered by saga ID",
+			filterConfig: &FilterConfig{
+				IncludeSagaIDs: []string{"saga-1", "saga-2"},
+			},
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-3",
+				Timestamp: time.Now(),
+			},
+			expectFiltered: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:    "test-handler",
+				HandlerName:  "Test Handler",
+				Topics:       []string{"test-topic"},
+				FilterConfig: tt.filterConfig,
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			handlerCtx := &EventHandlerContext{
+				MessageID: "msg-1",
+				Timestamp: time.Now(),
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, handlerCtx)
+
+			if tt.expectFiltered {
+				if err != ErrEventFilteredOut {
+					t.Errorf("expected ErrEventFilteredOut, got %v", err)
+				}
+			} else {
+				if err == ErrEventFilteredOut {
+					t.Error("event should not be filtered")
+				}
+			}
+		})
+	}
+}
