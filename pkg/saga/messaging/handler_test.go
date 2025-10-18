@@ -28,7 +28,7 @@ import (
 	"github.com/innovationmech/swit/pkg/saga"
 )
 
-// TestSagaEventType tests the SagaEventType methods
+// TestSagaEventType tests the SagaEventType helper functions
 func TestSagaEventType(t *testing.T) {
 	tests := []struct {
 		name                   string
@@ -36,71 +36,35 @@ func TestSagaEventType(t *testing.T) {
 		expectedIsStepEvent    bool
 		expectedIsCompensation bool
 		expectedIsLifecycle    bool
-		expectedIsRecovery     bool
+		expectedIsRetry        bool
 		expectedStringValue    string
 	}{
 		{
 			name:                   "step started event",
-			eventType:              EventTypeStepStarted,
+			eventType:              EventTypeSagaStepStarted,
 			expectedIsStepEvent:    true,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.step.started",
 		},
 		{
 			name:                   "step completed event",
-			eventType:              EventTypeStepCompleted,
+			eventType:              EventTypeSagaStepCompleted,
 			expectedIsStepEvent:    true,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.step.completed",
 		},
 		{
 			name:                   "step failed event",
-			eventType:              EventTypeStepFailed,
+			eventType:              EventTypeSagaStepFailed,
 			expectedIsStepEvent:    true,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.step.failed",
-		},
-		{
-			name:                   "step retrying event",
-			eventType:              EventTypeStepRetrying,
-			expectedIsStepEvent:    true,
-			expectedIsCompensation: false,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.step.retrying",
-		},
-		{
-			name:                   "step compensating event",
-			eventType:              EventTypeStepCompensating,
-			expectedIsStepEvent:    false,
-			expectedIsCompensation: true,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.step.compensating",
-		},
-		{
-			name:                   "step compensated event",
-			eventType:              EventTypeStepCompensated,
-			expectedIsStepEvent:    false,
-			expectedIsCompensation: true,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.step.compensated",
-		},
-		{
-			name:                   "step compensation failed event",
-			eventType:              EventTypeStepCompensationFailed,
-			expectedIsStepEvent:    false,
-			expectedIsCompensation: true,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.step.compensation_failed",
 		},
 		{
 			name:                   "saga started event",
@@ -108,7 +72,7 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    true,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.started",
 		},
 		{
@@ -117,7 +81,7 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    true,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.completed",
 		},
 		{
@@ -126,7 +90,7 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    true,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.failed",
 		},
 		{
@@ -135,7 +99,7 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    true,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.cancelled",
 		},
 		{
@@ -144,7 +108,7 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    true,
-			expectedIsRecovery:     false,
+			expectedIsRetry:        false,
 			expectedStringValue:    "saga.timed_out",
 		},
 		{
@@ -153,8 +117,35 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: true,
 			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.compensation.started",
+			expectedIsRetry:        false,
+			expectedStringValue:    "compensation.started",
+		},
+		{
+			name:                   "compensation step started event",
+			eventType:              EventTypeCompensationStepStarted,
+			expectedIsStepEvent:    false,
+			expectedIsCompensation: true,
+			expectedIsLifecycle:    false,
+			expectedIsRetry:        false,
+			expectedStringValue:    "compensation.step.started",
+		},
+		{
+			name:                   "compensation step completed event",
+			eventType:              EventTypeCompensationStepCompleted,
+			expectedIsStepEvent:    false,
+			expectedIsCompensation: true,
+			expectedIsLifecycle:    false,
+			expectedIsRetry:        false,
+			expectedStringValue:    "compensation.step.completed",
+		},
+		{
+			name:                   "compensation step failed event",
+			eventType:              EventTypeCompensationStepFailed,
+			expectedIsStepEvent:    false,
+			expectedIsCompensation: true,
+			expectedIsLifecycle:    false,
+			expectedIsRetry:        false,
+			expectedStringValue:    "compensation.step.failed",
 		},
 		{
 			name:                   "compensation completed event",
@@ -162,8 +153,8 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: true,
 			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.compensation.completed",
+			expectedIsRetry:        false,
+			expectedStringValue:    "compensation.completed",
 		},
 		{
 			name:                   "compensation failed event",
@@ -171,8 +162,26 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: true,
 			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.compensation.failed",
+			expectedIsRetry:        false,
+			expectedStringValue:    "compensation.failed",
+		},
+		{
+			name:                   "retry attempted event",
+			eventType:              EventTypeRetryAttempted,
+			expectedIsStepEvent:    false,
+			expectedIsCompensation: false,
+			expectedIsLifecycle:    false,
+			expectedIsRetry:        true,
+			expectedStringValue:    "retry.attempted",
+		},
+		{
+			name:                   "retry exhausted event",
+			eventType:              EventTypeRetryExhausted,
+			expectedIsStepEvent:    false,
+			expectedIsCompensation: false,
+			expectedIsLifecycle:    false,
+			expectedIsRetry:        true,
+			expectedStringValue:    "retry.exhausted",
 		},
 		{
 			name:                   "state changed event",
@@ -180,72 +189,36 @@ func TestSagaEventType(t *testing.T) {
 			expectedIsStepEvent:    false,
 			expectedIsCompensation: false,
 			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.state.changed",
-		},
-		{
-			name:                   "state transition failed event",
-			eventType:              EventTypeStateTransitionFailed,
-			expectedIsStepEvent:    false,
-			expectedIsCompensation: false,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     false,
-			expectedStringValue:    "saga.state.transition_failed",
-		},
-		{
-			name:                   "recovery initiated event",
-			eventType:              EventTypeRecoveryInitiated,
-			expectedIsStepEvent:    false,
-			expectedIsCompensation: false,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     true,
-			expectedStringValue:    "saga.recovery.initiated",
-		},
-		{
-			name:                   "recovery completed event",
-			eventType:              EventTypeRecoveryCompleted,
-			expectedIsStepEvent:    false,
-			expectedIsCompensation: false,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     true,
-			expectedStringValue:    "saga.recovery.completed",
-		},
-		{
-			name:                   "recovery failed event",
-			eventType:              EventTypeRecoveryFailed,
-			expectedIsStepEvent:    false,
-			expectedIsCompensation: false,
-			expectedIsLifecycle:    false,
-			expectedIsRecovery:     true,
-			expectedStringValue:    "saga.recovery.failed",
+			expectedIsRetry:        false,
+			expectedStringValue:    "state.changed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test String()
-			if got := tt.eventType.String(); got != tt.expectedStringValue {
+			// Test String() - using the underlying type's string value
+			if got := string(tt.eventType); got != tt.expectedStringValue {
 				t.Errorf("String() = %v, want %v", got, tt.expectedStringValue)
 			}
 
 			// Test IsStepEvent()
-			if got := tt.eventType.IsStepEvent(); got != tt.expectedIsStepEvent {
+			if got := IsStepEvent(tt.eventType); got != tt.expectedIsStepEvent {
 				t.Errorf("IsStepEvent() = %v, want %v", got, tt.expectedIsStepEvent)
 			}
 
 			// Test IsCompensationEvent()
-			if got := tt.eventType.IsCompensationEvent(); got != tt.expectedIsCompensation {
+			if got := IsCompensationEvent(tt.eventType); got != tt.expectedIsCompensation {
 				t.Errorf("IsCompensationEvent() = %v, want %v", got, tt.expectedIsCompensation)
 			}
 
 			// Test IsSagaLifecycleEvent()
-			if got := tt.eventType.IsSagaLifecycleEvent(); got != tt.expectedIsLifecycle {
+			if got := IsSagaLifecycleEvent(tt.eventType); got != tt.expectedIsLifecycle {
 				t.Errorf("IsSagaLifecycleEvent() = %v, want %v", got, tt.expectedIsLifecycle)
 			}
 
-			// Test IsRecoveryEvent()
-			if got := tt.eventType.IsRecoveryEvent(); got != tt.expectedIsRecovery {
-				t.Errorf("IsRecoveryEvent() = %v, want %v", got, tt.expectedIsRecovery)
+			// Test IsRetryEvent()
+			if got := IsRetryEvent(tt.eventType); got != tt.expectedIsRetry {
+				t.Errorf("IsRetryEvent() = %v, want %v", got, tt.expectedIsRetry)
 			}
 		})
 	}
@@ -449,8 +422,8 @@ func TestFilterConfigShouldProcess(t *testing.T) {
 			name: "include event types - match",
 			filter: &FilterConfig{
 				IncludeEventTypes: []SagaEventType{
-					EventTypeStepCompleted,
-					EventTypeStepFailed,
+					EventTypeSagaStepCompleted,
+					EventTypeSagaStepFailed,
 				},
 			},
 			event: &saga.SagaEvent{
@@ -463,8 +436,8 @@ func TestFilterConfigShouldProcess(t *testing.T) {
 			name: "include event types - no match",
 			filter: &FilterConfig{
 				IncludeEventTypes: []SagaEventType{
-					EventTypeStepCompleted,
-					EventTypeStepFailed,
+					EventTypeSagaStepCompleted,
+					EventTypeSagaStepFailed,
 				},
 			},
 			event: &saga.SagaEvent{
@@ -477,7 +450,7 @@ func TestFilterConfigShouldProcess(t *testing.T) {
 			name: "exclude event types - match",
 			filter: &FilterConfig{
 				ExcludeEventTypes: []SagaEventType{
-					EventTypeStepFailed,
+					EventTypeSagaStepFailed,
 				},
 			},
 			event: &saga.SagaEvent{
@@ -490,7 +463,7 @@ func TestFilterConfigShouldProcess(t *testing.T) {
 			name: "exclude event types - no match",
 			filter: &FilterConfig{
 				ExcludeEventTypes: []SagaEventType{
-					EventTypeStepFailed,
+					EventTypeSagaStepFailed,
 				},
 			},
 			event: &saga.SagaEvent{
@@ -572,7 +545,7 @@ func TestFilterConfigShouldProcess(t *testing.T) {
 		{
 			name: "complex filter - all conditions match",
 			filter: &FilterConfig{
-				IncludeEventTypes: []SagaEventType{EventTypeStepCompleted},
+				IncludeEventTypes: []SagaEventType{EventTypeSagaStepCompleted},
 				IncludeSagaIDs:    []string{"saga-1"},
 			},
 			event: &saga.SagaEvent{
@@ -584,7 +557,7 @@ func TestFilterConfigShouldProcess(t *testing.T) {
 		{
 			name: "complex filter - one condition fails",
 			filter: &FilterConfig{
-				IncludeEventTypes: []SagaEventType{EventTypeStepCompleted},
+				IncludeEventTypes: []SagaEventType{EventTypeSagaStepCompleted},
 				IncludeSagaIDs:    []string{"saga-1"},
 			},
 			event: &saga.SagaEvent{
@@ -666,8 +639,8 @@ func TestHandlerMetrics(t *testing.T) {
 		MaxProcessingTime:       200 * time.Millisecond,
 		MinProcessingTime:       10 * time.Millisecond,
 		EventTypeMetrics: map[SagaEventType]*EventTypeMetrics{
-			EventTypeStepCompleted: {
-				EventType:             EventTypeStepCompleted,
+			EventTypeSagaStepCompleted: {
+				EventType:             EventTypeSagaStepCompleted,
 				Count:                 50,
 				FailureCount:          1,
 				AverageProcessingTime: 45 * time.Millisecond,
@@ -704,15 +677,15 @@ func TestHandlerMetrics(t *testing.T) {
 // TestEventTypeMetrics tests the EventTypeMetrics structure
 func TestEventTypeMetrics(t *testing.T) {
 	metrics := &EventTypeMetrics{
-		EventType:             EventTypeStepCompleted,
+		EventType:             EventTypeSagaStepCompleted,
 		Count:                 100,
 		FailureCount:          5,
 		AverageProcessingTime: 50 * time.Millisecond,
 	}
 
 	// Verify metrics fields
-	if metrics.EventType != EventTypeStepCompleted {
-		t.Errorf("EventType = %v, want %v", metrics.EventType, EventTypeStepCompleted)
+	if metrics.EventType != EventTypeSagaStepCompleted {
+		t.Errorf("EventType = %v, want %v", metrics.EventType, EventTypeSagaStepCompleted)
 	}
 	if metrics.Count != 100 {
 		t.Errorf("Count = %v, want %v", metrics.Count, 100)

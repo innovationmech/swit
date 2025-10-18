@@ -182,88 +182,43 @@ type EventHandlerContext struct {
 	Metadata map[string]interface{}
 }
 
-// SagaEventType represents the type of a Saga event for handler routing.
-// These constants are used to determine which handler should process
-// a specific event.
-type SagaEventType string
+// Note: SagaEventType is defined in pkg/saga/types.go and reused here.
+// We use type alias to maintain compatibility while avoiding duplicate definitions.
+type SagaEventType = saga.SagaEventType
 
+// Reuse existing event type constants from pkg/saga/types.go to ensure
+// consistency across the codebase and avoid event routing mismatches.
 const (
-	// Step execution events
-	// EventTypeStepStarted indicates a Saga step has begun execution.
-	EventTypeStepStarted SagaEventType = "saga.step.started"
+	// Saga lifecycle events (from saga.EventSaga*)
+	EventTypeSagaStarted       = saga.EventSagaStarted       // "saga.started"
+	EventTypeSagaStepStarted   = saga.EventSagaStepStarted   // "saga.step.started"
+	EventTypeSagaStepCompleted = saga.EventSagaStepCompleted // "saga.step.completed"
+	EventTypeSagaStepFailed    = saga.EventSagaStepFailed    // "saga.step.failed"
+	EventTypeSagaCompleted     = saga.EventSagaCompleted     // "saga.completed"
+	EventTypeSagaFailed        = saga.EventSagaFailed        // "saga.failed"
+	EventTypeSagaCancelled     = saga.EventSagaCancelled     // "saga.cancelled"
+	EventTypeSagaTimedOut      = saga.EventSagaTimedOut      // "saga.timed_out"
 
-	// EventTypeStepCompleted indicates a Saga step completed successfully.
-	EventTypeStepCompleted SagaEventType = "saga.step.completed"
+	// Compensation events (from saga.EventCompensation*)
+	EventTypeCompensationStarted       = saga.EventCompensationStarted       // "compensation.started"
+	EventTypeCompensationStepStarted   = saga.EventCompensationStepStarted   // "compensation.step.started"
+	EventTypeCompensationStepCompleted = saga.EventCompensationStepCompleted // "compensation.step.completed"
+	EventTypeCompensationStepFailed    = saga.EventCompensationStepFailed    // "compensation.step.failed"
+	EventTypeCompensationCompleted     = saga.EventCompensationCompleted     // "compensation.completed"
+	EventTypeCompensationFailed        = saga.EventCompensationFailed        // "compensation.failed"
 
-	// EventTypeStepFailed indicates a Saga step failed during execution.
-	EventTypeStepFailed SagaEventType = "saga.step.failed"
+	// Retry events (from saga.EventRetry*)
+	EventTypeRetryAttempted = saga.EventRetryAttempted // "retry.attempted"
+	EventTypeRetryExhausted = saga.EventRetryExhausted // "retry.exhausted"
 
-	// EventTypeStepRetrying indicates a Saga step is being retried.
-	EventTypeStepRetrying SagaEventType = "saga.step.retrying"
-
-	// Compensation events
-	// EventTypeStepCompensating indicates a step's compensation has started.
-	EventTypeStepCompensating SagaEventType = "saga.step.compensating"
-
-	// EventTypeStepCompensated indicates a step was successfully compensated.
-	EventTypeStepCompensated SagaEventType = "saga.step.compensated"
-
-	// EventTypeStepCompensationFailed indicates step compensation failed.
-	EventTypeStepCompensationFailed SagaEventType = "saga.step.compensation_failed"
-
-	// Saga lifecycle events
-	// EventTypeSagaStarted indicates a new Saga instance has started.
-	EventTypeSagaStarted SagaEventType = "saga.started"
-
-	// EventTypeSagaCompleted indicates a Saga completed successfully.
-	EventTypeSagaCompleted SagaEventType = "saga.completed"
-
-	// EventTypeSagaFailed indicates a Saga failed and may need compensation.
-	EventTypeSagaFailed SagaEventType = "saga.failed"
-
-	// EventTypeSagaCancelled indicates a Saga was cancelled by user request.
-	EventTypeSagaCancelled SagaEventType = "saga.cancelled"
-
-	// EventTypeSagaTimedOut indicates a Saga exceeded its timeout.
-	EventTypeSagaTimedOut SagaEventType = "saga.timed_out"
-
-	// Compensation coordination events
-	// EventTypeCompensationStarted indicates compensation process has begun.
-	EventTypeCompensationStarted SagaEventType = "saga.compensation.started"
-
-	// EventTypeCompensationCompleted indicates all compensation succeeded.
-	EventTypeCompensationCompleted SagaEventType = "saga.compensation.completed"
-
-	// EventTypeCompensationFailed indicates compensation process failed.
-	EventTypeCompensationFailed SagaEventType = "saga.compensation.failed"
-
-	// State management events
-	// EventTypeStateChanged indicates a Saga's state has changed.
-	EventTypeStateChanged SagaEventType = "saga.state.changed"
-
-	// EventTypeStateTransitionFailed indicates a state transition failed.
-	EventTypeStateTransitionFailed SagaEventType = "saga.state.transition_failed"
-
-	// Recovery events
-	// EventTypeRecoveryInitiated indicates recovery process has started.
-	EventTypeRecoveryInitiated SagaEventType = "saga.recovery.initiated"
-
-	// EventTypeRecoveryCompleted indicates recovery succeeded.
-	EventTypeRecoveryCompleted SagaEventType = "saga.recovery.completed"
-
-	// EventTypeRecoveryFailed indicates recovery failed.
-	EventTypeRecoveryFailed SagaEventType = "saga.recovery.failed"
+	// State change events (from saga.EventState*)
+	EventTypeStateChanged = saga.EventStateChanged // "state.changed"
 )
 
-// String returns the string representation of the SagaEventType.
-func (t SagaEventType) String() string {
-	return string(t)
-}
-
 // IsStepEvent returns true if the event type is related to step execution.
-func (t SagaEventType) IsStepEvent() bool {
+func IsStepEvent(t SagaEventType) bool {
 	switch t {
-	case EventTypeStepStarted, EventTypeStepCompleted, EventTypeStepFailed, EventTypeStepRetrying:
+	case EventTypeSagaStepStarted, EventTypeSagaStepCompleted, EventTypeSagaStepFailed:
 		return true
 	default:
 		return false
@@ -271,10 +226,11 @@ func (t SagaEventType) IsStepEvent() bool {
 }
 
 // IsCompensationEvent returns true if the event type is related to compensation.
-func (t SagaEventType) IsCompensationEvent() bool {
+func IsCompensationEvent(t SagaEventType) bool {
 	switch t {
-	case EventTypeStepCompensating, EventTypeStepCompensated, EventTypeStepCompensationFailed,
-		EventTypeCompensationStarted, EventTypeCompensationCompleted, EventTypeCompensationFailed:
+	case EventTypeCompensationStarted, EventTypeCompensationStepStarted,
+		EventTypeCompensationStepCompleted, EventTypeCompensationStepFailed,
+		EventTypeCompensationCompleted, EventTypeCompensationFailed:
 		return true
 	default:
 		return false
@@ -282,7 +238,7 @@ func (t SagaEventType) IsCompensationEvent() bool {
 }
 
 // IsSagaLifecycleEvent returns true if the event type is a Saga lifecycle event.
-func (t SagaEventType) IsSagaLifecycleEvent() bool {
+func IsSagaLifecycleEvent(t SagaEventType) bool {
 	switch t {
 	case EventTypeSagaStarted, EventTypeSagaCompleted, EventTypeSagaFailed,
 		EventTypeSagaCancelled, EventTypeSagaTimedOut:
@@ -292,10 +248,10 @@ func (t SagaEventType) IsSagaLifecycleEvent() bool {
 	}
 }
 
-// IsRecoveryEvent returns true if the event type is related to recovery.
-func (t SagaEventType) IsRecoveryEvent() bool {
+// IsRetryEvent returns true if the event type is related to retry operations.
+func IsRetryEvent(t SagaEventType) bool {
 	switch t {
-	case EventTypeRecoveryInitiated, EventTypeRecoveryCompleted, EventTypeRecoveryFailed:
+	case EventTypeRetryAttempted, EventTypeRetryExhausted:
 		return true
 	default:
 		return false
