@@ -393,6 +393,9 @@ func (r *defaultEventRouter) Route(ctx context.Context, event *saga.SagaEvent, h
 		r.mu.Unlock()
 
 		// Invoke handler
+		// Note: The handler is responsible for calling its own OnEventFailed/OnEventProcessed
+		// callbacks internally. We do NOT call them here to avoid duplicate invocations
+		// which could cause duplicate side effects (e.g., duplicate DLQ routing, inflated metrics).
 		err := handler.HandleSagaEvent(ctx, event, handlerCtx)
 		if err != nil {
 			lastError = err
@@ -400,18 +403,12 @@ func (r *defaultEventRouter) Route(ctx context.Context, event *saga.SagaEvent, h
 			r.metrics.TotalRoutingErrors++
 			r.mu.Unlock()
 
-			// Call failure callback
-			handler.OnEventFailed(ctx, event, err)
-
 			// Stop routing if continueOnError is false
 			if !r.continueOnError {
 				return fmt.Errorf("handler %s failed to process event: %w", config.HandlerID, err)
 			}
 		} else {
 			handledSuccessfully = true
-
-			// Call success callback
-			handler.OnEventProcessed(ctx, event, nil)
 		}
 	}
 

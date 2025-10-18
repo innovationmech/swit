@@ -216,9 +216,7 @@ func TestEventRouter_Route(t *testing.T) {
 				if len(handlers[0].handledEvents) != 1 {
 					t.Errorf("Expected 1 handled event, got %d", len(handlers[0].handledEvents))
 				}
-				if !handlers[0].processedCallback {
-					t.Error("Expected processed callback to be called")
-				}
+				// Note: The router no longer calls OnEventProcessed - the handler does it internally
 			},
 		},
 		{
@@ -276,9 +274,8 @@ func TestEventRouter_Route(t *testing.T) {
 			},
 			expectError: true,
 			validate: func(t *testing.T, handlers []*mockSagaEventHandler) {
-				if !handlers[0].failedCallback {
-					t.Error("Expected failed callback to be called")
-				}
+				// Note: The router no longer calls OnEventFailed - the handler does it internally
+				// We just verify the error was propagated
 			},
 		},
 	}
@@ -607,6 +604,53 @@ func TestEventRouter_GetRouterMetrics(t *testing.T) {
 
 	if metrics.HandlerInvocations["handler-1"] != 1 {
 		t.Errorf("Expected 1 handler invocation, got %d", metrics.HandlerInvocations["handler-1"])
+	}
+}
+
+func TestEventRouter_NoDoubleCallbackInvocation(t *testing.T) {
+	// This test verifies that the router doesn't call OnEventProcessed/OnEventFailed
+	// since the handler already calls these callbacks internally during HandleSagaEvent.
+	router := NewDefaultEventRouter()
+
+	callbackCount := 0
+	handler := newMockHandler("handler-1", 10, saga.EventSagaStarted)
+
+	// Override handleFunc to simulate what defaultSagaEventHandler does:
+	// call the callback internally
+	handler.handleFunc = func(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+		// Simulate the handler calling its own callback internally
+		handler.OnEventProcessed(ctx, event, nil)
+		return nil
+	}
+
+	// Track callback invocations
+	handler.onProcessedFunc = func(ctx context.Context, event *saga.SagaEvent, result interface{}) {
+		callbackCount++
+	}
+
+	_ = router.RegisterHandler(handler)
+
+	ctx := context.Background()
+	event := &saga.SagaEvent{
+		ID:        "event-1",
+		SagaID:    "saga-1",
+		Type:      saga.EventSagaStarted,
+		Timestamp: time.Now(),
+	}
+	handlerCtx := &EventHandlerContext{
+		MessageID: "msg-1",
+		Topic:     "saga.events",
+		Timestamp: time.Now(),
+	}
+
+	err := router.RouteEvent(ctx, event, handlerCtx)
+	if err != nil {
+		t.Fatalf("RouteEvent failed: %v", err)
+	}
+
+	// The callback should only be called once (by the handler itself, not by the router)
+	if callbackCount != 1 {
+		t.Errorf("Expected callback to be called exactly once, got %d times", callbackCount)
 	}
 }
 
