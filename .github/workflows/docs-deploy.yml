@@ -170,7 +170,7 @@ jobs:
           fetch-depth: 0  # 获取完整历史以便正确提交
 
       - name: 🏗️ Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -245,7 +245,7 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: 🏗️ Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -411,7 +411,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 🏗️ Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -432,7 +432,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 🏗️ Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
