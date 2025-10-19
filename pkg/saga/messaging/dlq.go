@@ -689,6 +689,11 @@ func (h *defaultDeadLetterQueueHandler) StartDLQRecovery(ctx context.Context, re
 		return fmt.Errorf("recovery is already running")
 	}
 
+	// Validate recovery interval to prevent panic in time.NewTicker
+	if recoveryInterval <= 0 {
+		return fmt.Errorf("recovery interval must be positive, got %v", recoveryInterval)
+	}
+
 	h.recoveryCtx, h.recoveryCancel = context.WithCancel(ctx)
 	h.isRecoveryRunning = true
 

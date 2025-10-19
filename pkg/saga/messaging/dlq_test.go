@@ -556,6 +556,39 @@ func TestDLQHandlerHealthCheck(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestDLQRecoveryProcessInvalidInterval(t *testing.T) {
+	// Setup
+	mockPublisher := NewMockEventPublisher()
+	config := &DeadLetterConfig{
+		Enabled: true,
+		Topic:   "test-dlq",
+	}
+
+	handler, err := NewDeadLetterQueueHandler(config, mockPublisher)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Start the handler
+	err = handler.Start(ctx)
+	require.NoError(t, err)
+	defer handler.Stop(ctx)
+
+	// Test with zero interval
+	err = handler.StartDLQRecovery(ctx, 0)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "recovery interval must be positive")
+
+	// Test with negative interval
+	err = handler.StartDLQRecovery(ctx, -1*time.Second)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "recovery interval must be positive")
+
+	// Test with positive interval (should work)
+	err = handler.StartDLQRecovery(ctx, 100*time.Millisecond)
+	assert.NoError(t, err)
+}
+
 func TestDLQRecoveryProcess(t *testing.T) {
 	mockPublisher := NewMockEventPublisher()
 	config := &DeadLetterConfig{
