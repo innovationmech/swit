@@ -25,6 +25,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,8 +93,15 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 		httpAddr := server.GetHTTPAddress()
 		assert.NotEmpty(t, httpAddr)
 
+		// Convert IPv6 address to localhost for HTTP client
+		testHTTPAddr := httpAddr
+		if strings.HasPrefix(httpAddr, "[::]:") {
+			port := strings.TrimPrefix(httpAddr, "[::]:")
+			testHTTPAddr = "localhost:" + port
+		}
+
 		// Test Prometheus metrics endpoint
-		resp, err := http.Get(fmt.Sprintf("http://%s/metrics", httpAddr))
+		resp, err := http.Get(fmt.Sprintf("http://%s/metrics", testHTTPAddr))
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -101,7 +109,7 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 		assert.Contains(t, resp.Header.Get("Content-Type"), "text/plain")
 
 		// Test debug endpoints
-		debugResp, err := http.Get(fmt.Sprintf("http://%s/debug/status", httpAddr))
+		debugResp, err := http.Get(fmt.Sprintf("http://%s/debug/status", testHTTPAddr))
 		require.NoError(t, err)
 		defer debugResp.Body.Close()
 
@@ -109,7 +117,7 @@ func TestPhase3Integration_ServerWithPrometheusMetrics(t *testing.T) {
 		assert.Contains(t, debugResp.Header.Get("Content-Type"), "application/json")
 
 		// Test health endpoint
-		healthResp, err := http.Get(fmt.Sprintf("http://%s/health", httpAddr))
+		healthResp, err := http.Get(fmt.Sprintf("http://%s/health", testHTTPAddr))
 		require.NoError(t, err)
 		defer healthResp.Body.Close()
 
@@ -491,12 +499,19 @@ func TestPhase3Integration_TracingIntegration(t *testing.T) {
 		httpAddr := server.GetHTTPAddress()
 		assert.NotEmpty(t, httpAddr)
 
+		// Convert IPv6 address to localhost for HTTP client
+		testHTTPAddr := httpAddr
+		if strings.HasPrefix(httpAddr, "[::]:") {
+			port := strings.TrimPrefix(httpAddr, "[::]:")
+			testHTTPAddr = "localhost:" + port
+		}
+
 		grpcAddr := server.GetGRPCAddress()
 		assert.NotEmpty(t, grpcAddr)
 
 		// Test that HTTP transport has tracing middleware (by making a request)
 		// This will be traced through the HTTP middleware
-		resp, err := http.Get(fmt.Sprintf("http://%s/health", httpAddr))
+		resp, err := http.Get(fmt.Sprintf("http://%s/health", testHTTPAddr))
 		require.NoError(t, err)
 		defer resp.Body.Close()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)

@@ -510,7 +510,13 @@ func (suite *IntegrationTestSuite) TestGRPCTransportIntegration() {
 
 	// Test gRPC connection
 	grpcAddr := server.GetGRPCAddress()
-	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Convert IPv6 address to localhost for gRPC client
+	testGRPCAddr := grpcAddr
+	if strings.HasPrefix(grpcAddr, "[::]:") {
+		port := strings.TrimPrefix(grpcAddr, "[::]:")
+		testGRPCAddr = "localhost:" + port
+	}
+	conn, err := grpc.NewClient(testGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(suite.T(), err)
 	defer conn.Close()
 
@@ -656,13 +662,20 @@ func (suite *IntegrationTestSuite) TestConcurrentRequests() {
 	httpAddr := server.GetHTTPAddress()
 	client := &http.Client{Timeout: 5 * time.Second}
 
+	// Convert IPv6 address to localhost for HTTP client
+	testAddr := httpAddr
+	if strings.HasPrefix(httpAddr, "[::]:") {
+		port := strings.TrimPrefix(httpAddr, "[::]:")
+		testAddr = "localhost:" + port
+	}
+
 	// Make concurrent HTTP requests
 	const numRequests = 10
 	results := make(chan error, numRequests)
 
 	for i := 0; i < numRequests; i++ {
 		go func() {
-			resp, err := client.Get(fmt.Sprintf("http://%s/test", httpAddr))
+			resp, err := client.Get(fmt.Sprintf("http://%s/test", testAddr))
 			if err != nil {
 				results <- err
 				return
@@ -866,14 +879,27 @@ func TestBaseServerIntegrationWithRealTransports(t *testing.T) {
 	httpAddr := server.GetHTTPAddress()
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	resp, err := client.Get(fmt.Sprintf("http://%s/integration", httpAddr))
+	// Convert IPv6 address to localhost for HTTP client
+	testHTTPAddr := httpAddr
+	if strings.HasPrefix(httpAddr, "[::]:") {
+		port := strings.TrimPrefix(httpAddr, "[::]:")
+		testHTTPAddr = "localhost:" + port
+	}
+
+	resp, err := client.Get(fmt.Sprintf("http://%s/integration", testHTTPAddr))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Test gRPC transport
 	grpcAddr := server.GetGRPCAddress()
-	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Convert IPv6 address to localhost for gRPC client
+	testGRPCAddr := grpcAddr
+	if strings.HasPrefix(grpcAddr, "[::]:") {
+		port := strings.TrimPrefix(grpcAddr, "[::]:")
+		testGRPCAddr = "localhost:" + port
+	}
+	conn, err := grpc.NewClient(testGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer conn.Close()
 

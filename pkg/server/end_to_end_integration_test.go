@@ -27,6 +27,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +151,33 @@ func (suite *EndToEndTestSuite) cleanupConsulServices() {
 	}
 }
 
+// convertToTestAddress converts IPv6 address to localhost for testing
+func (suite *EndToEndTestSuite) convertToTestAddress(addr string) string {
+	if strings.HasPrefix(addr, "[::]:") {
+		return "localhost" + strings.TrimPrefix(addr, "[::]")
+	}
+	return addr
+}
+
+// waitForServerReady waits for the server to be ready to accept requests
+func (suite *EndToEndTestSuite) waitForServerReady(httpAddr string) {
+	client := &http.Client{Timeout: 100 * time.Millisecond}
+	testAddr := suite.convertToTestAddress(httpAddr)
+
+	// Try up to 10 times with 100ms intervals
+	for i := 0; i < 10; i++ {
+		resp, err := client.Get(fmt.Sprintf("http://%s/ready", testAddr))
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			return
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // createTestServer creates a test server with the given configuration
 func (suite *EndToEndTestSuite) createTestServer(serviceName string, httpPort, grpcPort string, enableDiscovery bool) (*BusinessServerImpl, *TestServiceRegistrar, *TestDependencyContainer) {
 	// Create configuration
@@ -266,15 +294,20 @@ func (suite *EndToEndTestSuite) TestCompleteServerLifecycle() {
 	assert.Contains(suite.T(), httpAddr, httpPort)
 	assert.Contains(suite.T(), grpcAddr, grpcPort)
 
+	// Wait for server to be ready
+	suite.waitForServerReady(httpAddr)
+
 	// Test HTTP endpoint
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s/test", httpAddr))
+	testHTTPAddr := suite.convertToTestAddress(httpAddr)
+	resp, err := client.Get(fmt.Sprintf("http://%s/test", testHTTPAddr))
 	require.NoError(suite.T(), err)
 	defer resp.Body.Close()
 	assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
 
 	// Test gRPC endpoint
-	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	testGRPCAddr := suite.convertToTestAddress(grpcAddr)
+	conn, err := grpc.NewClient(testGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(suite.T(), err)
 	defer conn.Close()
 
@@ -386,12 +419,16 @@ func (suite *EndToEndTestSuite) TestMultipleServersWithDiscovery() {
 	// Test both servers are accessible
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	resp1, err := client.Get(fmt.Sprintf("http://%s/test", server1.GetHTTPAddress()))
+	// Wait for both servers to be ready
+	suite.waitForServerReady(server1.GetHTTPAddress())
+	suite.waitForServerReady(server2.GetHTTPAddress())
+
+	resp1, err := client.Get(fmt.Sprintf("http://%s/test", suite.convertToTestAddress(server1.GetHTTPAddress())))
 	require.NoError(suite.T(), err)
 	defer resp1.Body.Close()
 	assert.Equal(suite.T(), http.StatusOK, resp1.StatusCode)
 
-	resp2, err := client.Get(fmt.Sprintf("http://%s/test", server2.GetHTTPAddress()))
+	resp2, err := client.Get(fmt.Sprintf("http://%s/test", suite.convertToTestAddress(server2.GetHTTPAddress())))
 	require.NoError(suite.T(), err)
 	defer resp2.Body.Close()
 	assert.Equal(suite.T(), http.StatusOK, resp2.StatusCode)
@@ -411,9 +448,13 @@ func (suite *EndToEndTestSuite) TestServerRecoveryFromFailure() {
 	err := server.Start(ctx)
 	require.NoError(suite.T(), err)
 
+	// Wait for server to be ready
+	suite.waitForServerReady(server.GetHTTPAddress())
+
 	// Verify server is working
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s/test", server.GetHTTPAddress()))
+	testAddr := suite.convertToTestAddress(server.GetHTTPAddress())
+	resp, err := client.Get(fmt.Sprintf("http://%s/test", testAddr))
 	require.NoError(suite.T(), err)
 	defer resp.Body.Close()
 	assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
@@ -427,7 +468,7 @@ func (suite *EndToEndTestSuite) TestServerRecoveryFromFailure() {
 	}
 
 	// Server should still be accessible (health check failure doesn't stop server)
-	resp, err = client.Get(fmt.Sprintf("http://%s/test", server.GetHTTPAddress()))
+	resp, err = client.Get(fmt.Sprintf("http://%s/test", testAddr))
 	require.NoError(suite.T(), err)
 	defer resp.Body.Close()
 	assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
@@ -440,7 +481,7 @@ func (suite *EndToEndTestSuite) TestServerRecoveryFromFailure() {
 	}
 
 	// Verify server is still working
-	resp, err = client.Get(fmt.Sprintf("http://%s/test", server.GetHTTPAddress()))
+	resp, err = client.Get(fmt.Sprintf("http://%s/test", testAddr))
 	require.NoError(suite.T(), err)
 	defer resp.Body.Close()
 	assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
@@ -469,6 +510,11 @@ func (suite *EndToEndTestSuite) TestConcurrentServerOperations() {
 		require.NoError(suite.T(), err)
 	}
 
+	// Wait for all servers to be ready
+	for _, server := range servers {
+		suite.waitForServerReady(server.GetHTTPAddress())
+	}
+
 	// Make concurrent requests to all servers
 	client := &http.Client{Timeout: 5 * time.Second}
 	results := make(chan error, numServers*numRequestsPerServer)
@@ -476,7 +522,8 @@ func (suite *EndToEndTestSuite) TestConcurrentServerOperations() {
 	for i, server := range servers {
 		for j := 0; j < numRequestsPerServer; j++ {
 			go func(serverIndex, requestIndex int, srv *BusinessServerImpl) {
-				resp, err := client.Get(fmt.Sprintf("http://%s/test", srv.GetHTTPAddress()))
+				testAddr := suite.convertToTestAddress(srv.GetHTTPAddress())
+				resp, err := client.Get(fmt.Sprintf("http://%s/test", testAddr))
 				if err != nil {
 					results <- fmt.Errorf("server %d request %d failed: %w", serverIndex, requestIndex, err)
 					return
