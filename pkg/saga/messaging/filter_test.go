@@ -156,8 +156,8 @@ func TestFilterChain_ShouldFilter(t *testing.T) {
 				NewEventTypeFilter("type-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
 			},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: false,
@@ -168,8 +168,8 @@ func TestFilterChain_ShouldFilter(t *testing.T) {
 				NewEventTypeFilter("type-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
 			},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaFailed,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaFailed,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: true,
@@ -180,8 +180,8 @@ func TestFilterChain_ShouldFilter(t *testing.T) {
 				NewEventTypeFilter("type-filter", nil, []SagaEventType{EventTypeSagaFailed}),
 			},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaFailed,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaFailed,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: true,
@@ -192,18 +192,18 @@ func TestFilterChain_ShouldFilter(t *testing.T) {
 				NewSagaIDFilter("id-filter", []string{"saga-1"}, nil),
 			},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-2",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-2",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: true,
 		},
 		{
-			name: "empty filter chain passes all events",
+			name:    "empty filter chain passes all events",
 			filters: []EventFilter{},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: false,
@@ -285,8 +285,8 @@ func TestEventTypeFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			filter := NewEventTypeFilter("test-filter", tt.allowedTypes, tt.excludedTypes)
 			event := &saga.SagaEvent{
-				Type:    tt.eventType,
-				SagaID:  "saga-1",
+				Type:      tt.eventType,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			}
 
@@ -348,8 +348,8 @@ func TestSagaIDFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			filter := NewSagaIDFilter("test-filter", tt.allowedIDs, tt.excludedIDs)
 			event := &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  tt.sagaID,
+				Type:      EventTypeSagaCompleted,
+				SagaID:    tt.sagaID,
 				Timestamp: time.Now(),
 			}
 
@@ -483,8 +483,8 @@ func TestCustomFilter(t *testing.T) {
 				return true, nil
 			},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: true,
@@ -495,8 +495,8 @@ func TestCustomFilter(t *testing.T) {
 				return false, nil
 			},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: false,
@@ -552,8 +552,8 @@ func TestCompositeFilter(t *testing.T) {
 			operator: FilterOperatorAND,
 			filters:  []EventFilter{typeFilter, idFilter},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: false, // Both pass, so not filtered
@@ -563,8 +563,8 @@ func TestCompositeFilter(t *testing.T) {
 			operator: FilterOperatorAND,
 			filters:  []EventFilter{typeFilter, idFilter},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-2",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-2",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: false, // ID filter would filter, but we need both to filter for AND
@@ -574,8 +574,8 @@ func TestCompositeFilter(t *testing.T) {
 			operator: FilterOperatorOR,
 			filters:  []EventFilter{typeFilter, idFilter},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaFailed,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaFailed,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: true, // Type filter filters it
@@ -585,8 +585,8 @@ func TestCompositeFilter(t *testing.T) {
 			operator: FilterOperatorOR,
 			filters:  []EventFilter{typeFilter, idFilter},
 			event: &saga.SagaEvent{
-				Type:    EventTypeSagaCompleted,
-				SagaID:  "saga-1",
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-1",
 				Timestamp: time.Now(),
 			},
 			expectedFilter: false,
@@ -626,13 +626,13 @@ func TestFilterChain_Metrics(t *testing.T) {
 
 	// Test events
 	event1 := &saga.SagaEvent{
-		Type:    EventTypeSagaCompleted,
-		SagaID:  "saga-1",
+		Type:      EventTypeSagaCompleted,
+		SagaID:    "saga-1",
 		Timestamp: time.Now(),
 	}
 	event2 := &saga.SagaEvent{
-		Type:    EventTypeSagaFailed,
-		SagaID:  "saga-2",
+		Type:      EventTypeSagaFailed,
+		SagaID:    "saga-2",
 		Timestamp: time.Now(),
 	}
 
@@ -679,8 +679,8 @@ func TestFilterPriority(t *testing.T) {
 	_ = chain.AddFilter(filter3)
 
 	event := &saga.SagaEvent{
-		Type:    EventTypeSagaCompleted,
-		SagaID:  "saga-1",
+		Type:      EventTypeSagaCompleted,
+		SagaID:    "saga-1",
 		Timestamp: time.Now(),
 	}
 
@@ -705,3 +705,484 @@ func TestFilterPriority(t *testing.T) {
 	}
 }
 
+// TestFilterChain_Clear tests clearing all filters from the chain
+func TestFilterChain_Clear(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialFilters []EventFilter
+		expectedCount  int
+	}{
+		{
+			name:           "clear empty chain",
+			initialFilters: []EventFilter{},
+			expectedCount:  0,
+		},
+		{
+			name: "clear chain with single filter",
+			initialFilters: []EventFilter{
+				NewEventTypeFilter("type-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "clear chain with multiple filters",
+			initialFilters: []EventFilter{
+				NewEventTypeFilter("type-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
+				NewSagaIDFilter("id-filter", []string{"saga-1"}, nil),
+				NewCustomFilter("custom-filter", 50, func(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) (bool, error) {
+					return false, nil
+				}),
+			},
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chain := NewFilterChain()
+
+			// Add initial filters
+			for _, filter := range tt.initialFilters {
+				_ = chain.AddFilter(filter)
+			}
+
+			// Verify filters were added
+			if len(tt.initialFilters) > 0 && len(chain.GetFilters()) != len(tt.initialFilters) {
+				t.Errorf("expected %d initial filters, got %d", len(tt.initialFilters), len(chain.GetFilters()))
+			}
+
+			// Clear the chain
+			chain.Clear()
+
+			// Verify chain is empty
+			if len(chain.GetFilters()) != tt.expectedCount {
+				t.Errorf("expected %d filters after clear, got %d", tt.expectedCount, len(chain.GetFilters()))
+			}
+
+			// Verify metrics are also cleared
+			metrics := chain.GetMetrics()
+			if len(metrics.FilterExecutions) != 0 {
+				t.Errorf("expected 0 filter executions after clear, got %d", len(metrics.FilterExecutions))
+			}
+			if len(metrics.FilterMatches) != 0 {
+				t.Errorf("expected 0 filter matches after clear, got %d", len(metrics.FilterMatches))
+			}
+		})
+	}
+}
+
+// TestFilterChain_ClearWithMetrics tests that clearing also resets metrics
+func TestFilterChain_ClearWithMetrics(t *testing.T) {
+	chain := NewFilterChain()
+	filter1 := NewEventTypeFilter("filter-1", []SagaEventType{EventTypeSagaCompleted}, nil)
+	filter2 := NewSagaIDFilter("filter-2", []string{"saga-1"}, nil)
+
+	_ = chain.AddFilter(filter1)
+	_ = chain.AddFilter(filter2)
+
+	// Process some events to generate metrics
+	ctx := context.Background()
+	handlerCtx := &EventHandlerContext{MessageID: "msg-1"}
+	event := &saga.SagaEvent{
+		Type:      EventTypeSagaCompleted,
+		SagaID:    "saga-1",
+		Timestamp: time.Now(),
+	}
+
+	_, _ = chain.ShouldFilter(ctx, event, handlerCtx)
+
+	// Verify metrics exist before clear
+	metricsBefore := chain.GetMetrics()
+	if metricsBefore.TotalEventsFiltered == 0 {
+		t.Errorf("expected metrics to have events before clear")
+	}
+	if len(metricsBefore.FilterExecutions) == 0 {
+		t.Errorf("expected filter executions to exist before clear")
+	}
+
+	// Clear the chain
+	chain.Clear()
+
+	// Verify filter-specific metrics are reset (TotalEventsFiltered is preserved)
+	metricsAfter := chain.GetMetrics()
+	// Note: TotalEventsFiltered is not reset by Clear() implementation - this is intentional
+	// to maintain cumulative metrics about the chain's lifetime
+	if len(metricsAfter.FilterExecutions) != 0 {
+		t.Errorf("expected FilterExecutions to be empty after clear, got %d entries", len(metricsAfter.FilterExecutions))
+	}
+	if len(metricsAfter.FilterMatches) != 0 {
+		t.Errorf("expected FilterMatches to be empty after clear, got %d entries", len(metricsAfter.FilterMatches))
+	}
+}
+
+// TestEventTypeFilter_SetPriority tests setting priority on EventTypeFilter
+func TestEventTypeFilter_SetPriority(t *testing.T) {
+	tests := []struct {
+		name             string
+		filter           *EventTypeFilter
+		newPriority      int
+		expectedPriority int
+	}{
+		{
+			name:             "set priority to positive value",
+			filter:           NewEventTypeFilter("test-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
+			newPriority:      150,
+			expectedPriority: 150,
+		},
+		{
+			name:             "set priority to zero",
+			filter:           NewEventTypeFilter("test-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
+			newPriority:      0,
+			expectedPriority: 0,
+		},
+		{
+			name:             "set priority to negative value",
+			filter:           NewEventTypeFilter("test-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
+			newPriority:      -50,
+			expectedPriority: -50,
+		},
+		{
+			name:             "set priority to maximum int",
+			filter:           NewEventTypeFilter("test-filter", []SagaEventType{EventTypeSagaCompleted}, nil),
+			newPriority:      2147483647,
+			expectedPriority: 2147483647,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Verify initial priority
+			initialPriority := tt.filter.GetPriority()
+			if initialPriority == 0 {
+				t.Logf("initial priority was %d", initialPriority)
+			}
+
+			// Set new priority
+			tt.filter.SetPriority(tt.newPriority)
+
+			// Verify priority was set
+			if tt.filter.GetPriority() != tt.expectedPriority {
+				t.Errorf("expected priority %d, got %d", tt.expectedPriority, tt.filter.GetPriority())
+			}
+		})
+	}
+}
+
+// TestSagaIDFilter_SetPriority tests setting priority on SagaIDFilter
+func TestSagaIDFilter_SetPriority(t *testing.T) {
+	tests := []struct {
+		name             string
+		filter           *SagaIDFilter
+		newPriority      int
+		expectedPriority int
+	}{
+		{
+			name:             "set priority to positive value",
+			filter:           NewSagaIDFilter("test-filter", []string{"saga-1"}, nil),
+			newPriority:      120,
+			expectedPriority: 120,
+		},
+		{
+			name:             "set priority to zero",
+			filter:           NewSagaIDFilter("test-filter", []string{"saga-1"}, nil),
+			newPriority:      0,
+			expectedPriority: 0,
+		},
+		{
+			name:             "set priority to negative value",
+			filter:           NewSagaIDFilter("test-filter", []string{"saga-1"}, nil),
+			newPriority:      -10,
+			expectedPriority: -10,
+		},
+		{
+			name:             "set priority to large value",
+			filter:           NewSagaIDFilter("test-filter", []string{"saga-1"}, nil),
+			newPriority:      1000,
+			expectedPriority: 1000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set new priority
+			tt.filter.SetPriority(tt.newPriority)
+
+			// Verify priority was set
+			if tt.filter.GetPriority() != tt.expectedPriority {
+				t.Errorf("expected priority %d, got %d", tt.expectedPriority, tt.filter.GetPriority())
+			}
+		})
+	}
+}
+
+// TestCustomFilter_SetPriority tests setting priority on CustomFilter
+func TestCustomFilter_SetPriority(t *testing.T) {
+	customFn := func(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) (bool, error) {
+		return false, nil
+	}
+
+	tests := []struct {
+		name             string
+		filter           *CustomFilter
+		newPriority      int
+		expectedPriority int
+	}{
+		{
+			name:             "set priority to positive value",
+			filter:           NewCustomFilter("test-filter", 50, customFn),
+			newPriority:      200,
+			expectedPriority: 200,
+		},
+		{
+			name:             "set priority to zero",
+			filter:           NewCustomFilter("test-filter", 50, customFn),
+			newPriority:      0,
+			expectedPriority: 0,
+		},
+		{
+			name:             "set priority to negative value",
+			filter:           NewCustomFilter("test-filter", 50, customFn),
+			newPriority:      -100,
+			expectedPriority: -100,
+		},
+		{
+			name:             "set priority to maximum value",
+			filter:           NewCustomFilter("test-filter", 50, customFn),
+			newPriority:      999999,
+			expectedPriority: 999999,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set new priority
+			tt.filter.SetPriority(tt.newPriority)
+
+			// Verify priority was set
+			if tt.filter.GetPriority() != tt.expectedPriority {
+				t.Errorf("expected priority %d, got %d", tt.expectedPriority, tt.filter.GetPriority())
+			}
+		})
+	}
+}
+
+// TestCompositeFilter_SetPriority tests setting priority on CompositeFilter
+func TestCompositeFilter_SetPriority(t *testing.T) {
+	typeFilter := NewEventTypeFilter("type-filter", []SagaEventType{EventTypeSagaCompleted}, nil)
+	idFilter := NewSagaIDFilter("id-filter", []string{"saga-1"}, nil)
+
+	tests := []struct {
+		name             string
+		filter           *CompositeFilter
+		newPriority      int
+		expectedPriority int
+	}{
+		{
+			name:             "set priority to positive value",
+			filter:           NewCompositeFilter("composite-filter", 70, []EventFilter{typeFilter, idFilter}, FilterOperatorAND),
+			newPriority:      180,
+			expectedPriority: 180,
+		},
+		{
+			name:             "set priority to zero",
+			filter:           NewCompositeFilter("composite-filter", 70, []EventFilter{typeFilter, idFilter}, FilterOperatorAND),
+			newPriority:      0,
+			expectedPriority: 0,
+		},
+		{
+			name:             "set priority to negative value",
+			filter:           NewCompositeFilter("composite-filter", 70, []EventFilter{typeFilter, idFilter}, FilterOperatorAND),
+			newPriority:      -20,
+			expectedPriority: -20,
+		},
+		{
+			name:             "set priority on empty composite filter",
+			filter:           NewCompositeFilter("empty-composite", 70, []EventFilter{}, FilterOperatorOR),
+			newPriority:      250,
+			expectedPriority: 250,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set new priority
+			tt.filter.SetPriority(tt.newPriority)
+
+			// Verify priority was set
+			if tt.filter.GetPriority() != tt.expectedPriority {
+				t.Errorf("expected priority %d, got %d", tt.expectedPriority, tt.filter.GetPriority())
+			}
+		})
+	}
+}
+
+// TestMetadataFilter_GetName_GetPriority tests GetName and GetPriority methods on MetadataFilter
+func TestMetadataFilter_GetName_GetPriority(t *testing.T) {
+	tests := []struct {
+		name             string
+		filterName       string
+		expectedName     string
+		expectedPriority int
+	}{
+		{
+			name:             "filter with simple name",
+			filterName:       "metadata-filter",
+			expectedName:     "metadata-filter",
+			expectedPriority: 80, // Default priority from implementation
+		},
+		{
+			name:             "filter with complex name",
+			filterName:       "complex-metadata-filter-v1",
+			expectedName:     "complex-metadata-filter-v1",
+			expectedPriority: 80,
+		},
+		{
+			name:             "filter with empty name",
+			filterName:       "",
+			expectedName:     "",
+			expectedPriority: 80,
+		},
+		{
+			name:             "filter with special characters",
+			filterName:       "metadata-filter_test-123",
+			expectedName:     "metadata-filter_test-123",
+			expectedPriority: 80,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules := []MetadataRule{
+				{
+					Key:           "environment",
+					MatchType:     MetadataMatchEquals,
+					ExpectedValue: "production",
+				},
+			}
+
+			filter, err := NewMetadataFilter(tt.filterName, rules)
+			if err != nil {
+				t.Fatalf("unexpected error creating filter: %v", err)
+			}
+
+			// Test GetName
+			if filter.GetName() != tt.expectedName {
+				t.Errorf("expected name %s, got %s", tt.expectedName, filter.GetName())
+			}
+
+			// Test GetPriority
+			if filter.GetPriority() != tt.expectedPriority {
+				t.Errorf("expected priority %d, got %d", tt.expectedPriority, filter.GetPriority())
+			}
+		})
+	}
+}
+
+// TestCompositeFilter_GetName_GetPriority tests GetName and GetPriority methods on CompositeFilter
+func TestCompositeFilter_GetName_GetPriority(t *testing.T) {
+	typeFilter := NewEventTypeFilter("type-filter", []SagaEventType{EventTypeSagaCompleted}, nil)
+	idFilter := NewSagaIDFilter("id-filter", []string{"saga-1"}, nil)
+
+	tests := []struct {
+		name             string
+		filterName       string
+		initialPriority  int
+		expectedName     string
+		expectedPriority int
+	}{
+		{
+			name:             "composite filter with simple name",
+			filterName:       "composite-filter",
+			initialPriority:  75,
+			expectedName:     "composite-filter",
+			expectedPriority: 75,
+		},
+		{
+			name:             "composite filter with AND operator",
+			filterName:       "and-composite",
+			initialPriority:  100,
+			expectedName:     "and-composite",
+			expectedPriority: 100,
+		},
+		{
+			name:             "composite filter with OR operator",
+			filterName:       "or-composite",
+			initialPriority:  50,
+			expectedName:     "or-composite",
+			expectedPriority: 50,
+		},
+		{
+			name:             "empty composite filter",
+			filterName:       "empty-composite",
+			initialPriority:  25,
+			expectedName:     "empty-composite",
+			expectedPriority: 25,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var filter *CompositeFilter
+			if tt.name == "empty composite filter" {
+				filter = NewCompositeFilter(tt.filterName, tt.initialPriority, []EventFilter{}, FilterOperatorOR)
+			} else {
+				filter = NewCompositeFilter(tt.filterName, tt.initialPriority, []EventFilter{typeFilter, idFilter}, FilterOperatorAND)
+			}
+
+			// Test GetName
+			if filter.GetName() != tt.expectedName {
+				t.Errorf("expected name %s, got %s", tt.expectedName, filter.GetName())
+			}
+
+			// Test GetPriority
+			if filter.GetPriority() != tt.expectedPriority {
+				t.Errorf("expected priority %d, got %d", tt.expectedPriority, filter.GetPriority())
+			}
+		})
+	}
+}
+
+// TestFilter_SetPriorityIntegration tests that setting priorities works correctly at the integration level
+func TestFilter_SetPriorityIntegration(t *testing.T) {
+	chain := NewFilterChain()
+
+	// Create filters with different priorities
+	filter1 := NewEventTypeFilter("type-filter", []SagaEventType{EventTypeSagaCompleted}, nil)
+	filter2 := NewSagaIDFilter("id-filter", []string{"saga-1"}, nil)
+
+	// Test initial priorities
+	if filter1.GetPriority() != 100 {
+		t.Errorf("expected EventTypeFilter initial priority 100, got %d", filter1.GetPriority())
+	}
+	if filter2.GetPriority() != 90 {
+		t.Errorf("expected SagaIDFilter initial priority 90, got %d", filter2.GetPriority())
+	}
+
+	// Add filters to chain
+	_ = chain.AddFilter(filter1)
+	_ = chain.AddFilter(filter2)
+
+	// Verify they are in the chain
+	filters := chain.GetFilters()
+	if len(filters) != 2 {
+		t.Errorf("expected 2 filters in chain, got %d", len(filters))
+	}
+
+	// Change priorities
+	filter1.SetPriority(50)
+	filter2.SetPriority(150)
+
+	// Verify priorities were changed
+	if filter1.GetPriority() != 50 {
+		t.Errorf("expected EventTypeFilter new priority 50, got %d", filter1.GetPriority())
+	}
+	if filter2.GetPriority() != 150 {
+		t.Errorf("expected SagaIDFilter new priority 150, got %d", filter2.GetPriority())
+	}
+
+	// Verify that the filters are still in the chain after priority change
+	filters = chain.GetFilters()
+	if len(filters) != 2 {
+		t.Errorf("expected 2 filters in chain after priority change, got %d", len(filters))
+	}
+}

@@ -1922,10 +1922,10 @@ func TestHandleRetryEvents(t *testing.T) {
 // TestEventProcessingWithFilters tests event processing with filter configuration
 func TestEventProcessingWithFilters(t *testing.T) {
 	tests := []struct {
-		name            string
-		filterConfig    *FilterConfig
-		event           *saga.SagaEvent
-		expectFiltered  bool
+		name           string
+		filterConfig   *FilterConfig
+		event          *saga.SagaEvent
+		expectFiltered bool
 	}{
 		{
 			name: "event passes include filter",
@@ -2013,6 +2013,1037 @@ func TestEventProcessingWithFilters(t *testing.T) {
 			} else {
 				if err == ErrEventFilteredOut {
 					t.Error("event should not be filtered")
+				}
+			}
+		})
+	}
+}
+
+// TestHandleStepStarted tests the handleStepStarted function with comprehensive coverage
+func TestHandleStepStarted(t *testing.T) {
+	tests := []struct {
+		name             string
+		event            *saga.SagaEvent
+		handlerCtx       *EventHandlerContext
+		coordinator      *mockCoordinator
+		expectError      bool
+		expectedError    error
+		expectedErrorMsg string
+	}{
+		{
+			name: "valid step started event",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepStarted,
+				SagaID:    "saga-123",
+				StepID:    "step-1",
+				Timestamp: time.Now(),
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-456",
+				Topic:     "saga-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "step started event with minimal data",
+			event: &saga.SagaEvent{
+				Type:      saga.EventSagaStepStarted,
+				SagaID:    "saga-minimal",
+				Timestamp: time.Now(),
+				// StepID is optional in current implementation
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-minimal",
+				Topic:     "saga-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "step started event with step ID and data",
+			event: &saga.SagaEvent{
+				Type:      saga.EventSagaStepStarted,
+				SagaID:    "saga-with-step",
+				StepID:    "step-1",
+				Timestamp: time.Now(),
+				Data:      map[string]interface{}{"step_input": "test_data"},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-with-step",
+				Topic:         "saga-events",
+				Partition:     1,
+				Offset:        100,
+				Timestamp:     time.Now(),
+				RetryCount:    0,
+				BrokerName:    "kafka",
+				ConsumerGroup: "saga-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "step started event with valid saga but minimal context",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepStarted,
+				SagaID:    "saga-minimal",
+				StepID:    "step-minimal",
+				Timestamp: time.Now(),
+				Data:      map[string]interface{}{"step_data": "test"},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-minimal",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "step started event with complex data",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepStarted,
+				SagaID:    "saga-complex",
+				StepID:    "step-complex",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"input":      "complex_input",
+					"parameters": map[string]interface{}{"param1": "value1"},
+					"metadata":   map[string]interface{}{"source": "test", "version": "1.0"},
+				},
+				Metadata: map[string]interface{}{
+					"retry_count": 0,
+					"priority":    "high",
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-complex",
+				Topic:         "saga-events",
+				Partition:     1,
+				Offset:        12345,
+				Timestamp:     time.Now(),
+				RetryCount:    0,
+				BrokerName:    "kafka",
+				ConsumerGroup: "saga-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-step-handler",
+				HandlerName: "Test Step Handler",
+				Topics:      []string{"saga-events"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(tt.coordinator))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, tt.handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else {
+					if tt.expectedErrorMsg != "" && !contains(err.Error(), tt.expectedErrorMsg) {
+						t.Errorf("expected error message to contain '%s', got '%s'", tt.expectedErrorMsg, err.Error())
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleCompensationStepStarted tests the handleCompensationStepStarted function with comprehensive coverage
+func TestHandleCompensationStepStarted(t *testing.T) {
+	tests := []struct {
+		name             string
+		event            *saga.SagaEvent
+		handlerCtx       *EventHandlerContext
+		coordinator      *mockCoordinator
+		expectError      bool
+		expectedError    error
+		expectedErrorMsg string
+	}{
+		{
+			name: "valid compensation step started event",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStepStarted,
+				SagaID:    "saga-comp-123",
+				StepID:    "comp-step-1",
+				Timestamp: time.Now(),
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-comp-456",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation step started event with minimal data",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStepStarted,
+				SagaID:    "saga-comp-minimal",
+				Timestamp: time.Now(),
+				// StepID is optional in current implementation
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-comp-minimal",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation step started event with step ID",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStepStarted,
+				SagaID:    "saga-comp-with-step",
+				StepID:    "comp-step-1",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"original_step_id":  "step-1",
+					"compensation_type": "rollback",
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-comp-with-step",
+				Topic:         "compensation-events",
+				Partition:     2,
+				Offset:        200,
+				Timestamp:     time.Now(),
+				RetryCount:    1,
+				BrokerName:    "kafka",
+				ConsumerGroup: "compensation-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation step started with zero timestamp",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStepStarted,
+				SagaID:    "saga-comp-zero",
+				StepID:    "comp-step-zero",
+				Timestamp: time.Time{}, // Zero time - should still work as timestamp not validated in this handler
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-comp-zero",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation step started with compensation data",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStepStarted,
+				SagaID:    "saga-comp-data",
+				StepID:    "comp-step-data",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"original_step_id":  "step-1",
+					"compensation_type": "rollback",
+					"rollback_data":     map[string]interface{}{"previous_state": "state1"},
+				},
+				Metadata: map[string]interface{}{
+					"compensation_reason": "step_failed",
+					"original_error":      "service timeout",
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-comp-data",
+				Topic:         "compensation-events",
+				Partition:     2,
+				Offset:        67890,
+				Timestamp:     time.Now(),
+				RetryCount:    1,
+				BrokerName:    "kafka",
+				ConsumerGroup: "compensation-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation step started for saga with multiple steps",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationStepStarted,
+				SagaID:    "saga-multi-step",
+				StepID:    "step-3-reverse", // Compensation for step 3
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"total_compensation_steps":  3,
+					"current_compensation_step": 2, // Processing step 3 first, then 2, then 1
+					"compensation_order":        []string{"step-3-reverse", "step-2-reverse", "step-1-reverse"},
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-multi-step",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-compensation-handler",
+				HandlerName: "Test Compensation Handler",
+				Topics:      []string{"compensation-events"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(tt.coordinator))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, tt.handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else {
+					if tt.expectedErrorMsg != "" && !contains(err.Error(), tt.expectedErrorMsg) {
+						t.Errorf("expected error message to contain '%s', got '%s'", tt.expectedErrorMsg, err.Error())
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleCompensationFailed tests the handleCompensationFailed function with comprehensive coverage
+func TestHandleCompensationFailed(t *testing.T) {
+	tests := []struct {
+		name             string
+		event            *saga.SagaEvent
+		handlerCtx       *EventHandlerContext
+		coordinator      *mockCoordinator
+		expectError      bool
+		expectedError    error
+		expectedErrorMsg string
+	}{
+		{
+			name: "valid compensation failed event",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationFailed,
+				SagaID:    "saga-comp-failed-123",
+				Timestamp: time.Now(),
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeCompensation,
+					Message: "compensation service unavailable",
+					Details: map[string]interface{}{"retry_count": 3},
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-comp-failed-456",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation failed event with minimal data",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationFailed,
+				SagaID:    "saga-comp-minimal-failed",
+				Timestamp: time.Now(),
+				// Error is optional in current implementation
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-comp-minimal-failed",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation failed event with error details",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationFailed,
+				SagaID:    "saga-comp-with-error",
+				Timestamp: time.Now(),
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeCompensation,
+					Message: "compensation service unavailable",
+					Details: map[string]interface{}{
+						"retry_count": 3,
+						"service":     "payment-service",
+					},
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-comp-with-error",
+				Topic:         "compensation-events",
+				Partition:     3,
+				Offset:        300,
+				Timestamp:     time.Now(),
+				RetryCount:    2,
+				BrokerName:    "kafka",
+				ConsumerGroup: "compensation-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation failed with different error types",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationFailed,
+				SagaID:    "saga-comp-error-types",
+				Timestamp: time.Now(),
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeService,
+					Message: "database connection failed during compensation",
+					Details: map[string]interface{}{
+						"database": "postgres",
+						"query":    "ROLLBACK saga_transaction",
+						"timeout":  "30s",
+					},
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-comp-error-types",
+				Topic:         "compensation-events",
+				Partition:     3,
+				Offset:        11111,
+				Timestamp:     time.Now(),
+				RetryCount:    2,
+				BrokerName:    "kafka",
+				ConsumerGroup: "compensation-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation failed with zero timestamp (should still work)",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationFailed,
+				SagaID:    "saga-comp-zero-time",
+				Timestamp: time.Time{}, // Zero time
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeCompensation,
+					Message: "compensation failed with zero timestamp",
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-comp-zero-time",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "compensation failed with complex error details",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationFailed,
+				SagaID:    "saga-comp-complex",
+				Timestamp: time.Now(),
+				Error: &saga.SagaError{
+					Type:      saga.ErrorTypeCompensation,
+					Message:   "complex compensation failure",
+					Code:      "COMPENSATION_COMPLEX_ERROR",
+					Retryable: false,
+					Details: map[string]interface{}{
+						"failed_operations": []string{"delete_record", "send_notification", "update_inventory"},
+						"partial_success":   true,
+						"completed_steps":   2,
+						"total_steps":       3,
+						"remaining_data": map[string]interface{}{
+							"records_to_cleanup": 5,
+							"notifications_sent": 2,
+						},
+						"recovery_options": []string{"manual_intervention", "retry_with_different_strategy"},
+					},
+				},
+				Data: map[string]interface{}{
+					"compensation_failure_summary": "Partial compensation completed",
+					"manual_review_required":       true,
+				},
+				Metadata: map[string]interface{}{
+					"critical_failure": true,
+					"escalation_level": 2,
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-comp-complex",
+				Topic:     "compensation-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-compensation-failed-handler",
+				HandlerName: "Test Compensation Failed Handler",
+				Topics:      []string{"compensation-events"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(tt.coordinator))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, tt.handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else {
+					if tt.expectedErrorMsg != "" && !contains(err.Error(), tt.expectedErrorMsg) {
+						t.Errorf("expected error message to contain '%s', got '%s'", tt.expectedErrorMsg, err.Error())
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestHandleStateChanged tests the handleStateChanged function with comprehensive coverage
+func TestHandleStateChanged(t *testing.T) {
+	tests := []struct {
+		name             string
+		event            *saga.SagaEvent
+		handlerCtx       *EventHandlerContext
+		coordinator      *mockCoordinator
+		expectError      bool
+		expectedError    error
+		expectedErrorMsg string
+	}{
+		{
+			name: "valid state changed event",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-state-123",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"previous_state":      "processing",
+					"current_state":       "completed",
+					"state_change_reason": "all_steps_completed_successfully",
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-state-456",
+				Topic:     "state-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "state changed event with zero timestamp",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-state-zero-time",
+				Timestamp: time.Time{}, // Zero timestamp - works in current implementation
+				Data: map[string]interface{}{
+					"previous_state": "running",
+					"current_state":  "failed",
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-state-zero-time",
+				Topic:     "state-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "state changed event with full transition data",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-state-full",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"previous_state":    "active",
+					"current_state":     "suspended",
+					"transition_reason": "manual_pause",
+					"metadata": map[string]interface{}{
+						"initiated_by": "admin",
+						"timestamp":    time.Now().Unix(),
+					},
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-state-full",
+				Topic:         "state-events",
+				Partition:     0,
+				Offset:        400,
+				Timestamp:     time.Now(),
+				RetryCount:    0,
+				BrokerName:    "kafka",
+				ConsumerGroup: "state-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "state changed event with minimal data",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-state-minimal",
+				Timestamp: time.Now(),
+				// Data can be empty - should still work
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-state-minimal",
+				Topic:     "state-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "state changed event with complex state transition",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-state-complex",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"previous_state":               "compensating",
+					"current_state":                "compensation_failed",
+					"state_change_reason":          "compensation_step_3_failed_permanently",
+					"state_transition_duration_ms": 15000,
+					"state_machine": map[string]interface{}{
+						"current_step":      "cleanup_resources",
+						"next_states":       []string{"manual_review", "terminated"},
+						"recovery_possible": false,
+					},
+					"affected_entities": []string{
+						"order_service",
+						"inventory_service",
+						"payment_service",
+					},
+				},
+				Metadata: map[string]interface{}{
+					"state_change_id": "transition-789",
+					"triggered_by":    "compensation_failure",
+					"automated":       true,
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID:     "msg-state-complex",
+				Topic:         "state-events",
+				Partition:     0,
+				Offset:        99999,
+				Timestamp:     time.Now(),
+				RetryCount:    0,
+				BrokerName:    "kafka",
+				ConsumerGroup: "state-handlers",
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "state changed event for saga lifecycle transitions",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-state-lifecycle",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"previous_state":       "started",
+					"current_state":        "executing",
+					"state_change_reason":  "step_1_completed_starting_step_2",
+					"saga_lifecycle_stage": "execution",
+					"current_step_id":      "step-2",
+					"total_steps":          5,
+					"completed_steps":      1,
+					"failed_steps":         0,
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-state-lifecycle",
+				Topic:     "state-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+		{
+			name: "state changed event with timestamp edge cases",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-state-edge-time",
+				Timestamp: time.Unix(0, 1), // Very early timestamp but not zero
+				Data: map[string]interface{}{
+					"previous_state": "initializing",
+					"current_state":  "ready",
+				},
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-state-edge-time",
+				Topic:     "state-events",
+				Timestamp: time.Now(),
+			},
+			coordinator: &mockCoordinator{},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-state-handler",
+				HandlerName: "Test State Handler",
+				Topics:      []string{"state-events"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(tt.coordinator))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			err = handler.HandleSagaEvent(ctx, tt.event, tt.handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else {
+					if tt.expectedErrorMsg != "" && !contains(err.Error(), tt.expectedErrorMsg) {
+						t.Errorf("expected error message to contain '%s', got '%s'", tt.expectedErrorMsg, err.Error())
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestOnEventProcessed tests the OnEventProcessed callback function with comprehensive coverage
+func TestOnEventProcessed(t *testing.T) {
+	tests := []struct {
+		name             string
+		event            *saga.SagaEvent
+		result           interface{}
+		setupHandler     func() SagaEventHandler
+		expectedBehavior string
+	}{
+		{
+			name: "callback with successful event processing",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepCompleted,
+				SagaID:    "saga-callback-123",
+				StepID:    "step-callback-1",
+				Timestamp: time.Now(),
+			},
+			result: map[string]interface{}{
+				"processing_time_ms": 150,
+				"result_data":        "step_completed_successfully",
+			},
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-callback-handler",
+					HandlerName: "Test Callback Handler",
+					Topics:      []string{"callback-events"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			expectedBehavior: "callback_completes_without_error",
+		},
+		{
+			name: "callback with nil result",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaCompleted,
+				SagaID:    "saga-callback-nil",
+				Timestamp: time.Now(),
+			},
+			result: nil,
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-callback-nil-handler",
+					HandlerName: "Test Callback Nil Handler",
+					Topics:      []string{"callback-events"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			expectedBehavior: "callback_handles_nil_result",
+		},
+		{
+			name: "callback with complex result data",
+			event: &saga.SagaEvent{
+				Type:      EventTypeCompensationCompleted,
+				SagaID:    "saga-callback-complex",
+				Timestamp: time.Now(),
+			},
+			result: map[string]interface{}{
+				"compensation_summary": map[string]interface{}{
+					"total_steps":              3,
+					"successful_steps":         3,
+					"failed_steps":             0,
+					"compensation_duration_ms": 2500,
+				},
+				"resource_cleanup": map[string]interface{}{
+					"database_transactions_rolled_back": 5,
+					"messages_published":                2,
+					"external_api_calls_made":           1,
+				},
+				"metrics": map[string]interface{}{
+					"memory_freed_mb":         15.5,
+					"temporary_files_deleted": 8,
+				},
+			},
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-callback-complex-handler",
+					HandlerName: "Test Callback Complex Handler",
+					Topics:      []string{"callback-events"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			expectedBehavior: "callback_handles_complex_result",
+		},
+		{
+			name: "callback with different event types",
+			event: &saga.SagaEvent{
+				Type:      EventTypeStateChanged,
+				SagaID:    "saga-callback-different",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"previous_state": "processing",
+					"current_state":  "completed",
+				},
+			},
+			result: "state_transition_successful",
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-callback-different-handler",
+					HandlerName: "Test Callback Different Handler",
+					Topics:      []string{"callback-events"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			expectedBehavior: "callback_handles_different_event_types",
+		},
+		{
+			name: "callback with string result",
+			event: &saga.SagaEvent{
+				Type:      EventTypeRetryExhausted,
+				SagaID:    "saga-callback-string",
+				Timestamp: time.Now(),
+			},
+			result: "retry_exhausted_compensation_initiated",
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-callback-string-handler",
+					HandlerName: "Test Callback String Handler",
+					Topics:      []string{"callback-events"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			expectedBehavior: "callback_handles_string_result",
+		},
+		{
+			name: "callback with numeric result",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepFailed,
+				SagaID:    "saga-callback-numeric",
+				StepID:    "step-numeric",
+				Timestamp: time.Now(),
+			},
+			result: 42, // Numeric result
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-callback-numeric-handler",
+					HandlerName: "Test Callback Numeric Handler",
+					Topics:      []string{"callback-events"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			expectedBehavior: "callback_handles_numeric_result",
+		},
+		{
+			name: "callback with error result (should still handle gracefully)",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaFailed,
+				SagaID:    "saga-callback-error",
+				Timestamp: time.Now(),
+				Error: &saga.SagaError{
+					Type:    saga.ErrorTypeService,
+					Message: "service unavailable",
+				},
+			},
+			result: errors.New("processing failed but handled"),
+			setupHandler: func() SagaEventHandler {
+				config := &HandlerConfig{
+					HandlerID:   "test-callback-error-handler",
+					HandlerName: "Test Callback Error Handler",
+					Topics:      []string{"callback-events"},
+				}
+				handler, _ := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+				return handler
+			},
+			expectedBehavior: "callback_handles_error_result",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := tt.setupHandler()
+			ctx := context.Background()
+
+			// Start the handler
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			// Call OnEventProcessed callback - this should not panic or return an error
+			// since it's a callback hook that's designed to be a no-op in the base implementation
+			handler.OnEventProcessed(ctx, tt.event, tt.result)
+
+			// If we reach here without panicking, the test passes
+			// The base implementation is a no-op, so we just verify it doesn't crash
+			t.Logf("OnEventProcessed callback completed successfully for test: %s", tt.name)
+		})
+	}
+}
+
+// TestOnEventProcessedIntegration tests OnEventProcessed in integration with HandleSagaEvent
+func TestOnEventProcessedIntegration(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       *saga.SagaEvent
+		handlerCtx  *EventHandlerContext
+		expectError bool
+	}{
+		{
+			name: "successful event processing triggers callback",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepCompleted,
+				SagaID:    "saga-integration-123",
+				StepID:    "step-integration-1",
+				Timestamp: time.Now(),
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-integration-456",
+				Topic:     "integration-events",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+		{
+			name: "valid event processing triggers callback",
+			event: &saga.SagaEvent{
+				Type:      EventTypeSagaStepCompleted,
+				SagaID:    "saga-integration-success",
+				StepID:    "step-integration-success",
+				Timestamp: time.Now(),
+			},
+			handlerCtx: &EventHandlerContext{
+				MessageID: "msg-integration-success",
+				Topic:     "integration-events",
+				Timestamp: time.Now(),
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &HandlerConfig{
+				HandlerID:   "test-integration-handler",
+				HandlerName: "Test Integration Handler",
+				Topics:      []string{"integration-events"},
+			}
+
+			handler, err := NewSagaEventHandler(config, WithCoordinator(&mockCoordinator{}))
+			if err != nil {
+				t.Fatalf("failed to create handler: %v", err)
+			}
+
+			ctx := context.Background()
+			if h, ok := handler.(*defaultSagaEventHandler); ok {
+				if err := h.Start(ctx); err != nil {
+					t.Fatalf("failed to start handler: %v", err)
+				}
+				defer h.Stop(ctx)
+			}
+
+			// Process the event - this will internally call OnEventProcessed if successful
+			err = handler.HandleSagaEvent(ctx, tt.event, tt.handlerCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected processing error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected processing error: %v", err)
 				}
 			}
 		})

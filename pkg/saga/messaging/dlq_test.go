@@ -24,6 +24,7 @@ package messaging
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -714,4 +715,1029 @@ func TestDLQIntegrationWithSagaEventHandler(t *testing.T) {
 	publishedEvents := mockPublisher.GetEvents()
 	assert.Len(t, publishedEvents, 1)
 	assert.Equal(t, saga.EventDeadLettered, publishedEvents[0].Type)
+}
+
+// Mock DLQ components for testing
+
+type MockDLQMessageSerializer struct {
+	serializeFunc   func(msg *DLQMessage) ([]byte, error)
+	deserializeFunc func(data []byte) (*DLQMessage, error)
+}
+
+func (m *MockDLQMessageSerializer) SerializeDLQMessage(msg *DLQMessage) ([]byte, error) {
+	if m.serializeFunc != nil {
+		return m.serializeFunc(msg)
+	}
+	return []byte("mock-serialized"), nil
+}
+
+func (m *MockDLQMessageSerializer) DeserializeDLQMessage(data []byte) (*DLQMessage, error) {
+	if m.deserializeFunc != nil {
+		return m.deserializeFunc(data)
+	}
+	return &DLQMessage{ID: "mock-deserialized"}, nil
+}
+
+type MockDLQRetryPolicy struct {
+	shouldRetryFunc     func(msg *DLQMessage) bool
+	getRetryDelayFunc   func(msg *DLQMessage) time.Duration
+	isExpiredFunc       func(msg *DLQMessage) bool
+	maxRecoveryAttempts int
+}
+
+func (m *MockDLQRetryPolicy) ShouldRetry(msg *DLQMessage) bool {
+	if m.shouldRetryFunc != nil {
+		return m.shouldRetryFunc(msg)
+	}
+	return true
+}
+
+func (m *MockDLQRetryPolicy) GetRetryDelay(msg *DLQMessage) time.Duration {
+	if m.getRetryDelayFunc != nil {
+		return m.getRetryDelayFunc(msg)
+	}
+	return 5 * time.Second
+}
+
+func (m *MockDLQRetryPolicy) IsExpired(msg *DLQMessage) bool {
+	if m.isExpiredFunc != nil {
+		return m.isExpiredFunc(msg)
+	}
+	return false
+}
+
+func (m *MockDLQRetryPolicy) GetMaxRecoveryAttempts() int {
+	return m.maxRecoveryAttempts
+}
+
+type MockDLQErrorClassifier struct {
+	classifyErrorFunc    func(err error) ErrorType
+	isRetryableErrorFunc func(err error) bool
+	getFailureReasonFunc func(err error) string
+}
+
+func (m *MockDLQErrorClassifier) ClassifyError(err error) ErrorType {
+	if m.classifyErrorFunc != nil {
+		return m.classifyErrorFunc(err)
+	}
+	return ErrorTypeUnknown
+}
+
+func (m *MockDLQErrorClassifier) IsRetryableError(err error) bool {
+	if m.isRetryableErrorFunc != nil {
+		return m.isRetryableErrorFunc(err)
+	}
+	return false
+}
+
+func (m *MockDLQErrorClassifier) GetFailureReason(err error) string {
+	if m.getFailureReasonFunc != nil {
+		return m.getFailureReasonFunc(err)
+	}
+	return "mock failure reason"
+}
+
+// Tests for DLQ functional options
+
+func TestWithDLQMessageSerializer(t *testing.T) {
+	tests := []struct {
+		name          string
+		serializer    DLQMessageSerializer
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:        "valid custom serializer",
+			serializer:  &MockDLQMessageSerializer{},
+			expectError: false,
+		},
+		{
+			name:          "nil serializer",
+			serializer:    nil,
+			expectError:   true,
+			errorContains: "DLQ message serializer cannot be nil",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &DeadLetterConfig{
+				Enabled: true,
+				Topic:   "test-dlq",
+			}
+			publisher := NewMockEventPublisher()
+
+			handler, err := NewDeadLetterQueueHandler(
+				config,
+				publisher,
+				WithDLQMessageSerializer(tt.serializer),
+			)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.Nil(t, handler)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, handler)
+			}
+		})
+	}
+}
+
+func TestWithDLQRetryPolicy(t *testing.T) {
+	tests := []struct {
+		name          string
+		policy        DLQRetryPolicy
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "valid custom retry policy",
+			policy: &MockDLQRetryPolicy{
+				maxRecoveryAttempts: 10,
+			},
+			expectError: false,
+		},
+		{
+			name:          "nil retry policy",
+			policy:        nil,
+			expectError:   true,
+			errorContains: "DLQ retry policy cannot be nil",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &DeadLetterConfig{
+				Enabled: true,
+				Topic:   "test-dlq",
+			}
+			publisher := NewMockEventPublisher()
+
+			handler, err := NewDeadLetterQueueHandler(
+				config,
+				publisher,
+				WithDLQRetryPolicy(tt.policy),
+			)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.Nil(t, handler)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, handler)
+			}
+		})
+	}
+}
+
+func TestWithDLQErrorClassifier(t *testing.T) {
+	tests := []struct {
+		name          string
+		classifier    DLQErrorClassifier
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:        "valid custom error classifier",
+			classifier:  &MockDLQErrorClassifier{},
+			expectError: false,
+		},
+		{
+			name:          "nil error classifier",
+			classifier:    nil,
+			expectError:   true,
+			errorContains: "DLQ error classifier cannot be nil",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &DeadLetterConfig{
+				Enabled: true,
+				Topic:   "test-dlq",
+			}
+			publisher := NewMockEventPublisher()
+
+			handler, err := NewDeadLetterQueueHandler(
+				config,
+				publisher,
+				WithDLQErrorClassifier(tt.classifier),
+			)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.Nil(t, handler)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, handler)
+			}
+		})
+	}
+}
+
+func TestDLQFunctionalOptionsIntegration(t *testing.T) {
+	// Test that all functional options work together
+	config := &DeadLetterConfig{
+		Enabled: true,
+		Topic:   "test-dlq",
+	}
+	publisher := NewMockEventPublisher()
+
+	mockSerializer := &MockDLQMessageSerializer{}
+	mockPolicy := &MockDLQRetryPolicy{maxRecoveryAttempts: 7}
+	mockClassifier := &MockDLQErrorClassifier{}
+
+	handler, err := NewDeadLetterQueueHandler(
+		config,
+		publisher,
+		WithDLQMessageSerializer(mockSerializer),
+		WithDLQRetryPolicy(mockPolicy),
+		WithDLQErrorClassifier(mockClassifier),
+	)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, handler)
+
+	// Verify the handler was created successfully
+	dlqConfig := handler.GetDLQConfiguration()
+	assert.Equal(t, config.Topic, dlqConfig.Topic)
+	assert.True(t, config.Enabled)
+}
+
+// Tests for DLQ component constructors
+
+func TestNewDLQMessageSerializer(t *testing.T) {
+	serializer := NewDefaultDLQMessageSerializer()
+	assert.NotNil(t, serializer)
+
+	// Test that it implements the interface
+	var _ DLQMessageSerializer = serializer
+}
+
+func TestNewDLQRetryPolicy(t *testing.T) {
+	tests := []struct {
+		name                 string
+		maxRecoveryAttempts  int
+		baseDelay            time.Duration
+		maxDelay             time.Duration
+		multiplier           float64
+		expectedMaxAttempts  int
+		expectedBaseDelay    time.Duration
+		expectedMaxDelay     time.Duration
+		expectedMultiplier   float64
+		testRecoveryAttempts int
+	}{
+		{
+			name:                 "valid parameters",
+			maxRecoveryAttempts:  10,
+			baseDelay:            60 * time.Second,
+			maxDelay:             60 * time.Minute,
+			multiplier:           3.0,
+			expectedMaxAttempts:  10,
+			expectedBaseDelay:    60 * time.Second,
+			expectedMaxDelay:     60 * time.Minute,
+			expectedMultiplier:   3.0,
+			testRecoveryAttempts: 1,
+		},
+		{
+			name:                 "zero recovery attempts - should use default",
+			maxRecoveryAttempts:  0,
+			baseDelay:            60 * time.Second,
+			maxDelay:             60 * time.Minute,
+			multiplier:           3.0,
+			expectedMaxAttempts:  5, // default
+			expectedBaseDelay:    60 * time.Second,
+			expectedMaxDelay:     60 * time.Minute,
+			expectedMultiplier:   3.0,
+			testRecoveryAttempts: 1,
+		},
+		{
+			name:                 "negative recovery attempts - should use default",
+			maxRecoveryAttempts:  -5,
+			baseDelay:            60 * time.Second,
+			maxDelay:             60 * time.Minute,
+			multiplier:           3.0,
+			expectedMaxAttempts:  5, // default
+			expectedBaseDelay:    60 * time.Second,
+			expectedMaxDelay:     60 * time.Minute,
+			expectedMultiplier:   3.0,
+			testRecoveryAttempts: 1,
+		},
+		{
+			name:                 "zero base delay - should use default",
+			maxRecoveryAttempts:  10,
+			baseDelay:            0,
+			maxDelay:             60 * time.Minute,
+			multiplier:           3.0,
+			expectedMaxAttempts:  10,
+			expectedBaseDelay:    30 * time.Second, // default
+			expectedMaxDelay:     60 * time.Minute,
+			expectedMultiplier:   3.0,
+			testRecoveryAttempts: 1,
+		},
+		{
+			name:                 "zero max delay - should use default",
+			maxRecoveryAttempts:  10,
+			baseDelay:            60 * time.Second,
+			maxDelay:             0,
+			multiplier:           3.0,
+			expectedMaxAttempts:  10,
+			expectedBaseDelay:    60 * time.Second,
+			expectedMaxDelay:     30 * time.Minute, // default
+			expectedMultiplier:   3.0,
+			testRecoveryAttempts: 1,
+		},
+		{
+			name:                 "multiplier less than 1.0 - should use default",
+			maxRecoveryAttempts:  10,
+			baseDelay:            60 * time.Second,
+			maxDelay:             60 * time.Minute,
+			multiplier:           0.5,
+			expectedMaxAttempts:  10,
+			expectedBaseDelay:    60 * time.Second,
+			expectedMaxDelay:     60 * time.Minute,
+			expectedMultiplier:   2.0, // default
+			testRecoveryAttempts: 1,
+		},
+		{
+			name:                 "all zero values - should use all defaults",
+			maxRecoveryAttempts:  0,
+			baseDelay:            0,
+			maxDelay:             0,
+			multiplier:           0,
+			expectedMaxAttempts:  5,                // default
+			expectedBaseDelay:    30 * time.Second, // default
+			expectedMaxDelay:     30 * time.Minute, // default
+			expectedMultiplier:   2.0,              // default
+			testRecoveryAttempts: 0,                // ensure it's retryable
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := NewDLQRetryPolicy(tt.maxRecoveryAttempts, tt.baseDelay, tt.maxDelay, tt.multiplier)
+			assert.NotNil(t, policy)
+
+			// Test that it implements the interface
+			var _ DLQRetryPolicy = policy
+
+			// Test the methods work
+			assert.Equal(t, tt.expectedMaxAttempts, policy.GetMaxRecoveryAttempts())
+
+			// Test with a sample message
+			testMsg := &DLQMessage{
+				ID:               "test",
+				RecoveryAttempts: tt.testRecoveryAttempts,
+				ErrorType:        ErrorTypeRetryable,
+				RetryCount:       0, // Set to 0 to ensure it's retryable
+				MaxRetries:       3, // Set to a value > RetryCount to ensure it's retryable
+			}
+
+			delay := policy.GetRetryDelay(testMsg)
+			assert.True(t, delay > 0)
+
+			shouldRetry := policy.ShouldRetry(testMsg)
+			assert.True(t, shouldRetry)
+		})
+	}
+}
+
+func TestNewDLQErrorClassifier(t *testing.T) {
+	tests := []struct {
+		name                string
+		retryableErrors     []string
+		permanentErrors     []string
+		expectRetryable     bool
+		expectPermanent     bool
+		testError           error
+		expectedErrorType   ErrorType
+		expectedIsRetryable bool
+	}{
+		{
+			name:                "custom retryable and permanent errors",
+			retryableErrors:     []string{"custom timeout", "custom network"},
+			permanentErrors:     []string{"custom invalid", "custom forbidden"},
+			expectRetryable:     true,
+			expectPermanent:     true,
+			testError:           errors.New("custom timeout error"),
+			expectedErrorType:   ErrorTypeTimeout,
+			expectedIsRetryable: true,
+		},
+		{
+			name:                "empty retryable errors - should use defaults",
+			retryableErrors:     []string{},
+			permanentErrors:     []string{"custom invalid"},
+			expectRetryable:     false, // should use defaults
+			expectPermanent:     true,
+			testError:           errors.New("connection refused"),
+			expectedErrorType:   ErrorTypeRetryable,
+			expectedIsRetryable: true,
+		},
+		{
+			name:                "empty permanent errors - should use defaults",
+			retryableErrors:     []string{"custom timeout"},
+			permanentErrors:     []string{},
+			expectRetryable:     true,
+			expectPermanent:     false, // should use defaults
+			testError:           errors.New("invalid input format"),
+			expectedErrorType:   ErrorTypeValidation,
+			expectedIsRetryable: false,
+		},
+		{
+			name:                "both empty - should use all defaults",
+			retryableErrors:     []string{},
+			permanentErrors:     []string{},
+			expectRetryable:     false,
+			expectPermanent:     false,
+			testError:           errors.New("connection refused"),
+			expectedErrorType:   ErrorTypeRetryable,
+			expectedIsRetryable: true,
+		},
+		{
+			name:                "custom permanent error matching",
+			retryableErrors:     []string{"custom timeout"},
+			permanentErrors:     []string{"invalid critical"},
+			expectRetryable:     true,
+			expectPermanent:     true,
+			testError:           errors.New("invalid critical failure occurred"),
+			expectedErrorType:   ErrorTypeValidation, // "invalid" matches permanent pattern in classifyByPattern
+			expectedIsRetryable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			classifier := NewDLQErrorClassifier(tt.retryableErrors, tt.permanentErrors)
+			assert.NotNil(t, classifier)
+
+			// Test that it implements the interface
+			var _ DLQErrorClassifier = classifier
+
+			// Test classification
+			errorType := classifier.ClassifyError(tt.testError)
+			assert.Equal(t, tt.expectedErrorType, errorType)
+
+			// Test retryable check
+			isRetryable := classifier.IsRetryableError(tt.testError)
+			assert.Equal(t, tt.expectedIsRetryable, isRetryable)
+
+			// Test failure reason
+			failureReason := classifier.GetFailureReason(tt.testError)
+			assert.NotEmpty(t, failureReason)
+		})
+	}
+}
+
+func TestDLQMessageSerializerEdgeCases(t *testing.T) {
+	serializer := NewDefaultDLQMessageSerializer()
+
+	t.Run("serialize nil message", func(t *testing.T) {
+		data, err := serializer.SerializeDLQMessage(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "DLQ message cannot be nil")
+		assert.Nil(t, data)
+	})
+
+	t.Run("deserialize empty data", func(t *testing.T) {
+		msg, err := serializer.DeserializeDLQMessage([]byte{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "data cannot be empty")
+		assert.Nil(t, msg)
+	})
+
+	t.Run("deserialize nil data", func(t *testing.T) {
+		msg, err := serializer.DeserializeDLQMessage(nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "data cannot be empty")
+		assert.Nil(t, msg)
+	})
+
+	t.Run("deserialize invalid JSON", func(t *testing.T) {
+		invalidJSON := []byte("{ invalid json }")
+		msg, err := serializer.DeserializeDLQMessage(invalidJSON)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to unmarshal DLQ message")
+		assert.Nil(t, msg)
+	})
+
+	t.Run("round trip with complex message", func(t *testing.T) {
+		now := time.Now()
+		originalMsg := &DLQMessage{
+			ID:               "complex-test-1",
+			Error:            "complex error",
+			ErrorType:        ErrorTypeRetryable,
+			FailureReason:    "complex failure",
+			RetryCount:       5,
+			MaxRetries:       10,
+			RecoveryAttempts: 2,
+			SagaID:           "complex-saga-1",
+			EventType:        EventTypeSagaStepFailed,
+			HandlerID:        "complex-handler-1",
+			FirstFailedAt:    now,
+			LastFailedAt:     now.Add(time.Hour),
+			Metadata: map[string]interface{}{
+				"key1": "value1",
+				"key2": 42,
+				"key3": true,
+				"nested": map[string]interface{}{
+					"inner": "value",
+				},
+			},
+		}
+
+		// Serialize
+		data, err := serializer.SerializeDLQMessage(originalMsg)
+		require.NoError(t, err)
+
+		// Deserialize
+		deserializedMsg, err := serializer.DeserializeDLQMessage(data)
+		require.NoError(t, err)
+
+		// Verify key fields
+		assert.Equal(t, originalMsg.ID, deserializedMsg.ID)
+		assert.Equal(t, originalMsg.Error, deserializedMsg.Error)
+		assert.Equal(t, originalMsg.ErrorType, deserializedMsg.ErrorType)
+		assert.Equal(t, originalMsg.FailureReason, deserializedMsg.FailureReason)
+		assert.Equal(t, originalMsg.RetryCount, deserializedMsg.RetryCount)
+		assert.Equal(t, originalMsg.MaxRetries, deserializedMsg.MaxRetries)
+		assert.Equal(t, originalMsg.RecoveryAttempts, deserializedMsg.RecoveryAttempts)
+		assert.Equal(t, originalMsg.SagaID, deserializedMsg.SagaID)
+		assert.Equal(t, originalMsg.EventType, deserializedMsg.EventType)
+		assert.Equal(t, originalMsg.HandlerID, deserializedMsg.HandlerID)
+	})
+}
+
+// Tests for DLQ metrics update functions and internal methods
+
+func TestDLQHandlerInternalMethods(t *testing.T) {
+	config := &DeadLetterConfig{
+		Enabled: true,
+		Topic:   "test-dlq",
+	}
+	publisher := NewMockEventPublisher()
+
+	handler, err := NewDeadLetterQueueHandler(config, publisher)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = handler.Start(ctx)
+	require.NoError(t, err)
+	defer handler.Stop(ctx)
+
+	// Cast to access internal methods
+	defaultHandler := handler.(*defaultDeadLetterQueueHandler)
+
+	t.Run("generateDLQMessageID", func(t *testing.T) {
+		event := &saga.SagaEvent{
+			ID:     "test-event-1",
+			SagaID: "test-saga-1",
+		}
+		handlerCtx := &EventHandlerContext{
+			MessageID: "test-message-1",
+		}
+
+		messageID := defaultHandler.generateDLQMessageID(event, handlerCtx)
+		assert.NotEmpty(t, messageID)
+		assert.Contains(t, messageID, "dlq_")
+		assert.Contains(t, messageID, event.SagaID)
+		assert.Contains(t, messageID, event.ID)
+	})
+
+	t.Run("getMaxRetries", func(t *testing.T) {
+		handlerCtx := &EventHandlerContext{
+			RetryCount: 2,
+		}
+
+		maxRetries := defaultHandler.getMaxRetries(handlerCtx)
+		assert.Equal(t, 3, maxRetries) // default value
+	})
+
+	t.Run("getHandlerID with metadata", func(t *testing.T) {
+		handlerCtx := &EventHandlerContext{
+			Metadata: map[string]interface{}{
+				"handler_id": "test-handler-123",
+			},
+		}
+
+		handlerID := defaultHandler.getHandlerID(handlerCtx)
+		assert.Equal(t, "test-handler-123", handlerID)
+	})
+
+	t.Run("getHandlerID without metadata", func(t *testing.T) {
+		handlerCtx := &EventHandlerContext{}
+
+		handlerID := defaultHandler.getHandlerID(handlerCtx)
+		assert.Equal(t, "unknown", handlerID)
+	})
+
+	t.Run("getHandlerID with nil metadata", func(t *testing.T) {
+		handlerCtx := &EventHandlerContext{
+			Metadata: nil,
+		}
+
+		handlerID := defaultHandler.getHandlerID(handlerCtx)
+		assert.Equal(t, "unknown", handlerID)
+	})
+}
+
+func TestDLQMetricsUpdateFunctions(t *testing.T) {
+	config := &DeadLetterConfig{
+		Enabled: true,
+		Topic:   "test-dlq",
+	}
+	publisher := NewMockEventPublisher()
+
+	handler, err := NewDeadLetterQueueHandler(config, publisher)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = handler.Start(ctx)
+	require.NoError(t, err)
+	defer handler.Stop(ctx)
+
+	// Cast to access internal methods
+	defaultHandler := handler.(*defaultDeadLetterQueueHandler)
+
+	t.Run("updateMetricsExpired", func(t *testing.T) {
+		// Set up initial state
+		defaultHandler.metrics.TotalMessagesExpired = 10
+		defaultHandler.metrics.CurrentQueueSize = 5
+
+		// Call updateMetricsExpired
+		defaultHandler.updateMetricsExpired()
+
+		// Verify metrics were updated
+		updatedMetrics := handler.GetDLQMetrics()
+		assert.Equal(t, int64(11), updatedMetrics.TotalMessagesExpired)
+		assert.Equal(t, int64(4), updatedMetrics.CurrentQueueSize)
+	})
+
+	t.Run("updateMetricsRecoveryFailed", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:        "test-recovery-failed",
+			ErrorType: ErrorTypeRetryable,
+		}
+		recoveryTime := 250 * time.Millisecond
+
+		// This function mainly updates Prometheus metrics, so we just test it doesn't panic
+		defaultHandler.updateMetricsRecoveryFailed(testMessage, recoveryTime)
+
+		// Verify handler is still healthy
+		metrics := handler.GetDLQMetrics()
+		assert.True(t, metrics.IsHealthy)
+	})
+
+	t.Run("updateMetricsError", func(t *testing.T) {
+		testError := errors.New("test metrics error")
+
+		// Get initial metrics
+		initialMetrics := handler.GetDLQMetrics()
+		assert.True(t, initialMetrics.IsHealthy)
+		assert.Empty(t, initialMetrics.LastError)
+
+		// Call updateMetricsError
+		defaultHandler.updateMetricsError(testError)
+
+		// Verify metrics were updated
+		updatedMetrics := handler.GetDLQMetrics()
+		assert.False(t, updatedMetrics.IsHealthy)
+		assert.Equal(t, testError.Error(), updatedMetrics.LastError)
+		assert.NotNil(t, updatedMetrics.LastErrorAt)
+	})
+
+	t.Run("updateMetricsSent", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:        "test-metrics-sent",
+			ErrorType: ErrorTypeRetryable,
+			EventType: EventTypeSagaStepFailed,
+		}
+
+		// Get initial metrics
+		initialMetrics := handler.GetDLQMetrics()
+		initialReceived := initialMetrics.TotalMessagesReceived
+		initialQueueSize := initialMetrics.CurrentQueueSize
+
+		// Call updateMetricsSent
+		defaultHandler.updateMetricsSent(testMessage)
+
+		// Verify metrics were updated
+		updatedMetrics := handler.GetDLQMetrics()
+		assert.Equal(t, initialReceived+1, updatedMetrics.TotalMessagesReceived)
+		assert.Equal(t, initialQueueSize+1, updatedMetrics.CurrentQueueSize)
+		assert.Equal(t, int64(1), updatedMetrics.MessagesByErrorType[ErrorTypeRetryable])
+		assert.Equal(t, int64(1), updatedMetrics.MessagesByEventType[EventTypeSagaStepFailed])
+		assert.NotNil(t, updatedMetrics.LastMessageReceivedAt)
+	})
+
+	t.Run("updateMetricsRecovered", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:        "test-metrics-recovered",
+			ErrorType: ErrorTypeRetryable,
+		}
+		recoveryTime := 150 * time.Millisecond
+
+		// Set up initial state
+		defaultHandler.metrics.TotalMessagesReceived = 10
+		defaultHandler.metrics.CurrentQueueSize = 5
+		defaultHandler.metrics.TotalMessagesRecovered = 2
+		defaultHandler.metrics.AverageRecoveryTime = 200 * time.Millisecond
+
+		// Call updateMetricsRecovered
+		defaultHandler.updateMetricsRecovered(testMessage, recoveryTime)
+
+		// Verify metrics were updated
+		updatedMetrics := handler.GetDLQMetrics()
+		assert.Equal(t, int64(3), updatedMetrics.TotalMessagesRecovered)
+		assert.Equal(t, int64(4), updatedMetrics.CurrentQueueSize)
+		assert.True(t, updatedMetrics.AverageRecoveryTime > 0)
+		assert.True(t, updatedMetrics.RecoverySuccessRate > 0)
+		assert.NotNil(t, updatedMetrics.LastRecoveryAt)
+	})
+}
+
+func TestDLQHandlerEdgeCases(t *testing.T) {
+	config := &DeadLetterConfig{
+		Enabled: true,
+		Topic:   "test-dlq",
+	}
+	publisher := NewMockEventPublisher()
+
+	handler, err := NewDeadLetterQueueHandler(config, publisher)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = handler.Start(ctx)
+	require.NoError(t, err)
+	defer handler.Stop(ctx)
+
+	// Cast to access internal methods
+	defaultHandler := handler.(*defaultDeadLetterQueueHandler)
+
+	t.Run("reprocessEvent simulated success", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:        "test-reprocess",
+			ErrorType: ErrorTypeRetryable,
+		}
+
+		start := time.Now()
+		err := defaultHandler.reprocessEvent(ctx, testMessage)
+		duration := time.Since(start)
+
+		assert.NoError(t, err)
+		assert.True(t, duration >= 100*time.Millisecond) // Should simulate processing time
+		assert.True(t, duration < 200*time.Millisecond)  // But not too long
+	})
+
+	t.Run("sendToDeadLetterQueue with nil error", func(t *testing.T) {
+		event := &saga.SagaEvent{
+			ID:     "test-event",
+			SagaID: "test-saga",
+		}
+		handlerCtx := &EventHandlerContext{
+			MessageID: "test-message",
+		}
+
+		err := handler.SendToDeadLetterQueue(ctx, event, handlerCtx, nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "error cannot be nil")
+	})
+
+	t.Run("sendToDeadLetterQueue with nil event", func(t *testing.T) {
+		handlerCtx := &EventHandlerContext{
+			MessageID: "test-message",
+		}
+		testError := errors.New("test error")
+
+		err := handler.SendToDeadLetterQueue(ctx, nil, handlerCtx, testError)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidEvent))
+	})
+
+	t.Run("sendToDeadLetterQueue with nil context", func(t *testing.T) {
+		event := &saga.SagaEvent{
+			ID:     "test-event",
+			SagaID: "test-saga",
+		}
+		testError := errors.New("test error")
+
+		err := handler.SendToDeadLetterQueue(ctx, event, nil, testError)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidContext))
+	})
+
+	t.Run("recoverFromDeadLetterQueue with nil message", func(t *testing.T) {
+		err := handler.RecoverFromDeadLetterQueue(ctx, nil)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidEvent))
+	})
+
+	t.Run("recoverFromDeadLetterQueue with non-retryable message", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:        "test-non-retryable",
+			ErrorType: ErrorTypePermanent,
+		}
+
+		err := handler.RecoverFromDeadLetterQueue(ctx, testMessage)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "message should not be retried")
+	})
+
+	t.Run("recoverFromDeadLetterQueue with expired message", func(t *testing.T) {
+		pastTime := time.Now().Add(-1 * time.Hour)
+		testMessage := &DLQMessage{
+			ID:               "test-expired",
+			ErrorType:        ErrorTypeRetryable,
+			ExpiresAt:        &pastTime,
+			RecoveryAttempts: 0, // Should be retryable based on attempts
+			RetryCount:       1,
+			MaxRetries:       3,
+		}
+
+		err := handler.RecoverFromDeadLetterQueue(ctx, testMessage)
+		assert.Error(t, err)
+		// The error might be either expired or retry policy based on implementation order
+		assert.True(t,
+			strings.Contains(err.Error(), "message has expired") ||
+				strings.Contains(err.Error(), "message should not be retried"),
+			"Error should mention expiration or retry policy, got: %s", err.Error())
+	})
+}
+
+func TestDLQRecoveryScenarios(t *testing.T) {
+	config := &DeadLetterConfig{
+		Enabled: true,
+		Topic:   "test-dlq",
+	}
+	publisher := NewMockEventPublisher()
+
+	handler, err := NewDeadLetterQueueHandler(config, publisher)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = handler.Start(ctx)
+	require.NoError(t, err)
+	defer handler.Stop(ctx)
+
+	t.Run("recovery with max attempts exceeded", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:               "test-max-attempts-exceeded",
+			ErrorType:        ErrorTypeRetryable,
+			RecoveryAttempts: 5, // Max attempts for default policy
+			RetryCount:       2,
+			MaxRetries:       3,
+		}
+
+		err := handler.RecoverFromDeadLetterQueue(ctx, testMessage)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "message should not be retried")
+	})
+
+	t.Run("recovery with nil expiration time", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:               "test-no-expiration",
+			ErrorType:        ErrorTypeRetryable,
+			ExpiresAt:        nil,
+			RecoveryAttempts: 1,
+			RetryCount:       1,
+			MaxRetries:       3,
+		}
+
+		// Should not panic and should attempt recovery
+		err := handler.RecoverFromDeadLetterQueue(ctx, testMessage)
+		// May succeed or fail based on retry policy, but shouldn't panic
+		if err != nil {
+			assert.NotEmpty(t, err.Error())
+		}
+	})
+
+	t.Run("recovery with custom retry policy", func(t *testing.T) {
+		// Create a new handler with custom retry policy
+		customPolicy := &MockDLQRetryPolicy{
+			maxRecoveryAttempts: 1,
+			shouldRetryFunc: func(msg *DLQMessage) bool {
+				return msg.RecoveryAttempts < 1
+			},
+			getRetryDelayFunc: func(msg *DLQMessage) time.Duration {
+				return 50 * time.Millisecond
+			},
+		}
+
+		customHandler, err := NewDeadLetterQueueHandler(
+			config,
+			publisher,
+			WithDLQRetryPolicy(customPolicy),
+		)
+		require.NoError(t, err)
+
+		err = customHandler.Start(ctx)
+		require.NoError(t, err)
+		defer customHandler.Stop(ctx)
+
+		testMessage := &DLQMessage{
+			ID:               "test-custom-policy",
+			ErrorType:        ErrorTypeRetryable,
+			RecoveryAttempts: 0,
+			RetryCount:       1,
+			MaxRetries:       3,
+		}
+
+		// First recovery should succeed
+		err = customHandler.RecoverFromDeadLetterQueue(ctx, testMessage)
+		assert.NoError(t, err)
+
+		// Second recovery should fail due to custom policy
+		testMessage.RecoveryAttempts = 1
+		err = customHandler.RecoverFromDeadLetterQueue(ctx, testMessage)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "message should not be retried")
+	})
+}
+
+func TestDLQHandlerLifecycleEdgeCases(t *testing.T) {
+	config := &DeadLetterConfig{
+		Enabled: true,
+		Topic:   "test-dlq",
+	}
+	publisher := NewMockEventPublisher()
+
+	handler, err := NewDeadLetterQueueHandler(config, publisher)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	event := &saga.SagaEvent{
+		ID:     "test-event",
+		SagaID: "test-saga",
+	}
+	handlerCtx := &EventHandlerContext{
+		MessageID: "test-message",
+	}
+	testError := errors.New("test error")
+
+	t.Run("operations before start", func(t *testing.T) {
+		// Should fail operations before start
+		err := handler.SendToDeadLetterQueue(ctx, event, handlerCtx, testError)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrHandlerNotInitialized))
+
+		err = handler.HealthCheck(ctx)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrHandlerNotInitialized))
+	})
+
+	t.Run("start handler", func(t *testing.T) {
+		err = handler.Start(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("operations after stop", func(t *testing.T) {
+		// Stop the handler
+		err = handler.Stop(ctx)
+		assert.NoError(t, err)
+
+		// Should fail operations after stop
+		err = handler.SendToDeadLetterQueue(ctx, event, handlerCtx, testError)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrHandlerShutdown))
+
+		err = handler.HealthCheck(ctx)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrHandlerShutdown))
+	})
+
+	t.Run("double start", func(t *testing.T) {
+		// Create new handler for double start test
+		newHandler, err := NewDeadLetterQueueHandler(config, publisher)
+		require.NoError(t, err)
+
+		err = newHandler.Start(ctx)
+		assert.NoError(t, err)
+
+		// Second start should fail
+		err = newHandler.Start(ctx)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrHandlerAlreadyInitialized))
+
+		newHandler.Stop(ctx)
+	})
+
+	t.Run("double stop", func(t *testing.T) {
+		// Create new handler for double stop test
+		newHandler, err := NewDeadLetterQueueHandler(config, publisher)
+		require.NoError(t, err)
+
+		err = newHandler.Start(ctx)
+		assert.NoError(t, err)
+
+		err = newHandler.Stop(ctx)
+		assert.NoError(t, err)
+
+		// Second stop should fail
+		err = newHandler.Stop(ctx)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrHandlerShutdown))
+	})
 }

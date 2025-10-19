@@ -631,4 +631,3 @@ func (f *CompositeFilter) GetPriority() int {
 func (f *CompositeFilter) SetPriority(priority int) {
 	f.priority = priority
 }
-
