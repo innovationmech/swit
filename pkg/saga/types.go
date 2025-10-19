@@ -223,6 +223,9 @@ const (
 
 	// State change events
 	EventStateChanged SagaEventType = "state.changed"
+
+	// Dead-letter events
+	EventDeadLettered SagaEventType = "dead.lettered"
 )
 
 // SagaInstanceData represents the complete data structure for a Saga instance.

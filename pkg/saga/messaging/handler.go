@@ -612,6 +612,9 @@ type defaultSagaEventHandler struct {
 	// eventPublisher publishes events (e.g., for DLQ).
 	eventPublisher saga.EventPublisher
 
+	// dlqHandler handles dead-letter queue operations.
+	dlqHandler DeadLetterQueueHandler
+
 	// metrics tracks handler performance metrics.
 	metrics *HandlerMetrics
 
@@ -715,6 +718,17 @@ func WithEventPublisher(publisher saga.EventPublisher) HandlerOption {
 			return ErrInvalidContext
 		}
 		h.eventPublisher = publisher
+		return nil
+	}
+}
+
+// WithDLQHandler sets the dead-letter queue handler for the handler.
+func WithDLQHandler(dlqHandler DeadLetterQueueHandler) HandlerOption {
+	return func(h *defaultSagaEventHandler) error {
+		if dlqHandler == nil {
+			return ErrInvalidContext
+		}
+		h.dlqHandler = dlqHandler
 		return nil
 	}
 }
@@ -1253,14 +1267,36 @@ func (h *defaultSagaEventHandler) handleFailureAction(ctx context.Context, event
 
 // sendToDeadLetterQueue sends a failed event to the dead-letter queue.
 func (h *defaultSagaEventHandler) sendToDeadLetterQueue(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext, err error) error {
+	// Use DLQ handler if available
+	if h.dlqHandler != nil {
+		return h.dlqHandler.SendToDeadLetterQueue(ctx, event, handlerCtx, err)
+	}
+
+	// Fallback to simple event publisher if DLQ handler is not configured
 	if h.eventPublisher == nil {
 		return ErrDeadLetterPublishFailed
 	}
 
-	// In a full implementation, this would construct a proper DLQ message
-	// and publish it using the event publisher
-	// For now, we just return success
-	return nil
+	// Create a simple DLQ event for backward compatibility
+	dlqEvent := &saga.SagaEvent{
+		ID:        fmt.Sprintf("dlq_%s_%d", event.ID, time.Now().UnixNano()),
+		SagaID:    event.SagaID,
+		Type:      saga.EventDeadLettered,
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"original_event_id": event.ID,
+			"original_event":    event,
+			"error":             err.Error(),
+			"handler_context":   handlerCtx,
+		},
+		Metadata: map[string]interface{}{
+			"failure_reason": "handler_processing_failed",
+			"retry_count":    handlerCtx.RetryCount,
+		},
+	}
+
+	// Publish the DLQ event
+	return h.eventPublisher.PublishEvent(ctx, dlqEvent)
 }
 
 // updateMetrics updates handler metrics based on event processing results.
