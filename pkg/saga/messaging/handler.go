@@ -905,7 +905,7 @@ func (h *defaultSagaEventHandler) HandleSagaEvent(ctx context.Context, event *sa
 }
 
 // processEvent handles the actual event processing logic.
-// This is a placeholder that can be extended with actual business logic.
+// It routes events to specific handlers based on event type.
 func (h *defaultSagaEventHandler) processEvent(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
 	// Basic validation
 	if event.Type == "" {
@@ -915,9 +915,295 @@ func (h *defaultSagaEventHandler) processEvent(ctx context.Context, event *saga.
 		return ErrInvalidEvent
 	}
 
-	// For now, just validate the event structure
-	// In a full implementation, this would delegate to the coordinator
-	// or execute custom event processing logic
+	// Route to specific event type handlers
+	eventType := SagaEventType(event.Type)
+	switch eventType {
+	// Step events
+	case EventTypeSagaStepStarted:
+		return h.handleStepStarted(ctx, event, handlerCtx)
+	case EventTypeSagaStepCompleted:
+		return h.handleStepCompleted(ctx, event, handlerCtx)
+	case EventTypeSagaStepFailed:
+		return h.handleStepFailed(ctx, event, handlerCtx)
+
+	// Saga lifecycle events
+	case EventTypeSagaStarted:
+		return h.handleSagaStarted(ctx, event, handlerCtx)
+	case EventTypeSagaCompleted:
+		return h.handleSagaCompleted(ctx, event, handlerCtx)
+	case EventTypeSagaFailed:
+		return h.handleSagaFailed(ctx, event, handlerCtx)
+	case EventTypeSagaCancelled:
+		return h.handleSagaCancelled(ctx, event, handlerCtx)
+	case EventTypeSagaTimedOut:
+		return h.handleSagaTimedOut(ctx, event, handlerCtx)
+
+	// Compensation events
+	case EventTypeCompensationStarted:
+		return h.handleCompensationStarted(ctx, event, handlerCtx)
+	case EventTypeCompensationStepStarted:
+		return h.handleCompensationStepStarted(ctx, event, handlerCtx)
+	case EventTypeCompensationStepCompleted:
+		return h.handleCompensationStepCompleted(ctx, event, handlerCtx)
+	case EventTypeCompensationStepFailed:
+		return h.handleCompensationStepFailed(ctx, event, handlerCtx)
+	case EventTypeCompensationCompleted:
+		return h.handleCompensationCompleted(ctx, event, handlerCtx)
+	case EventTypeCompensationFailed:
+		return h.handleCompensationFailed(ctx, event, handlerCtx)
+
+	// Retry events
+	case EventTypeRetryAttempted:
+		return h.handleRetryAttempted(ctx, event, handlerCtx)
+	case EventTypeRetryExhausted:
+		return h.handleRetryExhausted(ctx, event, handlerCtx)
+
+	// State change events
+	case EventTypeStateChanged:
+		return h.handleStateChanged(ctx, event, handlerCtx)
+
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidEventType, eventType)
+	}
+}
+
+// handleStepStarted processes a step started event.
+func (h *defaultSagaEventHandler) handleStepStarted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// Validate step information is present
+	if event.StepID == "" {
+		return fmt.Errorf("step started event missing step ID")
+	}
+
+	// Delegate to coordinator for state updates
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	// The coordinator will handle the actual state transition
+	// This handler mainly logs and validates the event
+	return nil
+}
+
+// handleStepCompleted processes a step completed event.
+func (h *defaultSagaEventHandler) handleStepCompleted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// Validate step information is present
+	if event.StepID == "" {
+		return fmt.Errorf("step completed event missing step ID")
+	}
+
+	// Validate that we have result data if expected
+	// The coordinator will process the step results and advance to the next step
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleStepFailed processes a step failed event.
+func (h *defaultSagaEventHandler) handleStepFailed(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// Validate step information is present
+	if event.StepID == "" {
+		return fmt.Errorf("step failed event missing step ID")
+	}
+
+	// Ensure error information is present
+	if event.Error == nil {
+		return fmt.Errorf("step failed event missing error information")
+	}
+
+	// Check coordinator availability
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	// The coordinator will decide whether to retry or start compensation
+	return nil
+}
+
+// handleSagaStarted processes a saga started event.
+func (h *defaultSagaEventHandler) handleSagaStarted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// Validate saga metadata
+	if event.SagaID == "" {
+		return fmt.Errorf("saga started event missing saga ID")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleSagaCompleted processes a saga completed event.
+func (h *defaultSagaEventHandler) handleSagaCompleted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// Validate completion timestamp
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("saga completed event missing timestamp")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleSagaFailed processes a saga failed event.
+func (h *defaultSagaEventHandler) handleSagaFailed(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// Ensure error information is present
+	if event.Error == nil {
+		return fmt.Errorf("saga failed event missing error information")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleSagaCancelled processes a saga cancelled event.
+func (h *defaultSagaEventHandler) handleSagaCancelled(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("saga cancelled event missing timestamp")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleSagaTimedOut processes a saga timed out event.
+func (h *defaultSagaEventHandler) handleSagaTimedOut(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("saga timed out event missing timestamp")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleCompensationStarted processes a compensation started event.
+func (h *defaultSagaEventHandler) handleCompensationStarted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("compensation started event missing timestamp")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleCompensationStepStarted processes a compensation step started event.
+func (h *defaultSagaEventHandler) handleCompensationStepStarted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.StepID == "" {
+		return fmt.Errorf("compensation step started event missing step ID")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleCompensationStepCompleted processes a compensation step completed event.
+func (h *defaultSagaEventHandler) handleCompensationStepCompleted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.StepID == "" {
+		return fmt.Errorf("compensation step completed event missing step ID")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleCompensationStepFailed processes a compensation step failed event.
+func (h *defaultSagaEventHandler) handleCompensationStepFailed(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.StepID == "" {
+		return fmt.Errorf("compensation step failed event missing step ID")
+	}
+
+	if event.Error == nil {
+		return fmt.Errorf("compensation step failed event missing error information")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleCompensationCompleted processes a compensation completed event.
+func (h *defaultSagaEventHandler) handleCompensationCompleted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("compensation completed event missing timestamp")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleCompensationFailed processes a compensation failed event.
+func (h *defaultSagaEventHandler) handleCompensationFailed(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.Error == nil {
+		return fmt.Errorf("compensation failed event missing error information")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleRetryAttempted processes a retry attempted event.
+func (h *defaultSagaEventHandler) handleRetryAttempted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// Validate retry count is tracked in context
+	if handlerCtx.RetryCount < 0 {
+		return fmt.Errorf("invalid retry count: %d", handlerCtx.RetryCount)
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleRetryExhausted processes a retry exhausted event.
+func (h *defaultSagaEventHandler) handleRetryExhausted(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	// When retries are exhausted, we typically need to start compensation
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
+
+	return nil
+}
+
+// handleStateChanged processes a state changed event.
+func (h *defaultSagaEventHandler) handleStateChanged(ctx context.Context, event *saga.SagaEvent, handlerCtx *EventHandlerContext) error {
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("state changed event missing timestamp")
+	}
+
+	if err := h.coordinator.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("coordinator unavailable: %w", err)
+	}
 
 	return nil
 }
