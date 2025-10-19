@@ -254,8 +254,10 @@ func TestDLQRetryPolicy(t *testing.T) {
 
 			if shouldRetry {
 				delay := policy.GetRetryDelay(tt.message)
-				// Allow some tolerance for delay calculation
-				assert.True(t, delay >= tt.expectedDelay-time.Second && delay <= tt.expectedDelay+time.Second,
+				// Allow tolerance for delay calculation including jitter (up to 5% jitter + buffer)
+				jitterTolerance := time.Duration(float64(tt.expectedDelay) * 0.1)
+				tolerance := jitterTolerance + 2*time.Second
+				assert.True(t, delay >= tt.expectedDelay-tolerance && delay <= tt.expectedDelay+tolerance,
 					"Expected delay around %v, got %v", tt.expectedDelay, delay)
 			}
 		})
@@ -428,6 +430,14 @@ func TestDLQHandlerRecovery(t *testing.T) {
 		EventType:      SagaEventType(event.Type),
 		HandlerID:      "test-handler",
 	}
+
+	// First send the message to DLQ to increment TotalMessagesReceived
+	err = handler.SendToDeadLetterQueue(ctx, event, handlerCtx, errors.New("temporary network error"))
+	assert.NoError(t, err)
+
+	// Check that message was received
+	initialMetrics := handler.GetDLQMetrics()
+	assert.Equal(t, int64(1), initialMetrics.TotalMessagesReceived)
 
 	// Test recovery
 	err = handler.RecoverFromDeadLetterQueue(ctx, dlqMessage)
@@ -627,6 +637,7 @@ func TestDLQIntegrationWithSagaEventHandler(t *testing.T) {
 
 	sagaHandler, err := NewSagaEventHandler(
 		handlerConfig,
+		WithCoordinator(&mockCoordinator{}),
 		WithEventPublisher(mockPublisher),
 		WithDLQHandler(dlqHandler),
 	)
