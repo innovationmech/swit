@@ -31,7 +31,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	pbsaga "github.com/innovationmech/swit/api/gen/go/proto/swit/saga/v1"
+	sagav1 "github.com/innovationmech/swit/api/gen/go/proto/swit/saga/v1"
 )
 
 // SagaEventSerializer defines the interface for serializing Saga events.
@@ -369,7 +369,7 @@ func (s *ProtobufSagaEventSerializer) Deserialize(ctx context.Context, data []by
 	}
 
 	// Unmarshal protobuf message
-	pbEvent := &pbsaga.SagaEvent{}
+	pbEvent := &sagav1.SagaEvent{}
 	if err := proto.Unmarshal(data, pbEvent); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal protobuf saga event: %w", err)
 	}
@@ -421,8 +421,8 @@ func (s *ProtobufSagaEventSerializer) Validate(ctx context.Context, event *saga.
 }
 
 // toProtobufEvent converts a saga.SagaEvent to a protobuf SagaEvent message.
-func (s *ProtobufSagaEventSerializer) toProtobufEvent(event *saga.SagaEvent) *pbsaga.SagaEvent {
-	pbEvent := &pbsaga.SagaEvent{
+func (s *ProtobufSagaEventSerializer) toProtobufEvent(event *saga.SagaEvent) *sagav1.SagaEvent {
+	pbEvent := &sagav1.SagaEvent{
 		Id:            event.ID,
 		SagaId:        event.SagaID,
 		StepId:        event.StepID,
@@ -447,7 +447,7 @@ func (s *ProtobufSagaEventSerializer) toProtobufEvent(event *saga.SagaEvent) *pb
 
 	// Convert error if present
 	if event.Error != nil {
-		pbEvent.Error = &pbsaga.SagaError{
+		pbEvent.Error = &sagav1.SagaError{
 			Code:      event.Error.Code,
 			Message:   event.Error.Message,
 			Retryable: event.Error.Retryable,
@@ -496,7 +496,7 @@ func (s *ProtobufSagaEventSerializer) toProtobufEvent(event *saga.SagaEvent) *pb
 }
 
 // fromProtobufEvent converts a protobuf SagaEvent message to a saga.SagaEvent.
-func (s *ProtobufSagaEventSerializer) fromProtobufEvent(pbEvent *pbsaga.SagaEvent) *saga.SagaEvent {
+func (s *ProtobufSagaEventSerializer) fromProtobufEvent(pbEvent *sagav1.SagaEvent) *saga.SagaEvent {
 	event := &saga.SagaEvent{
 		ID:             pbEvent.Id,
 		SagaID:         pbEvent.SagaId,

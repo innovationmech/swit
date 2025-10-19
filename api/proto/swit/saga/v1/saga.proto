@@ -4,7 +4,7 @@ package swit.saga.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/innovationmech/swit/api/gen/go/swit/saga;saga";
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/saga/v1;sagav1";
 
 // SagaEvent represents an event that occurs during Saga execution.
 message SagaEvent {
