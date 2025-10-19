@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package swit.saga.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/innovationmech/swit/api/gen/go/proto/swit/saga/v1;sagav1";
+
+// SagaEvent represents an event that occurs during Saga execution.
+message SagaEvent {
+  // Unique identifier for the event.
+  string id = 1;
+  // Unique identifier for the Saga instance.
+  string saga_id = 2;
+  // Identifier for the current step in the Saga.
+  string step_id = 3;
+  // Type of the Saga event.
+  string type = 4;
+  // Version of the event schema.
+  string version = 5;
+
+  // Timestamp when the event occurred.
+  google.protobuf.Timestamp timestamp = 6;
+  // Correlation ID for tracking related events.
+  string correlation_id = 7;
+
+  // Event data payload (stored as JSON bytes for flexibility).
+  bytes data = 8;
+  // Previous state before the event (stored as JSON bytes).
+  bytes previous_state = 9;
+  // New state after the event (stored as JSON bytes).
+  bytes new_state = 10;
+
+  // Error information if the event represents a failure.
+  SagaError error = 11;
+
+  // Duration of the operation in nanoseconds.
+  int64 duration = 12;
+  // Current attempt number for retry operations.
+  int32 attempt = 13;
+  // Maximum number of retry attempts allowed.
+  int32 max_attempts = 14;
+
+  // Additional metadata as key-value pairs.
+  map<string, string> metadata = 15;
+
+  // Source of the event.
+  string source = 16;
+  // Service name that generated the event.
+  string service = 17;
+  // Version of the service that generated the event.
+  string service_version = 18;
+
+  // Distributed tracing trace ID.
+  string trace_id = 19;
+  // Distributed tracing span ID.
+  string span_id = 20;
+  // Distributed tracing parent span ID.
+  string parent_span_id = 21;
+}
+
+// SagaError represents error information in a Saga event.
+message SagaError {
+  // Error code for categorization.
+  string code = 1;
+  // Human-readable error message.
+  string message = 2;
+  // Indicates if the operation can be retried.
+  bool retryable = 3;
+  // Additional error details (JSON-encoded).
+  string details = 4;
+}
