@@ -328,6 +328,220 @@ func (p *SagaEventPublisher) GetConfig() *PublisherConfig {
 	return p.config
 }
 
+// PublishSagaEvent publishes a single Saga event to the message broker.
+// This is the public API for publishing Saga events.
+//
+// The method performs the following operations:
+// 1. Validates the event structure
+// 2. Serializes the event to the configured format (JSON or Protobuf)
+// 3. Creates a message with appropriate headers and routing information
+// 4. Publishes the message with retry logic and optional confirmation
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - event: The Saga event to publish
+//
+// Returns:
+//   - error: An error if publishing fails after all retries, nil on success
+//
+// Example usage:
+//
+//	event := &saga.SagaEvent{
+//	    ID:        "event-123",
+//	    SagaID:    "saga-456",
+//	    Type:      saga.EventSagaStarted,
+//	    Timestamp: time.Now(),
+//	    Version:   "1.0",
+//	}
+//	if err := publisher.PublishSagaEvent(ctx, event); err != nil {
+//	    return fmt.Errorf("failed to publish saga event: %w", err)
+//	}
+func (p *SagaEventPublisher) PublishSagaEvent(
+	ctx context.Context,
+	event *saga.SagaEvent,
+) error {
+	if event == nil {
+		return fmt.Errorf("event cannot be nil")
+	}
+
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return fmt.Errorf("publisher is closed")
+	}
+	p.mu.RUnlock()
+
+	// Validate event
+	if err := p.validateEvent(event); err != nil {
+		p.logger.Error("event validation failed",
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.Error(err),
+		)
+		return fmt.Errorf("event validation failed: %w", err)
+	}
+
+	// Serialize event
+	data, err := p.serializer.Serialize(ctx, event)
+	if err != nil {
+		p.logger.Error("event serialization failed",
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.Error(err),
+		)
+		return fmt.Errorf("event serialization failed: %w", err)
+	}
+
+	// Get topic for the event
+	topic := p.getTopicForEvent(event)
+
+	// Create message with headers
+	msg := &messaging.Message{
+		ID:            event.ID,
+		Topic:         topic,
+		Payload:       data,
+		Timestamp:     event.Timestamp,
+		CorrelationID: event.CorrelationID,
+		Headers: map[string]string{
+			"saga_id":      event.SagaID,
+			"event_type":   string(event.Type),
+			"timestamp":    event.Timestamp.Format(time.RFC3339),
+			"version":      event.Version,
+			"content_type": p.serializer.ContentType(),
+		},
+	}
+
+	// Add optional headers
+	if event.StepID != "" {
+		msg.Headers["step_id"] = event.StepID
+	}
+	if event.TraceID != "" {
+		msg.Headers["trace_id"] = event.TraceID
+	}
+	if event.SpanID != "" {
+		msg.Headers["span_id"] = event.SpanID
+	}
+	if event.Source != "" {
+		msg.Headers["source"] = event.Source
+	}
+	if event.Service != "" {
+		msg.Headers["service"] = event.Service
+	}
+
+	// Track publish start time
+	startTime := time.Now()
+
+	// Publish with retry logic
+	var publishErr error
+	for attempt := 0; attempt <= p.config.RetryAttempts; attempt++ {
+		if attempt > 0 {
+			p.metrics.TotalRetries.Add(1)
+			p.logger.Warn("retrying publish",
+				zap.Int("attempt", attempt),
+				zap.String("event_id", event.ID),
+				zap.String("saga_id", event.SagaID),
+			)
+
+			// Wait before retry with exponential backoff
+			backoffDuration := p.config.RetryInterval * time.Duration(attempt)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoffDuration):
+			}
+		}
+
+		// Attempt to publish
+		if p.config.EnableConfirm {
+			_, publishErr = p.publisher.PublishWithConfirm(ctx, msg)
+		} else {
+			publishErr = p.publisher.Publish(ctx, msg)
+		}
+
+		if publishErr == nil {
+			// Success
+			break
+		}
+
+		p.logger.Warn("publish attempt failed",
+			zap.Int("attempt", attempt),
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.Error(publishErr),
+		)
+	}
+
+	// Update metrics
+	duration := time.Since(startTime)
+	p.metrics.PublishDuration.Store(duration.Nanoseconds())
+	p.metrics.LastPublishedAt.Store(time.Now().UnixNano())
+
+	if publishErr != nil {
+		p.metrics.TotalFailed.Add(1)
+		p.logger.Error("failed to publish event after retries",
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.String("event_type", string(event.Type)),
+			zap.Int("retry_attempts", p.config.RetryAttempts),
+			zap.Error(publishErr),
+		)
+		return fmt.Errorf("failed to publish event after %d retries: %w", p.config.RetryAttempts, publishErr)
+	}
+
+	p.metrics.TotalPublished.Add(1)
+	p.logger.Info("saga event published successfully",
+		zap.String("event_id", event.ID),
+		zap.String("saga_id", event.SagaID),
+		zap.String("event_type", string(event.Type)),
+		zap.String("topic", topic),
+		zap.Duration("duration", duration),
+	)
+
+	return nil
+}
+
+// getTopicForEvent determines the routing topic for a Saga event based on its type.
+// The topic follows the pattern: {prefix}.{event_type}
+//
+// For example, with prefix "saga" and event type "saga.started",
+// the resulting topic would be "saga.saga.started"
+//
+// Parameters:
+//   - event: The Saga event to route
+//
+// Returns:
+//   - string: The topic name for routing the event
+func (p *SagaEventPublisher) getTopicForEvent(event *saga.SagaEvent) string {
+	return fmt.Sprintf("%s.%s", p.config.TopicPrefix, event.Type)
+}
+
+// validateEvent performs validation on a Saga event before publishing.
+// It checks for required fields and ensures the event structure is valid.
+//
+// Parameters:
+//   - event: The Saga event to validate
+//
+// Returns:
+//   - error: An error if validation fails, nil if the event is valid
+func (p *SagaEventPublisher) validateEvent(event *saga.SagaEvent) error {
+	if event.ID == "" {
+		return fmt.Errorf("event ID is required")
+	}
+	if event.SagaID == "" {
+		return fmt.Errorf("saga ID is required")
+	}
+	if event.Type == "" {
+		return fmt.Errorf("event type is required")
+	}
+	if event.Version == "" {
+		return fmt.Errorf("event version is required")
+	}
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("event timestamp is required")
+	}
+	return nil
+}
+
 // publish is an internal helper that publishes an event with retry logic.
 func (p *SagaEventPublisher) publish(ctx context.Context, event *saga.SagaEvent) error {
 	p.mu.RLock()
