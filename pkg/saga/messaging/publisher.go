@@ -130,9 +130,8 @@ func (c *PublisherConfig) SetDefaults() {
 	if c.Reliability == nil {
 		c.Reliability = &ReliabilityConfig{}
 	}
-	c.Reliability.SetDefaults()
 
-	// Sync basic config with reliability config for backward compatibility
+	// Sync basic config with reliability config for backward compatibility BEFORE calling SetDefaults
 	if !c.Reliability.EnableConfirm && c.EnableConfirm {
 		c.Reliability.EnableConfirm = c.EnableConfirm
 	}
@@ -143,6 +142,9 @@ func (c *PublisherConfig) SetDefaults() {
 	if c.Reliability.PublishTimeout == 0 && c.Timeout > 0 {
 		c.Reliability.PublishTimeout = c.Timeout
 	}
+
+	// Now set defaults for any remaining unset fields
+	c.Reliability.SetDefaults()
 }
 
 // PublisherMetrics contains metrics for the saga event publisher.
