@@ -52,9 +52,9 @@ func createTestSagaEvent() *saga.SagaEvent {
 		NewState: map[string]interface{}{
 			"status": "completed",
 		},
-		Duration:       time.Second * 2,
-		Attempt:        1,
-		MaxAttempts:    3,
+		Duration:    time.Second * 2,
+		Attempt:     1,
+		MaxAttempts: 3,
 		Metadata: map[string]interface{}{
 			"user_id": "user-001",
 			"region":  "us-west-1",
@@ -608,12 +608,12 @@ func TestSagaEventSerializer_FormatName(t *testing.T) {
 // TestNewSagaEventSerializer tests the factory function.
 func TestNewSagaEventSerializer(t *testing.T) {
 	tests := []struct {
-		name        string
-		format      string
-		options     *SerializerOptions
-		wantErr     bool
-		errString   string
-		validateFn  func(t *testing.T, serializer SagaEventSerializer)
+		name       string
+		format     string
+		options    *SerializerOptions
+		wantErr    bool
+		errString  string
+		validateFn func(t *testing.T, serializer SagaEventSerializer)
 	}{
 		{
 			name:    "JSON format",
@@ -825,4 +825,3 @@ func TestSagaEventSerializer_Validate(t *testing.T) {
 		}
 	}
 }
-

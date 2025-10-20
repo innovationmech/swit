@@ -299,6 +299,7 @@ func (p *SagaEventPublisher) Close() error {
 	// Close the underlying publisher
 	if err := p.publisher.Close(); err != nil {
 		p.logger.Error("failed to close underlying publisher", zap.Error(err))
+		p.closed = true
 		return fmt.Errorf("failed to close publisher: %w", err)
 	}
 
