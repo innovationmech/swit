@@ -421,17 +421,19 @@ func (cc *ChoreographyCoordinator) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	// Unsubscribe from events
-	if cc.subscription != nil {
-		if err := cc.eventPublisher.Unsubscribe(cc.subscription); err != nil {
-			cc.mu.Unlock()
+	// Mark as not running and copy subscription to local variable
+	cc.running = false
+	subscription := cc.subscription
+	cc.subscription = nil
+	cc.mu.Unlock()
+
+	// Unsubscribe from events outside of lock to prevent deadlock
+	// This allows in-flight handlers to acquire read lock and complete
+	if subscription != nil {
+		if err := cc.eventPublisher.Unsubscribe(subscription); err != nil {
 			return fmt.Errorf("failed to unsubscribe: %w", err)
 		}
-		cc.subscription = nil
 	}
-
-	cc.running = false
-	cc.mu.Unlock()
 
 	// Wait for active handlers to complete with timeout
 	done := make(chan struct{})

@@ -879,3 +879,191 @@ func TestConcurrentHandlerExecution(t *testing.T) {
 		t.Errorf("Expected max 2 concurrent handlers, got %d", finalMaxActive)
 	}
 }
+
+// deadlockTestEventPublisher simulates a publisher that waits for in-flight handlers
+// during Unsubscribe to test deadlock scenarios
+type deadlockTestEventPublisher struct {
+	events        []*saga.SagaEvent
+	subscriptions map[string]*deadlockTestSubscription
+	mu            sync.RWMutex
+
+	// Fields to simulate blocking behavior
+	blockingUnsubscribe bool
+	inFlightHandlers    sync.WaitGroup
+}
+
+type deadlockTestSubscription struct {
+	id        string
+	filter    saga.EventFilter
+	handler   saga.EventHandler
+	active    bool
+	publisher *deadlockTestEventPublisher
+}
+
+func (s *deadlockTestSubscription) GetID() string                       { return s.id }
+func (s *deadlockTestSubscription) GetFilter() saga.EventFilter         { return s.filter }
+func (s *deadlockTestSubscription) GetHandler() saga.EventHandler       { return s.handler }
+func (s *deadlockTestSubscription) IsActive() bool                      { return s.active }
+func (s *deadlockTestSubscription) GetCreatedAt() time.Time             { return time.Now() }
+func (s *deadlockTestSubscription) GetMetadata() map[string]interface{} { return nil }
+
+func newDeadlockTestEventPublisher() *deadlockTestEventPublisher {
+	return &deadlockTestEventPublisher{
+		events:        make([]*saga.SagaEvent, 0),
+		subscriptions: make(map[string]*deadlockTestSubscription),
+	}
+}
+
+func (m *deadlockTestEventPublisher) PublishEvent(ctx context.Context, event *saga.SagaEvent) error {
+	m.mu.Lock()
+	m.events = append(m.events, event)
+	m.mu.Unlock()
+
+	// Notify subscribers
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, sub := range m.subscriptions {
+		if sub.active && sub.filter.Match(event) {
+			// Track in-flight handlers
+			m.inFlightHandlers.Add(1)
+			go func(subscription *deadlockTestSubscription) {
+				defer m.inFlightHandlers.Done()
+				_ = subscription.handler.HandleEvent(ctx, event)
+			}(sub)
+		}
+	}
+	return nil
+}
+
+func (m *deadlockTestEventPublisher) Subscribe(filter saga.EventFilter, handler saga.EventHandler) (saga.EventSubscription, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sub := &deadlockTestSubscription{
+		id:        generateChoreographyEventID(),
+		filter:    filter,
+		handler:   handler,
+		active:    true,
+		publisher: m,
+	}
+	m.subscriptions[sub.id] = sub
+	return sub, nil
+}
+
+func (m *deadlockTestEventPublisher) Unsubscribe(subscription saga.EventSubscription) error {
+	if m.blockingUnsubscribe {
+		// Wait for all in-flight handlers to complete before unsubscribing
+		// This simulates the common safety pattern that can cause deadlock
+		m.inFlightHandlers.Wait()
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if sub, exists := m.subscriptions[subscription.GetID()]; exists {
+		sub.active = false
+		delete(m.subscriptions, subscription.GetID())
+	}
+	return nil
+}
+
+func (m *deadlockTestEventPublisher) Close() error {
+	return nil
+}
+
+func (m *deadlockTestEventPublisher) GetEvents() []*saga.SagaEvent {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	events := make([]*saga.SagaEvent, len(m.events))
+	copy(events, m.events)
+	return events
+}
+
+// TestStopMethodDeadlockFix tests that the Stop method doesn't deadlock when
+// Unsubscribe waits for in-flight handlers that need to acquire the coordinator lock
+func TestStopMethodDeadlockFix(t *testing.T) {
+	// Create a mock publisher that blocks during unsubscribe
+	publisher := newDeadlockTestEventPublisher()
+	publisher.blockingUnsubscribe = true
+
+	coordinator, err := NewChoreographyCoordinator(&ChoreographyConfig{
+		EventPublisher: publisher,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create coordinator: %v", err)
+	}
+	defer coordinator.Close()
+
+	// Create a handler that simulates work and requires coordinator access
+	handler := &mockChoreographyHandler{
+		id:             "test-handler",
+		supportedTypes: []saga.SagaEventType{saga.EventSagaStarted},
+		priority:       1,
+		handleFunc: func(ctx context.Context, event *saga.SagaEvent) error {
+			// Simulate some processing time
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		},
+	}
+
+	// Register the handler
+	err = coordinator.RegisterEventHandler(handler)
+	if err != nil {
+		t.Fatalf("Failed to register handler: %v", err)
+	}
+
+	// Start the coordinator
+	ctx := context.Background()
+	err = coordinator.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start coordinator: %v", err)
+	}
+
+	// Publish an event that will trigger the handler
+	event := &saga.SagaEvent{
+		SagaID:    "test-saga",
+		Type:      saga.EventSagaStarted,
+		Timestamp: time.Now(),
+	}
+
+	// Publish the event in a goroutine
+	publishDone := make(chan error, 1)
+	go func() {
+		publishDone <- coordinator.PublishEvent(ctx, event)
+	}()
+
+	// Give the handler time to start executing
+	time.Sleep(10 * time.Millisecond)
+
+	// Try to stop the coordinator - this should not deadlock
+	// The deadlock would occur if Stop holds the lock while calling Unsubscribe
+	// and Unsubscribe waits for the handler which needs the lock
+	stopDone := make(chan error, 1)
+	go func() {
+		stopDone <- coordinator.Stop(ctx)
+	}()
+
+	// Wait for both operations to complete with a reasonable timeout
+	select {
+	case err := <-publishDone:
+		if err != nil {
+			t.Errorf("PublishEvent failed: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("PublishEvent timed out - possible deadlock")
+	}
+
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			t.Errorf("Stop failed: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Stop timed out - deadlock detected!")
+	}
+
+	// Verify the coordinator is stopped
+	if coordinator.IsRunning() {
+		t.Error("Expected coordinator to be stopped")
+	}
+}
