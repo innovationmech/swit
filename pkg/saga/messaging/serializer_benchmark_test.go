@@ -197,4 +197,3 @@ func BenchmarkProtobufSagaEventSerializer_Parallel(b *testing.B) {
 		}
 	})
 }
-

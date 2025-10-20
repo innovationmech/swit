@@ -289,8 +289,8 @@ func (s *JSONSagaEventSerializer) validateVersion(version string) error {
 
 // jsonEventWrapper wraps a SagaEvent with version information for forward/backward compatibility.
 type jsonEventWrapper struct {
-	Version string           `json:"version"`
-	Event   *saga.SagaEvent  `json:"event"`
+	Version string          `json:"version"`
+	Event   *saga.SagaEvent `json:"event"`
 }
 
 // ProtobufSagaEventSerializer implements SagaEventSerializer using Protocol Buffers format.
@@ -423,21 +423,21 @@ func (s *ProtobufSagaEventSerializer) Validate(ctx context.Context, event *saga.
 // toProtobufEvent converts a saga.SagaEvent to a protobuf SagaEvent message.
 func (s *ProtobufSagaEventSerializer) toProtobufEvent(event *saga.SagaEvent) *sagav1.SagaEvent {
 	pbEvent := &sagav1.SagaEvent{
-		Id:            event.ID,
-		SagaId:        event.SagaID,
-		StepId:        event.StepID,
-		Type:          string(event.Type),
-		Version:       event.Version,
-		Timestamp:     timestamppb.New(event.Timestamp),
-		CorrelationId: event.CorrelationID,
-		Source:        event.Source,
-		Service:       event.Service,
+		Id:             event.ID,
+		SagaId:         event.SagaID,
+		StepId:         event.StepID,
+		Type:           string(event.Type),
+		Version:        event.Version,
+		Timestamp:      timestamppb.New(event.Timestamp),
+		CorrelationId:  event.CorrelationID,
+		Source:         event.Source,
+		Service:        event.Service,
 		ServiceVersion: event.ServiceVersion,
-		TraceId:       event.TraceID,
-		SpanId:        event.SpanID,
-		ParentSpanId:  event.ParentSpanID,
-		Attempt:       int32(event.Attempt),
-		MaxAttempts:   int32(event.MaxAttempts),
+		TraceId:        event.TraceID,
+		SpanId:         event.SpanID,
+		ParentSpanId:   event.ParentSpanID,
+		Attempt:        int32(event.Attempt),
+		MaxAttempts:    int32(event.MaxAttempts),
 	}
 
 	// Convert duration
@@ -616,4 +616,3 @@ func NewSagaEventSerializer(format string, options *SerializerOptions) (SagaEven
 		return nil, fmt.Errorf("unsupported serialization format: %s", format)
 	}
 }
-
