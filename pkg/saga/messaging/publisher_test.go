@@ -94,7 +94,16 @@ func (m *mockPublisher) Publish(ctx context.Context, message *messaging.Message)
 }
 
 func (m *mockPublisher) PublishBatch(ctx context.Context, messages []*messaging.Message) error {
-	return errors.New("not implemented")
+	if m.publishFunc != nil {
+		// Simulate batch publish by calling publishFunc for each message
+		for _, msg := range messages {
+			if err := m.publishFunc(ctx, msg); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return nil
 }
 
 func (m *mockPublisher) PublishWithConfirm(ctx context.Context, message *messaging.Message) (*messaging.PublishConfirmation, error) {
@@ -1297,6 +1306,622 @@ func TestSagaEventPublisher_PublishSagaEventMetrics(t *testing.T) {
 	// Verify metrics
 	metrics := publisher.GetMetrics()
 	assert.Equal(t, int64(5), metrics.TotalPublished.Load())
+	assert.Equal(t, int64(0), metrics.TotalFailed.Load())
+	assert.Greater(t, metrics.LastPublishedAt.Load(), int64(0))
+	assert.Greater(t, metrics.PublishDuration.Load(), int64(0))
+}
+
+func TestSagaEventPublisher_PublishBatch(t *testing.T) {
+	logger.InitLogger()
+
+	tests := []struct {
+		name      string
+		events    []*saga.SagaEvent
+		setupMock func() *mockMessageBroker
+		config    *PublisherConfig
+		wantErr   bool
+		errMsg    string
+		validate  func(t *testing.T, messages []*messaging.Message)
+	}{
+		{
+			name: "successful batch publish",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-1",
+					SagaID:    "saga-batch",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				{
+					ID:        "event-2",
+					SagaID:    "saga-batch",
+					Type:      saga.EventSagaStepCompleted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				{
+					ID:        "event-3",
+					SagaID:    "saga-batch",
+					Type:      saga.EventSagaCompleted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				mockPub := &mockPublisher{
+					publishFunc: func(ctx context.Context, message *messaging.Message) error {
+						return nil
+					},
+				}
+				return &mockMessageBroker{
+					publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+						return mockPub, nil
+					},
+				}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				TopicPrefix:     "saga",
+				EnableConfirm:   false,
+				RetryAttempts:   3,
+				RetryInterval:   10 * time.Millisecond,
+				Timeout:         30 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name:   "empty batch",
+			events: []*saga.SagaEvent{},
+			setupMock: func() *mockMessageBroker {
+				return &mockMessageBroker{}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				Timeout:         30 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name: "nil event in batch",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-1",
+					SagaID:    "saga-batch",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				nil,
+				{
+					ID:        "event-3",
+					SagaID:    "saga-batch",
+					Type:      saga.EventSagaCompleted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				return &mockMessageBroker{}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				Timeout:         30 * time.Second,
+			},
+			wantErr: true,
+			errMsg:  "event 1 is nil",
+		},
+		{
+			name: "invalid event in batch",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-1",
+					SagaID:    "saga-batch",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				{
+					ID:        "event-2",
+					SagaID:    "", // Missing saga ID
+					Type:      saga.EventSagaStepCompleted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				return &mockMessageBroker{}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				Timeout:         30 * time.Second,
+			},
+			wantErr: true,
+			errMsg:  "event 1 validation failed",
+		},
+		{
+			name: "batch publish with retry success",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-retry-1",
+					SagaID:    "saga-retry",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				{
+					ID:        "event-retry-2",
+					SagaID:    "saga-retry",
+					Type:      saga.EventSagaStepCompleted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				callCount := 0
+				mockPub := &mockPublisher{
+					publishFunc: func(ctx context.Context, message *messaging.Message) error {
+						callCount++
+						if callCount <= 2 { // Fail first batch attempt
+							return errors.New("temporary failure")
+						}
+						return nil
+					},
+				}
+				return &mockMessageBroker{
+					publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+						return mockPub, nil
+					},
+				}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				TopicPrefix:     "saga",
+				EnableConfirm:   false,
+				RetryAttempts:   3,
+				RetryInterval:   10 * time.Millisecond,
+				Timeout:         30 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name: "batch publish fails after all retries",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-fail-1",
+					SagaID:    "saga-fail",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				mockPub := &mockPublisher{
+					publishFunc: func(ctx context.Context, message *messaging.Message) error {
+						return errors.New("permanent failure")
+					},
+				}
+				return &mockMessageBroker{
+					publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+						return mockPub, nil
+					},
+				}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				TopicPrefix:     "saga",
+				EnableConfirm:   false,
+				RetryAttempts:   2,
+				RetryInterval:   10 * time.Millisecond,
+				Timeout:         30 * time.Second,
+			},
+			wantErr: true,
+			errMsg:  "failed to publish batch after 2 retries",
+		},
+		{
+			name: "large batch publish",
+			events: func() []*saga.SagaEvent {
+				events := make([]*saga.SagaEvent, 100)
+				for i := 0; i < 100; i++ {
+					events[i] = &saga.SagaEvent{
+						ID:        fmt.Sprintf("event-%d", i),
+						SagaID:    "saga-large-batch",
+						Type:      saga.EventSagaStarted,
+						Version:   "1.0",
+						Timestamp: time.Now(),
+					}
+				}
+				return events
+			}(),
+			setupMock: func() *mockMessageBroker {
+				mockPub := &mockPublisher{
+					publishFunc: func(ctx context.Context, message *messaging.Message) error {
+						return nil
+					},
+				}
+				return &mockMessageBroker{
+					publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+						return mockPub, nil
+					},
+				}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				TopicPrefix:     "saga",
+				EnableConfirm:   false,
+				RetryAttempts:   3,
+				RetryInterval:   10 * time.Millisecond,
+				Timeout:         30 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name: "batch with full event metadata",
+			events: []*saga.SagaEvent{
+				{
+					ID:            "event-meta-1",
+					SagaID:        "saga-meta",
+					StepID:        "step-1",
+					Type:          saga.EventSagaStarted,
+					Version:       "1.0",
+					Timestamp:     time.Now(),
+					CorrelationID: "corr-123",
+					TraceID:       "trace-456",
+					SpanID:        "span-789",
+					Source:        "test-service",
+					Service:       "order-service",
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				mockPub := &mockPublisher{
+					publishFunc: func(ctx context.Context, message *messaging.Message) error {
+						return nil
+					},
+				}
+				return &mockMessageBroker{
+					publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+						return mockPub, nil
+					},
+				}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				TopicPrefix:     "saga",
+				EnableConfirm:   false,
+				RetryAttempts:   3,
+				RetryInterval:   10 * time.Millisecond,
+				Timeout:         30 * time.Second,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			broker := tt.setupMock()
+			publisher, err := NewSagaEventPublisher(broker, tt.config)
+			require.NoError(t, err)
+			defer publisher.Close()
+
+			ctx := context.Background()
+			err = publisher.PublishBatch(ctx, tt.events)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+
+				// Verify metrics for successful publishes
+				if len(tt.events) > 0 {
+					metrics := publisher.GetMetrics()
+					assert.Equal(t, int64(len(tt.events)), metrics.TotalPublished.Load())
+				}
+			}
+		})
+	}
+}
+
+func TestSagaEventPublisher_PublishBatchWhenClosed(t *testing.T) {
+	logger.InitLogger()
+
+	broker := &mockMessageBroker{}
+	config := &PublisherConfig{
+		BrokerType:      "nats",
+		BrokerEndpoints: []string{"nats://localhost:4222"},
+		SerializerType:  "json",
+		Timeout:         30 * time.Second,
+	}
+
+	publisher, err := NewSagaEventPublisher(broker, config)
+	require.NoError(t, err)
+
+	// Close the publisher
+	err = publisher.Close()
+	require.NoError(t, err)
+
+	// Try to publish batch after closing
+	events := []*saga.SagaEvent{
+		{
+			ID:        "event-1",
+			SagaID:    "saga-456",
+			Type:      saga.EventSagaStarted,
+			Version:   "1.0",
+			Timestamp: time.Now(),
+		},
+	}
+
+	ctx := context.Background()
+	err = publisher.PublishBatch(ctx, events)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "publisher is closed")
+}
+
+func TestSagaEventPublisher_PublishBatchAsync(t *testing.T) {
+	logger.InitLogger()
+
+	tests := []struct {
+		name      string
+		events    []*saga.SagaEvent
+		setupMock func() *mockMessageBroker
+		config    *PublisherConfig
+		wantErr   bool
+		errMsg    string
+	}{
+		{
+			name: "successful async batch publish",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-async-1",
+					SagaID:    "saga-async",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				{
+					ID:        "event-async-2",
+					SagaID:    "saga-async",
+					Type:      saga.EventSagaStepCompleted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				mockPub := &mockPublisher{
+					publishFunc: func(ctx context.Context, message *messaging.Message) error {
+						return nil
+					},
+				}
+				return &mockMessageBroker{
+					publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+						return mockPub, nil
+					},
+				}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				TopicPrefix:     "saga",
+				EnableConfirm:   false,
+				RetryAttempts:   3,
+				RetryInterval:   10 * time.Millisecond,
+				Timeout:         30 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name:   "empty async batch",
+			events: []*saga.SagaEvent{},
+			setupMock: func() *mockMessageBroker {
+				return &mockMessageBroker{}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				Timeout:         30 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name: "nil event in async batch",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-1",
+					SagaID:    "saga-async",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				nil,
+			},
+			setupMock: func() *mockMessageBroker {
+				return &mockMessageBroker{}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				Timeout:         30 * time.Second,
+			},
+			wantErr: true,
+			errMsg:  "event 1 is nil",
+		},
+		{
+			name: "invalid event in async batch",
+			events: []*saga.SagaEvent{
+				{
+					ID:        "event-1",
+					SagaID:    "saga-async",
+					Type:      saga.EventSagaStarted,
+					Version:   "1.0",
+					Timestamp: time.Now(),
+				},
+				{
+					ID:      "event-2",
+					SagaID:  "saga-async",
+					Type:    saga.EventSagaStepCompleted,
+					Version: "", // Missing version
+				},
+			},
+			setupMock: func() *mockMessageBroker {
+				return &mockMessageBroker{}
+			},
+			config: &PublisherConfig{
+				BrokerType:      "nats",
+				BrokerEndpoints: []string{"nats://localhost:4222"},
+				SerializerType:  "json",
+				Timeout:         30 * time.Second,
+			},
+			wantErr: true,
+			errMsg:  "event 1 validation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			broker := tt.setupMock()
+			publisher, err := NewSagaEventPublisher(broker, tt.config)
+			require.NoError(t, err)
+			defer publisher.Close()
+
+			ctx := context.Background()
+
+			// Use a channel to wait for callback
+			done := make(chan error, 1)
+			callback := func(err error) {
+				done <- err
+			}
+
+			err = publisher.PublishBatchAsync(ctx, tt.events, callback)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+
+				// Wait for callback
+				if len(tt.events) > 0 {
+					select {
+					case callbackErr := <-done:
+						assert.NoError(t, callbackErr)
+					case <-time.After(2 * time.Second):
+						t.Fatal("callback timeout")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSagaEventPublisher_PublishBatchAsyncWhenClosed(t *testing.T) {
+	logger.InitLogger()
+
+	broker := &mockMessageBroker{}
+	config := &PublisherConfig{
+		BrokerType:      "nats",
+		BrokerEndpoints: []string{"nats://localhost:4222"},
+		SerializerType:  "json",
+		Timeout:         30 * time.Second,
+	}
+
+	publisher, err := NewSagaEventPublisher(broker, config)
+	require.NoError(t, err)
+
+	// Close the publisher
+	err = publisher.Close()
+	require.NoError(t, err)
+
+	// Try to publish async batch after closing
+	events := []*saga.SagaEvent{
+		{
+			ID:        "event-1",
+			SagaID:    "saga-456",
+			Type:      saga.EventSagaStarted,
+			Version:   "1.0",
+			Timestamp: time.Now(),
+		},
+	}
+
+	ctx := context.Background()
+	err = publisher.PublishBatchAsync(ctx, events, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "publisher is closed")
+}
+
+func TestSagaEventPublisher_PublishBatchMetrics(t *testing.T) {
+	logger.InitLogger()
+
+	mockPub := &mockPublisher{
+		publishFunc: func(ctx context.Context, message *messaging.Message) error {
+			return nil
+		},
+	}
+
+	broker := &mockMessageBroker{
+		publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+			return mockPub, nil
+		},
+	}
+
+	config := &PublisherConfig{
+		BrokerType:      "nats",
+		BrokerEndpoints: []string{"nats://localhost:4222"},
+		SerializerType:  "json",
+		TopicPrefix:     "saga",
+		EnableConfirm:   false,
+		RetryAttempts:   3,
+		RetryInterval:   10 * time.Millisecond,
+		Timeout:         30 * time.Second,
+	}
+
+	publisher, err := NewSagaEventPublisher(broker, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	ctx := context.Background()
+
+	// Create a batch of 10 events
+	events := make([]*saga.SagaEvent, 10)
+	for i := 0; i < 10; i++ {
+		events[i] = &saga.SagaEvent{
+			ID:        fmt.Sprintf("event-%d", i),
+			SagaID:    "saga-metrics-batch",
+			Type:      saga.EventSagaStarted,
+			Version:   "1.0",
+			Timestamp: time.Now(),
+		}
+	}
+
+	// Publish batch
+	err = publisher.PublishBatch(ctx, events)
+	require.NoError(t, err)
+
+	// Verify metrics
+	metrics := publisher.GetMetrics()
+	assert.Equal(t, int64(10), metrics.TotalPublished.Load())
 	assert.Equal(t, int64(0), metrics.TotalFailed.Load())
 	assert.Greater(t, metrics.LastPublishedAt.Load(), int64(0))
 	assert.Greater(t, metrics.PublishDuration.Load(), int64(0))
