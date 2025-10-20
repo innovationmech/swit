@@ -339,7 +339,8 @@ func (a *MessagingIntegrationAdapter) Initialize(ctx context.Context) error {
 }
 
 // Start starts the adapter and begins processing messages.
-// This method blocks until Stop is called or an error occurs.
+// This method blocks until the adapter is successfully subscribed and running,
+// or an error occurs during startup.
 //
 // The start process:
 //  1. Verifies the adapter is initialized
@@ -363,45 +364,69 @@ func (a *MessagingIntegrationAdapter) Start(ctx context.Context) error {
 
 	a.logger.Info("starting messaging integration adapter")
 
-	// Mark as running before starting subscription
-	a.isRunning.Store(true)
+	// Channel to communicate subscription result
+	subErrCh := make(chan error, 1)
 
 	// Start health check monitoring
 	a.startHealthCheckMonitoring()
 
-	// Start subscription in a goroutine
+	// Start subscription in a goroutine and communicate result
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		if err := a.subscribe(ctx); err != nil {
 			a.logger.Error("subscription error", zap.Error(err))
 			a.metrics.IsHealthy.Store(false)
+			subErrCh <- fmt.Errorf("subscription failed: %w", err)
+			return
 		}
+		subErrCh <- nil
 	}()
 
-	a.logger.Info("messaging integration adapter started successfully")
-	return nil
+	// Wait for subscription result or context cancellation
+	select {
+	case err := <-subErrCh:
+		if err != nil {
+			// Subscription failed, stop health monitoring and cleanup
+			a.stopHealthCheckMonitoring()
+			a.isRunning.Store(false)
+			return fmt.Errorf("failed to start messaging integration adapter: %w", err)
+		}
+		// Subscription successful, mark as running
+		a.isRunning.Store(true)
+		a.logger.Info("messaging integration adapter started successfully")
+		return nil
+
+	case <-ctx.Done():
+		// Context cancelled during startup
+		a.stopHealthCheckMonitoring()
+		return fmt.Errorf("startup cancelled: %w", ctx.Err())
+	}
 }
 
 // Stop stops the adapter and waits for active processing to complete.
 // This method blocks until all active message processing completes
 // or the context times out.
 //
+// This method is thread-safe and idempotent. Multiple concurrent calls
+// will result in only one shutdown operation, with subsequent calls
+// returning an appropriate error.
+//
 // Parameters:
 //   - ctx: Context for shutdown timeout control
 //
 // Returns:
-//   - error: An error if shutdown fails
+//   - error: An error if shutdown fails or if adapter is not running
 func (a *MessagingIntegrationAdapter) Stop(ctx context.Context) error {
-	if !a.isRunning.Load() {
+	// Use atomic compare-and-swap to ensure only one goroutine can perform shutdown
+	if !a.isRunning.CompareAndSwap(true, false) {
 		return fmt.Errorf("adapter not running")
 	}
 
 	a.logger.Info("stopping messaging integration adapter")
 
-	// Signal shutdown
+	// Signal shutdown - this is now protected by the compare-and-swap above
 	close(a.stopCh)
-	a.isRunning.Store(false)
 
 	// Stop health check monitoring
 	a.stopHealthCheckMonitoring()
@@ -768,13 +793,14 @@ func (a *MessagingIntegrationAdapter) startHealthCheckMonitoring() {
 	}
 
 	a.healthTicker = time.NewTicker(a.config.HealthCheckInterval)
+	ticker := a.healthTicker
 
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		for {
 			select {
-			case <-a.healthTicker.C:
+			case <-ticker.C:
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				if err := a.HealthCheck(ctx); err != nil {
 					a.logger.Warn("health check failed", zap.Error(err))

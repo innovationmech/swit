@@ -23,6 +23,7 @@ package messaging
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -576,11 +577,9 @@ func TestMessageToSagaEvent(t *testing.T) {
 		},
 	}
 
-	// Serialize to JSON
-	serializer, err := NewSagaEventSerializer("json", nil)
-	require.NoError(t, err)
-
-	payload, err := serializer.Serialize(ctx, testEvent)
+	// Serialize to JSON using the messaging framework's serializer
+	jsonSerializer := messaging.NewJSONSerializer(nil)
+	payload, err := jsonSerializer.Serialize(ctx, testEvent)
 	require.NoError(t, err)
 
 	// Create message
@@ -771,4 +770,312 @@ func TestIntegrationAdapterCloseWhileRunning(t *testing.T) {
 	err = adapter.Close()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "still running")
+}
+
+// TestIntegrationAdapterStartSubscriptionFailure tests that Start method properly handles subscription failures.
+func TestIntegrationAdapterStartSubscriptionFailure(t *testing.T) {
+	mockBroker := new(MockMessageBroker)
+	mockPublisher := new(MockMessagingEventPublisher)
+	mockSubscriber := new(MockEventSubscriber)
+
+	config := &IntegrationConfig{
+		Topics:          []string{"saga.events"},
+		SubscriberGroup: "test-group",
+		Publisher: &PublisherConfig{
+			BrokerType:      "nats",
+			BrokerEndpoints: []string{"nats://localhost:4222"},
+			TopicPrefix:     "saga",
+			SerializerType:  "json",
+			Timeout:         30 * time.Second,
+		},
+	}
+
+	mockBroker.On("IsConnected").Return(true)
+	mockBroker.On("CreatePublisher", mock.AnythingOfType("messaging.PublisherConfig")).Return(mockPublisher, nil)
+	mockBroker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(mockSubscriber, nil)
+
+	// Set up Subscribe to fail with an error (simulating broker outage, bad credentials, etc.)
+	mockSubscriber.On("Subscribe", mock.Anything, mock.AnythingOfType("*messaging.messageHandlerAdapter")).Return(fmt.Errorf("broker connection failed"))
+
+	adapter, err := NewMessagingIntegrationAdapter(mockBroker, config)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = adapter.Initialize(ctx)
+	require.NoError(t, err)
+
+	// Start should fail due to subscription error
+	err = adapter.Start(ctx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to start messaging integration adapter")
+	assert.Contains(t, err.Error(), "subscription failed")
+	assert.Contains(t, err.Error(), "broker connection failed")
+
+	// Adapter should not be marked as running after subscription failure
+	assert.False(t, adapter.IsRunning())
+
+	// Health should be false due to subscription failure
+	metrics := adapter.GetMetrics()
+	assert.False(t, metrics.IsHealthy.Load())
+
+	mockBroker.AssertExpectations(t)
+	mockSubscriber.AssertExpectations(t)
+}
+
+// TestIntegrationAdapterStartContextCancellation tests that Start method respects context cancellation.
+func TestIntegrationAdapterStartContextCancellation(t *testing.T) {
+	mockBroker := new(MockMessageBroker)
+	mockPublisher := new(MockMessagingEventPublisher)
+	mockSubscriber := new(MockEventSubscriber)
+
+	config := &IntegrationConfig{
+		Topics:          []string{"saga.events"},
+		SubscriberGroup: "test-group",
+		Publisher: &PublisherConfig{
+			BrokerType:      "nats",
+			BrokerEndpoints: []string{"nats://localhost:4222"},
+			TopicPrefix:     "saga",
+			SerializerType:  "json",
+			Timeout:         30 * time.Second,
+		},
+	}
+
+	mockBroker.On("IsConnected").Return(true)
+	mockBroker.On("CreatePublisher", mock.AnythingOfType("messaging.PublisherConfig")).Return(mockPublisher, nil)
+	mockBroker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(mockSubscriber, nil)
+
+	// Set up Subscribe to hang (simulate slow broker response)
+	subscribeCalled := make(chan struct{})
+	mockSubscriber.On("Subscribe", mock.Anything, mock.AnythingOfType("*messaging.messageHandlerAdapter")).Run(func(args mock.Arguments) {
+		close(subscribeCalled)
+		// Block until context is cancelled
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(fmt.Errorf("context cancelled"))
+
+	adapter, err := NewMessagingIntegrationAdapter(mockBroker, config)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = adapter.Initialize(ctx)
+	require.NoError(t, err)
+
+	// Create a cancellable context with short timeout
+	cancelCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Start should fail due to context cancellation
+	err = adapter.Start(cancelCtx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "startup cancelled")
+	assert.Contains(t, err.Error(), "context deadline exceeded")
+
+	// Adapter should not be marked as running after context cancellation
+	assert.False(t, adapter.IsRunning())
+
+	// Wait for Subscribe to be called to ensure proper test behavior
+	select {
+	case <-subscribeCalled:
+		// Subscribe was called as expected
+	case <-time.After(time.Second):
+		t.Fatal("Subscribe was not called within expected time")
+	}
+
+	mockBroker.AssertExpectations(t)
+	mockSubscriber.AssertExpectations(t)
+}
+
+// TestIntegrationAdapterStartSuccess tests that Start method succeeds when subscription works.
+func TestIntegrationAdapterStartSuccess(t *testing.T) {
+	mockBroker := new(MockMessageBroker)
+	mockPublisher := new(MockMessagingEventPublisher)
+	mockSubscriber := new(MockEventSubscriber)
+
+	config := &IntegrationConfig{
+		Topics:          []string{"saga.events"},
+		SubscriberGroup: "test-group",
+		Publisher: &PublisherConfig{
+			BrokerType:      "nats",
+			BrokerEndpoints: []string{"nats://localhost:4222"},
+			TopicPrefix:     "saga",
+			SerializerType:  "json",
+			Timeout:         30 * time.Second,
+		},
+	}
+
+	mockBroker.On("IsConnected").Return(true)
+	mockBroker.On("CreatePublisher", mock.AnythingOfType("messaging.PublisherConfig")).Return(mockPublisher, nil)
+	mockBroker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(mockSubscriber, nil)
+
+	// Set up Subscribe to succeed
+	mockSubscriber.On("Subscribe", mock.Anything, mock.AnythingOfType("*messaging.messageHandlerAdapter")).Return(nil)
+	mockSubscriber.On("Unsubscribe", mock.Anything).Return(nil)
+	mockSubscriber.On("Close").Return(nil)
+	mockPublisher.On("Close").Return(nil)
+
+	adapter, err := NewMessagingIntegrationAdapter(mockBroker, config)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = adapter.Initialize(ctx)
+	require.NoError(t, err)
+
+	// Start should succeed
+	err = adapter.Start(ctx)
+	assert.NoError(t, err)
+
+	// Adapter should be marked as running after successful subscription
+	assert.True(t, adapter.IsRunning())
+
+	// Health should be true after successful subscription
+	metrics := adapter.GetMetrics()
+	assert.True(t, metrics.IsHealthy.Load())
+
+	// Clean up - stop the adapter
+	err = adapter.Stop(ctx)
+	assert.NoError(t, err)
+	err = adapter.Close()
+	assert.NoError(t, err)
+
+	mockBroker.AssertExpectations(t)
+	mockSubscriber.AssertExpectations(t)
+}
+
+// TestIntegrationAdapterConcurrentStop tests that multiple concurrent Stop calls are handled safely.
+func TestIntegrationAdapterConcurrentStop(t *testing.T) {
+	mockBroker := new(MockMessageBroker)
+	mockPublisher := new(MockMessagingEventPublisher)
+	mockSubscriber := new(MockEventSubscriber)
+
+	config := &IntegrationConfig{
+		Topics:          []string{"saga.events"},
+		SubscriberGroup: "test-group",
+		Publisher: &PublisherConfig{
+			BrokerType:      "nats",
+			BrokerEndpoints: []string{"nats://localhost:4222"},
+			TopicPrefix:     "saga",
+			SerializerType:  "json",
+			Timeout:         30 * time.Second,
+		},
+	}
+
+	mockBroker.On("IsConnected").Return(true)
+	mockBroker.On("CreatePublisher", mock.AnythingOfType("messaging.PublisherConfig")).Return(mockPublisher, nil)
+	mockBroker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(mockSubscriber, nil)
+
+	// Set up Subscribe to succeed
+	mockSubscriber.On("Subscribe", mock.Anything, mock.AnythingOfType("*messaging.messageHandlerAdapter")).Return(nil)
+	mockSubscriber.On("Unsubscribe", mock.Anything).Return(nil)
+	mockSubscriber.On("Close").Return(nil)
+	mockPublisher.On("Close").Return(nil)
+
+	adapter, err := NewMessagingIntegrationAdapter(mockBroker, config)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = adapter.Initialize(ctx)
+	require.NoError(t, err)
+
+	// Start the adapter
+	err = adapter.Start(ctx)
+	require.NoError(t, err)
+	assert.True(t, adapter.IsRunning())
+
+	// Test concurrent Stop calls
+	numGoroutines := 10
+	errCh := make(chan error, numGoroutines)
+
+	// Launch multiple goroutines calling Stop concurrently
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			err := adapter.Stop(ctx)
+			errCh <- err
+		}()
+	}
+
+	// Collect results
+	var successCount int
+	var errorCount int
+	for i := 0; i < numGoroutines; i++ {
+		err := <-errCh
+		if err == nil {
+			successCount++
+		} else {
+			errorCount++
+			assert.Contains(t, err.Error(), "adapter not running")
+		}
+	}
+
+	// Only one call should succeed, the rest should fail with "adapter not running"
+	assert.Equal(t, 1, successCount, "Only one Stop call should succeed")
+	assert.Equal(t, numGoroutines-1, errorCount, "Other Stop calls should fail with 'adapter not running'")
+
+	// Adapter should not be running
+	assert.False(t, adapter.IsRunning())
+
+	// Clean up
+	err = adapter.Close()
+	assert.NoError(t, err)
+
+	mockBroker.AssertExpectations(t)
+	mockSubscriber.AssertExpectations(t)
+}
+
+// TestIntegrationAdapterStopWhenNotRunning tests that Stop returns appropriate error when adapter is not running.
+func TestIntegrationAdapterStopWhenNotRunning(t *testing.T) {
+	mockBroker := new(MockMessageBroker)
+	mockPublisher := new(MockMessagingEventPublisher)
+	mockSubscriber := new(MockEventSubscriber)
+
+	config := &IntegrationConfig{
+		Topics:          []string{"saga.events"},
+		SubscriberGroup: "test-group",
+		Publisher: &PublisherConfig{
+			BrokerType:      "nats",
+			BrokerEndpoints: []string{"nats://localhost:4222"},
+			TopicPrefix:     "saga",
+			SerializerType:  "json",
+			Timeout:         30 * time.Second,
+		},
+	}
+
+	mockBroker.On("IsConnected").Return(true)
+	mockBroker.On("CreatePublisher", mock.AnythingOfType("messaging.PublisherConfig")).Return(mockPublisher, nil)
+	mockBroker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(mockSubscriber, nil)
+
+	adapter, err := NewMessagingIntegrationAdapter(mockBroker, config)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = adapter.Initialize(ctx)
+	require.NoError(t, err)
+
+	// Stop when not running should fail
+	err = adapter.Stop(ctx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "adapter not running")
+
+	// Start and then stop the adapter to test subsequent calls
+	mockSubscriber.On("Subscribe", mock.Anything, mock.AnythingOfType("*messaging.messageHandlerAdapter")).Return(nil)
+	mockSubscriber.On("Unsubscribe", mock.Anything).Return(nil)
+	mockSubscriber.On("Close").Return(nil)
+	mockPublisher.On("Close").Return(nil)
+
+	err = adapter.Start(ctx)
+	require.NoError(t, err)
+
+	err = adapter.Stop(ctx)
+	assert.NoError(t, err)
+
+	// Second call to Stop should also fail
+	err = adapter.Stop(ctx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "adapter not running")
+
+	// Clean up
+	err = adapter.Close()
+	assert.NoError(t, err)
+
+	mockBroker.AssertExpectations(t)
+	mockSubscriber.AssertExpectations(t)
 }
