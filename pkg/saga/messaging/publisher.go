@@ -774,6 +774,427 @@ func (p *SagaEventPublisher) PublishBatchAsync(
 	return nil
 }
 
+// PublishWithTransaction publishes multiple Saga events within a transaction.
+// This ensures atomicity - either all events are published or none are.
+//
+// The method performs the following operations:
+// 1. Checks if the broker supports transactions
+// 2. Begins a new transaction
+// 3. Serializes and publishes all events within the transaction
+// 4. Commits the transaction on success or rolls back on failure
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - events: Slice of Saga events to publish transactionally
+//
+// Returns:
+//   - error: An error if the broker doesn't support transactions, transaction fails, or any event processing fails
+//
+// Example usage:
+//
+//	events := []*saga.SagaEvent{
+//	    {ID: "event-1", SagaID: "saga-1", Type: saga.EventSagaStarted, Version: "1.0", Timestamp: time.Now()},
+//	    {ID: "event-2", SagaID: "saga-1", Type: saga.EventSagaStepCompleted, Version: "1.0", Timestamp: time.Now()},
+//	}
+//	if err := publisher.PublishWithTransaction(ctx, events); err != nil {
+//	    return fmt.Errorf("failed to publish in transaction: %w", err)
+//	}
+func (p *SagaEventPublisher) PublishWithTransaction(
+	ctx context.Context,
+	events []*saga.SagaEvent,
+) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return fmt.Errorf("publisher is closed")
+	}
+	p.mu.RUnlock()
+
+	// Check if broker supports transactions
+	// Note: We access the broker through a method on the underlying publisher
+	// Since EventPublisher interface doesn't expose GetBroker, we'll handle
+	// the error from BeginTransaction directly
+	// If transactions are not supported, BeginTransaction will return an error
+
+	// Track transaction start time
+	startTime := time.Now()
+
+	// Pre-validate all events
+	for i, event := range events {
+		if event == nil {
+			return fmt.Errorf("event %d is nil", i)
+		}
+		if err := p.validateEvent(event); err != nil {
+			p.logger.Error("transaction event validation failed",
+				zap.Int("event_index", i),
+				zap.String("event_id", event.ID),
+				zap.String("saga_id", event.SagaID),
+				zap.Error(err),
+			)
+			return fmt.Errorf("event %d validation failed: %w", i, err)
+		}
+	}
+
+	// Begin transaction
+	tx, err := p.publisher.BeginTransaction(ctx)
+	if err != nil {
+		p.logger.Error("failed to begin transaction",
+			zap.Int("event_count", len(events)),
+			zap.Error(err),
+		)
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on failure
+	defer func() {
+		if tx != nil {
+			// If we still have a transaction handle, something went wrong
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	// Serialize and publish events in transaction
+	for i, event := range events {
+		// Serialize event
+		data, err := p.serializer.Serialize(ctx, event)
+		if err != nil {
+			p.logger.Error("transaction event serialization failed",
+				zap.Int("event_index", i),
+				zap.String("event_id", event.ID),
+				zap.String("saga_id", event.SagaID),
+				zap.Error(err),
+			)
+			return fmt.Errorf("event %d serialization failed: %w", i, err)
+		}
+
+		// Get topic for the event
+		topic := p.getTopicForEvent(event)
+
+		// Create message with headers
+		msg := &messaging.Message{
+			ID:            event.ID,
+			Topic:         topic,
+			Payload:       data,
+			Timestamp:     event.Timestamp,
+			CorrelationID: event.CorrelationID,
+			Headers: map[string]string{
+				"saga_id":      event.SagaID,
+				"event_type":   string(event.Type),
+				"timestamp":    event.Timestamp.Format(time.RFC3339),
+				"version":      event.Version,
+				"content_type": p.serializer.ContentType(),
+				"tx_id":        tx.GetID(),
+			},
+		}
+
+		// Add optional headers
+		if event.StepID != "" {
+			msg.Headers["step_id"] = event.StepID
+		}
+		if event.TraceID != "" {
+			msg.Headers["trace_id"] = event.TraceID
+		}
+		if event.SpanID != "" {
+			msg.Headers["span_id"] = event.SpanID
+		}
+		if event.Source != "" {
+			msg.Headers["source"] = event.Source
+		}
+		if event.Service != "" {
+			msg.Headers["service"] = event.Service
+		}
+
+		// Publish in transaction
+		if err := tx.Publish(ctx, msg); err != nil {
+			p.logger.Error("failed to publish event in transaction",
+				zap.Int("event_index", i),
+				zap.String("event_id", event.ID),
+				zap.String("saga_id", event.SagaID),
+				zap.String("tx_id", tx.GetID()),
+				zap.Error(err),
+			)
+			return fmt.Errorf("publish event %d in transaction: %w", i, err)
+		}
+
+		p.logger.Debug("event published in transaction",
+			zap.Int("event_index", i),
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.String("tx_id", tx.GetID()),
+		)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		p.logger.Error("failed to commit transaction",
+			zap.Int("event_count", len(events)),
+			zap.String("tx_id", tx.GetID()),
+			zap.Error(err),
+		)
+		p.metrics.TotalFailed.Add(int64(len(events)))
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	// Clear transaction handle to prevent deferred rollback
+	tx = nil
+
+	// Update metrics
+	duration := time.Since(startTime)
+	p.metrics.PublishDuration.Store(duration.Nanoseconds())
+	p.metrics.LastPublishedAt.Store(time.Now().UnixNano())
+	p.metrics.TotalPublished.Add(int64(len(events)))
+
+	p.logger.Info("saga events published in transaction successfully",
+		zap.Int("event_count", len(events)),
+		zap.Duration("duration", duration),
+	)
+
+	return nil
+}
+
+// WithTransaction executes a function within a transaction context.
+// This provides a functional API for transactional operations with automatic
+// commit/rollback handling.
+//
+// The method performs the following operations:
+// 1. Checks if the broker supports transactions
+// 2. Begins a new transaction
+// 3. Executes the provided function with a transaction-aware publisher
+// 4. Commits on success or rolls back on error
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - fn: Function to execute within the transaction context
+//
+// Returns:
+//   - error: An error if the broker doesn't support transactions, transaction fails, or the function returns an error
+//
+// Example usage:
+//
+//	err := publisher.WithTransaction(ctx, func(ctx context.Context, txPub *TransactionalEventPublisher) error {
+//	    event1 := &saga.SagaEvent{...}
+//	    if err := txPub.PublishEvent(ctx, event1); err != nil {
+//	        return err
+//	    }
+//
+//	    event2 := &saga.SagaEvent{...}
+//	    if err := txPub.PublishEvent(ctx, event2); err != nil {
+//	        return err
+//	    }
+//
+//	    return nil
+//	})
+func (p *SagaEventPublisher) WithTransaction(
+	ctx context.Context,
+	fn func(ctx context.Context, txPub *TransactionalEventPublisher) error,
+) error {
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return fmt.Errorf("publisher is closed")
+	}
+	p.mu.RUnlock()
+
+	// Track transaction start time
+	startTime := time.Now()
+
+	// Begin transaction
+	tx, err := p.publisher.BeginTransaction(ctx)
+	if err != nil {
+		p.logger.Error("failed to begin transaction for WithTransaction",
+			zap.Error(err),
+		)
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// Ensure rollback on failure
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	// Create transactional publisher wrapper
+	txPub := &TransactionalEventPublisher{
+		tx:         tx,
+		serializer: p.serializer,
+		config:     p.config,
+		logger:     p.logger.With(zap.String("tx_id", tx.GetID())),
+		metrics:    p.metrics,
+	}
+
+	// Execute the function
+	if err := fn(ctx, txPub); err != nil {
+		p.logger.Error("transaction function failed",
+			zap.String("tx_id", tx.GetID()),
+			zap.Error(err),
+		)
+		return fmt.Errorf("transaction function: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		p.logger.Error("failed to commit transaction in WithTransaction",
+			zap.String("tx_id", tx.GetID()),
+			zap.Error(err),
+		)
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	committed = true
+
+	// Update metrics
+	duration := time.Since(startTime)
+	p.metrics.PublishDuration.Store(duration.Nanoseconds())
+	p.metrics.LastPublishedAt.Store(time.Now().UnixNano())
+
+	p.logger.Info("transaction completed successfully",
+		zap.String("tx_id", tx.GetID()),
+		zap.Duration("duration", duration),
+	)
+
+	return nil
+}
+
+// TransactionalEventPublisher provides a transaction-aware interface for publishing events.
+// This wrapper ensures all operations are performed within the transaction context.
+type TransactionalEventPublisher struct {
+	tx         messaging.Transaction
+	serializer SagaEventSerializer
+	config     *PublisherConfig
+	logger     *zap.Logger
+	metrics    *PublisherMetrics
+}
+
+// PublishEvent publishes a single event within the transaction.
+// The event will only be visible to consumers if the transaction is committed.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - event: The Saga event to publish
+//
+// Returns:
+//   - error: An error if validation or publishing fails
+func (t *TransactionalEventPublisher) PublishEvent(
+	ctx context.Context,
+	event *saga.SagaEvent,
+) error {
+	if event == nil {
+		return fmt.Errorf("event cannot be nil")
+	}
+
+	// Validate event
+	if err := t.validateEvent(event); err != nil {
+		t.logger.Error("transaction event validation failed",
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.Error(err),
+		)
+		return fmt.Errorf("event validation failed: %w", err)
+	}
+
+	// Serialize event
+	data, err := t.serializer.Serialize(ctx, event)
+	if err != nil {
+		t.logger.Error("transaction event serialization failed",
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.Error(err),
+		)
+		return fmt.Errorf("event serialization failed: %w", err)
+	}
+
+	// Get topic for the event
+	topic := t.getTopicForEvent(event)
+
+	// Create message with headers
+	msg := &messaging.Message{
+		ID:            event.ID,
+		Topic:         topic,
+		Payload:       data,
+		Timestamp:     event.Timestamp,
+		CorrelationID: event.CorrelationID,
+		Headers: map[string]string{
+			"saga_id":      event.SagaID,
+			"event_type":   string(event.Type),
+			"timestamp":    event.Timestamp.Format(time.RFC3339),
+			"version":      event.Version,
+			"content_type": t.serializer.ContentType(),
+			"tx_id":        t.tx.GetID(),
+		},
+	}
+
+	// Add optional headers
+	if event.StepID != "" {
+		msg.Headers["step_id"] = event.StepID
+	}
+	if event.TraceID != "" {
+		msg.Headers["trace_id"] = event.TraceID
+	}
+	if event.SpanID != "" {
+		msg.Headers["span_id"] = event.SpanID
+	}
+	if event.Source != "" {
+		msg.Headers["source"] = event.Source
+	}
+	if event.Service != "" {
+		msg.Headers["service"] = event.Service
+	}
+
+	// Publish in transaction
+	if err := t.tx.Publish(ctx, msg); err != nil {
+		t.logger.Error("failed to publish event in transaction",
+			zap.String("event_id", event.ID),
+			zap.String("saga_id", event.SagaID),
+			zap.Error(err),
+		)
+		return fmt.Errorf("publish in transaction: %w", err)
+	}
+
+	t.metrics.TotalPublished.Add(1)
+	t.logger.Debug("event published in transaction",
+		zap.String("event_id", event.ID),
+		zap.String("saga_id", event.SagaID),
+	)
+
+	return nil
+}
+
+// GetTransactionID returns the unique transaction identifier.
+func (t *TransactionalEventPublisher) GetTransactionID() string {
+	return t.tx.GetID()
+}
+
+// getTopicForEvent determines the routing topic for a Saga event.
+func (t *TransactionalEventPublisher) getTopicForEvent(event *saga.SagaEvent) string {
+	return fmt.Sprintf("%s.%s", t.config.TopicPrefix, event.Type)
+}
+
+// validateEvent validates a Saga event.
+func (t *TransactionalEventPublisher) validateEvent(event *saga.SagaEvent) error {
+	if event.ID == "" {
+		return fmt.Errorf("event ID is required")
+	}
+	if event.SagaID == "" {
+		return fmt.Errorf("saga ID is required")
+	}
+	if event.Type == "" {
+		return fmt.Errorf("event type is required")
+	}
+	if event.Version == "" {
+		return fmt.Errorf("event version is required")
+	}
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("event timestamp is required")
+	}
+	return nil
+}
+
 // publish is an internal helper that publishes an event with retry logic.
 func (p *SagaEventPublisher) publish(ctx context.Context, event *saga.SagaEvent) error {
 	p.mu.RLock()
