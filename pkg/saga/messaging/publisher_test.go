@@ -83,6 +83,7 @@ func (m *mockMessageBroker) GetCapabilities() *messaging.BrokerCapabilities {
 type mockPublisher struct {
 	publishFunc            func(ctx context.Context, message *messaging.Message) error
 	publishWithConfirmFunc func(ctx context.Context, message *messaging.Message) (*messaging.PublishConfirmation, error)
+	beginTransactionFunc   func(ctx context.Context) (messaging.Transaction, error)
 	closeFunc              func() error
 }
 
@@ -121,7 +122,10 @@ func (m *mockPublisher) PublishAsync(ctx context.Context, message *messaging.Mes
 }
 
 func (m *mockPublisher) BeginTransaction(ctx context.Context) (messaging.Transaction, error) {
-	return nil, errors.New("not implemented")
+	if m.beginTransactionFunc != nil {
+		return m.beginTransactionFunc(ctx)
+	}
+	return nil, errors.New("transactions not supported")
 }
 
 func (m *mockPublisher) Flush(ctx context.Context) error {
