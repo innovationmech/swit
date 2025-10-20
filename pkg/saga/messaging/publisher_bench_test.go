@@ -240,4 +240,3 @@ func BenchmarkPublishBatchAsync(b *testing.B) {
 		})
 	}
 }
-
