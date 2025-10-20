@@ -755,4 +755,3 @@ func TestTransactionalEventPublisher_GetTransactionID(t *testing.T) {
 
 	assert.Equal(t, "tx-get-id-123", txPub.GetTransactionID())
 }
-
