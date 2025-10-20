@@ -389,6 +389,300 @@ log.Printf("失败: %d", metrics.FailedSagas)
 log.Printf("平均执行时间: %s", metrics.AverageSagaDuration)
 ```
 
+### 7. Saga 事件发布器
+
+Saga 事件发布器（`SagaEventPublisher`）提供可靠的事件发布能力，支持多种发布模式、可靠性保证和性能优化。
+
+#### 创建事件发布器
+
+```go
+import (
+    "github.com/innovationmech/swit/pkg/messaging"
+    sagamessaging "github.com/innovationmech/swit/pkg/saga/messaging"
+)
+
+// 1. 创建消息 broker
+broker, err := messaging.NewNATSBroker(messaging.BrokerConfig{
+    Endpoints: []string{"nats://localhost:4222"},
+    Timeout:   5 * time.Second,
+})
+if err != nil {
+    return err
+}
+defer broker.Close()
+
+// 2. 创建 Saga 事件发布器
+publisher, err := sagamessaging.NewSagaEventPublisher(
+    broker,
+    &sagamessaging.PublisherConfig{
+        TopicPrefix:    "saga.events",    // 事件主题前缀
+        SerializerType: "json",           // 序列化格式: json 或 protobuf
+        RetryAttempts:  3,                // 失败重试次数
+        RetryInterval:  time.Second,      // 重试间隔
+        Timeout:        5 * time.Second,  // 发布超时
+        EnableMetrics:  true,             // 启用指标收集
+    },
+)
+if err != nil {
+    return err
+}
+defer publisher.Close()
+```
+
+#### 发布单个事件
+
+```go
+// 创建 Saga 事件
+event := &saga.SagaEvent{
+    ID:         "evt-001",
+    SagaID:     "saga-001",
+    Type:       saga.EventSagaStarted,
+    Timestamp:  time.Now(),
+    InstanceID: "inst-001",
+    Metadata: map[string]interface{}{
+        "order_id":    "ORDER-12345",
+        "customer_id": "CUST-67890",
+    },
+}
+
+// 发布事件
+ctx := context.Background()
+if err := publisher.PublishSagaEvent(ctx, event); err != nil {
+    log.Printf("发布事件失败: %v", err)
+    return err
+}
+
+log.Printf("事件发布成功: %s", event.ID)
+```
+
+#### 批量发布事件
+
+批量发布可以显著提高性能（通常快 5-10 倍）：
+
+```go
+// 创建多个事件
+events := []*saga.SagaEvent{
+    {
+        ID:         "evt-batch-001",
+        SagaID:     "saga-batch-001",
+        Type:       saga.EventSagaStepStarted,
+        Timestamp:  time.Now(),
+        InstanceID: "inst-batch-001",
+    },
+    {
+        ID:         "evt-batch-002",
+        SagaID:     "saga-batch-001",
+        Type:       saga.EventSagaStepCompleted,
+        Timestamp:  time.Now(),
+        InstanceID: "inst-batch-001",
+    },
+    {
+        ID:         "evt-batch-003",
+        SagaID:     "saga-batch-001",
+        Type:       saga.EventSagaCompleted,
+        Timestamp:  time.Now(),
+        InstanceID: "inst-batch-001",
+    },
+}
+
+// 批量发布
+if err := publisher.PublishBatch(ctx, events); err != nil {
+    log.Printf("批量发布失败: %v", err)
+    return err
+}
+
+log.Printf("批量发布成功: %d 个事件", len(events))
+```
+
+#### 异步批量发布
+
+对于延迟不敏感的场景，异步发布可以提供更高的吞吐量：
+
+```go
+// 异步发布事件批次
+resultChan := publisher.PublishBatchAsync(ctx, events)
+
+// 可以继续做其他工作...
+
+// 等待发布结果
+result := <-resultChan
+if result.Error != nil {
+    log.Printf("异步发布失败: %v", result.Error)
+} else {
+    log.Printf("异步发布成功: %d 个事件, 耗时: %s",
+        result.PublishedCount, result.Duration)
+}
+```
+
+#### 事务性消息发送
+
+确保多个相关事件的原子性发布：
+
+```go
+// 使用事务发布多个相关事件
+err := publisher.WithTransaction(ctx, "tx-order-001", func(txPublisher *sagamessaging.TransactionalEventPublisher) error {
+    // 在事务中发布多个事件
+    events := []*saga.SagaEvent{
+        {
+            ID:         "evt-tx-001",
+            SagaID:     "saga-tx-001",
+            Type:       saga.EventSagaStarted,
+            Timestamp:  time.Now(),
+            InstanceID: "inst-tx-001",
+        },
+        {
+            ID:         "evt-tx-002",
+            SagaID:     "saga-tx-001",
+            Type:       saga.EventSagaStepStarted,
+            Timestamp:  time.Now(),
+            InstanceID: "inst-tx-001",
+        },
+    }
+
+    for _, event := range events {
+        if err := txPublisher.PublishEvent(ctx, event); err != nil {
+            return err // 自动回滚
+        }
+    }
+
+    return nil // 自动提交
+})
+
+if err != nil {
+    log.Printf("事务性发布失败: %v", err)
+} else {
+    log.Printf("事务提交成功")
+}
+```
+
+#### 可靠性保证
+
+配置重试、确认和死信队列以确保消息可靠投递：
+
+```go
+publisher, err := sagamessaging.NewSagaEventPublisher(
+    broker,
+    &sagamessaging.PublisherConfig{
+        TopicPrefix:    "saga.events",
+        SerializerType: "json",
+        EnableConfirm:  true, // 启用发布确认
+        RetryAttempts:  5,    // 最多重试 5 次
+        RetryInterval:  500 * time.Millisecond,
+        Timeout:        10 * time.Second,
+        Reliability: &sagamessaging.ReliabilityConfig{
+            // 重试配置
+            EnableRetry:      true,
+            MaxRetryAttempts: 5,
+            RetryBackoff:     500 * time.Millisecond,  // 初始退避时间
+            MaxRetryBackoff:  5 * time.Second,         // 最大退避时间
+            
+            // 确认配置
+            EnableConfirm:  true,
+            ConfirmTimeout: 10 * time.Second,
+            
+            // 死信队列配置
+            EnableDLQ:  true,
+            DLQTopic:   "saga.dlq",
+        },
+    },
+)
+```
+
+#### 选择序列化格式
+
+发布器支持 JSON 和 Protobuf 两种序列化格式：
+
+```go
+// JSON 序列化（默认）- 便于调试和跨语言兼容
+&sagamessaging.PublisherConfig{
+    SerializerType: "json",
+}
+
+// Protobuf 序列化 - 更高性能，更小的消息体积（约 30-50%）
+&sagamessaging.PublisherConfig{
+    SerializerType: "protobuf",
+}
+```
+
+**性能对比**:
+- JSON: 易于调试，跨语言兼容性好
+- Protobuf: 序列化速度快 2-3 倍，消息体积小 30-50%
+
+#### 监控发布指标
+
+实时监控发布器的运行状态：
+
+```go
+// 获取发布指标
+metrics := publisher.GetMetrics()
+
+log.Printf("发布统计:")
+log.Printf("  成功: %d", metrics.PublishedCount)
+log.Printf("  失败: %d", metrics.FailedCount)
+log.Printf("  批次数: %d", metrics.BatchCount)
+log.Printf("  平均延迟: %s", metrics.AverageLatency)
+log.Printf("  平均批次大小: %.2f", metrics.AverageBatchSize)
+log.Printf("  发布速率: %.2f events/sec", metrics.GetPublishRate())
+
+// 获取可靠性指标
+if reliabilityMetrics := publisher.GetReliabilityMetrics(); reliabilityMetrics != nil {
+    log.Printf("可靠性指标:")
+    log.Printf("  总重试次数: %d", reliabilityMetrics.TotalRetries)
+    log.Printf("  成功的重试: %d", reliabilityMetrics.SuccessfulRetries)
+    log.Printf("  失败的重试: %d", reliabilityMetrics.FailedRetries)
+    log.Printf("  成功率: %.2f%%", reliabilityMetrics.GetSuccessRate()*100)
+    log.Printf("  重试成功率: %.2f%%", reliabilityMetrics.GetRetrySuccessRate()*100)
+    log.Printf("  DLQ 消息数: %d", reliabilityMetrics.DLQMessagesCount)
+}
+```
+
+#### 处理发布失败
+
+正确处理各种发布错误：
+
+```go
+err := publisher.PublishSagaEvent(ctx, event)
+if err != nil {
+    switch {
+    case errors.Is(err, sagamessaging.ErrPublisherClosed):
+        // 发布器已关闭，需要重新创建
+        log.Error("发布器已关闭，需要重新初始化")
+        
+    case errors.Is(err, context.DeadlineExceeded):
+        // 超时错误，可能需要重试
+        log.Warn("发布超时，将重试", zap.Error(err))
+        
+    case errors.Is(err, sagamessaging.ErrInvalidEvent):
+        // 事件无效，记录日志
+        log.Error("无效的事件", zap.Error(err))
+        
+    case errors.Is(err, sagamessaging.ErrSerializationFailed):
+        // 序列化失败
+        log.Error("序列化失败", zap.Error(err))
+        
+    default:
+        // 其他错误
+        log.Error("发布失败", zap.Error(err))
+    }
+}
+```
+
+#### 最佳实践
+
+1. **复用发布器实例**: 避免为每次发布创建新的发布器，应在应用初始化时创建并复用
+2. **使用批量发布**: 当需要发布多个相关事件时，使用批量 API 可显著提高性能
+3. **启用可靠性保证**: 在生产环境启用重试、确认和 DLQ 机制
+4. **选择合适的序列化格式**: 开发环境使用 JSON 便于调试，生产环境考虑使用 Protobuf 提高性能
+5. **监控指标**: 定期检查发布指标，及时发现和解决问题
+6. **合理设置超时**: 根据网络环境和消息大小调整超时配置
+7. **优雅关闭**: 应用退出时先停止接收新事件，等待正在处理的事件完成后再关闭发布器
+
+#### 完整示例
+
+查看完整的使用示例：
+- [examples/saga-publisher/](../examples/saga-publisher/) - 包含各种发布模式的完整示例
+- [pkg/saga/messaging/README.md](../pkg/saga/messaging/README.md) - 详细的 API 文档
+
 ## 最佳实践
 
 ### 1. 步骤设计原则
