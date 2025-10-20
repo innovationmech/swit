@@ -62,6 +62,9 @@ type PublisherConfig struct {
 
 	// EnableMetrics enables metrics collection
 	EnableMetrics bool `yaml:"enable_metrics" json:"enable_metrics"`
+
+	// Reliability contains advanced reliability configuration
+	Reliability *ReliabilityConfig `yaml:"reliability" json:"reliability"`
 }
 
 // Validate validates the publisher configuration.
@@ -121,6 +124,24 @@ func (c *PublisherConfig) SetDefaults() {
 
 	if !c.EnableMetrics {
 		c.EnableMetrics = true
+	}
+
+	// Initialize reliability config if not set
+	if c.Reliability == nil {
+		c.Reliability = &ReliabilityConfig{}
+	}
+	c.Reliability.SetDefaults()
+
+	// Sync basic config with reliability config for backward compatibility
+	if !c.Reliability.EnableConfirm && c.EnableConfirm {
+		c.Reliability.EnableConfirm = c.EnableConfirm
+	}
+	if c.Reliability.MaxRetryAttempts == 0 && c.RetryAttempts > 0 {
+		c.Reliability.MaxRetryAttempts = c.RetryAttempts
+		c.Reliability.EnableRetry = true
+	}
+	if c.Reliability.PublishTimeout == 0 && c.Timeout > 0 {
+		c.Reliability.PublishTimeout = c.Timeout
 	}
 }
 
@@ -187,6 +208,9 @@ type SagaEventPublisher struct {
 
 	// metrics tracks publisher metrics
 	metrics *PublisherMetrics
+
+	// reliabilityHandler handles reliability guarantees
+	reliabilityHandler *ReliabilityHandler
 
 	// mu protects the publisher state
 	mu sync.RWMutex
@@ -267,19 +291,30 @@ func NewSagaEventPublisher(
 	// Create metrics
 	metrics := &PublisherMetrics{}
 
+	// Create reliability handler if reliability config is provided
+	var reliabilityHandler *ReliabilityHandler
+	if config.Reliability != nil {
+		reliabilityHandler, err = NewReliabilityHandler(config.Reliability)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create reliability handler: %w", err)
+		}
+	}
+
 	p := &SagaEventPublisher{
-		publisher:  publisher,
-		serializer: serializer,
-		config:     config,
-		logger:     log,
-		metrics:    metrics,
-		closed:     false,
+		publisher:          publisher,
+		serializer:         serializer,
+		config:             config,
+		logger:             log,
+		metrics:            metrics,
+		reliabilityHandler: reliabilityHandler,
+		closed:             false,
 	}
 
 	log.Info("saga event publisher created successfully",
 		zap.String("serializer", config.SerializerType),
 		zap.Bool("confirm_enabled", config.EnableConfirm),
 		zap.Int("retry_attempts", config.RetryAttempts),
+		zap.Bool("reliability_enabled", reliabilityHandler != nil),
 	)
 
 	return p, nil
@@ -326,6 +361,16 @@ func (p *SagaEventPublisher) GetConfig() *PublisherConfig {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.config
+}
+
+// GetReliabilityMetrics returns the reliability metrics if reliability handler is enabled.
+func (p *SagaEventPublisher) GetReliabilityMetrics() *ReliabilityMetrics {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.reliabilityHandler != nil {
+		return p.reliabilityHandler.GetMetrics()
+	}
+	return nil
 }
 
 // PublishSagaEvent publishes a single Saga event to the message broker.
@@ -431,44 +476,49 @@ func (p *SagaEventPublisher) PublishSagaEvent(
 	// Track publish start time
 	startTime := time.Now()
 
-	// Publish with retry logic
+	// Use reliability handler if available, otherwise use legacy retry logic
 	var publishErr error
-	for attempt := 0; attempt <= p.config.RetryAttempts; attempt++ {
-		if attempt > 0 {
-			p.metrics.TotalRetries.Add(1)
-			p.logger.Warn("retrying publish",
+	if p.reliabilityHandler != nil {
+		publishErr = p.reliabilityHandler.PublishWithReliability(ctx, p.publisher, msg)
+	} else {
+		// Legacy retry logic for backward compatibility
+		for attempt := 0; attempt <= p.config.RetryAttempts; attempt++ {
+			if attempt > 0 {
+				p.metrics.TotalRetries.Add(1)
+				p.logger.Warn("retrying publish",
+					zap.Int("attempt", attempt),
+					zap.String("event_id", event.ID),
+					zap.String("saga_id", event.SagaID),
+				)
+
+				// Wait before retry with exponential backoff
+				backoffDuration := p.config.RetryInterval * time.Duration(attempt)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(backoffDuration):
+				}
+			}
+
+			// Attempt to publish
+			if p.config.EnableConfirm {
+				_, publishErr = p.publisher.PublishWithConfirm(ctx, msg)
+			} else {
+				publishErr = p.publisher.Publish(ctx, msg)
+			}
+
+			if publishErr == nil {
+				// Success
+				break
+			}
+
+			p.logger.Warn("publish attempt failed",
 				zap.Int("attempt", attempt),
 				zap.String("event_id", event.ID),
 				zap.String("saga_id", event.SagaID),
+				zap.Error(publishErr),
 			)
-
-			// Wait before retry with exponential backoff
-			backoffDuration := p.config.RetryInterval * time.Duration(attempt)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(backoffDuration):
-			}
 		}
-
-		// Attempt to publish
-		if p.config.EnableConfirm {
-			_, publishErr = p.publisher.PublishWithConfirm(ctx, msg)
-		} else {
-			publishErr = p.publisher.Publish(ctx, msg)
-		}
-
-		if publishErr == nil {
-			// Success
-			break
-		}
-
-		p.logger.Warn("publish attempt failed",
-			zap.Int("attempt", attempt),
-			zap.String("event_id", event.ID),
-			zap.String("saga_id", event.SagaID),
-			zap.Error(publishErr),
-		)
 	}
 
 	// Update metrics
