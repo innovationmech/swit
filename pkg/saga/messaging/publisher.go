@@ -542,6 +542,238 @@ func (p *SagaEventPublisher) validateEvent(event *saga.SagaEvent) error {
 	return nil
 }
 
+// PublishBatch publishes multiple Saga events in a single batch operation.
+// This is more efficient than individual PublishSagaEvent calls for high-throughput scenarios.
+//
+// The method performs the following operations:
+// 1. Validates all events in the batch
+// 2. Serializes all events to the configured format (JSON or Protobuf)
+// 3. Creates messages with appropriate headers and routing information
+// 4. Publishes all messages in a single batch operation
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control
+//   - events: Slice of Saga events to publish
+//
+// Returns:
+//   - error: An error if any event validation or publishing fails, nil on success
+//
+// Example usage:
+//
+//	events := []*saga.SagaEvent{
+//	    {ID: "event-1", SagaID: "saga-1", Type: saga.EventSagaStarted, Version: "1.0", Timestamp: time.Now()},
+//	    {ID: "event-2", SagaID: "saga-1", Type: saga.EventSagaStepCompleted, Version: "1.0", Timestamp: time.Now()},
+//	}
+//	if err := publisher.PublishBatch(ctx, events); err != nil {
+//	    return fmt.Errorf("failed to publish batch: %w", err)
+//	}
+func (p *SagaEventPublisher) PublishBatch(
+	ctx context.Context,
+	events []*saga.SagaEvent,
+) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return fmt.Errorf("publisher is closed")
+	}
+	p.mu.RUnlock()
+
+	// Track batch start time
+	startTime := time.Now()
+
+	// 1. Pre-validate all events
+	for i, event := range events {
+		if event == nil {
+			return fmt.Errorf("event %d is nil", i)
+		}
+		if err := p.validateEvent(event); err != nil {
+			p.logger.Error("batch event validation failed",
+				zap.Int("event_index", i),
+				zap.String("event_id", event.ID),
+				zap.String("saga_id", event.SagaID),
+				zap.Error(err),
+			)
+			return fmt.Errorf("event %d validation failed: %w", i, err)
+		}
+	}
+
+	// 2. Batch serialize all events
+	messages := make([]*messaging.Message, 0, len(events))
+	for i, event := range events {
+		// Serialize event
+		data, err := p.serializer.Serialize(ctx, event)
+		if err != nil {
+			p.logger.Error("batch event serialization failed",
+				zap.Int("event_index", i),
+				zap.String("event_id", event.ID),
+				zap.String("saga_id", event.SagaID),
+				zap.Error(err),
+			)
+			return fmt.Errorf("event %d serialization failed: %w", i, err)
+		}
+
+		// Get topic for the event
+		topic := p.getTopicForEvent(event)
+
+		// Create message with headers
+		msg := &messaging.Message{
+			ID:            event.ID,
+			Topic:         topic,
+			Payload:       data,
+			Timestamp:     event.Timestamp,
+			CorrelationID: event.CorrelationID,
+			Headers: map[string]string{
+				"saga_id":      event.SagaID,
+				"event_type":   string(event.Type),
+				"timestamp":    event.Timestamp.Format(time.RFC3339),
+				"version":      event.Version,
+				"content_type": p.serializer.ContentType(),
+			},
+		}
+
+		// Add optional headers
+		if event.StepID != "" {
+			msg.Headers["step_id"] = event.StepID
+		}
+		if event.TraceID != "" {
+			msg.Headers["trace_id"] = event.TraceID
+		}
+		if event.SpanID != "" {
+			msg.Headers["span_id"] = event.SpanID
+		}
+		if event.Source != "" {
+			msg.Headers["source"] = event.Source
+		}
+		if event.Service != "" {
+			msg.Headers["service"] = event.Service
+		}
+
+		messages = append(messages, msg)
+	}
+
+	// 3. Publish batch with retry logic
+	var publishErr error
+	for attempt := 0; attempt <= p.config.RetryAttempts; attempt++ {
+		if attempt > 0 {
+			p.metrics.TotalRetries.Add(int64(len(events)))
+			p.logger.Warn("retrying batch publish",
+				zap.Int("attempt", attempt),
+				zap.Int("batch_size", len(events)),
+			)
+
+			// Wait before retry with exponential backoff
+			backoffDuration := p.config.RetryInterval * time.Duration(attempt)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoffDuration):
+			}
+		}
+
+		// Attempt to publish batch
+		publishErr = p.publisher.PublishBatch(ctx, messages)
+
+		if publishErr == nil {
+			// Success
+			break
+		}
+
+		p.logger.Warn("batch publish attempt failed",
+			zap.Int("attempt", attempt),
+			zap.Int("batch_size", len(events)),
+			zap.Error(publishErr),
+		)
+	}
+
+	// Update metrics
+	duration := time.Since(startTime)
+	p.metrics.PublishDuration.Store(duration.Nanoseconds())
+	p.metrics.LastPublishedAt.Store(time.Now().UnixNano())
+
+	if publishErr != nil {
+		p.metrics.TotalFailed.Add(int64(len(events)))
+		p.logger.Error("failed to publish batch after retries",
+			zap.Int("batch_size", len(events)),
+			zap.Int("retry_attempts", p.config.RetryAttempts),
+			zap.Error(publishErr),
+		)
+		return fmt.Errorf("failed to publish batch after %d retries: %w", p.config.RetryAttempts, publishErr)
+	}
+
+	p.metrics.TotalPublished.Add(int64(len(events)))
+	p.logger.Info("saga event batch published successfully",
+		zap.Int("batch_size", len(events)),
+		zap.Duration("duration", duration),
+	)
+
+	return nil
+}
+
+// PublishBatchAsync publishes multiple Saga events asynchronously with callback notification.
+// This method returns immediately after queuing the batch and calls the callback when the operation completes.
+//
+// Parameters:
+//   - ctx: Context for cancellation control
+//   - events: Slice of Saga events to publish
+//   - callback: Function called when batch publishing completes (may be called on a different goroutine)
+//
+// Returns:
+//   - error: An error if immediate validation fails or publisher is closed, nil if queued successfully
+//
+// Example usage:
+//
+//	events := []*saga.SagaEvent{...}
+//	err := publisher.PublishBatchAsync(ctx, events, func(err error) {
+//	    if err != nil {
+//	        log.Printf("Batch publish failed: %v", err)
+//	    } else {
+//	        log.Printf("Batch published successfully")
+//	    }
+//	})
+func (p *SagaEventPublisher) PublishBatchAsync(
+	ctx context.Context,
+	events []*saga.SagaEvent,
+	callback func(error),
+) error {
+	if len(events) == 0 {
+		if callback != nil {
+			go callback(nil)
+		}
+		return nil
+	}
+
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return fmt.Errorf("publisher is closed")
+	}
+	p.mu.RUnlock()
+
+	// Pre-validate all events synchronously
+	for i, event := range events {
+		if event == nil {
+			return fmt.Errorf("event %d is nil", i)
+		}
+		if err := p.validateEvent(event); err != nil {
+			return fmt.Errorf("event %d validation failed: %w", i, err)
+		}
+	}
+
+	// Publish in background
+	go func() {
+		err := p.PublishBatch(ctx, events)
+		if callback != nil {
+			callback(err)
+		}
+	}()
+
+	return nil
+}
+
 // publish is an internal helper that publishes an event with retry logic.
 func (p *SagaEventPublisher) publish(ctx context.Context, event *saga.SagaEvent) error {
 	p.mu.RLock()
