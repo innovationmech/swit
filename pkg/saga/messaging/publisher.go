@@ -31,6 +31,12 @@ import (
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/messaging"
 	"github.com/innovationmech/swit/pkg/saga"
+	"github.com/innovationmech/swit/pkg/tracing"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -147,6 +153,90 @@ func (c *PublisherConfig) SetDefaults() {
 	c.Reliability.SetDefaults()
 }
 
+var (
+	// sagaEventsPublishedTotal tracks the total number of saga events published
+	sagaEventsPublishedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "saga_events_published_total",
+			Help: "Total number of saga events published",
+		},
+		[]string{"event_type", "status"},
+	)
+
+	// sagaPublishDuration tracks the duration of saga event publishing operations
+	sagaPublishDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "saga_publish_duration_seconds",
+			Help:    "Duration of saga event publishing operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"event_type", "operation"},
+	)
+
+	// sagaPublishBatchSize tracks the size of batch publish operations
+	sagaPublishBatchSize = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "saga_publish_batch_size",
+			Help:    "Size of batch publish operations",
+			Buckets: []float64{1, 5, 10, 20, 50, 100, 200, 500},
+		},
+	)
+
+	// sagaPublishRetries tracks retry attempts for publishing
+	sagaPublishRetries = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "saga_publish_retries_total",
+			Help: "Total number of publish retry attempts",
+		},
+		[]string{"event_type"},
+	)
+
+	// sagaPublishConfirmations tracks successful confirmations
+	sagaPublishConfirmations = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "saga_publish_confirmations_total",
+			Help: "Total number of successful publish confirmations",
+		},
+	)
+
+	// sagaDLQSent tracks events sent to DLQ
+	sagaDLQSent = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "saga_dlq_sent_total",
+			Help: "Total number of events sent to dead letter queue",
+		},
+		[]string{"event_type", "reason"},
+	)
+
+	// sagaSerializeDuration tracks event serialization duration
+	sagaSerializeDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "saga_serialize_duration_seconds",
+			Help:    "Duration of saga event serialization",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+		[]string{"serializer_type"},
+	)
+
+	// sagaTransactionsTotal tracks total transaction operations
+	sagaTransactionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "saga_transactions_total",
+			Help: "Total number of transaction operations",
+		},
+		[]string{"status"},
+	)
+
+	// sagaPublishErrors tracks publish errors by type
+	sagaPublishErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "saga_publish_errors_total",
+			Help: "Total number of publish errors by type",
+		},
+		[]string{"error_type"},
+	)
+)
+
 // PublisherMetrics contains metrics for the saga event publisher.
 type PublisherMetrics struct {
 	// TotalPublished is the total number of events published
@@ -213,6 +303,9 @@ type SagaEventPublisher struct {
 
 	// reliabilityHandler handles reliability guarantees
 	reliabilityHandler *ReliabilityHandler
+
+	// tracingManager handles distributed tracing
+	tracingManager tracing.TracingManager
 
 	// mu protects the publisher state
 	mu sync.RWMutex
@@ -302,6 +395,9 @@ func NewSagaEventPublisher(
 		}
 	}
 
+	// Initialize tracing manager
+	tracingMgr := tracing.NewTracingManager()
+
 	p := &SagaEventPublisher{
 		publisher:          publisher,
 		serializer:         serializer,
@@ -309,6 +405,7 @@ func NewSagaEventPublisher(
 		logger:             log,
 		metrics:            metrics,
 		reliabilityHandler: reliabilityHandler,
+		tracingManager:     tracingMgr,
 		closed:             false,
 	}
 
@@ -418,6 +515,13 @@ func (p *SagaEventPublisher) PublishSagaEvent(
 	}
 	p.mu.RUnlock()
 
+	// Start tracing span
+	ctx, span := p.startPublishSpan(ctx, event)
+	defer span.End()
+
+	// Log publish attempt
+	p.logPublishAttempt(ctx, event)
+
 	// Validate event
 	if err := p.validateEvent(event); err != nil {
 		p.logger.Error("event validation failed",
@@ -425,17 +529,28 @@ func (p *SagaEventPublisher) PublishSagaEvent(
 			zap.String("saga_id", event.SagaID),
 			zap.Error(err),
 		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "event validation failed")
 		return fmt.Errorf("event validation failed: %w", err)
 	}
 
-	// Serialize event
+	// Serialize event with timing
+	serializeStart := time.Now()
 	data, err := p.serializer.Serialize(ctx, event)
+	serializeDuration := time.Since(serializeStart)
+
+	// Record serialization metrics
+	sagaSerializeDuration.WithLabelValues(p.config.SerializerType).Observe(serializeDuration.Seconds())
+	span.SetAttribute("saga.serialize_duration_ms", serializeDuration.Seconds()*1000)
+
 	if err != nil {
 		p.logger.Error("event serialization failed",
 			zap.String("event_id", event.ID),
 			zap.String("saga_id", event.SagaID),
 			zap.Error(err),
 		)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "event serialization failed")
 		return fmt.Errorf("event serialization failed: %w", err)
 	}
 
@@ -487,16 +602,24 @@ func (p *SagaEventPublisher) PublishSagaEvent(
 		for attempt := 0; attempt <= p.config.RetryAttempts; attempt++ {
 			if attempt > 0 {
 				p.metrics.TotalRetries.Add(1)
+				sagaPublishRetries.WithLabelValues(string(event.Type)).Inc()
+
 				p.logger.Warn("retrying publish",
 					zap.Int("attempt", attempt),
 					zap.String("event_id", event.ID),
 					zap.String("saga_id", event.SagaID),
 				)
 
+				span.AddEvent("retry_attempt", oteltrace.WithAttributes(
+					attribute.Int("retry.attempt", attempt),
+				))
+
 				// Wait before retry with exponential backoff
 				backoffDuration := p.config.RetryInterval * time.Duration(attempt)
 				select {
 				case <-ctx.Done():
+					span.RecordError(ctx.Err())
+					span.SetStatus(codes.Error, "context cancelled")
 					return ctx.Err()
 				case <-time.After(backoffDuration):
 				}
@@ -530,24 +653,29 @@ func (p *SagaEventPublisher) PublishSagaEvent(
 
 	if publishErr != nil {
 		p.metrics.TotalFailed.Add(1)
-		p.logger.Error("failed to publish event after retries",
-			zap.String("event_id", event.ID),
-			zap.String("saga_id", event.SagaID),
-			zap.String("event_type", string(event.Type)),
-			zap.Int("retry_attempts", p.config.RetryAttempts),
-			zap.Error(publishErr),
-		)
+
+		// Record failure metrics and logs
+		p.recordPublishFailure(string(event.Type), publishErr)
+		p.logPublishFailure(ctx, event, publishErr)
+
+		// Update span with error
+		span.RecordError(publishErr)
+		span.SetStatus(codes.Error, "publish failed after retries")
+		span.SetAttribute("saga.retry_count", p.config.RetryAttempts)
+
 		return fmt.Errorf("failed to publish event after %d retries: %w", p.config.RetryAttempts, publishErr)
 	}
 
 	p.metrics.TotalPublished.Add(1)
-	p.logger.Info("saga event published successfully",
-		zap.String("event_id", event.ID),
-		zap.String("saga_id", event.SagaID),
-		zap.String("event_type", string(event.Type)),
-		zap.String("topic", topic),
-		zap.Duration("duration", duration),
-	)
+
+	// Record success metrics and logs
+	p.recordPublishSuccess(string(event.Type), duration)
+	p.logPublishSuccess(ctx, event, duration)
+
+	// Update span with success
+	span.SetStatus(codes.Ok, "event published successfully")
+	span.SetAttribute("saga.publish_duration_ms", duration.Seconds()*1000)
+	span.SetAttribute("saga.topic", topic)
 
 	return nil
 }
@@ -634,8 +762,26 @@ func (p *SagaEventPublisher) PublishBatch(
 	}
 	p.mu.RUnlock()
 
+	// Start tracing span for batch operation
+	ctx, span := p.tracingManager.StartSpan(
+		ctx,
+		"saga.publish_batch",
+		tracing.WithSpanKind(oteltrace.SpanKindProducer),
+		tracing.WithAttributes(
+			attribute.Int("saga.batch_size", len(events)),
+			attribute.String("messaging.system", p.config.BrokerType),
+		),
+	)
+	defer span.End()
+
 	// Track batch start time
 	startTime := time.Now()
+
+	// Log batch publish attempt
+	p.logger.Debug("attempting to publish saga event batch",
+		zap.Int("batch_size", len(events)),
+		zap.String("broker_type", p.config.BrokerType),
+	)
 
 	// 1. Pre-validate all events
 	for i, event := range events {
@@ -748,19 +894,41 @@ func (p *SagaEventPublisher) PublishBatch(
 
 	if publishErr != nil {
 		p.metrics.TotalFailed.Add(int64(len(events)))
+
+		// Record batch failure
+		p.recordBatchPublish(len(events), duration)
+		for _, event := range events {
+			p.recordPublishFailure(string(event.Type), publishErr)
+		}
+
 		p.logger.Error("failed to publish batch after retries",
 			zap.Int("batch_size", len(events)),
 			zap.Int("retry_attempts", p.config.RetryAttempts),
 			zap.Error(publishErr),
 		)
+
+		span.RecordError(publishErr)
+		span.SetStatus(codes.Error, "batch publish failed after retries")
+
 		return fmt.Errorf("failed to publish batch after %d retries: %w", p.config.RetryAttempts, publishErr)
 	}
 
 	p.metrics.TotalPublished.Add(int64(len(events)))
+
+	// Record batch success
+	p.recordBatchPublish(len(events), duration)
+	for _, event := range events {
+		p.recordPublishSuccess(string(event.Type), duration/time.Duration(len(events)))
+	}
+
 	p.logger.Info("saga event batch published successfully",
 		zap.Int("batch_size", len(events)),
 		zap.Duration("duration", duration),
+		zap.Float64("avg_duration_ms", (duration.Seconds()*1000)/float64(len(events))),
 	)
+
+	span.SetStatus(codes.Ok, "batch published successfully")
+	span.SetAttribute("saga.batch_duration_ms", duration.Seconds()*1000)
 
 	return nil
 }
@@ -866,6 +1034,18 @@ func (p *SagaEventPublisher) PublishWithTransaction(
 	}
 	p.mu.RUnlock()
 
+	// Start tracing span for transaction
+	ctx, span := p.tracingManager.StartSpan(
+		ctx,
+		"saga.publish_transaction",
+		tracing.WithSpanKind(oteltrace.SpanKindProducer),
+		tracing.WithAttributes(
+			attribute.Int("saga.event_count", len(events)),
+			attribute.String("messaging.system", p.config.BrokerType),
+		),
+	)
+	defer span.End()
+
 	// Check if broker supports transactions
 	// Note: We access the broker through a method on the underlying publisher
 	// Since EventPublisher interface doesn't expose GetBroker, we'll handle
@@ -874,6 +1054,11 @@ func (p *SagaEventPublisher) PublishWithTransaction(
 
 	// Track transaction start time
 	startTime := time.Now()
+
+	// Log transaction start
+	p.logger.Debug("starting transaction publish",
+		zap.Int("event_count", len(events)),
+	)
 
 	// Pre-validate all events
 	for i, event := range events {
@@ -980,14 +1165,23 @@ func (p *SagaEventPublisher) PublishWithTransaction(
 		)
 	}
 
+	// Get transaction ID before committing
+	txID := tx.GetID()
+
 	// Commit transaction
 	if err := tx.Commit(ctx); err != nil {
 		p.logger.Error("failed to commit transaction",
 			zap.Int("event_count", len(events)),
-			zap.String("tx_id", tx.GetID()),
+			zap.String("tx_id", txID),
 			zap.Error(err),
 		)
 		p.metrics.TotalFailed.Add(int64(len(events)))
+
+		// Record transaction failure
+		sagaTransactionsTotal.WithLabelValues("rollback").Inc()
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "transaction commit failed")
+
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
@@ -1000,10 +1194,20 @@ func (p *SagaEventPublisher) PublishWithTransaction(
 	p.metrics.LastPublishedAt.Store(time.Now().UnixNano())
 	p.metrics.TotalPublished.Add(int64(len(events)))
 
+	// Record transaction success
+	sagaTransactionsTotal.WithLabelValues("commit").Inc()
+	for _, event := range events {
+		p.recordPublishSuccess(string(event.Type), duration/time.Duration(len(events)))
+	}
+
 	p.logger.Info("saga events published in transaction successfully",
 		zap.Int("event_count", len(events)),
 		zap.Duration("duration", duration),
+		zap.String("tx_id", txID),
 	)
+
+	span.SetStatus(codes.Ok, "transaction committed successfully")
+	span.SetAttribute("saga.transaction_duration_ms", duration.Seconds()*1000)
 
 	return nil
 }
@@ -1245,6 +1449,116 @@ func (t *TransactionalEventPublisher) validateEvent(event *saga.SagaEvent) error
 		return fmt.Errorf("event timestamp is required")
 	}
 	return nil
+}
+
+// recordPublishSuccess records metrics for a successful publish operation
+func (p *SagaEventPublisher) recordPublishSuccess(eventType string, duration time.Duration) {
+	sagaEventsPublishedTotal.WithLabelValues(eventType, "success").Inc()
+	sagaPublishDuration.WithLabelValues(eventType, "single").Observe(duration.Seconds())
+	if p.config.EnableConfirm {
+		sagaPublishConfirmations.Inc()
+	}
+}
+
+// recordPublishFailure records metrics for a failed publish operation
+func (p *SagaEventPublisher) recordPublishFailure(eventType string, err error) {
+	sagaEventsPublishedTotal.WithLabelValues(eventType, "failure").Inc()
+
+	// Classify error type for better observability
+	errorType := "unknown"
+	if err != nil {
+		errorType = fmt.Sprintf("%T", err)
+	}
+	sagaPublishErrors.WithLabelValues(errorType).Inc()
+}
+
+// recordBatchPublish records metrics for a batch publish operation
+func (p *SagaEventPublisher) recordBatchPublish(count int, duration time.Duration) {
+	sagaPublishBatchSize.Observe(float64(count))
+	sagaPublishDuration.WithLabelValues("batch", "batch").Observe(duration.Seconds())
+}
+
+// logPublishAttempt logs an attempt to publish a saga event
+func (p *SagaEventPublisher) logPublishAttempt(
+	ctx context.Context,
+	event *saga.SagaEvent,
+) {
+	p.logger.Debug("attempting to publish saga event",
+		zap.String("event_id", event.ID),
+		zap.String("saga_id", event.SagaID),
+		zap.String("event_type", string(event.Type)),
+		zap.String("step_id", event.StepID),
+		zap.String("trace_id", event.TraceID),
+		zap.String("span_id", event.SpanID),
+		zap.String("source", event.Source),
+		zap.String("service", event.Service),
+		zap.Time("timestamp", event.Timestamp),
+	)
+}
+
+// logPublishSuccess logs a successful saga event publish
+func (p *SagaEventPublisher) logPublishSuccess(
+	ctx context.Context,
+	event *saga.SagaEvent,
+	duration time.Duration,
+) {
+	p.logger.Info("saga event published successfully",
+		zap.String("event_id", event.ID),
+		zap.String("saga_id", event.SagaID),
+		zap.String("event_type", string(event.Type)),
+		zap.Duration("duration", duration),
+		zap.Float64("duration_ms", duration.Seconds()*1000),
+		zap.String("serializer", p.config.SerializerType),
+		zap.Bool("confirmed", p.config.EnableConfirm),
+	)
+}
+
+// logPublishFailure logs a failed saga event publish
+func (p *SagaEventPublisher) logPublishFailure(
+	ctx context.Context,
+	event *saga.SagaEvent,
+	err error,
+) {
+	p.logger.Error("saga event publish failed",
+		zap.String("event_id", event.ID),
+		zap.String("saga_id", event.SagaID),
+		zap.String("event_type", string(event.Type)),
+		zap.Error(err),
+		zap.String("error_type", fmt.Sprintf("%T", err)),
+		zap.Int("retry_attempts", p.config.RetryAttempts),
+	)
+}
+
+// startPublishSpan starts a distributed tracing span for publishing
+func (p *SagaEventPublisher) startPublishSpan(
+	ctx context.Context,
+	event *saga.SagaEvent,
+) (context.Context, tracing.Span) {
+	// Create span for the publish operation
+	ctx, span := p.tracingManager.StartSpan(
+		ctx,
+		"saga.publish_event",
+		tracing.WithSpanKind(oteltrace.SpanKindProducer),
+		tracing.WithAttributes(
+			attribute.String("saga.event_id", event.ID),
+			attribute.String("saga.saga_id", event.SagaID),
+			attribute.String("saga.event_type", string(event.Type)),
+			attribute.String("saga.step_id", event.StepID),
+			attribute.String("saga.version", event.Version),
+			attribute.String("messaging.system", p.config.BrokerType),
+			attribute.String("messaging.destination", p.getTopicForEvent(event)),
+		),
+	)
+
+	// If event already has trace context, add it to span
+	if event.TraceID != "" {
+		span.SetAttribute("trace.trace_id", event.TraceID)
+	}
+	if event.SpanID != "" {
+		span.SetAttribute("trace.parent_span_id", event.SpanID)
+	}
+
+	return ctx, span
 }
 
 // publish is an internal helper that publishes an event with retry logic.

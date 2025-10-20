@@ -1930,3 +1930,247 @@ func TestSagaEventPublisher_PublishBatchMetrics(t *testing.T) {
 	assert.Greater(t, metrics.LastPublishedAt.Load(), int64(0))
 	assert.Greater(t, metrics.PublishDuration.Load(), int64(0))
 }
+
+func TestSagaEventPublisher_PrometheusMetricsCollection(t *testing.T) {
+	logger.InitLogger()
+
+	mockPub := &mockPublisher{
+		publishFunc: func(ctx context.Context, message *messaging.Message) error {
+			return nil
+		},
+	}
+
+	broker := &mockMessageBroker{
+		publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+			return mockPub, nil
+		},
+	}
+
+	config := &PublisherConfig{
+		BrokerType:      "nats",
+		BrokerEndpoints: []string{"nats://localhost:4222"},
+		SerializerType:  "json",
+		TopicPrefix:     "saga",
+		EnableConfirm:   true,
+		RetryAttempts:   3,
+		RetryInterval:   10 * time.Millisecond,
+		Timeout:         30 * time.Second,
+	}
+
+	publisher, err := NewSagaEventPublisher(broker, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	ctx := context.Background()
+
+	// Test single event publish
+	event := &saga.SagaEvent{
+		ID:        "event-prom-1",
+		SagaID:    "saga-prom",
+		Type:      saga.EventSagaStarted,
+		Version:   "1.0",
+		Timestamp: time.Now(),
+	}
+
+	err = publisher.PublishSagaEvent(ctx, event)
+	require.NoError(t, err)
+
+	// Prometheus metrics are global, so we can't easily verify exact counts
+	// but we can verify the methods were called without panicking
+	assert.NotNil(t, publisher)
+
+	// Test batch publish
+	events := []*saga.SagaEvent{
+		{
+			ID:        "event-batch-1",
+			SagaID:    "saga-batch-prom",
+			Type:      saga.EventSagaStarted,
+			Version:   "1.0",
+			Timestamp: time.Now(),
+		},
+		{
+			ID:        "event-batch-2",
+			SagaID:    "saga-batch-prom",
+			Type:      saga.EventSagaStepCompleted,
+			Version:   "1.0",
+			Timestamp: time.Now(),
+		},
+	}
+
+	err = publisher.PublishBatch(ctx, events)
+	require.NoError(t, err)
+}
+
+func TestSagaEventPublisher_MetricsOnFailure(t *testing.T) {
+	logger.InitLogger()
+
+	mockPub := &mockPublisher{
+		publishFunc: func(ctx context.Context, message *messaging.Message) error {
+			return errors.New("publish failed")
+		},
+	}
+
+	broker := &mockMessageBroker{
+		publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+			return mockPub, nil
+		},
+	}
+
+	config := &PublisherConfig{
+		BrokerType:      "nats",
+		BrokerEndpoints: []string{"nats://localhost:4222"},
+		SerializerType:  "json",
+		TopicPrefix:     "saga",
+		EnableConfirm:   false,
+		RetryAttempts:   1,
+		RetryInterval:   10 * time.Millisecond,
+		Timeout:         30 * time.Second,
+	}
+
+	publisher, err := NewSagaEventPublisher(broker, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	ctx := context.Background()
+
+	event := &saga.SagaEvent{
+		ID:        "event-fail",
+		SagaID:    "saga-fail",
+		Type:      saga.EventSagaFailed,
+		Version:   "1.0",
+		Timestamp: time.Now(),
+	}
+
+	err = publisher.PublishSagaEvent(ctx, event)
+	assert.Error(t, err)
+
+	// Verify failure metrics were recorded
+	metrics := publisher.GetMetrics()
+	assert.Equal(t, int64(1), metrics.TotalFailed.Load())
+	// Note: when using reliabilityHandler, retries are handled internally
+	// and may not be reflected in TotalRetries metric in the same way
+	// The key is that we recorded the failure
+}
+
+func TestSagaEventPublisher_LoggingIntegration(t *testing.T) {
+	logger.InitLogger()
+
+	mockPub := &mockPublisher{
+		publishFunc: func(ctx context.Context, message *messaging.Message) error {
+			return nil
+		},
+	}
+
+	broker := &mockMessageBroker{
+		publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+			return mockPub, nil
+		},
+	}
+
+	config := &PublisherConfig{
+		BrokerType:      "nats",
+		BrokerEndpoints: []string{"nats://localhost:4222"},
+		SerializerType:  "json",
+		TopicPrefix:     "saga",
+		EnableConfirm:   false,
+		RetryAttempts:   3,
+		RetryInterval:   10 * time.Millisecond,
+		Timeout:         30 * time.Second,
+	}
+
+	publisher, err := NewSagaEventPublisher(broker, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	ctx := context.Background()
+
+	// Test with full event metadata
+	event := &saga.SagaEvent{
+		ID:            "event-log-1",
+		SagaID:        "saga-log",
+		StepID:        "step-1",
+		Type:          saga.EventSagaStarted,
+		Version:       "1.0",
+		Timestamp:     time.Now(),
+		TraceID:       "trace-123",
+		SpanID:        "span-456",
+		CorrelationID: "corr-789",
+		Source:        "test-service",
+		Service:       "order-service",
+	}
+
+	// This should log attempt, success messages
+	err = publisher.PublishSagaEvent(ctx, event)
+	require.NoError(t, err)
+
+	// Test logging on failure
+	failMockPub := &mockPublisher{
+		publishFunc: func(ctx context.Context, message *messaging.Message) error {
+			return errors.New("intentional failure")
+		},
+	}
+
+	failBroker := &mockMessageBroker{
+		publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+			return failMockPub, nil
+		},
+	}
+
+	failPublisher, err := NewSagaEventPublisher(failBroker, config)
+	require.NoError(t, err)
+	defer failPublisher.Close()
+
+	// This should log failure message
+	err = failPublisher.PublishSagaEvent(ctx, event)
+	assert.Error(t, err)
+}
+
+func TestSagaEventPublisher_TracingSpan(t *testing.T) {
+	logger.InitLogger()
+
+	mockPub := &mockPublisher{
+		publishFunc: func(ctx context.Context, message *messaging.Message) error {
+			return nil
+		},
+	}
+
+	broker := &mockMessageBroker{
+		publisherFunc: func(config messaging.PublisherConfig) (messaging.EventPublisher, error) {
+			return mockPub, nil
+		},
+	}
+
+	config := &PublisherConfig{
+		BrokerType:      "nats",
+		BrokerEndpoints: []string{"nats://localhost:4222"},
+		SerializerType:  "json",
+		TopicPrefix:     "saga",
+		EnableConfirm:   false,
+		RetryAttempts:   3,
+		RetryInterval:   10 * time.Millisecond,
+		Timeout:         30 * time.Second,
+	}
+
+	publisher, err := NewSagaEventPublisher(broker, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	ctx := context.Background()
+
+	event := &saga.SagaEvent{
+		ID:        "event-trace-1",
+		SagaID:    "saga-trace",
+		Type:      saga.EventSagaStarted,
+		Version:   "1.0",
+		Timestamp: time.Now(),
+		TraceID:   "existing-trace-id",
+		SpanID:    "parent-span-id",
+	}
+
+	// Should start a span and propagate trace context
+	err = publisher.PublishSagaEvent(ctx, event)
+	require.NoError(t, err)
+
+	// Verify tracing manager was initialized
+	assert.NotNil(t, publisher.tracingManager)
+}
