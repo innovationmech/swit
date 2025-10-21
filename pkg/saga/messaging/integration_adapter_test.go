@@ -222,12 +222,8 @@ func TestMessagingIntegrationAdapter_ErrorHandlingAndRetry(t *testing.T) {
 			TopicPrefix:     "saga",
 			SerializerType:  "json",
 			Timeout:         30 * time.Second,
-			RetryPolicy: &messaging.RetryConfig{
-				MaxAttempts:     3,
-				InitialInterval: 100 * time.Millisecond,
-				MaxInterval:     1 * time.Second,
-				Multiplier:      2.0,
-			},
+			RetryAttempts:   3,
+			RetryInterval:   100 * time.Millisecond,
 		},
 	}
 
@@ -260,8 +256,8 @@ func TestMessagingIntegrationAdapter_ErrorHandlingAndRetry(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify retry configuration
-	assert.NotNil(t, adapter.config.Publisher.RetryPolicy)
-	assert.Equal(t, 3, adapter.config.Publisher.RetryPolicy.MaxAttempts)
+	assert.Equal(t, 3, adapter.config.Publisher.RetryAttempts)
+	assert.Equal(t, 100*time.Millisecond, adapter.config.Publisher.RetryInterval)
 }
 
 // TestMessagingIntegrationAdapter_ConcurrentMessageProcessing tests concurrent message processing.
@@ -379,7 +375,7 @@ func TestMessagingIntegrationAdapter_MessageBatchProcessing(t *testing.T) {
 
 	// Publish batch
 	publisher := adapter.GetPublisher()
-	err = publisher.PublishBatch(ctx, messages)
+	err = publisher.PublishBatch(ctx, events)
 	assert.NoError(t, err)
 
 	mockPublisher.AssertExpectations(t)
@@ -648,8 +644,10 @@ func TestMessagingIntegrationAdapter_DeadLetterQueue(t *testing.T) {
 			TopicPrefix:     "saga",
 			SerializerType:  "json",
 			Timeout:         30 * time.Second,
-			EnableDLQ:       true,
-			DLQTopic:        "saga.dlq",
+			Reliability: &ReliabilityConfig{
+				EnableDLQ: true,
+				DLQTopic:  "saga.dlq",
+			},
 		},
 	}
 
@@ -665,8 +663,9 @@ func TestMessagingIntegrationAdapter_DeadLetterQueue(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify DLQ configuration
-	assert.True(t, adapter.config.Publisher.EnableDLQ)
-	assert.Equal(t, "saga.dlq", adapter.config.Publisher.DLQTopic)
+	require.NotNil(t, adapter.config.Publisher.Reliability)
+	assert.True(t, adapter.config.Publisher.Reliability.EnableDLQ)
+	assert.Equal(t, "saga.dlq", adapter.config.Publisher.Reliability.DLQTopic)
 }
 
 // TestMessagingIntegrationAdapter_ConnectionResilience tests connection resilience.
