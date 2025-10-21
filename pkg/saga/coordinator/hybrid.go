@@ -292,11 +292,16 @@ func (hc *HybridCoordinator) StartSaga(
 		if hc.choreography == nil {
 			return nil, ErrChoreographyNotConfigured
 		}
+		// Generate a unique saga ID for this choreography instance
+		sagaID, err := generateSagaID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate saga ID: %w", err)
+		}
 		// For choreography mode, we publish an initial event to start the Saga
 		// The actual coordination is handled by event handlers
 		event := &saga.SagaEvent{
 			ID:        generateEventID(),
-			SagaID:    fmt.Sprintf("saga-%s", definition.GetID()),
+			SagaID:    sagaID,
 			Type:      saga.EventSagaStarted,
 			Timestamp: hc.now(),
 			Data:      initialData,

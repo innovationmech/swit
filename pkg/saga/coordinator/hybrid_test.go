@@ -24,6 +24,7 @@ package coordinator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/innovationmech/swit/pkg/saga"
@@ -660,4 +661,94 @@ func TestHybridConfigValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHybridCoordinatorChoreographyUniqueIDs tests that multiple choreography saga instances
+// get unique saga IDs instead of sharing the same definition-based ID.
+func TestHybridCoordinatorChoreographyUniqueIDs(t *testing.T) {
+	// Create mock coordinators
+	mockPublisher := &mockEventPublisher{}
+
+	choreography, err := NewChoreographyCoordinator(&ChoreographyConfig{
+		EventPublisher: mockPublisher,
+	})
+	if err != nil {
+		t.Fatalf("failed to create choreography coordinator: %v", err)
+	}
+	defer choreography.Close()
+
+	// Create hybrid coordinator with forced choreography mode
+	hybrid, err := NewHybridCoordinator(&HybridConfig{
+		Choreography:  choreography,
+		ForceMode:     ModeChoreography,
+		EnableMetrics: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to create hybrid coordinator: %v", err)
+	}
+	defer hybrid.Close()
+
+	// Create a simple saga definition
+	definition := &mockSagaDefinition{
+		id: "test-saga-definition",
+	}
+
+	// Start multiple choreography saga instances concurrently
+	const numInstances = 5
+	instances := make([]saga.SagaInstance, numInstances)
+	instanceIDs := make([]string, numInstances)
+
+	for i := 0; i < numInstances; i++ {
+		instance, err := hybrid.StartSaga(context.Background(), definition, "test-data")
+		if err != nil {
+			t.Fatalf("failed to start saga instance %d: %v", i, err)
+		}
+		instances[i] = instance
+		instanceIDs[i] = instance.GetID()
+	}
+
+	// Verify that all instance IDs are unique
+	idSet := make(map[string]bool)
+	for i, id := range instanceIDs {
+		if idSet[id] {
+			t.Errorf("duplicate saga ID found: %s (instance %d)", id, i)
+		}
+		idSet[id] = true
+
+		// Verify that the ID is not just the definition-based ID
+		expectedDefID := fmt.Sprintf("saga-%s", definition.GetID())
+		if id == expectedDefID {
+			t.Errorf("saga ID %q should not be equal to definition-based ID %q", id, expectedDefID)
+		}
+
+		// Verify that the ID follows the expected pattern from generateSagaID
+		if !matchesSagaIDPattern(id) {
+			t.Errorf("saga ID %q does not match expected saga ID pattern", id)
+		}
+	}
+
+	// Verify that mode tracking works correctly with unique IDs
+	for i, id := range instanceIDs {
+		mode, exists := hybrid.GetModeForSaga(id)
+		if !exists {
+			t.Errorf("mode tracking not found for saga instance %d with ID %s", i, id)
+		} else if mode != ModeChoreography {
+			t.Errorf("expected mode %s for saga instance %d, got %s", ModeChoreography, i, mode)
+		}
+	}
+
+	// Verify metrics count
+	metrics := hybrid.GetHybridMetrics()
+	if metrics.ChoreographySagas != int64(numInstances) {
+		t.Errorf("expected %d choreography sagas in metrics, got %d", numInstances, metrics.ChoreographySagas)
+	}
+}
+
+// matchesSagaIDPattern checks if a saga ID follows the pattern from generateSagaID
+func matchesSagaIDPattern(id string) bool {
+	// Expected pattern: saga-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (UUID-like)
+	if len(id) < 5 {
+		return false
+	}
+	return id[:5] == "saga-" && len(id) == 41 // saga- + 36 char UUID
 }
