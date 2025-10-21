@@ -1,0 +1,373 @@
+// Copyright © 2025 jackelyj <dreamerlyj@gmail.com>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+// Package main demonstrates choreography-based Saga coordination.
+// This example shows how to implement event-driven saga workflows where
+// services react to events autonomously without central control.
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/innovationmech/swit/pkg/logger"
+	"github.com/innovationmech/swit/pkg/saga"
+	"github.com/innovationmech/swit/pkg/saga/coordinator"
+)
+
+func main() {
+	// Initialize logger
+	log, err := logger.NewZapLogger(&logger.Config{
+		Level:      "info",
+		Format:     "json",
+		OutputPath: []string{"stdout"},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Sync()
+
+	log.Info("Starting choreography-based saga example")
+
+	// Create in-memory storage and publisher
+	storage := coordinator.NewInMemoryStateStorage()
+	publisher := coordinator.NewInMemoryEventPublisher()
+
+	// Configure choreography coordinator
+	config := &coordinator.ChoreographyConfig{
+		EventPublisher:        publisher,
+		StateStorage:          storage,
+		MaxConcurrentHandlers: 20,
+		EventTimeout:          30 * time.Second,
+		EnableMetrics:         true,
+		HandlerRetryPolicy:    saga.NewFixedDelayRetryPolicy(3, time.Second),
+	}
+
+	// Create coordinator
+	coord, err := coordinator.NewChoreographyCoordinator(config)
+	if err != nil {
+		log.Fatal("Failed to create choreography coordinator", "error", err)
+	}
+	defer coord.Close()
+
+	// Register service handlers
+	registerServiceHandlers(coord, log)
+
+	// Start coordinator
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := coord.Start(ctx); err != nil {
+		log.Fatal("Failed to start coordinator", "error", err)
+	}
+	defer coord.Stop(ctx)
+
+	log.Info("Choreography coordinator started successfully")
+
+	// Demonstrate order saga workflow
+	demonstrateOrderSaga(ctx, publisher, log)
+
+	// Wait for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	<-sigChan
+	log.Info("Shutdown signal received, stopping gracefully...")
+
+	// Display metrics
+	metrics := coord.GetMetrics()
+	log.Info("Coordinator metrics",
+		"total_events_published", metrics.TotalEventsPublished,
+		"total_events_handled", metrics.TotalEventsHandled,
+		"total_handler_errors", metrics.TotalHandlerErrors,
+		"active_handlers", metrics.ActiveHandlers)
+}
+
+// registerServiceHandlers registers all service event handlers
+func registerServiceHandlers(coord *coordinator.ChoreographyCoordinator, log logger.Logger) {
+	// Order Service Handler
+	orderHandler := &OrderServiceHandler{log: log}
+	if err := coord.RegisterHandler(orderHandler); err != nil {
+		log.Fatal("Failed to register order handler", "error", err)
+	}
+
+	// Inventory Service Handler
+	inventoryHandler := &InventoryServiceHandler{log: log}
+	if err := coord.RegisterHandler(inventoryHandler); err != nil {
+		log.Fatal("Failed to register inventory handler", "error", err)
+	}
+
+	// Payment Service Handler
+	paymentHandler := &PaymentServiceHandler{log: log}
+	if err := coord.RegisterHandler(paymentHandler); err != nil {
+		log.Fatal("Failed to register payment handler", "error", err)
+	}
+
+	// Shipping Service Handler
+	shippingHandler := &ShippingServiceHandler{log: log}
+	if err := coord.RegisterHandler(shippingHandler); err != nil {
+		log.Fatal("Failed to register shipping handler", "error", err)
+	}
+
+	// Notification Service Handler
+	notificationHandler := &NotificationServiceHandler{log: log}
+	if err := coord.RegisterHandler(notificationHandler); err != nil {
+		log.Fatal("Failed to register notification handler", "error", err)
+	}
+
+	log.Info("All service handlers registered successfully")
+}
+
+// demonstrateOrderSaga demonstrates a complete order processing saga
+func demonstrateOrderSaga(ctx context.Context, publisher saga.EventPublisher, log logger.Logger) {
+	log.Info("Starting order saga demonstration")
+
+	// Create initial order event
+	orderEvent := &saga.SagaEvent{
+		ID:        "order-saga-event-001",
+		SagaID:    "order-saga-001",
+		Type:      saga.EventSagaStarted,
+		Timestamp: time.Now(),
+		Version:   "1.0",
+		Data: map[string]interface{}{
+			"order_id":    "ORD-2025-001",
+			"customer_id": "CUST-123",
+			"items": []map[string]interface{}{
+				{"product_id": "PROD-001", "quantity": 2, "price": 50.0},
+				{"product_id": "PROD-002", "quantity": 1, "price": 100.0},
+			},
+			"total_amount": 200.0,
+			"address": map[string]string{
+				"street":  "123 Main St",
+				"city":    "San Francisco",
+				"state":   "CA",
+				"zipcode": "94102",
+			},
+		},
+		Metadata: map[string]string{
+			"source":      "web-app",
+			"customer_ip": "192.168.1.100",
+		},
+	}
+
+	// Publish the event to start the saga
+	if err := publisher.PublishEvent(ctx, orderEvent); err != nil {
+		log.Error("Failed to publish order event", "error", err)
+		return
+	}
+
+	log.Info("Order saga initiated",
+		"saga_id", orderEvent.SagaID,
+		"order_id", orderEvent.Data.(map[string]interface{})["order_id"])
+
+	// Wait for saga to complete
+	time.Sleep(5 * time.Second)
+
+	log.Info("Order saga demonstration completed")
+}
+
+// OrderServiceHandler handles order-related events
+type OrderServiceHandler struct {
+	log logger.Logger
+}
+
+func (h *OrderServiceHandler) HandleEvent(ctx context.Context, event *saga.SagaEvent) error {
+	if event.Type == saga.EventSagaStarted {
+		h.log.Info("Order service: Received new order",
+			"saga_id", event.SagaID,
+			"order_id", event.Data.(map[string]interface{})["order_id"])
+
+		// Validate order and trigger inventory check
+		// In real implementation, you would validate the order data here
+		h.log.Info("Order service: Order validated, requesting inventory check")
+
+		// This is just a demo - in real implementation, the coordinator would handle event publishing
+		return nil
+	}
+	return nil
+}
+
+func (h *OrderServiceHandler) GetHandlerID() string {
+	return "order-service"
+}
+
+func (h *OrderServiceHandler) GetSupportedEventTypes() []saga.SagaEventType {
+	return []saga.SagaEventType{saga.EventSagaStarted}
+}
+
+func (h *OrderServiceHandler) GetPriority() int {
+	return 100
+}
+
+// InventoryServiceHandler handles inventory-related events
+type InventoryServiceHandler struct {
+	log logger.Logger
+}
+
+func (h *InventoryServiceHandler) HandleEvent(ctx context.Context, event *saga.SagaEvent) error {
+	if event.Type == saga.EventStepStarted {
+		data := event.Data.(map[string]interface{})
+		if step, ok := data["step"].(string); ok && step == "check-inventory" {
+			h.log.Info("Inventory service: Checking inventory",
+				"saga_id", event.SagaID)
+
+			// Simulate inventory check
+			h.log.Info("Inventory service: Inventory available, reserving stock")
+
+			// In real implementation, you would reserve inventory here
+			return nil
+		}
+	}
+	return nil
+}
+
+func (h *InventoryServiceHandler) GetHandlerID() string {
+	return "inventory-service"
+}
+
+func (h *InventoryServiceHandler) GetSupportedEventTypes() []saga.SagaEventType {
+	return []saga.SagaEventType{saga.EventStepStarted, saga.EventStepCompleted}
+}
+
+func (h *InventoryServiceHandler) GetPriority() int {
+	return 90
+}
+
+// PaymentServiceHandler handles payment-related events
+type PaymentServiceHandler struct {
+	log logger.Logger
+}
+
+func (h *PaymentServiceHandler) HandleEvent(ctx context.Context, event *saga.SagaEvent) error {
+	if event.Type == saga.EventStepCompleted {
+		data := event.Data.(map[string]interface{})
+		if step, ok := data["step"].(string); ok && step == "inventory-reserved" {
+			h.log.Info("Payment service: Processing payment",
+				"saga_id", event.SagaID)
+
+			// Simulate payment processing
+			amount := data["amount"]
+			h.log.Info("Payment service: Payment processed successfully",
+				"amount", amount)
+
+			return nil
+		}
+	}
+	return nil
+}
+
+func (h *PaymentServiceHandler) GetHandlerID() string {
+	return "payment-service"
+}
+
+func (h *PaymentServiceHandler) GetSupportedEventTypes() []saga.SagaEventType {
+	return []saga.SagaEventType{saga.EventStepCompleted}
+}
+
+func (h *PaymentServiceHandler) GetPriority() int {
+	return 80
+}
+
+// ShippingServiceHandler handles shipping-related events
+type ShippingServiceHandler struct {
+	log logger.Logger
+}
+
+func (h *ShippingServiceHandler) HandleEvent(ctx context.Context, event *saga.SagaEvent) error {
+	if event.Type == saga.EventStepCompleted {
+		data := event.Data.(map[string]interface{})
+		if step, ok := data["step"].(string); ok && step == "payment-processed" {
+			h.log.Info("Shipping service: Creating shipment",
+				"saga_id", event.SagaID)
+
+			// Simulate shipment creation
+			h.log.Info("Shipping service: Shipment created, tracking number generated")
+
+			return nil
+		}
+	}
+	return nil
+}
+
+func (h *ShippingServiceHandler) GetHandlerID() string {
+	return "shipping-service"
+}
+
+func (h *ShippingServiceHandler) GetSupportedEventTypes() []saga.SagaEventType {
+	return []saga.SagaEventType{saga.EventStepCompleted}
+}
+
+func (h *ShippingServiceHandler) GetPriority() int {
+	return 70
+}
+
+// NotificationServiceHandler handles notification events
+type NotificationServiceHandler struct {
+	log logger.Logger
+}
+
+func (h *NotificationServiceHandler) HandleEvent(ctx context.Context, event *saga.SagaEvent) error {
+	switch event.Type {
+	case saga.EventSagaCompleted:
+		h.log.Info("Notification service: Sending order confirmation email",
+			"saga_id", event.SagaID)
+		fmt.Println("\n=== ORDER CONFIRMATION ===")
+		fmt.Println("Your order has been successfully processed!")
+		fmt.Println("==========================\n")
+
+	case saga.EventSagaFailed:
+		h.log.Info("Notification service: Sending order failure notification",
+			"saga_id", event.SagaID)
+		fmt.Println("\n=== ORDER FAILED ===")
+		fmt.Println("Unfortunately, your order could not be processed.")
+		fmt.Println("====================\n")
+
+	case saga.EventSagaCompensated:
+		h.log.Info("Notification service: Sending compensation notification",
+			"saga_id", event.SagaID)
+		fmt.Println("\n=== ORDER CANCELLED ===")
+		fmt.Println("Your order has been cancelled and any charges have been refunded.")
+		fmt.Println("=======================\n")
+	}
+	return nil
+}
+
+func (h *NotificationServiceHandler) GetHandlerID() string {
+	return "notification-service"
+}
+
+func (h *NotificationServiceHandler) GetSupportedEventTypes() []saga.SagaEventType {
+	return []saga.SagaEventType{
+		saga.EventSagaCompleted,
+		saga.EventSagaFailed,
+		saga.EventSagaCompensated,
+	}
+}
+
+func (h *NotificationServiceHandler) GetPriority() int {
+	return 50
+}
+
