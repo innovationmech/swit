@@ -560,4 +560,3 @@ func (h *testEventHandler) GetSupportedEventTypes() []saga.SagaEventType {
 func (h *testEventHandler) GetPriority() int {
 	return h.priority
 }
-

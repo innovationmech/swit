@@ -215,7 +215,7 @@ func TestE2E_OrderSaga_Choreography(t *testing.T) {
 		completionHandler,
 	}
 	for _, handler := range handlers {
-		if err := coordinator.RegisterEventHandler(handler); err != nil{
+		if err := coordinator.RegisterEventHandler(handler); err != nil {
 			t.Fatalf("Failed to register handler: %v", err)
 		}
 	}
@@ -415,7 +415,7 @@ func TestE2E_OrderSaga_CompensationFlow(t *testing.T) {
 		compensationHandler,
 	}
 	for _, handler := range handlers {
-		if err := coordinator.RegisterEventHandler(handler); err != nil{
+		if err := coordinator.RegisterEventHandler(handler); err != nil {
 			t.Fatalf("Failed to register handler: %v", err)
 		}
 	}
@@ -606,7 +606,7 @@ func TestE2E_TimeoutHandling(t *testing.T) {
 		},
 	}
 
-	if err := coordinator.RegisterEventHandler(slowHandler); err != nil{
+	if err := coordinator.RegisterEventHandler(slowHandler); err != nil {
 		t.Fatalf("Failed to register handler: %v", err)
 	}
 
@@ -649,4 +649,3 @@ type OrderSagaState struct {
 	ShippingCreated   bool
 	Completed         bool
 }
-

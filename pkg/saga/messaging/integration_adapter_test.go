@@ -713,4 +713,3 @@ func TestMessagingIntegrationAdapter_ConnectionResilience(t *testing.T) {
 	// Verify connection status tracking
 	assert.True(t, adapter.IsInitialized())
 }
-

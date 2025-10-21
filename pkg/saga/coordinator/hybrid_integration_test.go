@@ -656,4 +656,3 @@ func TestHybrid_MetricsAggregation(t *testing.T) {
 	t.Logf("Metrics aggregation verified: Total=%d, Orchestration=%d, Choreography=%d",
 		hybridMetrics.TotalSagas, hybridMetrics.OrchestrationSagas, hybridMetrics.ChoreographySagas)
 }
-
