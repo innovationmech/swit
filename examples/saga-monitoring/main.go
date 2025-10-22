@@ -1,3 +1,24 @@
+// Copyright © 2025 jackelyj <dreamerlyj@gmail.com>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
 package main
 
 import (
@@ -11,15 +32,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/innovationmech/swit/pkg/saga/monitoring"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
 	// Create metrics collector with default configuration
 	config := monitoring.DefaultConfig()
 	config.EnableLabeledMetrics = true
-	
+
 	collector, err := monitoring.NewSagaMetricsCollector(config)
 	if err != nil {
 		log.Fatalf("Failed to create metrics collector: %v", err)
@@ -57,7 +78,7 @@ func main() {
 	// Start saga simulation in background
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	go simulateSagaWorkload(ctx, collector)
 
 	// Wait for interrupt signal
@@ -66,10 +87,10 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server...")
-	
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-	
+
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
@@ -88,7 +109,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func indexHandler(collector monitoring.MetricsCollector) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metrics := collector.GetMetrics()
-		
+
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `
 <!DOCTYPE html>
@@ -230,15 +251,15 @@ func indexHandler(collector monitoring.MetricsCollector) http.HandlerFunc {
     </div>
 </body>
 </html>
-`, getSuccessRateColor(metrics), 
-		   metrics.SagasStarted, 
-		   metrics.SagasCompleted, 
-		   metrics.SagasFailed, 
-		   metrics.ActiveSagas,
-		   getSuccessRate(metrics),
-		   metrics.AvgDuration,
-		   formatFailureReasons(metrics.FailureReasons),
-		   time.Now().Format(time.RFC3339))
+`, getSuccessRateColor(metrics),
+			metrics.SagasStarted,
+			metrics.SagasCompleted,
+			metrics.SagasFailed,
+			metrics.ActiveSagas,
+			getSuccessRate(metrics),
+			metrics.AvgDuration,
+			formatFailureReasons(metrics.FailureReasons),
+			time.Now().Format(time.RFC3339))
 	}
 }
 
@@ -263,7 +284,7 @@ func formatFailureReasons(reasons map[string]int64) string {
 	if len(reasons) == 0 {
 		return `<div class="failure-item">No failures recorded</div>`
 	}
-	
+
 	html := ""
 	for reason, count := range reasons {
 		html += fmt.Sprintf(`<div class="failure-item"><strong>%s:</strong> %d occurrences</div>`, reason, count)
@@ -274,12 +295,12 @@ func formatFailureReasons(reasons map[string]int64) string {
 // simulateSagaWorkload simulates saga execution for demonstration purposes
 func simulateSagaWorkload(ctx context.Context, collector monitoring.MetricsCollector) {
 	log.Println("Starting saga workload simulation...")
-	
+
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	
+
 	sagaID := 0
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -300,11 +321,11 @@ func simulateSagaWorkload(ctx context.Context, collector monitoring.MetricsColle
 func executeSaga(sagaID string, collector monitoring.MetricsCollector) {
 	// Record saga start
 	collector.RecordSagaStarted(sagaID)
-	
+
 	// Simulate saga execution time (1-10 seconds)
 	executionTime := time.Duration(rand.Intn(9000)+1000) * time.Millisecond
 	time.Sleep(executionTime)
-	
+
 	// Randomly decide success or failure (90% success rate)
 	if rand.Float64() < 0.90 {
 		// Success
@@ -323,4 +344,3 @@ func executeSaga(sagaID string, collector monitoring.MetricsCollector) {
 		collector.RecordSagaFailed(sagaID, reason)
 	}
 }
-
