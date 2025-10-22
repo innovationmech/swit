@@ -253,13 +253,7 @@ func NewRBACManager(config *RBACManagerConfig) *RBACManager {
 // initializePredefinedRoles sets up common predefined roles
 func (m *RBACManager) initializePredefinedRoles() {
 	// Admin role with full permissions
-	adminRole := NewRole("admin", "Administrator with full permissions",
-		PermissionAdminFull,
-		PermissionRoleManage,
-		PermissionUserManage,
-		PermissionConfigWrite,
-		PermissionConfigRead,
-	)
+	adminRole := NewRole("admin", "Administrator with full permissions", AllPermissions()...)
 	m.roles["admin"] = adminRole
 
 	// Operator role for managing sagas

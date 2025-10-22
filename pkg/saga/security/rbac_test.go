@@ -858,6 +858,149 @@ func TestAllPermissions(t *testing.T) {
 	}
 }
 
+func TestRBACManager_AdminRoleFullPermissions(t *testing.T) {
+	manager := NewRBACManager(&RBACManagerConfig{
+		CacheEnabled: false,
+	})
+
+	ctx := context.Background()
+
+	// Assign admin role to user
+	_ = manager.AssignRole("user-admin", "admin")
+
+	// Get all available permissions
+	allPerms := AllPermissions()
+
+	t.Run("admin role has all permissions", func(t *testing.T) {
+		// Check that admin has every single permission defined in the system
+		for _, perm := range allPerms {
+			err := manager.CheckPermission(ctx, "user-admin", perm)
+			if err != nil {
+				t.Errorf("expected admin to have permission %s, got error: %v", perm, err)
+			}
+		}
+	})
+
+	t.Run("admin user permissions set contains all permissions", func(t *testing.T) {
+		// Get the user's permission set
+		userPerms, err := manager.GetUserPermissions("user-admin")
+		if err != nil {
+			t.Fatalf("failed to get user permissions: %v", err)
+		}
+
+		// Verify that the user's permission set contains all permissions
+		if userPerms.Size() != len(allPerms) {
+			t.Errorf("expected admin to have %d permissions, got %d", len(allPerms), userPerms.Size())
+		}
+
+		// Check each permission individually
+		for _, perm := range allPerms {
+			if !userPerms.Has(perm) {
+				t.Errorf("expected admin permissions to include %s", perm)
+			}
+		}
+	})
+
+	t.Run("admin role definition includes all permissions", func(t *testing.T) {
+		// Get the admin role definition
+		adminRole, err := manager.GetRole("admin")
+		if err != nil {
+			t.Fatalf("failed to get admin role: %v", err)
+		}
+
+		// Verify that the admin role definition contains all permissions
+		if adminRole.Permissions.Size() != len(allPerms) {
+			t.Errorf("expected admin role to have %d permissions, got %d", len(allPerms), adminRole.Permissions.Size())
+		}
+
+		// Check each permission individually
+		for _, perm := range allPerms {
+			if !adminRole.Permissions.Has(perm) {
+				t.Errorf("expected admin role permissions to include %s", perm)
+			}
+		}
+	})
+}
+
+func TestRBACManager_AdminRoleIssue661(t *testing.T) {
+	// This test specifically addresses the issue described in the GitHub issue:
+	// "CheckPermission(ctx, "user", PermissionSagaExecute) will receive ErrPermissionDenied,
+	// contradicting the intended semantics of an administrator"
+	manager := NewRBACManager(&RBACManagerConfig{
+		CacheEnabled: false,
+	})
+
+	ctx := context.Background()
+
+	// Assign admin role to user
+	err := manager.AssignRole("user", "admin")
+	if err != nil {
+		t.Fatalf("failed to assign admin role: %v", err)
+	}
+
+	// Test the specific case mentioned in the issue
+	t.Run("admin can execute saga operations", func(t *testing.T) {
+		// This should not return ErrPermissionDenied anymore
+		err := manager.CheckPermission(ctx, "user", PermissionSagaExecute)
+		if err != nil {
+			t.Errorf("admin should be able to execute saga operations, got error: %v", err)
+		}
+	})
+
+	t.Run("admin can perform all saga actions", func(t *testing.T) {
+		sagaPermissions := []Permission{
+			PermissionSagaExecute,
+			PermissionSagaRead,
+			PermissionSagaCancel,
+			PermissionSagaRetry,
+			PermissionSagaRollback,
+			PermissionSagaCompensate,
+			PermissionSagaCreate,
+			PermissionSagaUpdate,
+			PermissionSagaDelete,
+			PermissionSagaList,
+		}
+
+		for _, perm := range sagaPermissions {
+			err := manager.CheckPermission(ctx, "user", perm)
+			if err != nil {
+				t.Errorf("admin should be able to perform %s, got error: %v", perm, err)
+			}
+		}
+	})
+
+	t.Run("admin can perform all step actions", func(t *testing.T) {
+		stepPermissions := []Permission{
+			PermissionStepExecute,
+			PermissionStepRead,
+			PermissionStepUpdate,
+		}
+
+		for _, perm := range stepPermissions {
+			err := manager.CheckPermission(ctx, "user", perm)
+			if err != nil {
+				t.Errorf("admin should be able to perform %s, got error: %v", perm, err)
+			}
+		}
+	})
+
+	t.Run("admin can perform monitoring and audit actions", func(t *testing.T) {
+		monitorAuditPermissions := []Permission{
+			PermissionMonitorView,
+			PermissionMonitorAdmin,
+			PermissionAuditView,
+			PermissionAuditExport,
+		}
+
+		for _, perm := range monitorAuditPermissions {
+			err := manager.CheckPermission(ctx, "user", perm)
+			if err != nil {
+				t.Errorf("admin should be able to perform %s, got error: %v", perm, err)
+			}
+		}
+	})
+}
+
 func BenchmarkRBACManager_CheckPermission(b *testing.B) {
 	manager := NewRBACManager(&RBACManagerConfig{
 		CacheEnabled: true,
