@@ -1,0 +1,169 @@
+# Prometheus configuration for Saga monitoring
+# This configuration defines scraping targets, alerting rules, and service discovery for Saga monitoring
+
+global:
+  # How frequently to scrape targets by default
+  scrape_interval: 15s
+  
+  # How frequently to evaluate alerting rules
+  evaluation_interval: 15s
+  
+  # Timeout for scraping targets
+  scrape_timeout: 10s
+  
+  # External labels to attach to all time series and alerts
+  external_labels:
+    cluster: 'saga-cluster'
+    environment: 'production'
+    replica: 'prometheus-01'
+
+# Load alerting rules from files
+rule_files:
+  - 'alert-rules.yml'
+
+# Configure Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'
+      timeout: 10s
+      api_version: v2
+
+# Scrape configurations
+scrape_configs:
+  # Saga service metrics
+  - job_name: 'saga-service'
+    static_configs:
+      - targets: 
+          - 'saga-service:8080'
+          - 'saga-service:8081'
+          - 'saga-service:8082'
+    metrics_path: /metrics
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    honor_labels: true
+    honor_timestamps: true
+    metric_relabel_configs:
+      # Add service label
+      - target_label: service
+        replacement: saga
+      # Add datacenter label
+      - source_labels: [__address__]
+        regex: '.*:8080'
+        target_label: datacenter
+        replacement: dc1
+      - source_labels: [__address__]
+        regex: '.*:8081'
+        target_label: datacenter
+        replacement: dc2
+      - source_labels: [__address__]
+        regex: '.*:8082'
+        target_label: datacenter
+        replacement: dc3
+  
+  # Saga coordinator metrics (if deployed separately)
+  - job_name: 'saga-coordinator'
+    static_configs:
+      - targets: ['saga-coordinator:9090']
+    metrics_path: /metrics
+    scrape_interval: 10s
+    
+  # Saga state store metrics (PostgreSQL exporter)
+  - job_name: 'saga-postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 15s
+    
+  # Redis state store metrics
+  - job_name: 'saga-redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 15s
+    
+  # Message broker metrics (RabbitMQ)
+  - job_name: 'saga-rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq-exporter:9419']
+    scrape_interval: 15s
+    
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+    
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 10s
+    
+  # cAdvisor for container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 10s
+    
+  # Alertmanager monitoring
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+    scrape_interval: 15s
+
+  # Service discovery for Kubernetes deployments
+  # Uncomment if running in Kubernetes
+  # - job_name: 'kubernetes-saga-pods'
+  #   kubernetes_sd_configs:
+  #     - role: pod
+  #   relabel_configs:
+  #     # Only scrape pods with the annotation prometheus.io/scrape=true
+  #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+  #       action: keep
+  #       regex: true
+  #     # Use the pod's prometheus.io/port annotation for the port
+  #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port, __meta_kubernetes_pod_ip]
+  #       action: replace
+  #       regex: (.+);(.+)
+  #       replacement: $2:$1
+  #       target_label: __address__
+  #     # Use the pod's prometheus.io/path annotation for the path
+  #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+  #       action: replace
+  #       target_label: __metrics_path__
+  #       regex: (.+)
+  #     # Add Kubernetes metadata as labels
+  #     - source_labels: [__meta_kubernetes_namespace]
+  #       target_label: kubernetes_namespace
+  #     - source_labels: [__meta_kubernetes_pod_name]
+  #       target_label: kubernetes_pod_name
+  #     - source_labels: [__meta_kubernetes_pod_label_app]
+  #       target_label: app
+
+# Storage retention configuration
+storage:
+  tsdb:
+    # Keep data for 30 days
+    retention.time: 30d
+    # Or limit by size (whichever comes first)
+    retention.size: 10GB
+    # Disable WAL compression for better write performance
+    # wal_compression: false
+
+# Remote write configuration (optional, for long-term storage)
+# remote_write:
+#   - url: "https://prometheus-remote-write-endpoint/api/v1/write"
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 50
+#       min_shards: 1
+#       max_samples_per_send: 5000
+#       batch_send_deadline: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms
+
+# Remote read configuration (optional)
+# remote_read:
+#   - url: "https://prometheus-remote-read-endpoint/api/v1/read"
+#     read_recent: true
+

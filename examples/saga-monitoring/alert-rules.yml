@@ -1,0 +1,406 @@
+# Prometheus Alerting Rules for Saga Monitoring
+# These rules define alerts for critical Saga metrics and system health
+
+groups:
+  # Saga execution health alerts
+  - name: saga_execution
+    interval: 30s
+    rules:
+      # Alert when saga failure rate is high
+      - alert: HighSagaFailureRate
+        expr: |
+          (
+            rate(saga_monitoring_saga_failed_total[5m]) 
+            / 
+            rate(saga_monitoring_saga_started_total[5m])
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: critical
+          component: saga
+          category: execution
+        annotations:
+          summary: "High Saga failure rate detected"
+          description: "Saga failure rate is {{ $value | humanizePercentage }} (threshold: 10%). Check saga logs and error reasons."
+          dashboard: "http://grafana:3000/d/saga-overview"
+          runbook: "https://docs.example.com/runbooks/saga-high-failure-rate"
+      
+      # Alert when saga success rate drops significantly
+      - alert: LowSagaSuccessRate
+        expr: |
+          (
+            rate(saga_monitoring_saga_completed_total[10m]) 
+            / 
+            rate(saga_monitoring_saga_started_total[10m])
+          ) < 0.90
+        for: 10m
+        labels:
+          severity: warning
+          component: saga
+          category: execution
+        annotations:
+          summary: "Low Saga success rate"
+          description: "Saga success rate is {{ $value | humanizePercentage }} over the last 10 minutes (threshold: 90%)."
+      
+      # Alert when there are too many active sagas
+      - alert: TooManyActiveSagas
+        expr: saga_monitoring_active_sagas > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: saga
+          category: capacity
+        annotations:
+          summary: "Too many active Sagas"
+          description: "There are {{ $value }} active Sagas (threshold: 1000). This may indicate slow processing or stuck sagas."
+      
+      # Alert when saga execution duration is too long
+      - alert: SlowSagaExecution
+        expr: |
+          histogram_quantile(0.95, 
+            rate(saga_monitoring_saga_duration_seconds_bucket[5m])
+          ) > 60
+        for: 10m
+        labels:
+          severity: warning
+          component: saga
+          category: performance
+        annotations:
+          summary: "Slow Saga execution detected"
+          description: "P95 saga execution duration is {{ $value | humanizeDuration }} (threshold: 60s)."
+      
+      # Alert when saga execution duration is extremely long
+      - alert: VerySlow SagaExecution
+        expr: |
+          histogram_quantile(0.99, 
+            rate(saga_monitoring_saga_duration_seconds_bucket[5m])
+          ) > 300
+        for: 5m
+        labels:
+          severity: critical
+          component: saga
+          category: performance
+        annotations:
+          summary: "Very slow Saga execution detected"
+          description: "P99 saga execution duration is {{ $value | humanizeDuration }} (threshold: 300s). Immediate investigation required."
+      
+      # Alert when no sagas are being started (possible system issue)
+      - alert: NoSagaActivity
+        expr: rate(saga_monitoring_saga_started_total[10m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: saga
+          category: health
+        annotations:
+          summary: "No Saga activity detected"
+          description: "No new Sagas have been started in the last 15 minutes. Check if the system is receiving requests."
+
+  # Saga failure analysis alerts
+  - name: saga_failures
+    interval: 30s
+    rules:
+      # Alert on specific failure reasons with high occurrence
+      - alert: HighTimeoutFailures
+        expr: |
+          rate(saga_monitoring_saga_failed_total{reason="timeout"}[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: saga
+          category: failure
+          failure_type: timeout
+        annotations:
+          summary: "High rate of timeout failures"
+          description: "Saga timeout failures are occurring at {{ $value }} per second. Check downstream service latency."
+      
+      - alert: HighNetworkFailures
+        expr: |
+          rate(saga_monitoring_saga_failed_total{reason=~"network.*|connection.*"}[5m]) > 0.3
+        for: 5m
+        labels:
+          severity: critical
+          component: saga
+          category: failure
+          failure_type: network
+        annotations:
+          summary: "High rate of network failures"
+          description: "Network-related saga failures are occurring at {{ $value }} per second. Check network connectivity and service health."
+      
+      - alert: HighDatabaseFailures
+        expr: |
+          rate(saga_monitoring_saga_failed_total{reason=~".*database.*|.*storage.*"}[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          component: saga
+          category: failure
+          failure_type: database
+        annotations:
+          summary: "High rate of database failures"
+          description: "Database-related saga failures are occurring at {{ $value }} per second. Check database health and connections."
+
+  # Saga compensation alerts
+  - name: saga_compensation
+    interval: 30s
+    rules:
+      # Alert when compensation rate is unusually high
+      - alert: HighCompensationRate
+        expr: |
+          rate(saga_monitoring_compensation_executed_total[10m]) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          component: saga
+          category: compensation
+        annotations:
+          summary: "High compensation rate detected"
+          description: "Saga compensations are executing at {{ $value }} per second. This indicates frequent saga failures requiring rollback."
+      
+      # Alert when compensation itself is failing
+      - alert: CompensationFailures
+        expr: |
+          rate(saga_monitoring_compensation_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: saga
+          category: compensation
+        annotations:
+          summary: "Compensation failures detected"
+          description: "Saga compensations are failing at {{ $value }} per second. Manual intervention may be required to ensure data consistency."
+
+  # System resource alerts
+  - name: saga_resources
+    interval: 30s
+    rules:
+      # Alert on high memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          process_resident_memory_bytes{job="saga-service"} 
+          / 
+          (1024 * 1024 * 1024) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+          category: resources
+        annotations:
+          summary: "High memory usage in Saga service"
+          description: "Saga service is using {{ $value | humanize }}GB of memory (threshold: 2GB)."
+      
+      # Alert on high CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          rate(process_cpu_seconds_total{job="saga-service"}[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+          category: resources
+        annotations:
+          summary: "High CPU usage in Saga service"
+          description: "Saga service CPU usage is {{ $value }}% (threshold: 80%)."
+      
+      # Alert on high goroutine count (potential goroutine leak)
+      - alert: HighGoroutineCount
+        expr: go_goroutines{job="saga-service"} > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+          category: resources
+        annotations:
+          summary: "High goroutine count in Saga service"
+          description: "Saga service has {{ $value }} goroutines (threshold: 10000). Possible goroutine leak."
+
+  # Messaging system alerts
+  - name: saga_messaging
+    interval: 30s
+    rules:
+      # Alert on message publishing failures
+      - alert: HighMessagePublishFailures
+        expr: |
+          rate(saga_messaging_publish_failures_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          component: messaging
+          category: reliability
+        annotations:
+          summary: "High message publish failure rate"
+          description: "Message publishing is failing at {{ $value }} per second. Check message broker health."
+      
+      # Alert on message consumption failures
+      - alert: HighMessageConsumptionFailures
+        expr: |
+          rate(saga_messaging_consume_failures_total[5m]) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          component: messaging
+          category: reliability
+        annotations:
+          summary: "High message consumption failure rate"
+          description: "Message consumption is failing at {{ $value }} per second. Check consumer health and message formats."
+      
+      # Alert on high message queue depth
+      - alert: HighMessageQueueDepth
+        expr: saga_messaging_queue_depth > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: messaging
+          category: capacity
+        annotations:
+          summary: "High message queue depth"
+          description: "Message queue has {{ $value }} messages (threshold: 10000). Processing may be lagging."
+
+  # State storage alerts
+  - name: saga_storage
+    interval: 30s
+    rules:
+      # Alert on storage operation failures
+      - alert: HighStorageFailures
+        expr: |
+          rate(saga_storage_operations_total{status="error"}[5m]) 
+          / 
+          rate(saga_storage_operations_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: storage
+          category: reliability
+        annotations:
+          summary: "High storage operation failure rate"
+          description: "Storage operations are failing at {{ $value | humanizePercentage }} (threshold: 5%). Check database health."
+      
+      # Alert on slow storage operations
+      - alert: SlowStorageOperations
+        expr: |
+          histogram_quantile(0.95, 
+            rate(saga_storage_operation_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          component: storage
+          category: performance
+        annotations:
+          summary: "Slow storage operations detected"
+          description: "P95 storage operation latency is {{ $value | humanizeDuration }} (threshold: 1s)."
+
+  # Distributed tracing alerts
+  - name: saga_tracing
+    interval: 60s
+    rules:
+      # Alert when trace export is failing
+      - alert: TraceExportFailures
+        expr: |
+          rate(otelcol_exporter_send_failed_spans[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: tracing
+          category: observability
+        annotations:
+          summary: "Trace export failures detected"
+          description: "{{ $value }} spans are failing to export per second. Check Jaeger/Zipkin connectivity."
+      
+      # Alert when trace sampling rate is too low
+      - alert: LowTraceSamplingRate
+        expr: |
+          rate(otelcol_processor_spans_sampled_total[10m]) 
+          / 
+          rate(otelcol_processor_spans_incoming_total[10m]) < 0.01
+        for: 15m
+        labels:
+          severity: info
+          component: tracing
+          category: observability
+        annotations:
+          summary: "Very low trace sampling rate"
+          description: "Only {{ $value | humanizePercentage }} of traces are being sampled. Consider adjusting sampling configuration."
+
+  # Service health alerts
+  - name: saga_health
+    interval: 30s
+    rules:
+      # Alert when service is down
+      - alert: SagaServiceDown
+        expr: up{job="saga-service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: service
+          category: availability
+        annotations:
+          summary: "Saga service is down"
+          description: "Saga service {{ $labels.instance }} is not responding. Immediate action required."
+      
+      # Alert on high error rate from health checks
+      - alert: HealthCheckFailures
+        expr: |
+          rate(saga_health_check_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: service
+          category: health
+        annotations:
+          summary: "Health check failures detected"
+          description: "Health checks are failing at {{ $value }} per second. Check dependent services."
+      
+      # Alert when database connections are exhausted
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          saga_database_connections_in_use 
+          / 
+          saga_database_connections_max > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+          category: capacity
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: "Using {{ $value | humanizePercentage }} of available database connections (threshold: 90%)."
+
+  # SLO (Service Level Objective) alerts
+  - name: saga_slo
+    interval: 60s
+    rules:
+      # Alert when SLO for success rate is at risk
+      - alert: SagaSuccessRateSLOAtRisk
+        expr: |
+          (
+            sum(rate(saga_monitoring_saga_completed_total[1h]))
+            /
+            sum(rate(saga_monitoring_saga_started_total[1h]))
+          ) < 0.999
+        for: 15m
+        labels:
+          severity: warning
+          component: slo
+          category: reliability
+          slo: "99.9% success rate"
+        annotations:
+          summary: "Saga success rate SLO at risk"
+          description: "Current success rate is {{ $value | humanizePercentage }} over the last hour (SLO: 99.9%). Burning error budget."
+      
+      # Alert when SLO for latency is at risk
+      - alert: SagaLatencySLOAtRisk
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(saga_monitoring_saga_duration_seconds_bucket[1h])) by (le)
+          ) > 30
+        for: 15m
+        labels:
+          severity: warning
+          component: slo
+          category: performance
+          slo: "P95 latency < 30s"
+        annotations:
+          summary: "Saga latency SLO at risk"
+          description: "P95 latency is {{ $value | humanizeDuration }} over the last hour (SLO: 30s)."
+

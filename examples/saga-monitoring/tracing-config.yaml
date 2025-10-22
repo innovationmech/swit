@@ -1,0 +1,290 @@
+# Distributed Tracing Configuration for Saga System
+# Supports OpenTelemetry, Jaeger, and Zipkin exporters
+
+# OpenTelemetry Tracing Configuration
+opentelemetry:
+  # Enable or disable tracing
+  enabled: true
+  
+  # Service name for traces
+  service_name: "saga-coordinator"
+  
+  # Service version
+  service_version: "1.0.0"
+  
+  # Deployment environment
+  environment: "production"
+  
+  # Sampling configuration
+  sampling:
+    # Sampling strategy: always_on, always_off, trace_id_ratio, parent_based
+    strategy: "parent_based"
+    
+    # Sampling ratio (0.0 to 1.0) - only for trace_id_ratio strategy
+    # 1.0 means sample all traces, 0.1 means sample 10% of traces
+    ratio: 1.0
+    
+    # Parent-based sampling configuration
+    parent_based:
+      # Sample if parent is sampled
+      remote_parent_sampled: true
+      # Don't sample if parent is not sampled
+      remote_parent_not_sampled: false
+      # Sample local root spans
+      local_parent_sampled: true
+      local_parent_not_sampled: false
+  
+  # Batch span processor configuration
+  batch_processor:
+    # Maximum queue size
+    max_queue_size: 2048
+    
+    # Maximum batch size
+    max_export_batch_size: 512
+    
+    # Batch timeout (how long to wait before exporting)
+    schedule_delay: "5s"
+    
+    # Export timeout
+    export_timeout: "30s"
+  
+  # Resource attributes to add to all spans
+  resource_attributes:
+    # Deployment info
+    deployment.environment: "production"
+    service.namespace: "saga"
+    service.instance.id: "${HOSTNAME}"
+    
+    # Cloud provider info (optional)
+    # cloud.provider: "aws"
+    # cloud.region: "us-east-1"
+    # cloud.availability_zone: "us-east-1a"
+    
+    # Kubernetes info (optional)
+    # k8s.cluster.name: "saga-cluster"
+    # k8s.namespace.name: "saga-namespace"
+    # k8s.pod.name: "${POD_NAME}"
+    # k8s.node.name: "${NODE_NAME}"
+
+# Jaeger Exporter Configuration
+jaeger:
+  # Enable Jaeger exporter
+  enabled: true
+  
+  # Jaeger endpoint (agent or collector)
+  endpoint: "http://jaeger-collector:14268/api/traces"
+  
+  # Alternative: Use Jaeger agent with UDP
+  # agent:
+  #   host: "jaeger-agent"
+  #   port: 6831
+  
+  # Authentication (optional)
+  # username: "jaeger-user"
+  # password: "${JAEGER_PASSWORD}"
+  
+  # Tags to add to all spans
+  tags:
+    environment: "production"
+    service: "saga"
+  
+  # Maximum packet size for UDP agent
+  # max_packet_size: 65000
+  
+  # Batch configuration
+  batch:
+    max_queue_size: 2048
+    schedule_delay: "5s"
+    export_timeout: "30s"
+  
+  # Connection timeout
+  timeout: "10s"
+  
+  # Retry configuration
+  retry:
+    enabled: true
+    initial_interval: "5s"
+    max_interval: "30s"
+    max_elapsed_time: "300s"
+
+# Zipkin Exporter Configuration
+zipkin:
+  # Enable Zipkin exporter
+  enabled: false
+  
+  # Zipkin endpoint
+  endpoint: "http://zipkin:9411/api/v2/spans"
+  
+  # Batch configuration
+  batch:
+    max_queue_size: 2048
+    schedule_delay: "5s"
+    export_timeout: "30s"
+  
+  # Connection timeout
+  timeout: "10s"
+
+# OTLP (OpenTelemetry Protocol) Exporter Configuration
+# Use this for cloud providers or OpenTelemetry Collector
+otlp:
+  # Enable OTLP exporter
+  enabled: false
+  
+  # OTLP endpoint
+  endpoint: "otel-collector:4317"
+  
+  # Use insecure connection (no TLS)
+  insecure: true
+  
+  # TLS configuration (if not insecure)
+  # tls:
+  #   cert_file: "/path/to/cert.pem"
+  #   key_file: "/path/to/key.pem"
+  #   ca_file: "/path/to/ca.pem"
+  #   insecure_skip_verify: false
+  
+  # Headers to add to all requests (for authentication)
+  # headers:
+  #   authorization: "Bearer ${API_TOKEN}"
+  
+  # Compression: none, gzip
+  compression: "gzip"
+  
+  # Connection timeout
+  timeout: "10s"
+  
+  # Retry configuration
+  retry:
+    enabled: true
+    initial_interval: "5s"
+    max_interval: "30s"
+    max_elapsed_time: "300s"
+
+# Trace context propagation
+propagation:
+  # Propagators to use: tracecontext, baggage, b3, jaeger, ottrace
+  # Use multiple propagators for compatibility with different systems
+  propagators:
+    - "tracecontext"  # W3C Trace Context (standard)
+    - "baggage"       # W3C Baggage
+    - "b3"            # Zipkin B3 format
+    # - "jaeger"      # Jaeger native format
+    # - "ottrace"     # OpenTracing format
+
+# Saga-specific tracing configuration
+saga:
+  # Enable automatic span creation for saga lifecycle events
+  auto_instrumentation: true
+  
+  # Span names configuration
+  span_names:
+    saga_start: "saga.start"
+    saga_complete: "saga.complete"
+    saga_fail: "saga.fail"
+    saga_compensate: "saga.compensate"
+    step_execute: "saga.step.execute"
+    step_compensate: "saga.step.compensate"
+  
+  # Attributes to add to saga spans
+  attributes:
+    # Include saga ID
+    saga_id: true
+    
+    # Include saga type
+    saga_type: true
+    
+    # Include step information
+    step_name: true
+    step_index: true
+    
+    # Include participant information
+    participant: true
+    
+    # Include state information
+    state: true
+    
+    # Include error information
+    error_reason: true
+    error_details: true
+    
+    # Include timing information
+    execution_duration: true
+    
+    # Include retry information
+    retry_count: true
+    retry_reason: true
+  
+  # Enable correlation with messaging system traces
+  messaging_correlation: true
+  
+  # Enable correlation with database operation traces
+  database_correlation: true
+
+# Performance and resource limits
+limits:
+  # Maximum number of attributes per span
+  max_attributes_per_span: 128
+  
+  # Maximum number of events per span
+  max_events_per_span: 128
+  
+  # Maximum number of links per span
+  max_links_per_span: 128
+  
+  # Maximum attribute value length
+  max_attribute_value_length: 4096
+
+# Logging configuration for tracing errors
+logging:
+  # Log level for tracing errors: debug, info, warn, error
+  level: "warn"
+  
+  # Log failed exports
+  log_failed_exports: true
+  
+  # Log sampling decisions (for debugging)
+  log_sampling_decisions: false
+
+# Development and debugging
+debug:
+  # Enable debug mode (more verbose logging)
+  enabled: false
+  
+  # Print all spans to stdout (for development only)
+  print_spans: false
+  
+  # Validate span data before export
+  validate_spans: true
+
+# Example: Environment-specific configurations
+# You can use different configurations for different environments by using
+# environment variables or separate config files
+
+# Development environment example:
+# opentelemetry:
+#   sampling:
+#     strategy: "always_on"  # Sample all traces in development
+#   batch_processor:
+#     max_queue_size: 512
+#     max_export_batch_size: 128
+#     schedule_delay: "1s"
+# jaeger:
+#   endpoint: "http://localhost:14268/api/traces"
+# debug:
+#   enabled: true
+#   print_spans: true
+
+# Production environment example:
+# opentelemetry:
+#   sampling:
+#     strategy: "trace_id_ratio"
+#     ratio: 0.1  # Sample 10% of traces to reduce overhead
+#   batch_processor:
+#     max_queue_size: 4096
+#     max_export_batch_size: 1024
+#     schedule_delay: "10s"
+# jaeger:
+#   endpoint: "http://jaeger-collector.monitoring:14268/api/traces"
+# debug:
+#   enabled: false
+
