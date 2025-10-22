@@ -105,12 +105,12 @@ type SagaMetricsCollector struct {
 	mu sync.RWMutex
 
 	// Internal counters for non-Prometheus metrics retrieval
-	internalStarted   int64
-	internalCompleted int64
-	internalFailed    int64
-	internalActive    int64
-	internalDurations []float64
-	failureReasons    map[string]int64
+	internalStarted       int64
+	internalCompleted     int64
+	internalFailed        int64
+	internalActive        int64
+	internalTotalDuration float64 // Running sum of all durations to avoid unbounded slice storage
+	failureReasons        map[string]int64
 }
 
 // Config contains configuration options for SagaMetricsCollector.
@@ -275,10 +275,11 @@ func (smc *SagaMetricsCollector) RecordSagaCompleted(sagaID string, duration tim
 	smc.activeSagasGauge.Dec()
 	smc.sagaDurationHistogram.Observe(duration.Seconds())
 
+	durationSeconds := duration.Seconds()
 	smc.mu.Lock()
 	smc.internalCompleted++
 	smc.internalActive--
-	smc.internalDurations = append(smc.internalDurations, duration.Seconds())
+	smc.internalTotalDuration += durationSeconds
 	smc.mu.Unlock()
 }
 
@@ -310,14 +311,12 @@ func (smc *SagaMetricsCollector) GetMetrics() *Metrics {
 	smc.mu.RLock()
 	defer smc.mu.RUnlock()
 
-	// Calculate average duration
+	// Calculate average duration using running sum to avoid O(n) iteration
 	var avgDuration float64
 	var totalDuration float64
-	if len(smc.internalDurations) > 0 {
-		for _, d := range smc.internalDurations {
-			totalDuration += d
-		}
-		avgDuration = totalDuration / float64(len(smc.internalDurations))
+	if smc.internalCompleted > 0 {
+		totalDuration = smc.internalTotalDuration
+		avgDuration = totalDuration / float64(smc.internalCompleted)
 	}
 
 	// Copy failure reasons map
@@ -349,6 +348,6 @@ func (smc *SagaMetricsCollector) Reset() {
 	smc.internalCompleted = 0
 	smc.internalFailed = 0
 	smc.internalActive = 0
-	smc.internalDurations = nil
+	smc.internalTotalDuration = 0
 	smc.failureReasons = make(map[string]int64)
 }

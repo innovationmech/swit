@@ -516,3 +516,54 @@ func BenchmarkSagaMetricsCollector_Concurrent(b *testing.B) {
 		}
 	})
 }
+
+// TestSagaMetricsCollector_BoundedMemoryUsage tests that memory usage stays bounded
+// and GetMetrics performance doesn't degrade with large numbers of completed sagas.
+func TestSagaMetricsCollector_BoundedMemoryUsage(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	config := &Config{
+		Registry: registry,
+	}
+
+	collector, err := NewSagaMetricsCollector(config)
+	require.NoError(t, err)
+
+	// Record a large number of completed sagas
+	numSagas := 10000
+	expectedTotalDuration := 0.0
+
+	for i := 0; i < numSagas; i++ {
+		duration := time.Duration(i+1) * time.Millisecond
+		expectedTotalDuration += duration.Seconds()
+		collector.RecordSagaStarted("saga-" + string(rune(i)))
+		collector.RecordSagaCompleted("saga-"+string(rune(i)), duration)
+	}
+
+	// Verify metrics are accurate
+	metrics := collector.GetMetrics()
+	assert.Equal(t, int64(numSagas), metrics.SagasStarted)
+	assert.Equal(t, int64(numSagas), metrics.SagasCompleted)
+	assert.Equal(t, int64(0), metrics.ActiveSagas)
+	assert.InDelta(t, expectedTotalDuration, metrics.TotalDuration, 0.001)
+	assert.InDelta(t, expectedTotalDuration/float64(numSagas), metrics.AvgDuration, 0.001)
+
+	// Verify that GetMetrics performance is O(1) by timing multiple calls
+	// With the old implementation, this would get slower as internalDurations grows
+	start := time.Now()
+	for i := 0; i < 1000; i++ {
+		_ = collector.GetMetrics()
+	}
+	elapsed := time.Since(start)
+
+	// Should be very fast even with 10k completed sagas
+	// This is a rough check - on modern systems this should be < 10ms
+	assert.Less(t, elapsed, 10*time.Millisecond, "GetMetrics should remain fast even with many completed sagas")
+
+	// Reset and verify bounded behavior
+	collector.Reset()
+	metrics = collector.GetMetrics()
+	assert.Equal(t, int64(0), metrics.SagasStarted)
+	assert.Equal(t, int64(0), metrics.SagasCompleted)
+	assert.Equal(t, float64(0), metrics.TotalDuration)
+	assert.Equal(t, float64(0), metrics.AvgDuration)
+}
