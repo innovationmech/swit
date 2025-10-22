@@ -101,6 +101,9 @@ type SagaMetricsCollector struct {
 	// Gauge for active Sagas count
 	activeSagasGauge prometheus.Gauge
 
+	// Labeled metrics for advanced observability (optional)
+	labeledMetrics *PrometheusMetrics
+
 	// Mutex for thread-safe operations on internal state
 	mu sync.RWMutex
 
@@ -126,6 +129,9 @@ type Config struct {
 
 	// DurationBuckets for histogram (default: [0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60])
 	DurationBuckets []float64
+
+	// EnableLabeledMetrics enables collection of metrics with custom labels (saga_type, status)
+	EnableLabeledMetrics bool
 }
 
 // DefaultConfig returns a default configuration for SagaMetricsCollector.
@@ -252,6 +258,14 @@ func NewSagaMetricsCollector(config *Config) (*SagaMetricsCollector, error) {
 		return nil, err
 	}
 
+	// Initialize and register labeled metrics if enabled
+	if config.EnableLabeledMetrics {
+		collector.labeledMetrics = NewPrometheusMetrics(config.Namespace, config.Subsystem)
+		if err := collector.labeledMetrics.Register(config.Registry); err != nil {
+			return nil, err
+		}
+	}
+
 	return collector, nil
 }
 
@@ -350,4 +364,44 @@ func (smc *SagaMetricsCollector) Reset() {
 	smc.internalActive = 0
 	smc.internalTotalDuration = 0
 	smc.failureReasons = make(map[string]int64)
+}
+
+// RecordSagaStartedWithLabels records a Saga start with custom labels.
+// This method is only available when EnableLabeledMetrics is true in the config.
+// If labeled metrics are not enabled, this method does nothing.
+// This method is thread-safe and can be called concurrently.
+func (smc *SagaMetricsCollector) RecordSagaStartedWithLabels(sagaID string, labels *MetricsLabels) {
+	if smc.labeledMetrics == nil || labels == nil {
+		return
+	}
+
+	smc.labeledMetrics.SagaStartedTotal.WithLabelValues(labels.SagaType, labels.Status).Inc()
+	smc.labeledMetrics.ActiveSagas.WithLabelValues(labels.SagaType).Inc()
+}
+
+// RecordSagaCompletedWithLabels records a Saga completion with custom labels.
+// This method is only available when EnableLabeledMetrics is true in the config.
+// If labeled metrics are not enabled, this method does nothing.
+// This method is thread-safe and can be called concurrently.
+func (smc *SagaMetricsCollector) RecordSagaCompletedWithLabels(sagaID string, duration float64, labels *MetricsLabels) {
+	if smc.labeledMetrics == nil || labels == nil {
+		return
+	}
+
+	smc.labeledMetrics.SagaCompletedTotal.WithLabelValues(labels.SagaType, labels.Status).Inc()
+	smc.labeledMetrics.ActiveSagas.WithLabelValues(labels.SagaType).Dec()
+	smc.labeledMetrics.SagaDurationSeconds.WithLabelValues(labels.SagaType, labels.Status).Observe(duration)
+}
+
+// RecordSagaFailedWithLabels records a Saga failure with custom labels.
+// This method is only available when EnableLabeledMetrics is true in the config.
+// If labeled metrics are not enabled, this method does nothing.
+// This method is thread-safe and can be called concurrently.
+func (smc *SagaMetricsCollector) RecordSagaFailedWithLabels(sagaID string, reason string, labels *MetricsLabels) {
+	if smc.labeledMetrics == nil || labels == nil {
+		return
+	}
+
+	smc.labeledMetrics.SagaFailedTotal.WithLabelValues(labels.SagaType, reason).Inc()
+	smc.labeledMetrics.ActiveSagas.WithLabelValues(labels.SagaType).Dec()
 }
