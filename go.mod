@@ -16,6 +16,7 @@ require (
 	github.com/hashicorp/consul/api v1.29.4
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.1
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/nats-io/nats.go v1.31.0
 	github.com/prometheus/client_golang v1.23.0
 	github.com/prometheus/client_model v0.6.2

@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -505,6 +506,25 @@ func splitLines(s string) []string {
 }
 
 // DatabaseAuditStorage implements database-based audit log storage
+//
+// This implementation supports multiple database drivers through dialect-aware SQL generation:
+// - MySQL/SQLite: Uses ? placeholders (e.g., "VALUES (?, ?, ?)")
+// - PostgreSQL/lib/pq/pgx: Uses numbered placeholders (e.g., "VALUES ($1, $2, $3)")
+// - Other drivers: Defaults to ? placeholder syntax
+//
+// Example usage:
+//
+//	// MySQL/SQLite
+//	storage, err := NewDatabaseAuditStorage(&DatabaseAuditStorageConfig{
+//	    DB:         db,
+//	    DriverName: "mysql", // or "sqlite3"
+//	})
+//
+//	// PostgreSQL
+//	storage, err := NewDatabaseAuditStorage(&DatabaseAuditStorageConfig{
+//	    DB:         db,
+//	    DriverName: "postgres", // or "pgx", "pq"
+//	})
 type DatabaseAuditStorage struct {
 	db         *sql.DB
 	tableName  string
@@ -517,7 +537,7 @@ type DatabaseAuditStorage struct {
 type DatabaseAuditStorageConfig struct {
 	DB         *sql.DB
 	TableName  string
-	DriverName string // "postgres", "mysql", etc.
+	DriverName string // "postgres", "mysql", "sqlite3", "pgx", "pq", etc.
 }
 
 // NewDatabaseAuditStorage creates a new database-based audit storage
@@ -550,8 +570,46 @@ func NewDatabaseAuditStorage(config *DatabaseAuditStorageConfig) (*DatabaseAudit
 	return storage, nil
 }
 
+// getPlaceholder returns the appropriate placeholder for the database driver
+func (s *DatabaseAuditStorage) getPlaceholder(index int) string {
+	switch s.driverName {
+	case "postgres":
+		return fmt.Sprintf("$%d", index)
+	case "pgx", "pq":
+		return fmt.Sprintf("$%d", index)
+	default:
+		// MySQL, SQLite, and others use ?
+		return "?"
+	}
+}
+
+// buildPlaceholders returns a string of placeholders for the given count
+func (s *DatabaseAuditStorage) buildPlaceholders(count int) string {
+	if count <= 0 {
+		return ""
+	}
+
+	switch s.driverName {
+	case "postgres", "pgx", "pq":
+		// PostgreSQL uses $1, $2, $3, etc.
+		placeholders := make([]string, count)
+		for i := 0; i < count; i++ {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		}
+		return strings.Join(placeholders, ", ")
+	default:
+		// MySQL, SQLite, and others use ?, ?, ?, etc.
+		placeholders := make([]string, count)
+		for i := 0; i < count; i++ {
+			placeholders[i] = "?"
+		}
+		return strings.Join(placeholders, ", ")
+	}
+}
+
 // initTable creates the audit log table if it doesn't exist
 func (s *DatabaseAuditStorage) initTable() error {
+	// Create table
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id VARCHAR(255) PRIMARY KEY,
@@ -572,16 +630,36 @@ func (s *DatabaseAuditStorage) initTable() error {
 			trace_id VARCHAR(255),
 			span_id VARCHAR(255),
 			correlation_id VARCHAR(255),
-			metadata TEXT,
-			INDEX idx_timestamp (timestamp),
-			INDEX idx_action (action),
-			INDEX idx_resource (resource_type, resource_id),
-			INDEX idx_user (user_id)
+			metadata TEXT
 		)
 	`, s.tableName)
 
-	_, err := s.db.Exec(query)
-	return err
+	if _, err := s.db.Exec(query); err != nil {
+		return err
+	}
+
+	// Create indexes separately for database compatibility
+	indexes := []struct {
+		name   string
+		column string
+	}{
+		{"idx_timestamp", "timestamp"},
+		{"idx_action", "action"},
+		{"idx_resource", "resource_type, resource_id"},
+		{"idx_user", "user_id"},
+	}
+
+	for _, idx := range indexes {
+		indexQuery := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (%s)", idx.name, s.tableName, idx.column)
+		if _, err := s.db.Exec(indexQuery); err != nil {
+			// Log error but don't fail - indexes are optional for functionality
+			s.logger.Warn("Failed to create index",
+				zap.String("index", idx.name),
+				zap.Error(err))
+		}
+	}
+
+	return nil
 }
 
 // Write writes an audit entry to the database
@@ -598,8 +676,8 @@ func (s *DatabaseAuditStorage) Write(ctx context.Context, entry *AuditEntry) err
 			id, timestamp, level, action, resource_type, resource_id,
 			user_id, username, source, ip_address, old_state, new_state,
 			message, details, error, trace_id, span_id, correlation_id, metadata
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, s.tableName)
+		) VALUES (%s)
+	`, s.tableName, s.buildPlaceholders(19))
 
 	_, err := s.db.ExecContext(ctx, query,
 		entry.ID, entry.Timestamp, entry.Level, entry.Action,
@@ -623,32 +701,39 @@ func (s *DatabaseAuditStorage) Query(ctx context.Context, filter *AuditFilter) (
 
 	query := fmt.Sprintf("SELECT * FROM %s WHERE 1=1", s.tableName)
 	args := []interface{}{}
+	placeholderIndex := 1
 
 	// Build WHERE clause
 	if filter != nil {
 		if filter.StartTime != nil {
-			query += " AND timestamp >= ?"
-			args = append(args, filter.StartTime)
+			query += fmt.Sprintf(" AND timestamp >= %s", s.getPlaceholder(placeholderIndex))
+			args = append(args, *filter.StartTime)
+			placeholderIndex++
 		}
 		if filter.EndTime != nil {
-			query += " AND timestamp <= ?"
-			args = append(args, filter.EndTime)
+			query += fmt.Sprintf(" AND timestamp <= %s", s.getPlaceholder(placeholderIndex))
+			args = append(args, *filter.EndTime)
+			placeholderIndex++
 		}
 		if filter.ResourceType != "" {
-			query += " AND resource_type = ?"
+			query += fmt.Sprintf(" AND resource_type = %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.ResourceType)
+			placeholderIndex++
 		}
 		if filter.ResourceID != "" {
-			query += " AND resource_id = ?"
+			query += fmt.Sprintf(" AND resource_id = %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.ResourceID)
+			placeholderIndex++
 		}
 		if filter.UserID != "" {
-			query += " AND user_id = ?"
+			query += fmt.Sprintf(" AND user_id = %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.UserID)
+			placeholderIndex++
 		}
 		if filter.Source != "" {
-			query += " AND source = ?"
+			query += fmt.Sprintf(" AND source = %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.Source)
+			placeholderIndex++
 		}
 	}
 
@@ -665,12 +750,14 @@ func (s *DatabaseAuditStorage) Query(ctx context.Context, filter *AuditFilter) (
 
 	// Add pagination
 	if filter != nil && filter.Limit > 0 {
-		query += " LIMIT ?"
+		query += fmt.Sprintf(" LIMIT %s", s.getPlaceholder(placeholderIndex))
 		args = append(args, filter.Limit)
+		placeholderIndex++
 
 		if filter.Offset > 0 {
-			query += " OFFSET ?"
+			query += fmt.Sprintf(" OFFSET %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.Offset)
+			placeholderIndex++
 		}
 	}
 
@@ -718,28 +805,34 @@ func (s *DatabaseAuditStorage) Count(ctx context.Context, filter *AuditFilter) (
 
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", s.tableName)
 	args := []interface{}{}
+	placeholderIndex := 1
 
 	// Build WHERE clause (same as Query)
 	if filter != nil {
 		if filter.StartTime != nil {
-			query += " AND timestamp >= ?"
-			args = append(args, filter.StartTime)
+			query += fmt.Sprintf(" AND timestamp >= %s", s.getPlaceholder(placeholderIndex))
+			args = append(args, *filter.StartTime)
+			placeholderIndex++
 		}
 		if filter.EndTime != nil {
-			query += " AND timestamp <= ?"
-			args = append(args, filter.EndTime)
+			query += fmt.Sprintf(" AND timestamp <= %s", s.getPlaceholder(placeholderIndex))
+			args = append(args, *filter.EndTime)
+			placeholderIndex++
 		}
 		if filter.ResourceType != "" {
-			query += " AND resource_type = ?"
+			query += fmt.Sprintf(" AND resource_type = %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.ResourceType)
+			placeholderIndex++
 		}
 		if filter.ResourceID != "" {
-			query += " AND resource_id = ?"
+			query += fmt.Sprintf(" AND resource_id = %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.ResourceID)
+			placeholderIndex++
 		}
 		if filter.UserID != "" {
-			query += " AND user_id = ?"
+			query += fmt.Sprintf(" AND user_id = %s", s.getPlaceholder(placeholderIndex))
 			args = append(args, filter.UserID)
+			placeholderIndex++
 		}
 	}
 
@@ -763,7 +856,7 @@ func (s *DatabaseAuditStorage) Cleanup(ctx context.Context, olderThan time.Durat
 	defer s.mu.Unlock()
 
 	cutoffTime := time.Now().Add(-olderThan)
-	query := fmt.Sprintf("DELETE FROM %s WHERE timestamp < ?", s.tableName)
+	query := fmt.Sprintf("DELETE FROM %s WHERE timestamp < %s", s.tableName, s.getPlaceholder(1))
 
 	result, err := s.db.ExecContext(ctx, query, cutoffTime)
 	if err != nil {

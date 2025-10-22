@@ -23,13 +23,17 @@ package security
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3" // SQLite driver for testing
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestMemoryAuditStorage_Write(t *testing.T) {
@@ -627,4 +631,183 @@ func TestFileAuditStorage_MaxBackups(t *testing.T) {
 
 	// Verify we don't have more than maxBackups
 	assert.LessOrEqual(t, backupCount, maxBackups)
+}
+
+func TestDatabaseAuditStorage_TimeFilters(t *testing.T) {
+	// Create in-memory SQLite database for testing
+	db, err := sql.Open("sqlite3", ":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Create database audit storage
+	storage, err := NewDatabaseAuditStorage(&DatabaseAuditStorageConfig{
+		DB:         db,
+		TableName:  "test_audit_logs",
+		DriverName: "sqlite3",
+	})
+	require.NoError(t, err)
+	defer storage.Close()
+
+	ctx := context.Background()
+	now := time.Now()
+
+	// Create test entries with different timestamps
+	entries := []*AuditEntry{
+		{
+			ID:        "audit-1",
+			Timestamp: now.Add(-2 * time.Hour), // 2 hours ago
+			Level:     AuditLevelInfo,
+			Action:    AuditActionSagaStarted,
+			Message:   "Old entry",
+		},
+		{
+			ID:        "audit-2",
+			Timestamp: now.Add(-1 * time.Hour), // 1 hour ago
+			Level:     AuditLevelInfo,
+			Action:    AuditActionSagaCompleted,
+			Message:   "Medium entry",
+		},
+		{
+			ID:        "audit-3",
+			Timestamp: now, // now
+			Level:     AuditLevelInfo,
+			Action:    AuditActionSagaStarted,
+			Message:   "Recent entry",
+		},
+	}
+
+	// Write test entries
+	for _, entry := range entries {
+		err := storage.Write(ctx, entry)
+		require.NoError(t, err)
+	}
+
+	// Test Query with time range filter
+	startTime := now.Add(-90 * time.Minute) // 90 minutes ago
+	endTime := now.Add(30 * time.Minute)    // 30 minutes from now
+
+	filter := &AuditFilter{
+		StartTime: &startTime,
+		EndTime:   &endTime,
+	}
+
+	results, err := storage.Query(ctx, filter)
+	require.NoError(t, err)
+	assert.Len(t, results, 2, "Should return 2 entries within time range")
+
+	// Verify the entries are within the time range
+	for _, entry := range results {
+		assert.True(t, entry.Timestamp.After(startTime) || entry.Timestamp.Equal(startTime))
+		assert.True(t, entry.Timestamp.Before(endTime) || entry.Timestamp.Equal(endTime))
+	}
+
+	// Test Count with time range filter
+	count, err := storage.Count(ctx, filter)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count, "Count should return 2 entries within time range")
+
+	// Test Query with only start time
+	filterOnlyStart := &AuditFilter{
+		StartTime: &startTime,
+	}
+
+	results, err = storage.Query(ctx, filterOnlyStart)
+	require.NoError(t, err)
+	assert.Len(t, results, 2, "Should return 2 entries after start time")
+
+	count, err = storage.Count(ctx, filterOnlyStart)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count, "Count should return 2 entries after start time")
+
+	// Test Query with only end time
+	filterOnlyEnd := &AuditFilter{
+		EndTime: &startTime,
+	}
+
+	results, err = storage.Query(ctx, filterOnlyEnd)
+	require.NoError(t, err)
+	assert.Len(t, results, 1, "Should return 1 entry before end time")
+
+	count, err = storage.Count(ctx, filterOnlyEnd)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "Count should return 1 entry before end time")
+}
+
+func TestDatabaseAuditStorage_SQLDialects(t *testing.T) {
+	testCases := []struct {
+		name       string
+		driverName string
+		wantQuery  string
+	}{
+		{
+			name:       "MySQL/SQLite dialect",
+			driverName: "mysql",
+			wantQuery:  "INSERT INTO audit_logs (id, timestamp, level) VALUES (?, ?, ?)",
+		},
+		{
+			name:       "PostgreSQL dialect",
+			driverName: "postgres",
+			wantQuery:  "INSERT INTO audit_logs (id, timestamp, level) VALUES ($1, $2, $3)",
+		},
+		{
+			name:       "pgx driver dialect",
+			driverName: "pgx",
+			wantQuery:  "INSERT INTO audit_logs (id, timestamp, level) VALUES ($1, $2, $3)",
+		},
+		{
+			name:       "lib/pq driver dialect",
+			driverName: "pq",
+			wantQuery:  "INSERT INTO audit_logs (id, timestamp, level) VALUES ($1, $2, $3)",
+		},
+		{
+			name:       "SQLite dialect",
+			driverName: "sqlite3",
+			wantQuery:  "INSERT INTO audit_logs (id, timestamp, level) VALUES (?, ?, ?)",
+		},
+		{
+			name:       "Unknown driver defaults to ?",
+			driverName: "unknown_driver",
+			wantQuery:  "INSERT INTO audit_logs (id, timestamp, level) VALUES (?, ?, ?)",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create storage instance with specific driver
+			storage := &DatabaseAuditStorage{
+				driverName: tc.driverName,
+				tableName:  "audit_logs",
+				logger:     zap.NewNop(),
+			}
+
+			// Test buildPlaceholders method
+			gotPlaceholders := storage.buildPlaceholders(3)
+			expectedPlaceholders := "?"
+			if tc.driverName == "postgres" || tc.driverName == "pgx" || tc.driverName == "pq" {
+				expectedPlaceholders = "$1, $2, $3"
+			} else {
+				expectedPlaceholders = "?, ?, ?"
+			}
+			assert.Equal(t, expectedPlaceholders, gotPlaceholders,
+				"buildPlaceholders should generate correct placeholders for driver %s", tc.driverName)
+
+			// Test getPlaceholder method
+			gotPlaceholder1 := storage.getPlaceholder(1)
+			gotPlaceholder2 := storage.getPlaceholder(2)
+
+			if tc.driverName == "postgres" || tc.driverName == "pgx" || tc.driverName == "pq" {
+				assert.Equal(t, "$1", gotPlaceholder1)
+				assert.Equal(t, "$2", gotPlaceholder2)
+			} else {
+				assert.Equal(t, "?", gotPlaceholder1)
+				assert.Equal(t, "?", gotPlaceholder2)
+			}
+
+			// Test that INSERT query generation would work
+			query := fmt.Sprintf("INSERT INTO %s (id, timestamp, level) VALUES (%s)",
+				storage.tableName, storage.buildPlaceholders(3))
+			assert.Equal(t, tc.wantQuery, query,
+				"INSERT query should use correct placeholders for driver %s", tc.driverName)
+		})
+	}
 }
