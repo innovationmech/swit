@@ -46,7 +46,7 @@ const (
 	AuthTypeAPIKey AuthType = "apikey"
 )
 
-// contextKey is a typed context key to prevent collisions
+// contextKey is a typed context key to prevent collisions.
 type contextKey string
 
 const (
