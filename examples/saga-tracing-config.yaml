@@ -1,0 +1,183 @@
+# Saga Distributed Tracing Configuration Example
+# This file demonstrates how to configure distributed tracing for Saga execution
+# with OpenTelemetry, Jaeger, and Zipkin exporters.
+
+# Basic tracing configuration
+tracing:
+  # Enable distributed tracing
+  enabled: true
+
+  # Service name to identify this service in traces
+  service_name: "swit-saga-service"
+
+  # Sampling configuration
+  sampling:
+    # Sampling strategy: always_on, always_off, traceidratio
+    type: "traceidratio"
+    # Sampling rate (0.0 to 1.0) - used with traceidratio
+    # 1.0 = 100% sampling (all traces), 0.1 = 10% sampling
+    rate: 1.0
+
+  # Exporter configuration
+  exporter:
+    # Exporter type: jaeger, otlp, zipkin, console
+    type: "jaeger"
+
+    # Jaeger collector endpoint (HTTP)
+    endpoint: "http://localhost:14268/api/traces"
+
+    # Request timeout
+    timeout: "10s"
+
+    # Optional: Additional headers for authentication
+    # headers:
+    #   x-api-key: "your-api-key"
+
+    # Jaeger-specific configuration
+    jaeger:
+      # Jaeger agent endpoint (UDP) - alternative to collector endpoint
+      # agent_endpoint: "localhost:6831"
+
+      # Jaeger collector endpoint (HTTP) - alternative to general endpoint
+      collector_endpoint: "http://localhost:14268/api/traces"
+
+      # Optional: Basic authentication
+      # username: "jaeger-user"
+      # password: "jaeger-password"
+
+      # RPC timeout for Jaeger operations
+      rpc_timeout: "5s"
+
+    # OTLP-specific configuration (if using OTLP exporter)
+    # otlp:
+    #   endpoint: "localhost:4317"
+    #   insecure: true
+    #   headers:
+    #     api-key: "your-otlp-api-key"
+    #   compression: "gzip"
+
+  # Resource attributes to add to all spans
+  resource_attributes:
+    environment: "production"
+    version: "v1.0.0"
+    service.namespace: "swit"
+    deployment.environment: "production"
+
+  # Context propagators for distributed tracing
+  propagators:
+    - "tracecontext"  # W3C Trace Context
+    - "baggage"       # W3C Baggage
+
+---
+# Development Configuration
+# Use this for local development with full sampling
+
+tracing:
+  enabled: true
+  service_name: "swit-saga-dev"
+
+  sampling:
+    type: "always_on"  # Sample all traces in development
+
+  exporter:
+    type: "jaeger"
+    endpoint: "http://localhost:14268/api/traces"
+    timeout: "10s"
+
+  resource_attributes:
+    environment: "development"
+    version: "dev"
+    service.namespace: "swit"
+
+  propagators:
+    - "tracecontext"
+    - "baggage"
+
+---
+# Production Configuration with OTLP
+# Use this for production with OTLP exporter (e.g., to Honeycomb, New Relic, etc.)
+
+tracing:
+  enabled: true
+  service_name: "swit-saga-production"
+
+  sampling:
+    type: "traceidratio"
+    rate: 0.1  # Sample 10% of traces to reduce overhead
+
+  exporter:
+    type: "otlp"
+    endpoint: "api.honeycomb.io:443"
+    timeout: "10s"
+    headers:
+      x-honeycomb-team: "your-api-key"
+
+    otlp:
+      endpoint: "api.honeycomb.io:443"
+      insecure: false
+      compression: "gzip"
+      headers:
+        x-honeycomb-team: "your-api-key"
+        x-honeycomb-dataset: "saga-traces"
+
+  resource_attributes:
+    environment: "production"
+    version: "v1.0.0"
+    service.namespace: "swit"
+    service.instance.id: "instance-123"
+    deployment.environment: "production"
+    cloud.provider: "aws"
+    cloud.region: "us-east-1"
+
+  propagators:
+    - "tracecontext"
+    - "baggage"
+
+---
+# Zipkin Configuration
+# Use this for Zipkin tracing backend
+
+tracing:
+  enabled: true
+  service_name: "swit-saga-zipkin"
+
+  sampling:
+    type: "traceidratio"
+    rate: 1.0
+
+  exporter:
+    type: "zipkin"
+    endpoint: "http://localhost:9411/api/v2/spans"
+    timeout: "10s"
+
+  resource_attributes:
+    environment: "staging"
+    version: "v1.0.0"
+    service.namespace: "swit"
+
+  propagators:
+    - "tracecontext"
+    - "baggage"
+
+---
+# Console/Debug Configuration
+# Use this for debugging - prints traces to console
+
+tracing:
+  enabled: true
+  service_name: "swit-saga-debug"
+
+  sampling:
+    type: "always_on"
+
+  exporter:
+    type: "console"  # Print traces to stdout
+
+  resource_attributes:
+    environment: "debug"
+    version: "dev"
+
+  propagators:
+    - "tracecontext"
+    - "baggage"
+
