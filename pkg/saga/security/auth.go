@@ -46,6 +46,14 @@ const (
 	AuthTypeAPIKey AuthType = "apikey"
 )
 
+// contextKey is a typed context key to prevent collisions
+type contextKey string
+
+const (
+	// sagaAuthContextKey is the context key for storing saga authentication context
+	sagaAuthContextKey contextKey = "saga_auth_context"
+)
+
 // Common errors
 var (
 	ErrInvalidAuthType      = errors.New("invalid authentication type")
@@ -766,11 +774,11 @@ func generateSagaAuthID() string {
 
 // ContextWithAuth stores the authentication context in the context
 func ContextWithAuth(ctx context.Context, authCtx *AuthContext) context.Context {
-	return context.WithValue(ctx, "saga_auth_context", authCtx)
+	return context.WithValue(ctx, sagaAuthContextKey, authCtx)
 }
 
 // AuthFromContext retrieves the authentication context from the context
 func AuthFromContext(ctx context.Context) (*AuthContext, bool) {
-	authCtx, ok := ctx.Value("saga_auth_context").(*AuthContext)
+	authCtx, ok := ctx.Value(sagaAuthContextKey).(*AuthContext)
 	return authCtx, ok
 }
