@@ -527,9 +527,8 @@ func (t *DefaultAuditTracker) GetTrace(ctx context.Context, traceID string) (*Op
 		return nil, fmt.Errorf("trace not found: %s", traceID)
 	}
 
-	// Return a copy to avoid external modifications
-	traceCopy := *trace
-	return &traceCopy, nil
+	// Return a deep copy to avoid external modifications
+	return deepCopyTrace(trace), nil
 }
 
 // GetTracesByCategory retrieves all traces for a category
@@ -544,8 +543,7 @@ func (t *DefaultAuditTracker) GetTracesByCategory(ctx context.Context, category 
 	var results []*OperationTrace
 	for _, trace := range t.traces {
 		if trace.Category == category {
-			traceCopy := *trace
-			results = append(results, &traceCopy)
+			results = append(results, deepCopyTrace(trace))
 		}
 	}
 
@@ -565,8 +563,7 @@ func (t *DefaultAuditTracker) GetTracesByTag(ctx context.Context, tag AuditTag) 
 	for _, trace := range t.traces {
 		for _, traceTag := range trace.Tags {
 			if traceTag == tag {
-				traceCopy := *trace
-				results = append(results, &traceCopy)
+				results = append(results, deepCopyTrace(trace))
 				break
 			}
 		}
@@ -590,8 +587,7 @@ func (t *DefaultAuditTracker) GetTracesByTimeRange(ctx context.Context, startTim
 		if trace.StartTime.Before(startTime) || trace.StartTime.After(endTime) {
 			continue
 		}
-		traceCopy := *trace
-		results = append(results, &traceCopy)
+		results = append(results, deepCopyTrace(trace))
 	}
 
 	return results, nil
@@ -706,4 +702,82 @@ func splitString(s string, delimiter string) []string {
 	}
 
 	return parts
+}
+
+// deepCopyTrace creates a deep copy of an OperationTrace to prevent concurrent mutation
+func deepCopyTrace(original *OperationTrace) *OperationTrace {
+	if original == nil {
+		return nil
+	}
+
+	// Deep copy Tags slice
+	tagsCopy := make([]AuditTag, len(original.Tags))
+	copy(tagsCopy, original.Tags)
+
+	// Deep copy Steps slice
+	stepsCopy := make([]*OperationStep, len(original.Steps))
+	for i, step := range original.Steps {
+		stepsCopy[i] = deepCopyStep(step)
+	}
+
+	// Deep copy AuditEntryIDs slice
+	auditIDsCopy := make([]string, len(original.AuditEntryIDs))
+	copy(auditIDsCopy, original.AuditEntryIDs)
+
+	// Deep copy Context map
+	contextCopy := make(map[string]interface{})
+	for k, v := range original.Context {
+		contextCopy[k] = v
+	}
+
+	// Deep copy Metadata map
+	metadataCopy := make(map[string]string)
+	for k, v := range original.Metadata {
+		metadataCopy[k] = v
+	}
+
+	return &OperationTrace{
+		TraceID:       original.TraceID,
+		ParentTraceID: original.ParentTraceID,
+		Operation:     original.Operation,
+		Category:      original.Category,
+		Tags:          tagsCopy,
+		StartTime:     original.StartTime,
+		EndTime:       original.EndTime,
+		Duration:      original.Duration,
+		Status:        original.Status,
+		UserID:        original.UserID,
+		ResourceType:  original.ResourceType,
+		ResourceID:    original.ResourceID,
+		Steps:         stepsCopy,
+		AuditEntryIDs: auditIDsCopy,
+		Context:       contextCopy,
+		Error:         original.Error,
+		Metadata:      metadataCopy,
+	}
+}
+
+// deepCopyStep creates a deep copy of an OperationStep to prevent concurrent mutation
+func deepCopyStep(original *OperationStep) *OperationStep {
+	if original == nil {
+		return nil
+	}
+
+	// Deep copy Details map
+	detailsCopy := make(map[string]interface{})
+	for k, v := range original.Details {
+		detailsCopy[k] = v
+	}
+
+	return &OperationStep{
+		Name:         original.Name,
+		Sequence:     original.Sequence,
+		StartTime:    original.StartTime,
+		EndTime:      original.EndTime,
+		Duration:     original.Duration,
+		Status:       original.Status,
+		AuditEntryID: original.AuditEntryID,
+		Error:        original.Error,
+		Details:      detailsCopy,
+	}
 }
