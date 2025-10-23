@@ -25,6 +25,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,29 @@ import (
 	"github.com/innovationmech/swit/pkg/saga/state"
 	"go.uber.org/zap"
 )
+
+// refCountedMutex is a mutex wrapper that tracks how many goroutines are using it.
+// This prevents the race condition where a mutex is deleted from the map while still in use.
+type refCountedMutex struct {
+	mu    sync.Mutex
+	count int64 // Reference count using atomic operations
+}
+
+// acquire increments the reference count and returns the underlying mutex.
+func (rcm *refCountedMutex) acquire() *sync.Mutex {
+	atomic.AddInt64(&rcm.count, 1)
+	return &rcm.mu
+}
+
+// release decrements the reference count and returns the new count.
+func (rcm *refCountedMutex) release() int64 {
+	return atomic.AddInt64(&rcm.count, -1)
+}
+
+// canDelete returns true if no goroutines are currently referencing this mutex.
+func (rcm *refCountedMutex) canDelete() bool {
+	return atomic.LoadInt64(&rcm.count) == 0
+}
 
 // SagaControlAPI provides API endpoints for controlling Saga instances.
 // It supports operations like cancel and retry, with proper validation and logging.
@@ -45,7 +69,7 @@ type SagaControlAPI struct {
 	recoveryManager *state.RecoveryManager
 
 	// operationLock prevents concurrent operations on the same Saga
-	operationLock sync.Map // sagaID -> *sync.Mutex
+	operationLock sync.Map // sagaID -> *refCountedMutex
 }
 
 // NewSagaControlAPI creates a new Saga control API handler.
@@ -425,12 +449,17 @@ func (api *SagaControlAPI) RetrySaga(c *gin.Context) {
 
 // acquireOperationLock acquires a lock for the given Saga to prevent concurrent operations.
 func (api *SagaControlAPI) acquireOperationLock(sagaID string) error {
-	// Get or create mutex for this Saga
-	mutexInterface, _ := api.operationLock.LoadOrStore(sagaID, &sync.Mutex{})
-	mutex := mutexInterface.(*sync.Mutex)
+	// Get or create ref-counted mutex for this Saga
+	rcmInterface, _ := api.operationLock.LoadOrStore(sagaID, &refCountedMutex{})
+	rcm := rcmInterface.(*refCountedMutex)
+
+	// Acquire reference to the underlying mutex
+	mutex := rcm.acquire()
 
 	// Try to acquire lock (non-blocking)
 	if !mutex.TryLock() {
+		// Release our reference since we failed to acquire the lock
+		rcm.release()
 		return ErrConcurrentOperation
 	}
 
@@ -439,20 +468,34 @@ func (api *SagaControlAPI) acquireOperationLock(sagaID string) error {
 
 // releaseOperationLock releases the lock for the given Saga.
 func (api *SagaControlAPI) releaseOperationLock(sagaID string) {
-	mutexInterface, ok := api.operationLock.Load(sagaID)
+	rcmInterface, ok := api.operationLock.Load(sagaID)
 	if !ok {
 		return
 	}
 
-	mutex := mutexInterface.(*sync.Mutex)
+	rcm := rcmInterface.(*refCountedMutex)
+
+	// Get the underlying mutex and unlock it
+	mutex := &rcm.mu
 	mutex.Unlock()
 
-	// Clean up the lock after a delay (to prevent immediate lock acquisition by another operation)
-	// This is a simple implementation - in production, you might want a more sophisticated approach
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		api.operationLock.Delete(sagaID)
-	}()
+	// Release our reference to the mutex
+	newCount := rcm.release()
+
+	// If this was the last reference, schedule cleanup
+	if newCount == 0 {
+		// Schedule cleanup in a goroutine to avoid blocking the current request
+		go func() {
+			// Add a small delay to allow any pending operations to acquire the mutex
+			// This prevents immediate deletion while other operations might be starting
+			time.Sleep(10 * time.Millisecond)
+
+			// Double-check that no new references have been added during the delay
+			if rcm.canDelete() {
+				api.operationLock.Delete(sagaID)
+			}
+		}()
+	}
 }
 
 // generateOperationID generates a unique operation ID for audit/tracking purposes.
