@@ -24,6 +24,7 @@ package monitoring
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -118,6 +119,21 @@ func NewMonitoringMiddleware(config *MiddlewareConfig) *MonitoringMiddleware {
 	}
 }
 
+// sanitizeForLog sanitizes user input for logging to prevent log injection attacks.
+func sanitizeForLog(input string) string {
+	// Remove newlines and tabs to prevent log injection
+	sanitized := strings.ReplaceAll(input, "\n", "")
+	sanitized = strings.ReplaceAll(sanitized, "\r", "")
+	sanitized = strings.ReplaceAll(sanitized, "\t", "")
+
+	// Limit length to prevent log flooding
+	if len(sanitized) > 500 {
+		sanitized = sanitized[:500] + "... [truncated]"
+	}
+
+	return sanitized
+}
+
 // ApplyToRouter applies all configured middleware to the Gin router.
 func (m *MonitoringMiddleware) ApplyToRouter(router *gin.Engine) {
 	// Recovery middleware should be first to catch panics in other middleware
@@ -171,12 +187,12 @@ func (m *MonitoringMiddleware) loggingMiddleware() gin.HandlerFunc {
 		if logger.Logger != nil {
 			logger.Logger.Info("HTTP request",
 				zap.String("method", c.Request.Method),
-				zap.String("path", path),
-				zap.String("query", query),
+				zap.String("path", sanitizeForLog(path)),
+				zap.String("query", sanitizeForLog(query)),
 				zap.Int("status", c.Writer.Status()),
 				zap.Duration("latency", latency),
-				zap.String("client_ip", c.ClientIP()),
-				zap.String("user_agent", c.Request.UserAgent()),
+				zap.String("client_ip", sanitizeForLog(c.ClientIP())),
+				zap.String("user_agent", sanitizeForLog(c.Request.UserAgent())),
 				zap.Int("body_size", c.Writer.Size()),
 			)
 		}
@@ -210,7 +226,7 @@ func (m *MonitoringMiddleware) errorHandlingMiddleware() gin.HandlerFunc {
 			// Log the error
 			if logger.Logger != nil {
 				logger.Logger.Error("Request error",
-					zap.String("path", c.Request.URL.Path),
+					zap.String("path", sanitizeForLog(c.Request.URL.Path)),
 					zap.String("method", c.Request.Method),
 					zap.Error(err.Err),
 					zap.Uint32("error_type", uint32(err.Type)),
@@ -246,9 +262,9 @@ func (m *MonitoringMiddleware) recoveryMiddleware() gin.HandlerFunc {
 				if logger.Logger != nil {
 					logger.Logger.Error("Panic recovered",
 						zap.Any("error", err),
-						zap.String("path", c.Request.URL.Path),
+						zap.String("path", sanitizeForLog(c.Request.URL.Path)),
 						zap.String("method", c.Request.Method),
-						zap.String("client_ip", c.ClientIP()),
+						zap.String("client_ip", sanitizeForLog(c.ClientIP())),
 					)
 				}
 
@@ -268,4 +284,3 @@ func (m *MonitoringMiddleware) recoveryMiddleware() gin.HandlerFunc {
 func (m *MonitoringMiddleware) GetConfig() *MiddlewareConfig {
 	return m.config
 }
-

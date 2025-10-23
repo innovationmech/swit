@@ -594,3 +594,163 @@ func TestCORSHeaders(t *testing.T) {
 	assert.NotEmpty(t, resp.Header.Get("Access-Control-Allow-Origin"))
 }
 
+// TestServerStartupFailure tests server startup failure scenarios.
+func TestServerStartupFailure(t *testing.T) {
+	t.Run("TLS certificate file not found", func(t *testing.T) {
+		config := DefaultServerConfig()
+		config.Port = "0"
+		config.GinMode = gin.TestMode
+		config.EnableTLS = true
+		config.TLSConfig = &TLSConfig{
+			CertFile: "/nonexistent/cert.pem",
+			KeyFile:  "/nonexistent/key.pem",
+		}
+
+		server, err := NewMonitoringServer(config)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = server.Start(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "server startup failed")
+		assert.False(t, server.IsRunning())
+	})
+
+	t.Run("port already in use", func(t *testing.T) {
+		// Start a server on a specific port
+		config1 := DefaultServerConfig()
+		config1.Port = "54321" // Use a fixed port
+		config1.GinMode = gin.TestMode
+
+		server1, err := NewMonitoringServer(config1)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = server1.Start(ctx)
+		require.NoError(t, err)
+		defer func() {
+			_ = server1.Stop(context.Background())
+		}()
+
+		// Try to start another server on the same port
+		config2 := DefaultServerConfig()
+		config2.Port = "54321"
+		config2.GinMode = gin.TestMode
+
+		server2, err := NewMonitoringServer(config2)
+		require.NoError(t, err)
+
+		err = server2.Start(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "address already in use")
+		assert.False(t, server2.IsRunning())
+	})
+
+	t.Run("invalid address", func(t *testing.T) {
+		config := DefaultServerConfig()
+		config.Address = "invalid-address-format"
+		config.Port = ""
+		config.GinMode = gin.TestMode
+
+		server, err := NewMonitoringServer(config)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = server.Start(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing port in address")
+		assert.False(t, server.IsRunning())
+	})
+}
+
+// TestServerRestartAfterFailure tests that server can be restarted after a failure.
+func TestServerRestartAfterFailure(t *testing.T) {
+	config := DefaultServerConfig()
+	config.Port = "54322" // Use a fixed port
+	config.GinMode = gin.TestMode
+
+	server, err := NewMonitoringServer(config)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// First, start a server on the port
+	server1, err := NewMonitoringServer(config)
+	require.NoError(t, err)
+	err = server1.Start(ctx)
+	require.NoError(t, err)
+
+	// Try to start our server - should fail
+	err = server.Start(ctx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "address already in use")
+	assert.False(t, server.IsRunning())
+
+	// Stop the first server
+	err = server1.Stop(context.Background())
+	require.NoError(t, err)
+
+	// Give a moment for the port to be released
+	time.Sleep(100 * time.Millisecond)
+
+	// Now our server should be able to start
+	err = server.Start(ctx)
+	require.NoError(t, err)
+	assert.True(t, server.IsRunning())
+
+	// Clean up
+	err = server.Stop(context.Background())
+	require.NoError(t, err)
+}
+
+// TestSanitizeForLog tests the sanitization function for log injection prevention.
+func TestSanitizeForLog(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "normal string",
+			input:    "/api/users/123",
+			expected: "/api/users/123",
+		},
+		{
+			name:     "string with newline",
+			input:    "/api/users/123\nLog Injection Attempt",
+			expected: "/api/users/123Log Injection Attempt",
+		},
+		{
+			name:     "string with carriage return",
+			input:    "/api/users/123\rLog Injection Attempt",
+			expected: "/api/users/123Log Injection Attempt",
+		},
+		{
+			name:     "string with tab",
+			input:    "/api/users/123\tLog Injection Attempt",
+			expected: "/api/users/123Log Injection Attempt",
+		},
+		{
+			name:     "string with all control characters",
+			input:    "/api/users/123\n\r\tLog Injection Attempt",
+			expected: "/api/users/123Log Injection Attempt",
+		},
+		{
+			name:     "long string gets truncated",
+			input:    string(make([]byte, 600)), // 600 bytes
+			expected: string(make([]byte, 500)) + "... [truncated]",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeForLog(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
