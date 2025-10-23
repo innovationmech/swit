@@ -295,4 +295,3 @@ func FromSagaInstances(instances []saga.SagaInstance) []SagaDTO {
 	}
 	return dtos
 }
-

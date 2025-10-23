@@ -104,23 +104,23 @@ type mockQuerySagaInstance struct {
 	traceID        string
 }
 
-func (m *mockQuerySagaInstance) GetID() string                        { return m.id }
-func (m *mockQuerySagaInstance) GetDefinitionID() string              { return m.definitionID }
-func (m *mockQuerySagaInstance) GetState() saga.SagaState             { return m.state }
-func (m *mockQuerySagaInstance) GetCurrentStep() int                  { return m.currentStep }
-func (m *mockQuerySagaInstance) GetStartTime() time.Time              { return m.startTime }
-func (m *mockQuerySagaInstance) GetEndTime() time.Time                { return m.endTime }
-func (m *mockQuerySagaInstance) GetResult() interface{}               { return m.result }
-func (m *mockQuerySagaInstance) GetError() *saga.SagaError            { return m.err }
-func (m *mockQuerySagaInstance) GetTotalSteps() int                   { return m.totalSteps }
-func (m *mockQuerySagaInstance) GetCompletedSteps() int               { return m.completedSteps }
-func (m *mockQuerySagaInstance) GetCreatedAt() time.Time              { return m.createdAt }
-func (m *mockQuerySagaInstance) GetUpdatedAt() time.Time              { return m.updatedAt }
-func (m *mockQuerySagaInstance) GetTimeout() time.Duration            { return m.timeout }
-func (m *mockQuerySagaInstance) GetMetadata() map[string]interface{}  { return m.metadata }
-func (m *mockQuerySagaInstance) GetTraceID() string                   { return m.traceID }
-func (m *mockQuerySagaInstance) IsTerminal() bool                     { return m.state.IsTerminal() }
-func (m *mockQuerySagaInstance) IsActive() bool                       { return m.state.IsActive() }
+func (m *mockQuerySagaInstance) GetID() string                       { return m.id }
+func (m *mockQuerySagaInstance) GetDefinitionID() string             { return m.definitionID }
+func (m *mockQuerySagaInstance) GetState() saga.SagaState            { return m.state }
+func (m *mockQuerySagaInstance) GetCurrentStep() int                 { return m.currentStep }
+func (m *mockQuerySagaInstance) GetStartTime() time.Time             { return m.startTime }
+func (m *mockQuerySagaInstance) GetEndTime() time.Time               { return m.endTime }
+func (m *mockQuerySagaInstance) GetResult() interface{}              { return m.result }
+func (m *mockQuerySagaInstance) GetError() *saga.SagaError           { return m.err }
+func (m *mockQuerySagaInstance) GetTotalSteps() int                  { return m.totalSteps }
+func (m *mockQuerySagaInstance) GetCompletedSteps() int              { return m.completedSteps }
+func (m *mockQuerySagaInstance) GetCreatedAt() time.Time             { return m.createdAt }
+func (m *mockQuerySagaInstance) GetUpdatedAt() time.Time             { return m.updatedAt }
+func (m *mockQuerySagaInstance) GetTimeout() time.Duration           { return m.timeout }
+func (m *mockQuerySagaInstance) GetMetadata() map[string]interface{} { return m.metadata }
+func (m *mockQuerySagaInstance) GetTraceID() string                  { return m.traceID }
+func (m *mockQuerySagaInstance) IsTerminal() bool                    { return m.state.IsTerminal() }
+func (m *mockQuerySagaInstance) IsActive() bool                      { return m.state.IsActive() }
 
 // setupTestRouter creates a test router with the query API.
 func setupTestRouter(coordinator saga.SagaCoordinator) *gin.Engine {
@@ -456,4 +456,3 @@ func TestApplyFilters(t *testing.T) {
 		assert.Len(t, filtered, 2)
 	})
 }
-

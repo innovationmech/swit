@@ -332,4 +332,3 @@ func (api *SagaQueryAPI) applyFilters(instances []saga.SagaInstance, req *SagaLi
 
 	return filtered
 }
-
