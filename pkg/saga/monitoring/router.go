@@ -148,10 +148,10 @@ func (rm *RouteManager) handleHealthCheck(c *gin.Context) {
 		}
 
 		c.JSON(httpStatus, gin.H{
-			"status":      string(report.Status),
-			"components":  report.Components,
-			"timestamp":   report.Timestamp,
-			"check_time":  report.TotalCheckDuration.String(),
+			"status":     string(report.Status),
+			"components": report.Components,
+			"timestamp":  report.Timestamp,
+			"check_time": report.TotalCheckDuration.String(),
 		})
 		return
 	}
@@ -232,4 +232,3 @@ func getErrorMessage(err error) string {
 	}
 	return "unknown error"
 }
-

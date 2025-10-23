@@ -315,8 +315,26 @@ func (s *MonitoringServer) Start(ctx context.Context) error {
 			zap.String("health_check_path", s.config.HealthCheckPath))
 	}
 
-	// Start server in a goroutine
+	// Channel to communicate startup result
+	startupResult := make(chan error, 1)
+
+	// Start server in a goroutine with better startup error handling
 	go func() {
+		defer func() {
+			// If this goroutine exits due to an error or panic, ensure the running flag is cleared
+			if r := recover(); r != nil {
+				if logger.Logger != nil {
+					logger.Logger.Error("Monitoring server panic during startup", zap.Any("panic", r))
+				}
+				// Clear running flag and send panic error
+				s.running.Store(false)
+				select {
+				case startupResult <- fmt.Errorf("server panic: %v", r):
+				default:
+				}
+			}
+		}()
+
 		var err error
 		if s.config.EnableTLS {
 			err = s.server.ServeTLS(ln, s.config.TLSConfig.CertFile, s.config.TLSConfig.KeyFile)
@@ -326,20 +344,35 @@ func (s *MonitoringServer) Start(ctx context.Context) error {
 
 		if err != nil && err != http.ErrServerClosed {
 			if logger.Logger != nil {
-				logger.Logger.Error("Monitoring server error", zap.Error(err))
+				logger.Logger.Error("Monitoring server failed to start", zap.Error(err))
+			}
+			// Clear running flag and send startup error
+			s.running.Store(false)
+			select {
+			case startupResult <- err:
+			default:
+				// Channel is full or closed, ignore
 			}
 		}
 	}()
 
-	// Mark server as running
-	s.running.Store(true)
-
-	if logger.Logger != nil {
-		logger.Logger.Info("Saga monitoring server started successfully",
-			zap.String("address", s.actualAddress))
+	// Wait for startup errors (like TLS certificate issues, port binding problems)
+	// These typically happen immediately when Serve() is called, but use a longer timeout
+	// for CI environments and slower systems
+	select {
+	case err := <-startupResult:
+		// Immediate startup failure occurred
+		return fmt.Errorf("server startup failed: %w", err)
+	case <-time.After(1 * time.Second):
+		// No error received within timeout, assume server started successfully
+		// Mark server as running only after we're reasonably confident it started
+		s.running.Store(true)
+		if logger.Logger != nil {
+			logger.Logger.Info("Saga monitoring server started successfully",
+				zap.String("address", s.actualAddress))
+		}
+		return nil
 	}
-
-	return nil
 }
 
 // Stop stops the monitoring server gracefully.
@@ -445,4 +478,3 @@ func (s *MonitoringServer) GetConfig() *ServerConfig {
 func (s *MonitoringServer) RegisterCustomRoute(method, path string, handlers ...gin.HandlerFunc) {
 	s.router.Handle(method, path, handlers...)
 }
-
