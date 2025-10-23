@@ -183,6 +183,10 @@ func NewSagaDashboard(config *DashboardConfig) (*SagaDashboard, error) {
 		return nil, fmt.Errorf("failed to create monitoring server: %w", err)
 	}
 
+	// Create and register Saga query API
+	queryAPI := NewSagaQueryAPI(config.Coordinator)
+	server.SetQueryAPI(queryAPI)
+
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 

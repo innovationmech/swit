@@ -478,3 +478,9 @@ func (s *MonitoringServer) GetConfig() *ServerConfig {
 func (s *MonitoringServer) RegisterCustomRoute(method, path string, handlers ...gin.HandlerFunc) {
 	s.router.Handle(method, path, handlers...)
 }
+
+// SetQueryAPI sets the Saga query API handler and registers its routes.
+// This should be called before Start().
+func (s *MonitoringServer) SetQueryAPI(queryAPI *SagaQueryAPI) {
+	s.routeManager.SetQueryAPI(queryAPI)
+}
