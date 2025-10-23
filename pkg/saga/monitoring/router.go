@@ -355,9 +355,27 @@ func (rm *RouteManager) SetMetricsAPI(metricsAPI *MetricsAPI) {
 func (rm *RouteManager) SetRealtimePusher(pusher *RealtimePusher) {
 	rm.realtimePush = pusher
 
-	// Re-register metrics routes to include SSE endpoint if metrics API is already set
+	// Register only the SSE route if metrics API and API group are already set
+	// to avoid duplicate route registration
 	if rm.apiGroup != nil && rm.metricsAPI != nil {
-		rm.setupMetricsRoutes()
+		rm.setupSSERoute()
+	}
+}
+
+// setupSSERoute configures only the SSE route for real-time updates.
+// This method is called separately to avoid duplicate route registration.
+func (rm *RouteManager) setupSSERoute() {
+	if rm.realtimePush == nil {
+		return
+	}
+
+	// Register only the SSE route under /api/metrics/stream
+	metricsGroup := rm.apiGroup.Group("/metrics")
+	metricsGroup.GET("/stream", rm.realtimePush.HandleSSE)
+
+	if logger.Logger != nil {
+		logger.Logger.Info("SSE route configured",
+			zap.String("path", "/api/metrics/stream"))
 	}
 }
 

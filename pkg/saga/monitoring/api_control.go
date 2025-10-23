@@ -256,7 +256,7 @@ func (api *SagaControlAPI) CancelSaga(c *gin.Context) {
 	if logger.Logger != nil {
 		logger.Logger.Info("Saga cancelled successfully",
 			zap.String("saga_id", sagaID),
-			zap.String("reason", req.Reason),
+			zap.String("reason", sanitizeForLog(req.Reason)),
 			zap.String("new_state", newState),
 			zap.Duration("duration", duration),
 			zap.String("operation_id", operationID))
@@ -424,7 +424,7 @@ func (api *SagaControlAPI) RetrySaga(c *gin.Context) {
 		logger.Logger.Info("Saga retry initiated successfully",
 			zap.String("saga_id", sagaID),
 			zap.Int("from_step", req.FromStep),
-			zap.String("reason", req.Reason),
+			zap.String("reason", sanitizeForLog(req.Reason)),
 			zap.String("new_state", newState),
 			zap.Duration("duration", duration),
 			zap.String("operation_id", operationID))

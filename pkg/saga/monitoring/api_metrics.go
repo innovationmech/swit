@@ -177,7 +177,7 @@ func (api *MetricsAPI) GetMetrics(c *gin.Context) {
 		if err != nil {
 			if logger.Logger != nil {
 				logger.Logger.Warn("Failed to get aggregated metrics",
-					zap.String("group_by", req.GroupBy),
+					zap.String("group_by", sanitizeForLog(req.GroupBy)),
 					zap.Error(err))
 			}
 			// Continue without aggregations rather than failing the whole request
