@@ -270,7 +270,7 @@ func (v *SagaVisualizer) GenerateVisualization(ctx context.Context, sagaID strin
 	if err != nil {
 		if logger.Logger != nil {
 			logger.Logger.Error("Failed to get Saga instance for visualization",
-				zap.String("sagaID", sagaID),
+				zap.String("sagaID", sanitizeForLog(sagaID)),
 				zap.Error(err))
 		}
 		return nil, fmt.Errorf("failed to get Saga instance: %w", err)
@@ -281,7 +281,7 @@ func (v *SagaVisualizer) GenerateVisualization(ctx context.Context, sagaID strin
 	if err != nil {
 		if logger.Logger != nil {
 			logger.Logger.Error("Failed to get Saga definition",
-				zap.String("sagaID", sagaID),
+				zap.String("sagaID", sanitizeForLog(sagaID)),
 				zap.String("definitionID", instance.GetDefinitionID()),
 				zap.Error(err))
 		}
@@ -325,7 +325,7 @@ func (v *SagaVisualizer) GenerateVisualization(ctx context.Context, sagaID strin
 
 	if logger.Logger != nil {
 		logger.Logger.Debug("Generated visualization data",
-			zap.String("sagaID", sagaID),
+			zap.String("sagaID", sanitizeForLog(sagaID)),
 			zap.Int("nodeCount", len(nodes)),
 			zap.Int("edgeCount", len(edges)),
 			zap.String("flowType", string(flowType)))
