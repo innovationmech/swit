@@ -685,7 +685,7 @@ func TestGenerateOperationID(t *testing.T) {
 	sagaID := "test-saga-123"
 
 	id1 := generateOperationID(operation, sagaID)
-	time.Sleep(2 * time.Second) // Increase sleep to ensure different second timestamps
+	time.Sleep(1100 * time.Millisecond) // Just over 1 second to ensure different timestamps
 	id2 := generateOperationID(operation, sagaID)
 
 	// IDs should be unique
