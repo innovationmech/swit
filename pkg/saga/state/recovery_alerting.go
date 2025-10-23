@@ -468,12 +468,18 @@ func (am *RecoveryAlertingManager) addToAlertHistory(alert *RecoveryAlert) {
 }
 
 // GetAlertHistory returns recent alerts.
+// The limit parameter is capped at 10000 to prevent excessive memory allocation.
 func (am *RecoveryAlertingManager) GetAlertHistory(limit int) []*RecoveryAlert {
 	am.alertHistoryMu.RLock()
 	defer am.alertHistoryMu.RUnlock()
 
+	// Cap limit to prevent excessive memory allocation (CodeQL security requirement)
+	const maxLimit = 10000
 	if limit <= 0 || limit > len(am.alertHistory) {
 		limit = len(am.alertHistory)
+	}
+	if limit > maxLimit {
+		limit = maxLimit
 	}
 
 	// Return most recent alerts
