@@ -40,7 +40,8 @@ type RouteManager struct {
 	healthGroup *gin.RouterGroup
 
 	// API handlers
-	queryAPI *SagaQueryAPI
+	queryAPI   *SagaQueryAPI
+	controlAPI *SagaControlAPI
 }
 
 // NewRouteManager creates a new route manager.
@@ -65,6 +66,11 @@ func (rm *RouteManager) SetupRoutes() error {
 	// Setup Saga query routes (if query API is configured)
 	if rm.queryAPI != nil {
 		rm.setupSagaQueryRoutes()
+	}
+
+	// Setup Saga control routes (if control API is configured)
+	if rm.controlAPI != nil {
+		rm.setupSagaControlRoutes()
 	}
 
 	if logger.Logger != nil {
@@ -117,6 +123,24 @@ func (rm *RouteManager) setupSagaQueryRoutes() {
 	}
 }
 
+// setupSagaControlRoutes configures Saga control related routes.
+func (rm *RouteManager) setupSagaControlRoutes() {
+	// Saga control endpoints
+	sagaGroup := rm.apiGroup.Group("/sagas")
+	{
+		// POST /api/sagas/:id/cancel - Cancel a Saga
+		sagaGroup.POST("/:id/cancel", rm.controlAPI.CancelSaga)
+
+		// POST /api/sagas/:id/retry - Retry a Saga
+		sagaGroup.POST("/:id/retry", rm.controlAPI.RetrySaga)
+	}
+
+	if logger.Logger != nil {
+		logger.Logger.Info("Saga control routes configured",
+			zap.String("base_path", "/api/sagas"))
+	}
+}
+
 // handleRoot handles the root endpoint.
 func (rm *RouteManager) handleRoot(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -144,6 +168,12 @@ func (rm *RouteManager) handleInfo(c *gin.Context) {
 	if rm.queryAPI != nil {
 		endpoints["sagas_list"] = "/api/sagas"
 		endpoints["saga_detail"] = "/api/sagas/:id"
+	}
+
+	// Add Saga control endpoints if available
+	if rm.controlAPI != nil {
+		endpoints["saga_cancel"] = "/api/sagas/:id/cancel"
+		endpoints["saga_retry"] = "/api/sagas/:id/retry"
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -267,6 +297,17 @@ func (rm *RouteManager) SetQueryAPI(queryAPI *SagaQueryAPI) {
 	// (i.e., if SetupRoutes has already been called)
 	if rm.apiGroup != nil && rm.queryAPI != nil {
 		rm.setupSagaQueryRoutes()
+	}
+}
+
+// SetControlAPI sets the Saga control API handler and registers its routes.
+func (rm *RouteManager) SetControlAPI(controlAPI *SagaControlAPI) {
+	rm.controlAPI = controlAPI
+
+	// Register Saga control routes if the API group has been initialized
+	// (i.e., if SetupRoutes has already been called)
+	if rm.apiGroup != nil && rm.controlAPI != nil {
+		rm.setupSagaControlRoutes()
 	}
 }
 

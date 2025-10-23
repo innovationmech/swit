@@ -485,3 +485,10 @@ func (s *Server) RegisterCustomRoute(method, path string, handlers ...gin.Handle
 func (s *Server) SetQueryAPI(queryAPI *SagaQueryAPI) {
 	s.routeManager.SetQueryAPI(queryAPI)
 }
+
+// SetControlAPI sets the Saga control API handler and registers its routes.
+// This can be called before or after server creation, but must be called before Start()
+// to ensure the routes are available.
+func (s *Server) SetControlAPI(controlAPI *SagaControlAPI) {
+	s.routeManager.SetControlAPI(controlAPI)
+}
