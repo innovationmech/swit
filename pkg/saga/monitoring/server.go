@@ -203,14 +203,14 @@ func NewMonitoringServer(config *ServerConfig) (*MonitoringServer, error) {
 		return nil, fmt.Errorf("invalid server configuration: %w", err)
 	}
 
-	// Set Gin mode
+	// Set Gin mode (must be done before gin.New())
 	if config.GinMode != "" {
 		gin.SetMode(config.GinMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Create router
+	// Create router - each call to gin.New() creates an independent router instance
 	router := gin.New()
 
 	// Create monitoring middleware
