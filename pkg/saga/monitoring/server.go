@@ -500,6 +500,13 @@ func (s *Server) SetMetricsAPI(metricsAPI *MetricsAPI) {
 	s.routeManager.SetMetricsAPI(metricsAPI)
 }
 
+// SetVisualizationAPI sets the Saga visualization API handler and registers its routes.
+// This can be called before or after server creation, but must be called before Start()
+// to ensure the routes are available.
+func (s *Server) SetVisualizationAPI(visualizationAPI *SagaVisualizationAPI) {
+	s.routeManager.SetVisualizationAPI(visualizationAPI)
+}
+
 // SetRealtimePusher sets the realtime pusher for SSE streaming.
 // This can be called before or after server creation, but must be called before Start()
 // to ensure the SSE endpoint is available.

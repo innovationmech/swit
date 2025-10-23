@@ -39,10 +39,11 @@ type RouteManager struct {
 	apiGroup *gin.RouterGroup
 
 	// API handlers
-	queryAPI     *SagaQueryAPI
-	controlAPI   *SagaControlAPI
-	metricsAPI   *MetricsAPI
-	realtimePush *RealtimePusher
+	queryAPI         *SagaQueryAPI
+	controlAPI       *SagaControlAPI
+	metricsAPI       *MetricsAPI
+	visualizationAPI *SagaVisualizationAPI
+	realtimePush     *RealtimePusher
 }
 
 // NewRouteManager creates a new route manager.
@@ -77,6 +78,11 @@ func (rm *RouteManager) SetupRoutes() error {
 	// Setup metrics routes (if metrics API is configured)
 	if rm.metricsAPI != nil {
 		rm.setupMetricsRoutes()
+	}
+
+	// Setup visualization routes (if visualization API is configured)
+	if rm.visualizationAPI != nil {
+		rm.setupVisualizationRoutes()
 	}
 
 	if logger.Logger != nil {
@@ -167,6 +173,21 @@ func (rm *RouteManager) setupMetricsRoutes() {
 	if logger.Logger != nil {
 		logger.Logger.Info("Metrics routes configured",
 			zap.String("base_path", "/api/metrics"))
+	}
+}
+
+// setupVisualizationRoutes configures Saga visualization related routes.
+func (rm *RouteManager) setupVisualizationRoutes() {
+	// Visualization endpoints under /api/sagas/:id/visualization
+	sagaGroup := rm.apiGroup.Group("/sagas")
+	{
+		// GET /api/sagas/:id/visualization - Get Saga flow visualization
+		sagaGroup.GET("/:id/visualization", rm.visualizationAPI.GetVisualization)
+	}
+
+	if logger.Logger != nil {
+		logger.Logger.Info("Saga visualization routes configured",
+			zap.String("base_path", "/api/sagas/:id/visualization"))
 	}
 }
 
@@ -348,6 +369,16 @@ func (rm *RouteManager) SetMetricsAPI(metricsAPI *MetricsAPI) {
 	// (i.e., if SetupRoutes has already been called)
 	if rm.apiGroup != nil && rm.metricsAPI != nil {
 		rm.setupMetricsRoutes()
+	}
+}
+
+// SetVisualizationAPI sets the visualization API handler.
+func (rm *RouteManager) SetVisualizationAPI(visualizationAPI *SagaVisualizationAPI) {
+	rm.visualizationAPI = visualizationAPI
+
+	// Register visualization routes if the API group has been initialized
+	if rm.apiGroup != nil && rm.visualizationAPI != nil {
+		rm.setupVisualizationRoutes()
 	}
 }
 
