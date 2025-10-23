@@ -97,6 +97,40 @@ func DefaultMaskConfig() *MaskConfig {
 	}
 }
 
+// copyMaskConfig creates a deep copy of MaskConfig to avoid concurrent map access issues
+func copyMaskConfig(original *MaskConfig) *MaskConfig {
+	if original == nil {
+		return DefaultMaskConfig()
+	}
+
+	copy := &MaskConfig{
+		DefaultMaskChar:    original.DefaultMaskChar,
+		PhoneKeepPrefix:    original.PhoneKeepPrefix,
+		PhoneKeepSuffix:    original.PhoneKeepSuffix,
+		EmailKeepPrefix:    original.EmailKeepPrefix,
+		BankCardKeepPrefix: original.BankCardKeepPrefix,
+		BankCardKeepSuffix: original.BankCardKeepSuffix,
+		IDCardKeepPrefix:   original.IDCardKeepPrefix,
+		IDCardKeepSuffix:   original.IDCardKeepSuffix,
+		NameKeepFirst:      original.NameKeepFirst,
+		CustomRules:        make(map[string]*MaskRule),
+	}
+
+	// Deep copy CustomRules
+	for name, rule := range original.CustomRules {
+		if rule != nil {
+			copy.CustomRules[name] = &MaskRule{
+				Pattern:   rule.Pattern,
+				KeepPrefix: rule.KeepPrefix,
+				KeepSuffix: rule.KeepSuffix,
+				MaskChar:  rule.MaskChar,
+			}
+		}
+	}
+
+	return copy
+}
+
 // Masker is an interface for data masking
 type Masker interface {
 	// Mask masks data based on its type
@@ -145,12 +179,11 @@ type DefaultMasker struct {
 
 // NewMasker creates a new data masker
 func NewMasker(config *MaskConfig) (*DefaultMasker, error) {
-	if config == nil {
-		config = DefaultMaskConfig()
-	}
+	// Create a deep copy of the config to avoid concurrent map access issues
+	maskerConfig := copyMaskConfig(config)
 
 	masker := &DefaultMasker{
-		config: config,
+		config: maskerConfig,
 		logger: logger.Logger,
 	}
 
