@@ -187,6 +187,10 @@ func NewSagaDashboard(config *DashboardConfig) (*SagaDashboard, error) {
 	queryAPI := NewSagaQueryAPI(config.Coordinator)
 	server.SetQueryAPI(queryAPI)
 
+	// Create and register Saga visualization API
+	visualizationAPI := NewSagaVisualizationAPI(config.Coordinator)
+	server.SetVisualizationAPI(visualizationAPI)
+
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 
