@@ -38,6 +38,9 @@ type RouteManager struct {
 	// Route groups for better organization
 	apiGroup    *gin.RouterGroup
 	healthGroup *gin.RouterGroup
+
+	// API handlers
+	queryAPI *SagaQueryAPI
 }
 
 // NewRouteManager creates a new route manager.
@@ -58,6 +61,11 @@ func (rm *RouteManager) SetupRoutes() error {
 
 	// Setup base routes
 	rm.setupBaseRoutes()
+
+	// Setup Saga query routes (if query API is configured)
+	if rm.queryAPI != nil {
+		rm.setupSagaQueryRoutes()
+	}
 
 	if logger.Logger != nil {
 		logger.Logger.Info("Routes configured successfully",
@@ -91,6 +99,24 @@ func (rm *RouteManager) setupBaseRoutes() {
 	rm.apiGroup.GET("/info", rm.handleInfo)
 }
 
+// setupSagaQueryRoutes configures Saga query related routes.
+func (rm *RouteManager) setupSagaQueryRoutes() {
+	// Saga query endpoints
+	sagaGroup := rm.apiGroup.Group("/sagas")
+	{
+		// GET /api/sagas - List Sagas with pagination and filtering
+		sagaGroup.GET("", rm.queryAPI.ListSagas)
+
+		// GET /api/sagas/:id - Get Saga details
+		sagaGroup.GET("/:id", rm.queryAPI.GetSagaDetails)
+	}
+
+	if logger.Logger != nil {
+		logger.Logger.Info("Saga query routes configured",
+			zap.String("base_path", "/api/sagas"))
+	}
+}
+
 // handleRoot handles the root endpoint.
 func (rm *RouteManager) handleRoot(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -108,15 +134,23 @@ func (rm *RouteManager) handleRoot(c *gin.Context) {
 
 // handleInfo handles the API info endpoint.
 func (rm *RouteManager) handleInfo(c *gin.Context) {
+	endpoints := gin.H{
+		"health":    rm.config.HealthCheckPath,
+		"readiness": "/api/health/ready",
+		"liveness":  "/api/health/live",
+	}
+
+	// Add Saga query endpoints if available
+	if rm.queryAPI != nil {
+		endpoints["sagas_list"] = "/api/sagas"
+		endpoints["saga_detail"] = "/api/sagas/:id"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"name":        "Saga Monitoring API",
 		"version":     "v1",
 		"description": "Web monitoring dashboard for Saga distributed transactions",
-		"endpoints": gin.H{
-			"health":    rm.config.HealthCheckPath,
-			"readiness": "/api/health/ready",
-			"liveness":  "/api/health/live",
-		},
+		"endpoints":   endpoints,
 	})
 }
 
@@ -223,6 +257,17 @@ func (rm *RouteManager) handleReadinessCheck(c *gin.Context) {
 // GetAPIGroup returns the API route group for registering additional routes.
 func (rm *RouteManager) GetAPIGroup() *gin.RouterGroup {
 	return rm.apiGroup
+}
+
+// SetQueryAPI sets the Saga query API handler and registers its routes.
+func (rm *RouteManager) SetQueryAPI(queryAPI *SagaQueryAPI) {
+	rm.queryAPI = queryAPI
+
+	// Register Saga query routes if the API group has been initialized
+	// (i.e., if SetupRoutes has already been called)
+	if rm.apiGroup != nil && rm.queryAPI != nil {
+		rm.setupSagaQueryRoutes()
+	}
 }
 
 // getErrorMessage safely extracts error message from error.

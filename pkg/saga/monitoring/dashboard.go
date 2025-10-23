@@ -103,7 +103,7 @@ type SagaDashboard struct {
 	coordinator      saga.SagaCoordinator
 	metricsCollector MetricsCollector
 	healthManager    *SagaHealthManager
-	server           *MonitoringServer
+	server           *Server
 
 	// State management
 	mu      sync.RWMutex
@@ -182,6 +182,10 @@ func NewSagaDashboard(config *DashboardConfig) (*SagaDashboard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create monitoring server: %w", err)
 	}
+
+	// Create and register Saga query API
+	queryAPI := NewSagaQueryAPI(config.Coordinator)
+	server.SetQueryAPI(queryAPI)
 
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
@@ -367,7 +371,7 @@ func (d *SagaDashboard) GetHealthManager() *SagaHealthManager {
 
 // GetServer returns the underlying monitoring server.
 // This allows advanced users to register custom routes and middleware.
-func (d *SagaDashboard) GetServer() *MonitoringServer {
+func (d *SagaDashboard) GetServer() *Server {
 	return d.server
 }
 
