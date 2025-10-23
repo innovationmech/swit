@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saga 监控面板 - Swit Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>🔄 Saga 监控面板</h1>
+                <div class="header-info">
+                    <span class="status-indicator" id="connectionStatus">
+                        <span class="status-dot"></span>
+                        连接中...
+                    </span>
+                    <span class="last-update">最后更新: <span id="lastUpdate">-</span></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Metrics Dashboard -->
+        <section class="metrics-section">
+            <h2>实时指标</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon">📊</div>
+                    <div class="metric-content">
+                        <div class="metric-label">总计 Saga</div>
+                        <div class="metric-value" id="totalSagas">0</div>
+                    </div>
+                </div>
+                <div class="metric-card success">
+                    <div class="metric-icon">✅</div>
+                    <div class="metric-content">
+                        <div class="metric-label">成功完成</div>
+                        <div class="metric-value" id="completedSagas">0</div>
+                    </div>
+                </div>
+                <div class="metric-card warning">
+                    <div class="metric-icon">⏳</div>
+                    <div class="metric-content">
+                        <div class="metric-label">运行中</div>
+                        <div class="metric-value" id="runningSagas">0</div>
+                    </div>
+                </div>
+                <div class="metric-card error">
+                    <div class="metric-icon">❌</div>
+                    <div class="metric-content">
+                        <div class="metric-label">失败</div>
+                        <div class="metric-value" id="failedSagas">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="metrics-details">
+                <div class="metric-detail-card">
+                    <h3>平均执行时间</h3>
+                    <div class="metric-large" id="avgDuration">0 ms</div>
+                </div>
+                <div class="metric-detail-card">
+                    <h3>成功率</h3>
+                    <div class="metric-large" id="successRate">0%</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Alerts Section -->
+        <section class="alerts-section" id="alertsSection" style="display: none;">
+            <h2>🚨 活跃告警</h2>
+            <div class="alerts-list" id="alertsList">
+                <!-- Alerts will be dynamically added here -->
+            </div>
+        </section>
+
+        <!-- Saga List -->
+        <section class="saga-section">
+            <div class="section-header">
+                <h2>Saga 列表</h2>
+                <div class="controls">
+                    <div class="filter-group">
+                        <label for="statusFilter">状态:</label>
+                        <select id="statusFilter" class="filter-select">
+                            <option value="">全部</option>
+                            <option value="running">运行中</option>
+                            <option value="completed">已完成</option>
+                            <option value="failed">失败</option>
+                            <option value="compensating">补偿中</option>
+                            <option value="compensated">已补偿</option>
+                        </select>
+                    </div>
+                    <button id="refreshBtn" class="btn btn-primary">🔄 刷新</button>
+                </div>
+            </div>
+
+            <div class="saga-table-container">
+                <table class="saga-table">
+                    <thead>
+                        <tr>
+                            <th>Saga ID</th>
+                            <th>类型</th>
+                            <th>状态</th>
+                            <th>进度</th>
+                            <th>开始时间</th>
+                            <th>持续时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sagaTableBody">
+                        <tr class="loading-row">
+                            <td colspan="7" class="loading">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="pagination">
+                <button id="prevBtn" class="btn btn-secondary" disabled>← 上一页</button>
+                <span class="page-info" id="pageInfo">第 1 页</span>
+                <button id="nextBtn" class="btn btn-secondary">下一页 →</button>
+            </div>
+        </section>
+
+        <!-- Saga Detail Modal -->
+        <div id="detailModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Saga 详情</h2>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                    <!-- Details will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Visualization Modal -->
+        <div id="vizModal" class="modal">
+            <div class="modal-content large">
+                <div class="modal-header">
+                    <h2>流程可视化</h2>
+                    <button class="close-btn" id="closeVizModal">&times;</button>
+                </div>
+                <div class="modal-body" id="vizModalBody">
+                    <!-- Visualization will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
+

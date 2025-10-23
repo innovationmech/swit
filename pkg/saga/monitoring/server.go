@@ -253,6 +253,10 @@ func (s *Server) applyMiddleware() error {
 
 // setupRoutes initializes all routes for the monitoring server.
 func (s *Server) setupRoutes() error {
+	// Setup static file serving for the web dashboard frontend
+	s.router.Static("/static", "./web/static")
+
+	// Setup API routes
 	return s.routeManager.SetupRoutes()
 }
 
