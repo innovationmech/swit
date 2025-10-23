@@ -120,10 +120,10 @@ func copyMaskConfig(original *MaskConfig) *MaskConfig {
 	for name, rule := range original.CustomRules {
 		if rule != nil {
 			copy.CustomRules[name] = &MaskRule{
-				Pattern:   rule.Pattern,
+				Pattern:    rule.Pattern,
 				KeepPrefix: rule.KeepPrefix,
 				KeepSuffix: rule.KeepSuffix,
-				MaskChar:  rule.MaskChar,
+				MaskChar:   rule.MaskChar,
 			}
 		}
 	}

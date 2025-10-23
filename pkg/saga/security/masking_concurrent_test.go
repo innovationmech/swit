@@ -32,20 +32,20 @@ import (
 func TestMaskerConcurrentConfigSharing(t *testing.T) {
 	// Create a shared config with some custom rules
 	sharedConfig := DefaultMaskConfig()
-	
+
 	// Add some custom rules to the shared config
 	postalCodeRule := &MaskRule{
-		Pattern:   regexp.MustCompile(`^\d{6}$`),
+		Pattern:    regexp.MustCompile(`^\d{6}$`),
 		KeepPrefix: 2,
 		KeepSuffix: 2,
-		MaskChar:  '*',
+		MaskChar:   '*',
 	}
 	sharedConfig.CustomRules["postal_code"] = postalCodeRule
 
 	// Create multiple maskers using the same config
 	numMaskers := 10
 	maskers := make([]*DefaultMasker, numMaskers)
-	
+
 	for i := 0; i < numMaskers; i++ {
 		masker, err := NewMasker(sharedConfig)
 		if err != nil {
@@ -57,7 +57,7 @@ func TestMaskerConcurrentConfigSharing(t *testing.T) {
 	// Test concurrent access to custom rules
 	var wg sync.WaitGroup
 	numGoroutines := 100
-	
+
 	// Test concurrent reads
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
@@ -80,10 +80,10 @@ func TestMaskerConcurrentConfigSharing(t *testing.T) {
 			masker := maskers[id%numMaskers]
 			ruleName := "test_rule"
 			rule := &MaskRule{
-				Pattern:   regexp.MustCompile(`^test\d+$`),
+				Pattern:    regexp.MustCompile(`^test\d+$`),
 				KeepPrefix: 2,
 				KeepSuffix: 1,
-				MaskChar:  '#',
+				MaskChar:   '#',
 			}
 			err := masker.AddCustomRule(ruleName, rule)
 			if err != nil {
@@ -139,14 +139,14 @@ func TestCopyMaskConfig(t *testing.T) {
 	original := &MaskConfig{
 		DefaultMaskChar: '#',
 		PhoneKeepPrefix: 2,
-		CustomRules: make(map[string]*MaskRule),
+		CustomRules:     make(map[string]*MaskRule),
 	}
-	
+
 	rule := &MaskRule{
-		Pattern:   regexp.MustCompile(`^\d{6}$`),
+		Pattern:    regexp.MustCompile(`^\d{6}$`),
 		KeepPrefix: 2,
 		KeepSuffix: 2,
-		MaskChar:  '*',
+		MaskChar:   '*',
 	}
 	original.CustomRules["test"] = rule
 
@@ -204,10 +204,10 @@ func TestMaskerIsolation(t *testing.T) {
 
 	// Add a custom rule to masker1
 	rule := &MaskRule{
-		Pattern:   regexp.MustCompile(`^\d{6}$`),
+		Pattern:    regexp.MustCompile(`^\d{6}$`),
 		KeepPrefix: 2,
 		KeepSuffix: 2,
-		MaskChar:  '#',
+		MaskChar:   '#',
 	}
 	err = masker1.AddCustomRule("test_rule", rule)
 	if err != nil {
