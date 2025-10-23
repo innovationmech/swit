@@ -30,6 +30,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// sanitizeStringsForLog sanitizes a slice of strings for logging.
+func sanitizeStringsForLog(strs []string) []string {
+	result := make([]string, len(strs))
+	for i, s := range strs {
+		result[i] = sanitizeForLog(s)
+	}
+	return result
+}
+
 // SagaQueryAPI provides API endpoints for querying Saga instances.
 type SagaQueryAPI struct {
 	coordinator saga.SagaCoordinator
@@ -77,8 +86,7 @@ func (api *SagaQueryAPI) ListSagas(c *gin.Context) {
 	if err := c.ShouldBindQuery(&req); err != nil {
 		if logger.Logger != nil {
 			logger.Logger.Warn("Invalid query parameters",
-				zap.Error(err),
-				zap.Any("query", c.Request.URL.Query()))
+				zap.Error(err))
 		}
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_request",
@@ -98,9 +106,9 @@ func (api *SagaQueryAPI) ListSagas(c *gin.Context) {
 		logger.Logger.Debug("Listing Sagas",
 			zap.Int("page", req.Page),
 			zap.Int("pageSize", req.PageSize),
-			zap.Strings("states", req.States),
-			zap.String("sortBy", req.SortBy),
-			zap.String("sortOrder", req.SortOrder))
+			zap.Strings("states", sanitizeStringsForLog(req.States)),
+			zap.String("sortBy", sanitizeForLog(req.SortBy)),
+			zap.String("sortOrder", sanitizeForLog(req.SortOrder)))
 	}
 
 	// Query active Sagas from coordinator
@@ -172,7 +180,7 @@ func (api *SagaQueryAPI) ListSagas(c *gin.Context) {
 			zap.Int("count", len(dtos)),
 			zap.Int("totalItems", totalItems),
 			zap.Int("page", req.Page),
-			zap.String("trace_id", c.GetHeader("X-Trace-ID")))
+			zap.String("trace_id", sanitizeForLog(c.GetHeader("X-Trace-ID"))))
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -216,8 +224,8 @@ func (api *SagaQueryAPI) GetSagaDetails(c *gin.Context) {
 	// Log the query
 	if logger.Logger != nil {
 		logger.Logger.Debug("Getting Saga details",
-			zap.String("sagaID", sagaID),
-			zap.String("trace_id", c.GetHeader("X-Trace-ID")))
+			zap.String("sagaID", sanitizeForLog(sagaID)),
+			zap.String("trace_id", sanitizeForLog(c.GetHeader("X-Trace-ID"))))
 	}
 
 	// Get Saga instance from coordinator
@@ -227,7 +235,7 @@ func (api *SagaQueryAPI) GetSagaDetails(c *gin.Context) {
 		if saga.IsSagaNotFound(err) {
 			if logger.Logger != nil {
 				logger.Logger.Warn("Saga not found",
-					zap.String("sagaID", sagaID),
+					zap.String("sagaID", sanitizeForLog(sagaID)),
 					zap.Error(err))
 			}
 			c.JSON(http.StatusNotFound, ErrorResponse{
@@ -240,7 +248,7 @@ func (api *SagaQueryAPI) GetSagaDetails(c *gin.Context) {
 		// Other errors
 		if logger.Logger != nil {
 			logger.Logger.Error("Failed to get Saga instance",
-				zap.String("sagaID", sagaID),
+				zap.String("sagaID", sanitizeForLog(sagaID)),
 				zap.Error(err))
 		}
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
@@ -261,9 +269,9 @@ func (api *SagaQueryAPI) GetSagaDetails(c *gin.Context) {
 	// Log success
 	if logger.Logger != nil {
 		logger.Logger.Info("Successfully retrieved Saga details",
-			zap.String("sagaID", sagaID),
+			zap.String("sagaID", sanitizeForLog(sagaID)),
 			zap.String("state", dto.State),
-			zap.String("trace_id", c.GetHeader("X-Trace-ID")))
+			zap.String("trace_id", sanitizeForLog(c.GetHeader("X-Trace-ID"))))
 	}
 
 	c.JSON(http.StatusOK, dto)
