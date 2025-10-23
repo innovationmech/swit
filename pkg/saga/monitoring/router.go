@@ -1,0 +1,235 @@
+// Copyright © 2025 jackelyj <dreamerlyj@gmail.com>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+
+package monitoring
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/pkg/logger"
+	"go.uber.org/zap"
+)
+
+// RouteManager manages API routes for the monitoring server.
+type RouteManager struct {
+	router *gin.Engine
+	config *ServerConfig
+
+	// Route groups for better organization
+	apiGroup    *gin.RouterGroup
+	healthGroup *gin.RouterGroup
+}
+
+// NewRouteManager creates a new route manager.
+func NewRouteManager(router *gin.Engine, config *ServerConfig) *RouteManager {
+	return &RouteManager{
+		router: router,
+		config: config,
+	}
+}
+
+// SetupRoutes initializes all routes for the monitoring server.
+func (rm *RouteManager) SetupRoutes() error {
+	// Create API route group
+	rm.apiGroup = rm.router.Group("/api")
+
+	// Setup health check routes
+	rm.setupHealthRoutes()
+
+	// Setup base routes
+	rm.setupBaseRoutes()
+
+	if logger.Logger != nil {
+		logger.Logger.Info("Routes configured successfully",
+			zap.String("health_path", rm.config.HealthCheckPath))
+	}
+
+	return nil
+}
+
+// setupHealthRoutes configures health check related routes.
+func (rm *RouteManager) setupHealthRoutes() {
+	// Register health check endpoint at configured path
+	rm.router.GET(rm.config.HealthCheckPath, rm.handleHealthCheck)
+
+	// Also register under /api/health for consistency
+	if rm.config.HealthCheckPath != "/api/health" {
+		rm.apiGroup.GET("/health", rm.handleHealthCheck)
+	}
+
+	// Add liveness and readiness probes (Kubernetes compatible)
+	rm.apiGroup.GET("/health/live", rm.handleLivenessCheck)
+	rm.apiGroup.GET("/health/ready", rm.handleReadinessCheck)
+}
+
+// setupBaseRoutes configures base API routes.
+func (rm *RouteManager) setupBaseRoutes() {
+	// Root endpoint
+	rm.router.GET("/", rm.handleRoot)
+
+	// API info endpoint
+	rm.apiGroup.GET("/info", rm.handleInfo)
+}
+
+// handleRoot handles the root endpoint.
+func (rm *RouteManager) handleRoot(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"service": "Saga Monitoring Dashboard",
+		"version": "1.0.0",
+		"status":  "running",
+		"links": gin.H{
+			"health":    rm.config.HealthCheckPath,
+			"api":       "/api",
+			"readiness": "/api/health/ready",
+			"liveness":  "/api/health/live",
+		},
+	})
+}
+
+// handleInfo handles the API info endpoint.
+func (rm *RouteManager) handleInfo(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"name":        "Saga Monitoring API",
+		"version":     "v1",
+		"description": "Web monitoring dashboard for Saga distributed transactions",
+		"endpoints": gin.H{
+			"health":    rm.config.HealthCheckPath,
+			"readiness": "/api/health/ready",
+			"liveness":  "/api/health/live",
+		},
+	})
+}
+
+// handleHealthCheck handles the main health check endpoint.
+func (rm *RouteManager) handleHealthCheck(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// If health manager is configured, use it for detailed checks
+	if rm.config.HealthManager != nil {
+		report, err := rm.config.HealthManager.CheckHealth(ctx)
+		if err != nil {
+			if logger.Logger != nil {
+				logger.Logger.Error("Health check failed", zap.Error(err))
+			}
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":    "unhealthy",
+				"error":     err.Error(),
+				"timestamp": time.Now(),
+			})
+			return
+		}
+
+		// Determine HTTP status based on health status
+		httpStatus := http.StatusOK
+		if report.Status == HealthStatusUnhealthy {
+			httpStatus = http.StatusServiceUnavailable
+		} else if report.Status == HealthStatusDegraded {
+			httpStatus = http.StatusOK // Still OK but with degraded status
+		}
+
+		c.JSON(httpStatus, gin.H{
+			"status":      string(report.Status),
+			"components":  report.Components,
+			"timestamp":   report.Timestamp,
+			"check_time":  report.TotalCheckDuration.String(),
+		})
+		return
+	}
+
+	// Basic health check without health manager
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "healthy",
+		"service":   "saga-monitoring",
+		"timestamp": time.Now(),
+	})
+}
+
+// handleLivenessCheck handles the Kubernetes liveness probe.
+// Returns 200 if the application is alive (not deadlocked or crashed).
+func (rm *RouteManager) handleLivenessCheck(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	if rm.config.HealthManager != nil {
+		alive, err := rm.config.HealthManager.CheckLiveness(ctx)
+		if err != nil || !alive {
+			if logger.Logger != nil {
+				logger.Logger.Warn("Liveness check failed",
+					zap.Error(err),
+					zap.Bool("alive", alive))
+			}
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":    "not alive",
+				"error":     getErrorMessage(err),
+				"timestamp": time.Now(),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "alive",
+		"timestamp": time.Now(),
+	})
+}
+
+// handleReadinessCheck handles the Kubernetes readiness probe.
+// Returns 200 if the application is ready to serve traffic.
+func (rm *RouteManager) handleReadinessCheck(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	if rm.config.HealthManager != nil {
+		ready, err := rm.config.HealthManager.CheckReadiness(ctx)
+		if err != nil || !ready {
+			if logger.Logger != nil {
+				logger.Logger.Warn("Readiness check failed",
+					zap.Error(err),
+					zap.Bool("ready", ready))
+			}
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":    "not ready",
+				"error":     getErrorMessage(err),
+				"timestamp": time.Now(),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "ready",
+		"timestamp": time.Now(),
+	})
+}
+
+// GetAPIGroup returns the API route group for registering additional routes.
+func (rm *RouteManager) GetAPIGroup() *gin.RouterGroup {
+	return rm.apiGroup
+}
+
+// getErrorMessage safely extracts error message from error.
+func getErrorMessage(err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	return "unknown error"
+}
+
