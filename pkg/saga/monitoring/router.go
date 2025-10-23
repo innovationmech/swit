@@ -225,7 +225,18 @@ func (rm *RouteManager) setupAlertsRoutes() {
 }
 
 // handleRoot handles the root endpoint.
+// It serves the dashboard HTML page if it exists, otherwise returns JSON API info.
 func (rm *RouteManager) handleRoot(c *gin.Context) {
+	// Check if request accepts HTML
+	acceptHeader := c.GetHeader("Accept")
+	if acceptHeader != "" && (c.GetHeader("Accept") == "text/html" ||
+		c.GetHeader("Accept") == "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8") {
+		// Try to serve the dashboard HTML
+		c.File("./web/static/index.html")
+		return
+	}
+
+	// Default: return JSON API info
 	c.JSON(http.StatusOK, gin.H{
 		"service": "Saga Monitoring Dashboard",
 		"version": "1.0.0",
@@ -235,6 +246,7 @@ func (rm *RouteManager) handleRoot(c *gin.Context) {
 			"api":       "/api",
 			"readiness": "/api/health/ready",
 			"liveness":  "/api/health/live",
+			"dashboard": "/static/index.html",
 		},
 	})
 }

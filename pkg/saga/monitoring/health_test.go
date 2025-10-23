@@ -248,7 +248,7 @@ func TestStorageHealthChecker_Check_Degraded(t *testing.T) {
 func TestStorageHealthChecker_Check_Timeout(t *testing.T) {
 	storage := &mockStorage{
 		healthErr: nil,
-		delay:     10 * time.Second, // Exceeds timeout
+		delay:     2 * time.Second, // Exceeds timeout but reasonable for CI
 	}
 	checker := NewStorageHealthChecker("test-storage", storage, 1*time.Second)
 

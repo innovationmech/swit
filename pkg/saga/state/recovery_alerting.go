@@ -488,14 +488,14 @@ func (am *RecoveryAlertingManager) GetAlertHistory(limit int) []*RecoveryAlert {
 
 	// Cap limit to prevent excessive memory allocation (CodeQL security requirement)
 	const maxLimit = 10000
-	
+
 	// Calculate safe limit using explicit min comparisons
 	// Use min() helper to make bounds checking explicit for CodeQL
 	requestedLimit := limit
 	if requestedLimit <= 0 {
 		requestedLimit = historyLen
 	}
-	
+
 	// Bounded allocation: min(min(requestedLimit, historyLen), maxLimit)
 	// This ensures the allocated size is always within safe bounds
 	boundedLimit := min(min(requestedLimit, historyLen), maxLimit)

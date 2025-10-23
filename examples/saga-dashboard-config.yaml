@@ -1,0 +1,519 @@
+# Saga Dashboard Configuration Example
+# 这是一个完整的 Saga 监控面板配置示例文件
+
+# ============================================================================
+# 监控面板服务器配置
+# ============================================================================
+monitoring:
+  # 服务监听地址
+  # 格式: "host:port" 或 ":port"
+  # 示例: ":8080" (监听所有接口的 8080 端口)
+  #       "localhost:8080" (只监听本地)
+  #       "0.0.0.0:8080" (监听所有网络接口)
+  address: ":8080"
+  
+  # 或者单独指定端口 (如果同时指定 address 和 port，port 优先)
+  # port: "8080"
+  
+  # 服务器超时配置
+  timeouts:
+    # 读取请求超时
+    read_timeout: 30s
+    # 写入响应超时
+    write_timeout: 30s
+    # 空闲连接超时
+    idle_timeout: 60s
+  
+  # HTTP 请求头最大字节数
+  max_header_bytes: 1048576  # 1MB
+  
+  # Gin 框架运行模式
+  # 可选值: debug, release, test
+  # 生产环境推荐使用 release
+  gin_mode: release
+  
+  # 健康检查端点路径
+  health_check_path: /api/health
+  
+  # 优雅关闭配置
+  graceful_shutdown:
+    # 启用优雅关闭
+    enabled: true
+    # 优雅关闭超时时间
+    timeout: 30s
+  
+  # TLS/HTTPS 配置 (可选)
+  tls:
+    # 启用 TLS
+    enabled: false
+    # TLS 证书文件路径
+    cert_file: /path/to/cert.pem
+    # TLS 私钥文件路径
+    key_file: /path/to/key.pem
+    # 最低 TLS 版本 (1.0, 1.1, 1.2, 1.3)
+    min_version: "1.2"
+    # 最高 TLS 版本
+    max_version: "1.3"
+
+# ============================================================================
+# Saga 协调器配置
+# ============================================================================
+saga:
+  # 协调器类型
+  coordinator_type: memory  # memory, redis, postgresql
+  
+  # 内存协调器配置 (用于开发测试)
+  memory:
+    # 最大并发 Saga 数量
+    max_concurrent_sagas: 1000
+    # Saga 历史保留时间
+    history_retention: 24h
+  
+  # Redis 协调器配置 (生产推荐)
+  redis:
+    address: "localhost:6379"
+    password: ""
+    db: 0
+    pool_size: 10
+    max_retries: 3
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
+  
+  # PostgreSQL 协调器配置 (生产推荐)
+  postgresql:
+    host: localhost
+    port: 5432
+    database: saga_db
+    username: saga_user
+    password: saga_password
+    sslmode: disable
+    max_open_conns: 25
+    max_idle_conns: 5
+    conn_max_lifetime: 5m
+
+# ============================================================================
+# 健康检查配置
+# ============================================================================
+health:
+  # 健康检查超时
+  timeout: 5s
+  
+  # 检查间隔
+  interval: 10s
+  
+  # 组件健康检查配置
+  components:
+    # Saga 协调器健康检查
+    - name: coordinator
+      enabled: true
+      critical: true  # 该组件故障会导致整体 unhealthy
+    
+    # 数据库健康检查
+    - name: database
+      enabled: true
+      critical: true
+    
+    # 消息代理健康检查
+    - name: message_broker
+      enabled: false
+      critical: false
+    
+    # 缓存服务健康检查
+    - name: cache
+      enabled: false
+      critical: false
+
+# ============================================================================
+# 指标采集配置
+# ============================================================================
+metrics:
+  # 启用指标采集
+  enabled: true
+  
+  # 指标采集间隔
+  collection_interval: 5s
+  
+  # 指标数据保留时长
+  retention_period: 24h
+  
+  # Prometheus 集成
+  prometheus:
+    # 启用 Prometheus 指标导出
+    enabled: true
+    # Prometheus 指标端点路径
+    path: /metrics
+    # 指标命名空间
+    namespace: saga
+    # 指标子系统名称
+    subsystem: dashboard
+  
+  # 自定义指标配置
+  custom_metrics:
+    # 启用自定义指标
+    enabled: true
+    # 自定义指标列表
+    metrics:
+      - name: saga_business_value
+        type: gauge
+        help: "Business value of saga transactions"
+        labels: ["saga_type", "status"]
+
+# ============================================================================
+# 告警配置
+# ============================================================================
+alerts:
+  # 启用告警系统
+  enabled: true
+  
+  # 告警检查间隔
+  check_interval: 10s
+  
+  # 告警规则配置
+  rules:
+    # Saga 执行超时告警
+    - name: saga_duration_threshold
+      description: "Saga 执行时间超过阈值"
+      condition: "duration_ms > 30000"
+      severity: high
+      enabled: true
+      actions:
+        - type: notify
+          channels: ["slack", "email"]
+    
+    # Saga 失败率告警
+    - name: saga_failure_rate
+      description: "Saga 失败率过高"
+      condition: "failure_rate > 0.1"
+      severity: critical
+      enabled: true
+      actions:
+        - type: notify
+          channels: ["slack", "email", "pagerduty"]
+    
+    # 运行中 Saga 数量告警
+    - name: running_sagas_threshold
+      description: "运行中的 Saga 数量过多"
+      condition: "running_sagas > 1000"
+      severity: medium
+      enabled: true
+      actions:
+        - type: notify
+          channels: ["slack"]
+    
+    # 补偿失败告警
+    - name: compensation_failure
+      description: "Saga 补偿操作失败"
+      condition: "compensation_failed == true"
+      severity: critical
+      enabled: true
+      actions:
+        - type: notify
+          channels: ["slack", "email", "pagerduty"]
+  
+  # 告警通知渠道配置
+  channels:
+    # Slack 通知
+    slack:
+      enabled: false
+      webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+      channel: "#saga-alerts"
+      username: "Saga Alert Bot"
+    
+    # Email 通知
+    email:
+      enabled: false
+      smtp_host: smtp.example.com
+      smtp_port: 587
+      smtp_user: alerts@example.com
+      smtp_password: your_password
+      from: alerts@example.com
+      to:
+        - ops-team@example.com
+        - dev-team@example.com
+    
+    # PagerDuty 通知
+    pagerduty:
+      enabled: false
+      integration_key: your_integration_key
+      severity_mapping:
+        critical: critical
+        high: error
+        medium: warning
+        low: info
+
+# ============================================================================
+# 日志配置
+# ============================================================================
+logging:
+  # 日志级别: debug, info, warn, error
+  level: info
+  
+  # 日志格式: json, console
+  format: json
+  
+  # 日志输出
+  output: stdout
+  
+  # 日志文件配置 (当 output 为 file 时)
+  file:
+    path: /var/log/saga-dashboard/dashboard.log
+    max_size: 100  # MB
+    max_backups: 10
+    max_age: 30  # days
+    compress: true
+  
+  # 访问日志
+  access_log:
+    enabled: true
+    format: json
+    # 忽略的路径
+    skip_paths:
+      - /api/health
+      - /metrics
+
+# ============================================================================
+# 中间件配置
+# ============================================================================
+middleware:
+  # CORS 配置
+  cors:
+    enabled: true
+    allowed_origins:
+      - "*"
+    allowed_methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allowed_headers:
+      - "*"
+    expose_headers:
+      - Content-Length
+    max_age: 12h
+  
+  # 认证配置
+  auth:
+    enabled: false
+    type: jwt  # jwt, basic, api_key
+    jwt:
+      secret: your_jwt_secret
+      expiration: 24h
+      issuer: saga-dashboard
+    basic:
+      username: admin
+      password: admin123
+    api_key:
+      header: X-API-Key
+      keys:
+        - key1: description1
+        - key2: description2
+  
+  # 速率限制
+  rate_limit:
+    enabled: false
+    # 每秒请求数
+    requests_per_second: 100
+    # 突发请求数
+    burst: 200
+    # 限制策略: ip, user, global
+    strategy: ip
+  
+  # 请求追踪
+  tracing:
+    enabled: true
+    # Jaeger 配置
+    jaeger:
+      enabled: false
+      agent_host: localhost
+      agent_port: 6831
+      service_name: saga-dashboard
+      sampler_type: probabilistic
+      sampler_param: 0.1
+  
+  # 请求压缩
+  compression:
+    enabled: true
+    level: 5  # 1-9, 越大压缩率越高但 CPU 消耗越大
+    min_length: 1024  # 最小压缩长度 (bytes)
+
+# ============================================================================
+# 实时推送配置
+# ============================================================================
+realtime:
+  # 启用 SSE (Server-Sent Events) 推送
+  sse:
+    enabled: true
+    # 心跳间隔
+    heartbeat_interval: 15s
+    # 最大连接数
+    max_connections: 1000
+    # 连接超时
+    connection_timeout: 5m
+  
+  # 启用 WebSocket 推送
+  websocket:
+    enabled: false
+    # WebSocket 路径
+    path: /ws
+    # 心跳间隔
+    ping_interval: 30s
+    # 最大消息大小
+    max_message_size: 65536  # 64KB
+
+# ============================================================================
+# 缓存配置
+# ============================================================================
+cache:
+  # 启用缓存
+  enabled: true
+  
+  # 缓存类型: memory, redis
+  type: memory
+  
+  # 内存缓存配置
+  memory:
+    # 最大条目数
+    max_entries: 10000
+    # 默认过期时间
+    default_expiration: 5m
+    # 清理间隔
+    cleanup_interval: 10m
+  
+  # Redis 缓存配置
+  redis:
+    address: "localhost:6379"
+    password: ""
+    db: 1
+    default_expiration: 5m
+
+# ============================================================================
+# 数据库连接池配置
+# ============================================================================
+database:
+  # 最大打开连接数
+  max_open_connections: 25
+  
+  # 最大空闲连接数
+  max_idle_connections: 5
+  
+  # 连接最大生命周期
+  connection_max_lifetime: 5m
+  
+  # 连接最大空闲时间
+  connection_max_idle_time: 10m
+
+# ============================================================================
+# 性能优化配置
+# ============================================================================
+performance:
+  # 启用查询缓存
+  query_cache: true
+  
+  # 启用连接池
+  connection_pooling: true
+  
+  # 批量操作大小
+  batch_size: 100
+  
+  # 预取大小
+  prefetch_size: 50
+  
+  # 启用分页优化
+  pagination_optimization: true
+
+# ============================================================================
+# 安全配置
+# ============================================================================
+security:
+  # 启用 HTTPS 重定向
+  https_redirect: false
+  
+  # 启用 HSTS
+  hsts:
+    enabled: false
+    max_age: 31536000  # 1 year
+    include_subdomains: true
+    preload: true
+  
+  # 启用 X-Frame-Options
+  x_frame_options: DENY
+  
+  # 启用 X-Content-Type-Options
+  x_content_type_options: nosniff
+  
+  # 启用 X-XSS-Protection
+  x_xss_protection: "1; mode=block"
+  
+  # Content Security Policy
+  csp:
+    enabled: false
+    policy: "default-src 'self'"
+
+# ============================================================================
+# 开发/调试配置
+# ============================================================================
+debug:
+  # 启用调试模式
+  enabled: false
+  
+  # 启用 pprof 性能分析
+  pprof:
+    enabled: false
+    # pprof 监听地址
+    address: ":6060"
+  
+  # 启用详细错误信息
+  verbose_errors: false
+  
+  # 启用请求日志
+  request_logging: true
+  
+  # 启用 SQL 查询日志
+  sql_logging: false
+
+# ============================================================================
+# 特性开关
+# ============================================================================
+features:
+  # 启用流程可视化
+  visualization: true
+  
+  # 启用实时指标
+  realtime_metrics: true
+  
+  # 启用历史数据查询
+  history_query: true
+  
+  # 启用 Saga 操作 (取消、重试)
+  saga_operations: true
+  
+  # 启用告警管理
+  alert_management: true
+  
+  # 启用批量操作
+  bulk_operations: false
+  
+  # 启用数据导出
+  data_export: false
+
+# ============================================================================
+# 其他配置
+# ============================================================================
+misc:
+  # 默认时区
+  timezone: UTC
+  
+  # 日期时间格式
+  datetime_format: "2006-01-02T15:04:05Z07:00"
+  
+  # 默认分页大小
+  default_page_size: 20
+  
+  # 最大分页大小
+  max_page_size: 100
+  
+  # 默认语言
+  default_language: zh-CN
+
