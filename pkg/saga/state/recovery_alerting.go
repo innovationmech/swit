@@ -473,18 +473,32 @@ func (am *RecoveryAlertingManager) GetAlertHistory(limit int) []*RecoveryAlert {
 	am.alertHistoryMu.RLock()
 	defer am.alertHistoryMu.RUnlock()
 
+	historyLen := len(am.alertHistory)
+	if historyLen == 0 {
+		return []*RecoveryAlert{}
+	}
+
 	// Cap limit to prevent excessive memory allocation (CodeQL security requirement)
 	const maxLimit = 10000
-	if limit <= 0 || limit > len(am.alertHistory) {
-		limit = len(am.alertHistory)
+	
+	// Calculate safe limit: minimum of requested limit, history length, and max limit
+	// This explicit bounds checking satisfies CodeQL security requirements
+	safeLimit := limit
+	if safeLimit <= 0 {
+		safeLimit = historyLen
 	}
-	if limit > maxLimit {
-		limit = maxLimit
+	// Ensure safeLimit doesn't exceed history length
+	if safeLimit > historyLen {
+		safeLimit = historyLen
+	}
+	// Ensure safeLimit doesn't exceed maximum allowed
+	if safeLimit > maxLimit {
+		safeLimit = maxLimit
 	}
 
 	// Return most recent alerts
-	result := make([]*RecoveryAlert, limit)
-	startIdx := len(am.alertHistory) - limit
+	result := make([]*RecoveryAlert, safeLimit)
+	startIdx := historyLen - safeLimit
 	copy(result, am.alertHistory[startIdx:])
 
 	return result
