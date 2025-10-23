@@ -1,0 +1,579 @@
+# Saga Security Configuration Examples
+# This file contains comprehensive examples for configuring security features
+# in the Swit Saga framework. Choose and adapt the configuration based on your
+# deployment environment (development, testing, production).
+
+# =============================================================================
+# DEVELOPMENT ENVIRONMENT EXAMPLE
+# =============================================================================
+# Suitable for local development with minimal security overhead
+
+development:
+  authentication:
+    enabled: true
+    default_provider: "jwt"
+    jwt:
+      secret: "dev-secret-key-change-in-production-minimum-32-chars"
+      issuer: "swit-dev"
+      audience: "saga-dev"
+      token_expiry: 24h  # Long expiry for development convenience
+    cache:
+      enabled: true
+      ttl: 10m
+      max_size: 100
+
+  authorization:
+    enabled: false  # Disabled for easier testing
+    rbac:
+      enabled: false
+      predefined_roles: true
+    acl:
+      enabled: false
+
+  encryption:
+    enabled: false  # Disabled for development to simplify debugging
+
+  audit:
+    enabled: true
+    storage:
+      type: "file"
+      file:
+        path: "./logs/audit-dev.log"
+        max_file_size: 10485760  # 10MB
+        max_backups: 3
+        compress: false
+      retention_days: 7
+    levels:
+      - info
+      - warning
+      - error
+      - critical
+    categories:
+      - saga
+      - auth
+    include_sensitive: false  # Never log sensitive data even in dev
+
+  data_protection:
+    enabled: false  # Disabled for development
+
+# =============================================================================
+# TESTING/STAGING ENVIRONMENT EXAMPLE
+# =============================================================================
+# Suitable for integration testing and QA with moderate security
+
+testing:
+  authentication:
+    enabled: true
+    default_provider: "jwt"
+    jwt:
+      secret: "test-secret-key-change-in-production-at-least-32-characters"
+      issuer: "swit-test"
+      audience: "saga-test"
+      token_expiry: 2h
+    cache:
+      enabled: true
+      ttl: 5m
+      max_size: 500
+
+  authorization:
+    enabled: true
+    rbac:
+      enabled: true
+      predefined_roles: true
+      # roles_file: "./config/test-roles.yaml"  # Optional: custom roles
+    acl:
+      enabled: false  # ACL typically not needed unless testing specific rules
+      default_effect: "deny"
+      enable_metrics: true
+    cache:
+      enabled: true
+      ttl: 5m
+      max_size: 500
+
+  encryption:
+    enabled: true
+    algorithm: "aes-gcm"
+    key_size: 32  # AES-256
+    key_manager:
+      type: "memory"
+      rotation_interval: 0  # No rotation in test
+
+  audit:
+    enabled: true
+    storage:
+      type: "file"
+      file:
+        path: "/var/log/swit/audit-test.log"
+        max_file_size: 52428800  # 50MB
+        max_backups: 5
+        compress: true
+      retention_days: 30
+    levels:
+      - warning
+      - error
+      - critical
+    categories:
+      - saga
+      - auth
+      - security
+    include_sensitive: false
+
+  data_protection:
+    enabled: true
+    masking_rules:
+      default_mask_char: "*"
+      email_strategy: "partial"
+      phone_strategy: "last4"
+      credit_card_strategy: "last4"
+    sensitive_fields:
+      - password
+      - secret
+      - token
+      - api_key
+      - credit_card
+      - ssn
+
+# =============================================================================
+# PRODUCTION ENVIRONMENT EXAMPLE (FILE-BASED AUDIT)
+# =============================================================================
+# Suitable for production with file-based audit storage
+
+production_file:
+  authentication:
+    enabled: true
+    default_provider: "jwt"
+    jwt:
+      # IMPORTANT: Use a strong, randomly generated secret (at least 64 characters)
+      # Store in environment variable or secrets management system
+      secret: "${JWT_SECRET}"
+      issuer: "swit-production"
+      audience: "saga-production"
+      token_expiry: 1h
+    cache:
+      enabled: true
+      ttl: 5m
+      max_size: 10000
+
+  authorization:
+    enabled: true
+    rbac:
+      enabled: true
+      predefined_roles: true
+      roles_file: "/etc/swit/roles.yaml"  # Production roles definition
+    acl:
+      enabled: true
+      default_effect: "deny"
+      rules_file: "/etc/swit/acl-rules.yaml"
+      enable_metrics: true
+    cache:
+      enabled: true
+      ttl: 5m
+      max_size: 10000
+
+  encryption:
+    enabled: true
+    algorithm: "aes-gcm"
+    key_size: 32  # AES-256
+    key_manager:
+      type: "file"
+      key_file: "/etc/swit/secrets/encryption.key"
+      rotation_interval: 2160h  # 90 days
+
+  audit:
+    enabled: true
+    storage:
+      type: "file"
+      file:
+        path: "/var/log/swit/audit.log"
+        max_file_size: 104857600  # 100MB
+        max_backups: 30
+        compress: true
+      retention_days: 365  # 1 year retention
+    levels:
+      - info
+      - warning
+      - error
+      - critical
+    categories:
+      - saga
+      - auth
+      - data
+      - config
+      - security
+      - system
+    include_sensitive: false
+
+  data_protection:
+    enabled: true
+    masking_rules:
+      default_mask_char: "*"
+      email_strategy: "partial"  # user@example.com -> u***@example.com
+      phone_strategy: "last4"    # +1234567890 -> +123***7890
+      credit_card_strategy: "last4"  # 1234567890123456 -> ************3456
+    sensitive_fields:
+      - password
+      - secret
+      - token
+      - api_key
+      - private_key
+      - credit_card
+      - card_number
+      - cvv
+      - ssn
+      - tax_id
+      - account_number
+      - routing_number
+      - pin
+
+# =============================================================================
+# PRODUCTION ENVIRONMENT EXAMPLE (DATABASE-BASED AUDIT)
+# =============================================================================
+# Suitable for production with centralized database audit storage
+
+production_database:
+  authentication:
+    enabled: true
+    default_provider: "jwt"
+    jwt:
+      secret: "${JWT_SECRET}"
+      issuer: "swit-production"
+      audience: "saga-production"
+      token_expiry: 1h
+    cache:
+      enabled: true
+      ttl: 5m
+      max_size: 10000
+
+  authorization:
+    enabled: true
+    rbac:
+      enabled: true
+      predefined_roles: true
+      roles_file: "/etc/swit/roles.yaml"
+    acl:
+      enabled: true
+      default_effect: "deny"
+      rules_file: "/etc/swit/acl-rules.yaml"
+      enable_metrics: true
+    cache:
+      enabled: true
+      ttl: 5m
+      max_size: 10000
+
+  encryption:
+    enabled: true
+    algorithm: "aes-gcm"
+    key_size: 32
+    key_manager:
+      type: "file"
+      key_file: "/etc/swit/secrets/encryption.key"
+      rotation_interval: 2160h  # 90 days
+
+  audit:
+    enabled: true
+    storage:
+      type: "database"
+      database:
+        driver: "postgres"
+        dsn: "${AUDIT_DATABASE_URL}"  # e.g., postgres://user:pass@host:5432/audit_db
+        table_name: "audit_logs"
+      retention_days: 365
+    levels:
+      - info
+      - warning
+      - error
+      - critical
+    categories:
+      - saga
+      - auth
+      - data
+      - config
+      - security
+      - system
+    include_sensitive: false
+
+  data_protection:
+    enabled: true
+    masking_rules:
+      default_mask_char: "*"
+      email_strategy: "partial"
+      phone_strategy: "last4"
+      credit_card_strategy: "last4"
+    sensitive_fields:
+      - password
+      - secret
+      - token
+      - api_key
+      - private_key
+      - credit_card
+      - card_number
+      - cvv
+      - ssn
+      - tax_id
+      - account_number
+      - routing_number
+      - pin
+
+# =============================================================================
+# PRODUCTION ENVIRONMENT EXAMPLE (API KEY AUTHENTICATION)
+# =============================================================================
+# Suitable for service-to-service communication
+
+production_apikey:
+  authentication:
+    enabled: true
+    default_provider: "apikey"
+    api_key:
+      # Option 1: Define keys inline (not recommended for production)
+      # keys:
+      #   "api-key-1": "service-1"
+      #   "api-key-2": "service-2"
+      
+      # Option 2: Load from file (recommended)
+      keys_file: "/etc/swit/api-keys.yaml"
+    cache:
+      enabled: true
+      ttl: 10m
+      max_size: 1000
+
+  authorization:
+    enabled: true
+    rbac:
+      enabled: true
+      predefined_roles: true
+      roles_file: "/etc/swit/roles.yaml"
+    acl:
+      enabled: true
+      default_effect: "deny"
+      rules_file: "/etc/swit/acl-rules.yaml"
+      enable_metrics: true
+
+  encryption:
+    enabled: true
+    algorithm: "aes-gcm"
+    key_size: 32
+    key_manager:
+      type: "file"
+      key_file: "/etc/swit/secrets/encryption.key"
+      rotation_interval: 2160h
+
+  audit:
+    enabled: true
+    storage:
+      type: "database"
+      database:
+        driver: "postgres"
+        dsn: "${AUDIT_DATABASE_URL}"
+        table_name: "audit_logs"
+      retention_days: 365
+    levels:
+      - warning
+      - error
+      - critical
+    categories:
+      - saga
+      - auth
+      - security
+    include_sensitive: false
+
+  data_protection:
+    enabled: true
+    masking_rules:
+      default_mask_char: "*"
+      email_strategy: "domain"  # user@example.com -> ***@example.com
+      phone_strategy: "full"     # Complete masking
+      credit_card_strategy: "last4"
+    sensitive_fields:
+      - password
+      - secret
+      - token
+      - api_key
+
+# =============================================================================
+# HIGH-SECURITY ENVIRONMENT EXAMPLE
+# =============================================================================
+# Suitable for highly regulated environments (finance, healthcare, government)
+
+high_security:
+  authentication:
+    enabled: true
+    default_provider: "jwt"
+    jwt:
+      secret: "${JWT_SECRET}"  # Must be 64+ characters, stored in HSM or secrets manager
+      issuer: "swit-production"
+      audience: "saga-production"
+      token_expiry: 15m  # Short expiry for high security
+    cache:
+      enabled: true
+      ttl: 2m  # Short cache TTL
+      max_size: 5000
+
+  authorization:
+    enabled: true
+    rbac:
+      enabled: true
+      predefined_roles: false  # Custom roles only
+      roles_file: "/etc/swit/security/roles.yaml"
+    acl:
+      enabled: true
+      default_effect: "deny"
+      rules_file: "/etc/swit/security/acl-rules.yaml"
+      enable_metrics: true
+    cache:
+      enabled: true
+      ttl: 2m
+      max_size: 5000
+
+  encryption:
+    enabled: true
+    algorithm: "aes-gcm"
+    key_size: 32
+    key_manager:
+      type: "external"  # Use external KMS (AWS KMS, HashiCorp Vault, etc.)
+      rotation_interval: 720h  # 30 days
+
+  audit:
+    enabled: true
+    storage:
+      type: "database"
+      database:
+        driver: "postgres"
+        dsn: "${AUDIT_DATABASE_URL}"
+        table_name: "audit_logs"
+      retention_days: 2555  # 7 years for compliance
+    levels:
+      - info
+      - warning
+      - error
+      - critical
+    categories:
+      - saga
+      - auth
+      - data
+      - config
+      - security
+      - system
+    include_sensitive: false  # Never include sensitive data
+
+  data_protection:
+    enabled: true
+    masking_rules:
+      default_mask_char: "X"
+      email_strategy: "full"  # Complete masking
+      phone_strategy: "full"   # Complete masking
+      credit_card_strategy: "full"  # Complete masking
+    sensitive_fields:
+      - password
+      - secret
+      - token
+      - api_key
+      - private_key
+      - public_key
+      - certificate
+      - credit_card
+      - card_number
+      - cvv
+      - cvv2
+      - pin
+      - ssn
+      - tax_id
+      - national_id
+      - passport
+      - drivers_license
+      - account_number
+      - routing_number
+      - iban
+      - swift
+      - bank_account
+      - medical_record
+      - health_insurance
+      - diagnosis
+      - prescription
+      - biometric_data
+
+# =============================================================================
+# MINIMAL SECURITY EXAMPLE
+# =============================================================================
+# Not recommended for production, only for internal testing or demos
+
+minimal:
+  authentication:
+    enabled: false
+
+  authorization:
+    enabled: false
+
+  encryption:
+    enabled: false
+
+  audit:
+    enabled: false
+
+  data_protection:
+    enabled: false
+
+# =============================================================================
+# NOTES AND BEST PRACTICES
+# =============================================================================
+#
+# 1. SECRETS MANAGEMENT:
+#    - Never commit secrets to version control
+#    - Use environment variables (${VAR_NAME}) or external secrets managers
+#    - Rotate secrets regularly (JWT secrets, encryption keys, API keys)
+#
+# 2. JWT CONFIGURATION:
+#    - Use at least 64 random characters for production secrets
+#    - Set appropriate token expiry (15m-1h for production)
+#    - Implement token refresh mechanisms for long-lived sessions
+#
+# 3. ENCRYPTION:
+#    - Always use AES-256 (key_size: 32) in production
+#    - Prefer AES-GCM over AES-CBC for authenticated encryption
+#    - Rotate encryption keys regularly (30-90 days)
+#    - Use external KMS for high-security environments
+#
+# 4. AUDIT LOGGING:
+#    - Enable audit logging in all production environments
+#    - Use database storage for centralized audit trails
+#    - Set appropriate retention periods based on compliance requirements
+#    - Never log sensitive data (passwords, tokens, credit cards)
+#    - Monitor audit logs for suspicious activities
+#
+# 5. AUTHORIZATION:
+#    - Use RBAC for role-based access control
+#    - Use ACL for fine-grained resource-level permissions
+#    - Default to "deny" for ACL default_effect
+#    - Cache permissions to reduce performance impact
+#
+# 6. DATA PROTECTION:
+#    - Always enable data masking in production
+#    - Use appropriate masking strategies for different data types
+#    - Maintain a comprehensive list of sensitive fields
+#    - Review and update sensitive fields regularly
+#
+# 7. PERFORMANCE CONSIDERATIONS:
+#    - Enable caching to reduce authentication/authorization overhead
+#    - Set appropriate cache TTL (5m recommended)
+#    - Monitor cache hit rates and adjust max_size accordingly
+#    - Use file-based audit for high-throughput scenarios
+#
+# 8. COMPLIANCE:
+#    - Adjust retention_days based on regulatory requirements
+#    - GDPR: typically 30-90 days unless legally required longer
+#    - HIPAA: typically 6 years
+#    - SOX: typically 7 years
+#    - PCI DSS: typically 1 year for audit logs
+#
+# 9. MONITORING:
+#    - Enable ACL metrics to track authorization performance
+#    - Monitor authentication failures for security incidents
+#    - Set up alerts for critical audit events
+#    - Track key rotation and expiration
+#
+# 10. TESTING:
+#     - Test security configuration before deploying to production
+#     - Validate all authentication flows
+#     - Verify authorization rules work as expected
+#     - Test audit log generation and storage
+#     - Verify data masking works correctly
+
