@@ -229,7 +229,7 @@ func (rm *RouteManager) setupAlertsRoutes() {
 func (rm *RouteManager) handleRoot(c *gin.Context) {
 	// Check if request accepts HTML
 	acceptHeader := c.GetHeader("Accept")
-	if acceptHeader != "" && (c.GetHeader("Accept") == "text/html" || 
+	if acceptHeader != "" && (c.GetHeader("Accept") == "text/html" ||
 		c.GetHeader("Accept") == "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8") {
 		// Try to serve the dashboard HTML
 		c.File("./web/static/index.html")
