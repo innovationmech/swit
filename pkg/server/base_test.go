@@ -318,28 +318,62 @@ func TestBaseServer_StartStop(t *testing.T) {
 func TestBaseServer_Shutdown(t *testing.T) {
 	config := NewServerConfig()
 	config.Discovery.Enabled = false
+	config.ShutdownTimeout = 10 * time.Second // Add explicit timeout
 
 	mockRegistrar := &mockBusinessServiceRegistrar{}
 	mockRegistrar.On("RegisterServices", mock.Anything).Return(nil)
 
+	// Create a more reliable mock dependency that responds quickly
 	mockDeps := &mockBusinessDependencyContainer{}
-	mockDeps.On("Close").Return(nil)
+	mockDeps.On("Close").Return(nil).Once()
 
 	server, err := NewBusinessServerCore(config, mockRegistrar, mockDeps)
 	require.NoError(t, err)
 
-	// Start the server
-	ctx := context.Background()
+	// Start the server with a timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	err = server.Start(ctx)
 	require.NoError(t, err)
 
-	// Test shutdown
-	err = server.Shutdown()
-	require.NoError(t, err)
-	assert.False(t, server.started)
+	// Give a brief moment for server to fully initialize
+	time.Sleep(10 * time.Millisecond)
 
-	// Verify dependencies were closed
-	mockDeps.AssertExpectations(t)
+	// Verify server is started
+	assert.True(t, server.started)
+
+	// Test shutdown with its own timeout context
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+
+	// Use a goroutine with timeout to prevent hanging
+	done := make(chan error, 1)
+	go func() {
+		done <- server.Shutdown()
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+		assert.False(t, server.started)
+	case <-shutdownCtx.Done():
+		t.Fatal("Shutdown timed out")
+	}
+
+	// Verify dependencies were closed with a timeout
+	closeDone := make(chan struct{}, 1)
+	go func() {
+		mockDeps.AssertExpectations(t)
+		close(closeDone)
+	}()
+
+	select {
+	case <-closeDone:
+		// Assertions passed
+	case <-time.After(1 * time.Second):
+		t.Error("Dependency assertion timed out")
+	}
 }
 
 func TestServiceRegistryAdapter(t *testing.T) {
