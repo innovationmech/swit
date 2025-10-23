@@ -519,3 +519,18 @@ func (n *LogAlertNotifier) Notify(ctx context.Context, alert *RecoveryAlert) err
 
 	return nil
 }
+
+// GetRules returns all configured alert rules.
+func (am *RecoveryAlertingManager) GetRules() []*AlertRule {
+	// Return a copy of rules slice to prevent external modification
+	rulesCopy := make([]*AlertRule, len(am.rules))
+	copy(rulesCopy, am.rules)
+	return rulesCopy
+}
+
+// GetConfig returns the current alerting configuration.
+func (am *RecoveryAlertingManager) GetConfig() *RecoveryAlertingConfig {
+	// Return a copy of config to prevent external modification
+	configCopy := *am.config
+	return &configCopy
+}

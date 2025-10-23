@@ -507,6 +507,13 @@ func (s *Server) SetVisualizationAPI(visualizationAPI *SagaVisualizationAPI) {
 	s.routeManager.SetVisualizationAPI(visualizationAPI)
 }
 
+// SetAlertsAPI sets the alerts API handler and registers its routes.
+// This can be called before or after server creation, but must be called before Start()
+// to ensure the routes are available.
+func (s *Server) SetAlertsAPI(alertsAPI *AlertsAPI) {
+	s.routeManager.SetAlertsAPI(alertsAPI)
+}
+
 // SetRealtimePusher sets the realtime pusher for SSE streaming.
 // This can be called before or after server creation, but must be called before Start()
 // to ensure the SSE endpoint is available.
