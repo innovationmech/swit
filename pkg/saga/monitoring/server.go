@@ -160,12 +160,12 @@ func (c *ServerConfig) GetAddress() string {
 	return c.Address
 }
 
-// MonitoringServer is the web server for Saga monitoring dashboard.
-type MonitoringServer struct {
+// Server is the web server for Saga monitoring dashboard.
+type Server struct {
 	config       *ServerConfig
 	router       *gin.Engine
 	server       *http.Server
-	middleware   *MonitoringMiddleware
+	middleware   *Middleware
 	routeManager *RouteManager
 
 	mu            sync.RWMutex
@@ -179,7 +179,7 @@ type MonitoringServer struct {
 //   - config: Server configuration. If nil, default configuration is used.
 //
 // Returns:
-//   - A configured MonitoringServer ready to start.
+//   - A configured Server ready to start.
 //   - An error if the configuration is invalid.
 //
 // Example:
@@ -193,7 +193,7 @@ type MonitoringServer struct {
 //	if err := server.Start(context.Background()); err != nil {
 //	    return err
 //	}
-func NewMonitoringServer(config *ServerConfig) (*MonitoringServer, error) {
+func NewMonitoringServer(config *ServerConfig) (*Server, error) {
 	if config == nil {
 		config = DefaultServerConfig()
 	}
@@ -224,7 +224,7 @@ func NewMonitoringServer(config *ServerConfig) (*MonitoringServer, error) {
 	// Create route manager
 	routeManager := NewRouteManager(router, config)
 
-	server := &MonitoringServer{
+	server := &Server{
 		config:       config,
 		router:       router,
 		middleware:   middleware,
@@ -245,14 +245,14 @@ func NewMonitoringServer(config *ServerConfig) (*MonitoringServer, error) {
 }
 
 // applyMiddleware applies all configured middleware to the router.
-func (s *MonitoringServer) applyMiddleware() error {
+func (s *Server) applyMiddleware() error {
 	// Apply middleware in the correct order
 	s.middleware.ApplyToRouter(s.router)
 	return nil
 }
 
 // setupRoutes initializes all routes for the monitoring server.
-func (s *MonitoringServer) setupRoutes() error {
+func (s *Server) setupRoutes() error {
 	return s.routeManager.SetupRoutes()
 }
 
@@ -269,7 +269,7 @@ func (s *MonitoringServer) setupRoutes() error {
 //	if err := server.Start(context.Background()); err != nil {
 //	    log.Fatalf("Failed to start server: %v", err)
 //	}
-func (s *MonitoringServer) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -390,7 +390,7 @@ func (s *MonitoringServer) Start(ctx context.Context) error {
 //	if err := server.Stop(ctx); err != nil {
 //	    log.Printf("Error during shutdown: %v", err)
 //	}
-func (s *MonitoringServer) Stop(ctx context.Context) error {
+func (s *Server) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -439,13 +439,13 @@ func (s *MonitoringServer) Stop(ctx context.Context) error {
 }
 
 // IsRunning returns true if the server is currently running.
-func (s *MonitoringServer) IsRunning() bool {
+func (s *Server) IsRunning() bool {
 	return s.running.Load()
 }
 
 // GetAddress returns the actual listening address after the server has started.
 // Returns empty string if the server hasn't started yet.
-func (s *MonitoringServer) GetAddress() string {
+func (s *Server) GetAddress() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.actualAddress
@@ -453,12 +453,12 @@ func (s *MonitoringServer) GetAddress() string {
 
 // GetRouter returns the Gin router for advanced configuration.
 // This allows users to register custom routes and middleware.
-func (s *MonitoringServer) GetRouter() *gin.Engine {
+func (s *Server) GetRouter() *gin.Engine {
 	return s.router
 }
 
 // GetConfig returns the server configuration.
-func (s *MonitoringServer) GetConfig() *ServerConfig {
+func (s *Server) GetConfig() *ServerConfig {
 	return s.config
 }
 
@@ -475,13 +475,13 @@ func (s *MonitoringServer) GetConfig() *ServerConfig {
 //	server.RegisterCustomRoute("GET", "/api/custom", func(c *gin.Context) {
 //	    c.JSON(200, gin.H{"message": "Custom endpoint"})
 //	})
-func (s *MonitoringServer) RegisterCustomRoute(method, path string, handlers ...gin.HandlerFunc) {
+func (s *Server) RegisterCustomRoute(method, path string, handlers ...gin.HandlerFunc) {
 	s.router.Handle(method, path, handlers...)
 }
 
 // SetQueryAPI sets the Saga query API handler and registers its routes.
 // This can be called before or after server creation, but must be called before Start()
 // to ensure the routes are available.
-func (s *MonitoringServer) SetQueryAPI(queryAPI *SagaQueryAPI) {
+func (s *Server) SetQueryAPI(queryAPI *SagaQueryAPI) {
 	s.routeManager.SetQueryAPI(queryAPI)
 }

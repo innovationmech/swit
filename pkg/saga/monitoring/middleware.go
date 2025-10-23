@@ -98,13 +98,13 @@ func DefaultCORSConfig() *CORSConfig {
 	}
 }
 
-// MonitoringMiddleware manages middleware for the monitoring server.
-type MonitoringMiddleware struct {
+// Middleware manages middleware for the monitoring server.
+type Middleware struct {
 	config *MiddlewareConfig
 }
 
 // NewMonitoringMiddleware creates a new monitoring middleware manager.
-func NewMonitoringMiddleware(config *MiddlewareConfig) *MonitoringMiddleware {
+func NewMonitoringMiddleware(config *MiddlewareConfig) *Middleware {
 	if config == nil {
 		config = DefaultMiddlewareConfig()
 	}
@@ -114,7 +114,7 @@ func NewMonitoringMiddleware(config *MiddlewareConfig) *MonitoringMiddleware {
 		config.CORSConfig = DefaultCORSConfig()
 	}
 
-	return &MonitoringMiddleware{
+	return &Middleware{
 		config: config,
 	}
 }
@@ -135,7 +135,7 @@ func sanitizeForLog(input string) string {
 }
 
 // ApplyToRouter applies all configured middleware to the Gin router.
-func (m *MonitoringMiddleware) ApplyToRouter(router *gin.Engine) {
+func (m *Middleware) ApplyToRouter(router *gin.Engine) {
 	// Recovery middleware should be first to catch panics in other middleware
 	if m.config.EnableRecovery {
 		router.Use(m.recoveryMiddleware())
@@ -170,7 +170,7 @@ func (m *MonitoringMiddleware) ApplyToRouter(router *gin.Engine) {
 }
 
 // loggingMiddleware creates a request logging middleware.
-func (m *MonitoringMiddleware) loggingMiddleware() gin.HandlerFunc {
+func (m *Middleware) loggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Start timer
 		start := time.Now()
@@ -200,7 +200,7 @@ func (m *MonitoringMiddleware) loggingMiddleware() gin.HandlerFunc {
 }
 
 // corsMiddleware creates a CORS middleware.
-func (m *MonitoringMiddleware) corsMiddleware() gin.HandlerFunc {
+func (m *Middleware) corsMiddleware() gin.HandlerFunc {
 	config := cors.Config{
 		AllowOrigins:     m.config.CORSConfig.AllowOrigins,
 		AllowMethods:     m.config.CORSConfig.AllowMethods,
@@ -214,7 +214,7 @@ func (m *MonitoringMiddleware) corsMiddleware() gin.HandlerFunc {
 }
 
 // errorHandlingMiddleware creates an error handling middleware.
-func (m *MonitoringMiddleware) errorHandlingMiddleware() gin.HandlerFunc {
+func (m *Middleware) errorHandlingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 
@@ -254,7 +254,7 @@ func (m *MonitoringMiddleware) errorHandlingMiddleware() gin.HandlerFunc {
 }
 
 // recoveryMiddleware creates a panic recovery middleware.
-func (m *MonitoringMiddleware) recoveryMiddleware() gin.HandlerFunc {
+func (m *Middleware) recoveryMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -281,6 +281,6 @@ func (m *MonitoringMiddleware) recoveryMiddleware() gin.HandlerFunc {
 }
 
 // GetConfig returns the middleware configuration.
-func (m *MonitoringMiddleware) GetConfig() *MiddlewareConfig {
+func (m *Middleware) GetConfig() *MiddlewareConfig {
 	return m.config
 }

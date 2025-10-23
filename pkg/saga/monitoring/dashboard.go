@@ -103,7 +103,7 @@ type SagaDashboard struct {
 	coordinator      saga.SagaCoordinator
 	metricsCollector MetricsCollector
 	healthManager    *SagaHealthManager
-	server           *MonitoringServer
+	server           *Server
 
 	// State management
 	mu      sync.RWMutex
@@ -371,7 +371,7 @@ func (d *SagaDashboard) GetHealthManager() *SagaHealthManager {
 
 // GetServer returns the underlying monitoring server.
 // This allows advanced users to register custom routes and middleware.
-func (d *SagaDashboard) GetServer() *MonitoringServer {
+func (d *SagaDashboard) GetServer() *Server {
 	return d.server
 }
 
