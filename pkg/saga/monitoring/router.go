@@ -259,9 +259,15 @@ func (rm *RouteManager) GetAPIGroup() *gin.RouterGroup {
 	return rm.apiGroup
 }
 
-// SetQueryAPI sets the Saga query API handler.
+// SetQueryAPI sets the Saga query API handler and registers its routes.
 func (rm *RouteManager) SetQueryAPI(queryAPI *SagaQueryAPI) {
 	rm.queryAPI = queryAPI
+
+	// Register Saga query routes if the API group has been initialized
+	// (i.e., if SetupRoutes has already been called)
+	if rm.apiGroup != nil && rm.queryAPI != nil {
+		rm.setupSagaQueryRoutes()
+	}
 }
 
 // getErrorMessage safely extracts error message from error.
