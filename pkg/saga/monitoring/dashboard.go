@@ -50,6 +50,10 @@ type DashboardConfig struct {
 	// If nil, basic health checks will be used.
 	HealthManager *SagaHealthManager
 
+	// AlertIntegration provides alert management integration.
+	// If nil, alerts functionality will be disabled.
+	AlertIntegration *AlertIntegration
+
 	// EnableAutoStart automatically starts the server when the dashboard is created.
 	// Default is false.
 	EnableAutoStart bool
@@ -190,6 +194,12 @@ func NewSagaDashboard(config *DashboardConfig) (*SagaDashboard, error) {
 	// Create and register Saga visualization API
 	visualizationAPI := NewSagaVisualizationAPI(config.Coordinator)
 	server.SetVisualizationAPI(visualizationAPI)
+
+	// Create and register Alerts API if AlertIntegration is provided
+	if config.AlertIntegration != nil {
+		alertsAPI := NewAlertsAPI(config.AlertIntegration)
+		server.SetAlertsAPI(alertsAPI)
+	}
 
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())

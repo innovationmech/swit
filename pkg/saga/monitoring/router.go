@@ -43,6 +43,7 @@ type RouteManager struct {
 	controlAPI       *SagaControlAPI
 	metricsAPI       *MetricsAPI
 	visualizationAPI *SagaVisualizationAPI
+	alertsAPI        *AlertsAPI
 	realtimePush     *RealtimePusher
 }
 
@@ -83,6 +84,11 @@ func (rm *RouteManager) SetupRoutes() error {
 	// Setup visualization routes (if visualization API is configured)
 	if rm.visualizationAPI != nil {
 		rm.setupVisualizationRoutes()
+	}
+
+	// Setup alerts routes (if alerts API is configured)
+	if rm.alertsAPI != nil {
+		rm.setupAlertsRoutes()
 	}
 
 	if logger.Logger != nil {
@@ -188,6 +194,33 @@ func (rm *RouteManager) setupVisualizationRoutes() {
 	if logger.Logger != nil {
 		logger.Logger.Info("Saga visualization routes configured",
 			zap.String("base_path", "/api/sagas/:id/visualization"))
+	}
+}
+
+// setupAlertsRoutes configures alert related routes.
+func (rm *RouteManager) setupAlertsRoutes() {
+	// Alerts endpoints
+	alertsGroup := rm.apiGroup.Group("/alerts")
+	{
+		// GET /api/alerts - Get alerts list with filtering
+		alertsGroup.GET("", rm.alertsAPI.GetAlerts)
+
+		// GET /api/alerts/stats - Get alert statistics
+		alertsGroup.GET("/stats", rm.alertsAPI.GetAlertStats)
+
+		// GET /api/alerts/rules - Get alert rules configuration
+		alertsGroup.GET("/rules", rm.alertsAPI.GetAlertRules)
+
+		// GET /api/alerts/:id - Get specific alert by ID
+		alertsGroup.GET("/:id", rm.alertsAPI.GetAlert)
+
+		// POST /api/alerts/:id/acknowledge - Acknowledge an alert
+		alertsGroup.POST("/:id/acknowledge", rm.alertsAPI.AcknowledgeAlert)
+	}
+
+	if logger.Logger != nil {
+		logger.Logger.Info("Alerts routes configured",
+			zap.String("base_path", "/api/alerts"))
 	}
 }
 
@@ -379,6 +412,16 @@ func (rm *RouteManager) SetVisualizationAPI(visualizationAPI *SagaVisualizationA
 	// Register visualization routes if the API group has been initialized
 	if rm.apiGroup != nil && rm.visualizationAPI != nil {
 		rm.setupVisualizationRoutes()
+	}
+}
+
+// SetAlertsAPI sets the alerts API handler and registers its routes.
+func (rm *RouteManager) SetAlertsAPI(alertsAPI *AlertsAPI) {
+	rm.alertsAPI = alertsAPI
+
+	// Register alerts routes if the API group has been initialized
+	if rm.apiGroup != nil && rm.alertsAPI != nil {
+		rm.setupAlertsRoutes()
 	}
 }
 

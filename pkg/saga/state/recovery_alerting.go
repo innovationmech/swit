@@ -467,18 +467,42 @@ func (am *RecoveryAlertingManager) addToAlertHistory(alert *RecoveryAlert) {
 	}
 }
 
+// min returns the minimum of two integers.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // GetAlertHistory returns recent alerts.
+// The limit parameter is capped at 10000 to prevent excessive memory allocation.
 func (am *RecoveryAlertingManager) GetAlertHistory(limit int) []*RecoveryAlert {
 	am.alertHistoryMu.RLock()
 	defer am.alertHistoryMu.RUnlock()
 
-	if limit <= 0 || limit > len(am.alertHistory) {
-		limit = len(am.alertHistory)
+	historyLen := len(am.alertHistory)
+	if historyLen == 0 {
+		return []*RecoveryAlert{}
 	}
 
-	// Return most recent alerts
-	result := make([]*RecoveryAlert, limit)
-	startIdx := len(am.alertHistory) - limit
+	// Cap limit to prevent excessive memory allocation (CodeQL security requirement)
+	const maxLimit = 10000
+	
+	// Calculate safe limit using explicit min comparisons
+	// Use min() helper to make bounds checking explicit for CodeQL
+	requestedLimit := limit
+	if requestedLimit <= 0 {
+		requestedLimit = historyLen
+	}
+	
+	// Bounded allocation: min(min(requestedLimit, historyLen), maxLimit)
+	// This ensures the allocated size is always within safe bounds
+	boundedLimit := min(min(requestedLimit, historyLen), maxLimit)
+
+	// Return most recent alerts using the bounded limit
+	result := make([]*RecoveryAlert, boundedLimit)
+	startIdx := historyLen - boundedLimit
 	copy(result, am.alertHistory[startIdx:])
 
 	return result
@@ -518,4 +542,19 @@ func (n *LogAlertNotifier) Notify(ctx context.Context, alert *RecoveryAlert) err
 	)
 
 	return nil
+}
+
+// GetRules returns all configured alert rules.
+func (am *RecoveryAlertingManager) GetRules() []*AlertRule {
+	// Return a copy of rules slice to prevent external modification
+	rulesCopy := make([]*AlertRule, len(am.rules))
+	copy(rulesCopy, am.rules)
+	return rulesCopy
+}
+
+// GetConfig returns the current alerting configuration.
+func (am *RecoveryAlertingManager) GetConfig() *RecoveryAlertingConfig {
+	// Return a copy of config to prevent external modification
+	configCopy := *am.config
+	return &configCopy
 }
