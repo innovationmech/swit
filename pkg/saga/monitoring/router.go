@@ -36,12 +36,13 @@ type RouteManager struct {
 	config *ServerConfig
 
 	// Route groups for better organization
-	apiGroup    *gin.RouterGroup
-	healthGroup *gin.RouterGroup
+	apiGroup *gin.RouterGroup
 
 	// API handlers
-	queryAPI   *SagaQueryAPI
-	controlAPI *SagaControlAPI
+	queryAPI     *SagaQueryAPI
+	controlAPI   *SagaControlAPI
+	metricsAPI   *MetricsAPI
+	realtimePush *RealtimePusher
 }
 
 // NewRouteManager creates a new route manager.
@@ -71,6 +72,11 @@ func (rm *RouteManager) SetupRoutes() error {
 	// Setup Saga control routes (if control API is configured)
 	if rm.controlAPI != nil {
 		rm.setupSagaControlRoutes()
+	}
+
+	// Setup metrics routes (if metrics API is configured)
+	if rm.metricsAPI != nil {
+		rm.setupMetricsRoutes()
 	}
 
 	if logger.Logger != nil {
@@ -138,6 +144,29 @@ func (rm *RouteManager) setupSagaControlRoutes() {
 	if logger.Logger != nil {
 		logger.Logger.Info("Saga control routes configured",
 			zap.String("base_path", "/api/sagas"))
+	}
+}
+
+// setupMetricsRoutes configures metrics related routes.
+func (rm *RouteManager) setupMetricsRoutes() {
+	// Metrics endpoints
+	metricsGroup := rm.apiGroup.Group("/metrics")
+	{
+		// GET /api/metrics - Get metrics data
+		metricsGroup.GET("", rm.metricsAPI.GetMetrics)
+
+		// GET /api/metrics/realtime - Get real-time metrics snapshot
+		metricsGroup.GET("/realtime", rm.metricsAPI.GetRealtimeMetrics)
+
+		// GET /api/metrics/stream - SSE stream for real-time updates
+		if rm.realtimePush != nil {
+			metricsGroup.GET("/stream", rm.realtimePush.HandleSSE)
+		}
+	}
+
+	if logger.Logger != nil {
+		logger.Logger.Info("Metrics routes configured",
+			zap.String("base_path", "/api/metrics"))
 	}
 }
 
@@ -308,6 +337,45 @@ func (rm *RouteManager) SetControlAPI(controlAPI *SagaControlAPI) {
 	// (i.e., if SetupRoutes has already been called)
 	if rm.apiGroup != nil && rm.controlAPI != nil {
 		rm.setupSagaControlRoutes()
+	}
+}
+
+// SetMetricsAPI sets the metrics API handler and registers its routes.
+func (rm *RouteManager) SetMetricsAPI(metricsAPI *MetricsAPI) {
+	rm.metricsAPI = metricsAPI
+
+	// Register metrics routes if the API group has been initialized
+	// (i.e., if SetupRoutes has already been called)
+	if rm.apiGroup != nil && rm.metricsAPI != nil {
+		rm.setupMetricsRoutes()
+	}
+}
+
+// SetRealtimePusher sets the realtime pusher for SSE streaming.
+func (rm *RouteManager) SetRealtimePusher(pusher *RealtimePusher) {
+	rm.realtimePush = pusher
+
+	// Register only the SSE route if metrics API and API group are already set
+	// to avoid duplicate route registration
+	if rm.apiGroup != nil && rm.metricsAPI != nil {
+		rm.setupSSERoute()
+	}
+}
+
+// setupSSERoute configures only the SSE route for real-time updates.
+// This method is called separately to avoid duplicate route registration.
+func (rm *RouteManager) setupSSERoute() {
+	if rm.realtimePush == nil {
+		return
+	}
+
+	// Register only the SSE route under /api/metrics/stream
+	metricsGroup := rm.apiGroup.Group("/metrics")
+	metricsGroup.GET("/stream", rm.realtimePush.HandleSSE)
+
+	if logger.Logger != nil {
+		logger.Logger.Info("SSE route configured",
+			zap.String("path", "/api/metrics/stream"))
 	}
 }
 

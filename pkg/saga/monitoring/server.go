@@ -492,3 +492,17 @@ func (s *Server) SetQueryAPI(queryAPI *SagaQueryAPI) {
 func (s *Server) SetControlAPI(controlAPI *SagaControlAPI) {
 	s.routeManager.SetControlAPI(controlAPI)
 }
+
+// SetMetricsAPI sets the metrics API handler and registers its routes.
+// This can be called before or after server creation, but must be called before Start()
+// to ensure the routes are available.
+func (s *Server) SetMetricsAPI(metricsAPI *MetricsAPI) {
+	s.routeManager.SetMetricsAPI(metricsAPI)
+}
+
+// SetRealtimePusher sets the realtime pusher for SSE streaming.
+// This can be called before or after server creation, but must be called before Start()
+// to ensure the SSE endpoint is available.
+func (s *Server) SetRealtimePusher(pusher *RealtimePusher) {
+	s.routeManager.SetRealtimePusher(pusher)
+}
