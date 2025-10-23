@@ -467,6 +467,14 @@ func (am *RecoveryAlertingManager) addToAlertHistory(alert *RecoveryAlert) {
 	}
 }
 
+// min returns the minimum of two integers.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // GetAlertHistory returns recent alerts.
 // The limit parameter is capped at 10000 to prevent excessive memory allocation.
 func (am *RecoveryAlertingManager) GetAlertHistory(limit int) []*RecoveryAlert {
@@ -481,24 +489,20 @@ func (am *RecoveryAlertingManager) GetAlertHistory(limit int) []*RecoveryAlert {
 	// Cap limit to prevent excessive memory allocation (CodeQL security requirement)
 	const maxLimit = 10000
 	
-	// Calculate safe limit: minimum of requested limit, history length, and max limit
-	// This explicit bounds checking satisfies CodeQL security requirements
-	safeLimit := limit
-	if safeLimit <= 0 {
-		safeLimit = historyLen
+	// Calculate safe limit using explicit min comparisons
+	// Use min() helper to make bounds checking explicit for CodeQL
+	requestedLimit := limit
+	if requestedLimit <= 0 {
+		requestedLimit = historyLen
 	}
-	// Ensure safeLimit doesn't exceed history length
-	if safeLimit > historyLen {
-		safeLimit = historyLen
-	}
-	// Ensure safeLimit doesn't exceed maximum allowed
-	if safeLimit > maxLimit {
-		safeLimit = maxLimit
-	}
+	
+	// Bounded allocation: min(min(requestedLimit, historyLen), maxLimit)
+	// This ensures the allocated size is always within safe bounds
+	boundedLimit := min(min(requestedLimit, historyLen), maxLimit)
 
-	// Return most recent alerts
-	result := make([]*RecoveryAlert, safeLimit)
-	startIdx := historyLen - safeLimit
+	// Return most recent alerts using the bounded limit
+	result := make([]*RecoveryAlert, boundedLimit)
+	startIdx := historyLen - boundedLimit
 	copy(result, am.alertHistory[startIdx:])
 
 	return result
