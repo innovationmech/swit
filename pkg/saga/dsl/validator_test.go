@@ -1426,4 +1426,3 @@ func TestCustomValidationRule(t *testing.T) {
 	assert.Contains(t, err.Error(), "saga.version")
 	assert.Contains(t, err.Error(), "version is recommended")
 }
-

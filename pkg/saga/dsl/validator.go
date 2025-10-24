@@ -913,4 +913,3 @@ func validateCompensationAction(comp *CompensationAction, fieldPrefix string) Va
 
 	return errors
 }
-
