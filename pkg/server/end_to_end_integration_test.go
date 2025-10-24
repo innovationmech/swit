@@ -161,11 +161,11 @@ func (suite *EndToEndTestSuite) convertToTestAddress(addr string) string {
 
 // waitForServerReady waits for the server to be ready to accept requests
 func (suite *EndToEndTestSuite) waitForServerReady(httpAddr string) {
-	client := &http.Client{Timeout: 100 * time.Millisecond}
+	client := &http.Client{Timeout: 500 * time.Millisecond}
 	testAddr := suite.convertToTestAddress(httpAddr)
 
-	// Try up to 10 times with 100ms intervals
-	for i := 0; i < 10; i++ {
+	// Try up to 30 times with 200ms intervals (6 seconds total) for more reliable CI behavior
+	for i := 0; i < 30; i++ {
 		resp, err := client.Get(fmt.Sprintf("http://%s/ready", testAddr))
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
@@ -174,8 +174,22 @@ func (suite *EndToEndTestSuite) waitForServerReady(httpAddr string) {
 		if resp != nil {
 			resp.Body.Close()
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
+
+	// If still not ready, try one more time with a longer timeout and log the attempt
+	suite.T().Logf("Server not ready after 6 seconds, making final attempt with longer timeout")
+	client = &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://%s/ready", testAddr))
+	if err == nil && resp.StatusCode == http.StatusOK {
+		resp.Body.Close()
+		return
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	suite.T().Errorf("Server at %s failed to become ready after 6+ seconds", testAddr)
 }
 
 // createTestServer creates a test server with the given configuration

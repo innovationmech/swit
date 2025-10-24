@@ -1124,7 +1124,7 @@ func TestValidationFunctions(t *testing.T) {
 		for _, tt := range tests {
 			result := isUserNotFoundError(tt.err)
 			if result != tt.expected {
-				t.Errorf("%s: isUserNotFoundError(%v) = %v, expected %v", 
+				t.Errorf("%s: isUserNotFoundError(%v) = %v, expected %v",
 					tt.name, tt.err, result, tt.expected)
 			}
 		}
