@@ -248,4 +248,3 @@ func TestSagaListRequest_ToSagaFilter_Offset_Calculation(t *testing.T) {
 		})
 	}
 }
-

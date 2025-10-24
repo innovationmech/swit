@@ -312,4 +312,3 @@ func TestApplyToRouterWithSelectiveMiddleware(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 }
-

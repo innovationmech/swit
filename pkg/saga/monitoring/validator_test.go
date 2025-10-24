@@ -43,7 +43,7 @@ func (m *validatorMockSagaInstance) GetState() saga.SagaState {
 // validatorMockCoordinator is a mock coordinator for validator testing.
 type validatorMockCoordinator struct {
 	dashboardMockCoordinator
-	instance      *validatorMockSagaInstance
+	instance       *validatorMockSagaInstance
 	getInstanceErr error
 }
 
@@ -392,4 +392,3 @@ func TestValidatorWithTimeout(t *testing.T) {
 		t.Logf("ValidateRetryOperation() with timeout: %v", err)
 	}
 }
-
