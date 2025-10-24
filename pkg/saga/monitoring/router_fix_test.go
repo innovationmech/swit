@@ -71,8 +71,12 @@ func TestRouteManager_GetAPIGroup(t *testing.T) {
 	config := DefaultServerConfig()
 	rm := NewRouteManager(router, config)
 
+	// SetupRoutes must be called first to initialize apiGroup
+	err := rm.SetupRoutes()
+	assert.NoError(t, err)
+
 	group := rm.GetAPIGroup()
-	assert.NotNil(t, group, "GetAPIGroup should return non-nil group")
+	assert.NotNil(t, group, "GetAPIGroup should return non-nil group after SetupRoutes")
 }
 
 // TestRouteManager_SetQueryAPI tests SetQueryAPI method.
