@@ -215,14 +215,29 @@ func (s *CreateUserAccountStep) Execute(ctx context.Context, data interface{}) (
 	}
 
 	// 检查邮箱是否已存在
+	// 注意：必须正确处理查询错误，避免在服务不可用时误创建重复账户
 	existingUser, err := s.service.GetUserByEmail(ctx, registrationData.Email)
-	if err == nil && existingUser != nil {
+	if err != nil {
+		// 只有明确的"用户不存在"错误才继续，其他错误应该传播
+		if !isUserNotFoundError(err) {
+			return nil, fmt.Errorf("查询邮箱失败，无法验证唯一性: %w", err)
+		}
+		// err 是"用户不存在"错误，这是预期的，继续执行
+	} else if existingUser != nil {
+		// 查询成功且用户存在
 		return nil, fmt.Errorf("邮箱已被注册: %s", registrationData.Email)
 	}
 
 	// 检查用户名是否已存在
 	existingUser, err = s.service.GetUserByUsername(ctx, registrationData.Username)
-	if err == nil && existingUser != nil {
+	if err != nil {
+		// 只有明确的"用户不存在"错误才继续，其他错误应该传播
+		if !isUserNotFoundError(err) {
+			return nil, fmt.Errorf("查询用户名失败，无法验证唯一性: %w", err)
+		}
+		// err 是"用户不存在"错误，这是预期的，继续执行
+	} else if existingUser != nil {
+		// 查询成功且用户存在
 		return nil, fmt.Errorf("用户名已被使用: %s", registrationData.Username)
 	}
 
@@ -493,10 +508,7 @@ func (s *InitializeUserConfigStep) GetRetryPolicy() saga.RetryPolicy {
 
 // IsRetryable 判断错误是否可重试
 func (s *InitializeUserConfigStep) IsRetryable(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	return true
+	return !errors.Is(err, context.DeadlineExceeded)
 }
 
 // GetMetadata 返回步骤元数据
@@ -580,10 +592,7 @@ func (s *AllocateResourcesStep) GetRetryPolicy() saga.RetryPolicy {
 
 // IsRetryable 判断错误是否可重试
 func (s *AllocateResourcesStep) IsRetryable(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	return true
+	return !errors.Is(err, context.DeadlineExceeded)
 }
 
 // GetMetadata 返回步骤元数据
@@ -810,6 +819,20 @@ func NewUserRegistrationSaga(
 // ==========================
 // 辅助函数
 // ==========================
+
+// isUserNotFoundError 判断错误是否为"用户不存在"错误
+// 这个函数用于区分真正的"用户不存在"和其他类型的错误（如网络错误、数据库错误）
+func isUserNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// 检查常见的"用户不存在"错误模式
+	errMsg := err.Error()
+	return containsSubstring(errMsg, "user not found") ||
+		containsSubstring(errMsg, "not found") ||
+		containsSubstring(errMsg, "no rows") ||
+		containsSubstring(errMsg, "does not exist")
+}
 
 // isValidEmail 验证邮箱地址格式
 func isValidEmail(email string) bool {

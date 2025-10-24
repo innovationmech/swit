@@ -432,6 +432,91 @@ func TestCreateUserAccountStep_Execute_UsernameExists(t *testing.T) {
 	}
 }
 
+// TestCreateUserAccountStep_Execute_EmailLookupError 测试邮箱查询失败场景
+func TestCreateUserAccountStep_Execute_EmailLookupError(t *testing.T) {
+	mockService := &mockUserService{
+		getUserByEmailFunc: func(ctx context.Context, email string) (*UserCreationResult, error) {
+			// 模拟数据库连接错误（非"用户不存在"错误）
+			return nil, errors.New("database connection failed")
+		},
+	}
+	step := &CreateUserAccountStep{service: mockService}
+	data := createTestRegistrationData()
+	ctx := context.Background()
+
+	_, err := step.Execute(ctx, data)
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "查询邮箱失败") {
+		t.Errorf("Expected '查询邮箱失败' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "database connection failed") {
+		t.Errorf("Expected wrapped error message, got: %v", err)
+	}
+}
+
+// TestCreateUserAccountStep_Execute_UsernameLookupError 测试用户名查询失败场景
+func TestCreateUserAccountStep_Execute_UsernameLookupError(t *testing.T) {
+	mockService := &mockUserService{
+		getUserByEmailFunc: func(ctx context.Context, email string) (*UserCreationResult, error) {
+			// 返回"用户不存在"错误，允许继续
+			return nil, errors.New("user not found")
+		},
+		getUserByUsernameFunc: func(ctx context.Context, username string) (*UserCreationResult, error) {
+			// 模拟网络超时错误（非"用户不存在"错误）
+			return nil, errors.New("network timeout")
+		},
+	}
+	step := &CreateUserAccountStep{service: mockService}
+	data := createTestRegistrationData()
+	ctx := context.Background()
+
+	_, err := step.Execute(ctx, data)
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "查询用户名失败") {
+		t.Errorf("Expected '查询用户名失败' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "network timeout") {
+		t.Errorf("Expected wrapped error message, got: %v", err)
+	}
+}
+
+// TestCreateUserAccountStep_Execute_UserNotFoundError 测试"用户不存在"错误被正确识别
+func TestCreateUserAccountStep_Execute_UserNotFoundError(t *testing.T) {
+	mockService := &mockUserService{
+		getUserByEmailFunc: func(ctx context.Context, email string) (*UserCreationResult, error) {
+			// 返回"用户不存在"错误，应该被识别并允许继续
+			return nil, errors.New("user not found")
+		},
+		getUserByUsernameFunc: func(ctx context.Context, username string) (*UserCreationResult, error) {
+			// 返回另一种形式的"不存在"错误
+			return nil, errors.New("no rows in result set")
+		},
+		createUserFunc: func(ctx context.Context, data *UserRegistrationData) (*UserCreationResult, error) {
+			return &UserCreationResult{
+				UserID:   "new-user-123",
+				Username: data.Username,
+				Email:    data.Email,
+				Status:   "pending",
+			}, nil
+		},
+	}
+	step := &CreateUserAccountStep{service: mockService}
+	data := createTestRegistrationData()
+	ctx := context.Background()
+
+	result, err := step.Execute(ctx, data)
+	if err != nil {
+		t.Errorf("Expected success when user not found, got error: %v", err)
+	}
+	if result == nil {
+		t.Error("Expected result, got nil")
+	}
+}
+
 // TestCreateUserAccountStep_Compensate_Success 测试补偿操作成功场景
 func TestCreateUserAccountStep_Compensate_Success(t *testing.T) {
 	deleteCalled := false
@@ -1016,6 +1101,31 @@ func TestValidationFunctions(t *testing.T) {
 			result := isValidUsername(tt.username)
 			if result != tt.valid {
 				t.Errorf("isValidUsername(%s) = %v, expected %v", tt.username, result, tt.valid)
+			}
+		}
+	})
+
+	t.Run("isUserNotFoundError", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			err      error
+			expected bool
+		}{
+			{"nil error", nil, false},
+			{"user not found", errors.New("user not found"), true},
+			{"not found", errors.New("record not found"), true},
+			{"no rows", errors.New("no rows in result set"), true},
+			{"does not exist", errors.New("user does not exist"), true},
+			{"database error", errors.New("database connection failed"), false},
+			{"network timeout", errors.New("network timeout"), false},
+			{"generic error", errors.New("something went wrong"), false},
+		}
+
+		for _, tt := range tests {
+			result := isUserNotFoundError(tt.err)
+			if result != tt.expected {
+				t.Errorf("%s: isUserNotFoundError(%v) = %v, expected %v", 
+					tt.name, tt.err, result, tt.expected)
 			}
 		}
 	})
