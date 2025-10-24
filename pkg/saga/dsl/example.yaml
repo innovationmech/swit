@@ -1,0 +1,212 @@
+# Saga DSL 示例文件
+# 此文件演示了完整的 Saga 定义语法
+
+saga:
+  id: order-processing-saga
+  name: Order Processing Saga
+  description: Processes customer orders with payment and inventory
+  version: "1.0.0"
+  timeout: 5m
+  mode: orchestration
+  tags:
+    - orders
+    - payment
+    - inventory
+  metadata:
+    owner: order-team
+    priority: high
+
+# 全局重试策略（可选）
+global_retry_policy:
+  type: exponential_backoff
+  max_attempts: 3
+  initial_delay: 1s
+  max_delay: 30s
+  multiplier: 2.0
+  jitter: true
+
+# 全局补偿配置（可选）
+global_compensation:
+  strategy: sequential
+  timeout: 2m
+  max_attempts: 3
+
+# Saga 步骤定义
+steps:
+  # 步骤 1: 验证订单
+  - id: validate-order
+    name: Validate Order
+    description: Validates order data and inventory availability
+    type: service
+    action:
+      service:
+        name: order-service
+        endpoint: http://order-service:8080
+        method: POST
+        path: /api/orders/validate
+        headers:
+          Content-Type: application/json
+        body:
+          order_id: "{{.input.order_id}}"
+          items: "{{.input.items}}"
+        timeout: 10s
+    compensation:
+      type: skip  # 验证步骤不需要补偿
+    timeout: 30s
+
+  # 步骤 2: 预留库存
+  - id: reserve-inventory
+    name: Reserve Inventory
+    description: Reserves inventory for order items
+    type: grpc
+    action:
+      service:
+        name: inventory-service
+        endpoint: inventory-service:9090
+        method: ReserveInventory
+        body:
+          order_id: "{{.output.validate-order.order_id}}"
+          items: "{{.input.items}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: inventory-service
+          endpoint: inventory-service:9090
+          method: ReleaseInventory
+          body:
+            reservation_id: "{{.output.reserve-inventory.reservation_id}}"
+      strategy: sequential
+      timeout: 30s
+      max_attempts: 3
+      on_failure:
+        action: alert
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 5
+      initial_delay: 500ms
+      max_delay: 10s
+      multiplier: 2.0
+      jitter: true
+      retryable_errors:
+        - timeout
+        - network
+        - service_unavailable
+    timeout: 1m
+    dependencies:
+      - validate-order
+
+  # 步骤 3: 处理支付
+  - id: process-payment
+    name: Process Payment
+    description: Processes payment for the order
+    type: service
+    action:
+      service:
+        name: payment-service
+        endpoint: http://payment-service:8080
+        method: POST
+        path: /api/payments/process
+        headers:
+          Content-Type: application/json
+          Authorization: "Bearer {{.context.auth_token}}"
+        body:
+          order_id: "{{.output.validate-order.order_id}}"
+          amount: "{{.input.amount}}"
+          payment_method: "{{.input.payment_method}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: payment-service
+          endpoint: http://payment-service:8080
+          method: POST
+          path: /api/payments/refund
+          body:
+            transaction_id: "{{.output.process-payment.transaction_id}}"
+            amount: "{{.output.process-payment.amount}}"
+      timeout: 1m
+      max_attempts: 5
+      on_failure:
+        action: alert
+        retry_policy:
+          type: exponential_backoff
+          max_attempts: 10
+          initial_delay: 5s
+          max_delay: 5m
+    timeout: 2m
+    dependencies:
+      - validate-order
+    on_success:
+      notifications:
+        - type: webhook
+          target: http://notification-service:8080/payment-success
+          message: "Payment successful for order {{.output.validate-order.order_id}}"
+    on_failure:
+      notifications:
+        - type: slack
+          target: "#orders-alerts"
+          message: "Payment failed for order {{.output.validate-order.order_id}}"
+
+  # 步骤 4: 确认订单
+  - id: confirm-order
+    name: Confirm Order
+    description: Confirms the order and notifies customer
+    type: service
+    action:
+      service:
+        name: order-service
+        endpoint: http://order-service:8080
+        method: POST
+        path: /api/orders/confirm
+        body:
+          order_id: "{{.output.validate-order.order_id}}"
+          transaction_id: "{{.output.process-payment.transaction_id}}"
+          reservation_id: "{{.output.reserve-inventory.reservation_id}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: order-service
+          endpoint: http://order-service:8080
+          method: POST
+          path: /api/orders/cancel
+          body:
+            order_id: "{{.output.validate-order.order_id}}"
+    timeout: 30s
+    dependencies:
+      - reserve-inventory
+      - process-payment
+    on_success:
+      actions:
+        - message:
+            topic: orders.confirmed
+            broker: default
+            payload:
+              order_id: "{{.output.validate-order.order_id}}"
+              timestamp: "{{.timestamp}}"
+      notifications:
+        - type: email
+          target: "{{.input.customer_email}}"
+          message: "Your order {{.output.validate-order.order_id}} has been confirmed"
+
+  # 步骤 5: 通知配送服务
+  - id: notify-shipping
+    name: Notify Shipping
+    description: Sends notification to shipping service
+    type: message
+    action:
+      message:
+        topic: shipping.new-order
+        broker: default
+        payload:
+          order_id: "{{.output.validate-order.order_id}}"
+          items: "{{.input.items}}"
+          address: "{{.input.shipping_address}}"
+        routing_key: shipping.high-priority
+    compensation:
+      type: skip  # 消息通知不需要补偿
+    async: true  # 异步执行
+    dependencies:
+      - confirm-order
+
