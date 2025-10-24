@@ -1,0 +1,457 @@
+# 订单处理 Saga 示例
+# 本示例演示了完整的电商订单处理流程，包括订单验证、库存预留、支付处理和发货通知
+#
+# 业务流程：
+# 1. 验证订单信息（客户信息、商品可用性、价格准确性）
+# 2. 预留库存（确保商品库存足够）
+# 3. 处理支付（收取款项）
+# 4. 确认订单（更新订单状态）
+# 5. 通知发货服务（触发配送流程）
+#
+# 补偿逻辑：
+# - 如果任何步骤失败，会按反向顺序执行补偿操作
+# - 库存预留失败 -> 释放库存
+# - 支付失败 -> 退款
+# - 订单确认失败 -> 取消订单
+
+saga:
+  id: order-processing-saga
+  name: Order Processing Saga
+  description: |
+    Complete e-commerce order processing workflow including validation,
+    inventory reservation, payment processing, and shipping notification.
+    
+    This Saga ensures data consistency across multiple microservices
+    using the Saga pattern with compensating transactions.
+  version: "2.0.0"
+  timeout: 10m
+  mode: orchestration
+  tags:
+    - orders
+    - payment
+    - inventory
+    - e-commerce
+    - critical
+  metadata:
+    owner: order-team
+    priority: high
+    business_unit: commerce
+    sla: 99.9%
+    cost_center: "CC-ORDER-001"
+
+# 全局重试策略 - 应用于所有步骤（除非步骤覆盖）
+global_retry_policy:
+  type: exponential_backoff
+  max_attempts: 3
+  initial_delay: 1s
+  max_delay: 30s
+  multiplier: 2.0
+  jitter: true
+  retryable_errors:
+    - timeout
+    - network
+    - service_unavailable
+    - temporary_error
+
+# 全局补偿配置
+global_compensation:
+  strategy: sequential  # 按反向顺序依次补偿
+  timeout: 5m
+  max_attempts: 3
+
+# Saga 执行步骤
+steps:
+  # ============================================================================
+  # 步骤 1: 验证订单
+  # ============================================================================
+  - id: validate-order
+    name: Validate Order
+    description: |
+      Validates the order including:
+      - Customer information and eligibility
+      - Product availability and pricing
+      - Shipping address validity
+      - Order total accuracy
+    type: service
+    action:
+      service:
+        name: order-service
+        endpoint: http://order-service:8080
+        method: POST
+        path: /api/v1/orders/validate
+        headers:
+          Content-Type: application/json
+          X-Request-ID: "{{.context.request_id}}"
+          X-Saga-ID: "{{.saga_id}}"
+        body:
+          order_id: "{{.input.order_id}}"
+          customer_id: "{{.input.customer_id}}"
+          items: "{{.input.items}}"
+          shipping_address: "{{.input.shipping_address}}"
+          billing_address: "{{.input.billing_address}}"
+        timeout: 10s
+    compensation:
+      type: skip  # 验证步骤是只读操作，不需要补偿
+    timeout: 30s
+    metadata:
+      step_type: validation
+      criticality: high
+
+  # ============================================================================
+  # 步骤 2: 预留库存
+  # ============================================================================
+  - id: reserve-inventory
+    name: Reserve Inventory
+    description: |
+      Reserves inventory for all order items to ensure availability.
+      Creates a reservation that expires after 15 minutes if not confirmed.
+    type: grpc
+    action:
+      service:
+        name: inventory-service
+        endpoint: inventory-service:9090
+        method: ReserveInventory
+        headers:
+          X-Request-ID: "{{.context.request_id}}"
+          X-Saga-ID: "{{.saga_id}}"
+        body:
+          order_id: "{{.output.validate-order.order_id}}"
+          items: "{{.input.items}}"
+          warehouse_id: "{{.input.warehouse_id}}"
+          reservation_timeout: "15m"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: inventory-service
+          endpoint: inventory-service:9090
+          method: ReleaseInventory
+          body:
+            reservation_id: "{{.output.reserve-inventory.reservation_id}}"
+            order_id: "{{.output.validate-order.order_id}}"
+            reason: "saga_compensation"
+            timestamp: "{{.timestamp}}"
+      strategy: sequential
+      timeout: 1m
+      max_attempts: 5
+      on_failure:
+        action: alert
+        retry_policy:
+          type: exponential_backoff
+          max_attempts: 10
+          initial_delay: 5s
+          max_delay: 5m
+        notifications:
+          - type: slack
+            target: "#inventory-alerts"
+            message: "⚠️ Failed to release inventory reservation {{.output.reserve-inventory.reservation_id}}"
+          - type: pagerduty
+            target: inventory-team
+            message: "Critical: Inventory compensation failed for order {{.output.validate-order.order_id}}"
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 5
+      initial_delay: 500ms
+      max_delay: 10s
+      multiplier: 2.0
+      jitter: true
+      retryable_errors:
+        - timeout
+        - network
+        - service_unavailable
+        - resource_locked
+    timeout: 2m
+    dependencies:
+      - validate-order
+    metadata:
+      step_type: resource_allocation
+      criticality: high
+
+  # ============================================================================
+  # 步骤 3: 处理支付
+  # ============================================================================
+  - id: process-payment
+    name: Process Payment
+    description: |
+      Processes payment using the customer's selected payment method.
+      Supports: credit card, debit card, PayPal, and bank transfer.
+      
+      This step is critical and includes:
+      - Payment authorization
+      - Fraud detection check
+      - 3D Secure verification (if required)
+      - Transaction recording
+    type: service
+    action:
+      service:
+        name: payment-service
+        endpoint: http://payment-service:8080
+        method: POST
+        path: /api/v1/payments/charge
+        headers:
+          Content-Type: application/json
+          Authorization: "Bearer {{.context.auth_token}}"
+          X-Request-ID: "{{.context.request_id}}"
+          X-Saga-ID: "{{.saga_id}}"
+          X-Idempotency-Key: "{{.saga_id}}-process-payment"
+        body:
+          order_id: "{{.output.validate-order.order_id}}"
+          customer_id: "{{.input.customer_id}}"
+          amount: "{{.input.amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          payment_details: "{{.input.payment_details}}"
+          billing_address: "{{.input.billing_address}}"
+          metadata:
+            order_id: "{{.output.validate-order.order_id}}"
+            saga_id: "{{.saga_id}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: payment-service
+          endpoint: http://payment-service:8080
+          method: POST
+          path: /api/v1/payments/refund
+          headers:
+            Content-Type: application/json
+            Authorization: "Bearer {{.context.auth_token}}"
+            X-Idempotency-Key: "{{.saga_id}}-refund-payment"
+          body:
+            transaction_id: "{{.output.process-payment.transaction_id}}"
+            amount: "{{.output.process-payment.amount}}"
+            currency: "{{.output.process-payment.currency}}"
+            reason: "order_cancelled"
+            metadata:
+              saga_id: "{{.saga_id}}"
+              original_order_id: "{{.output.validate-order.order_id}}"
+      timeout: 2m
+      max_attempts: 5
+      on_failure:
+        action: alert
+        retry_policy:
+          type: exponential_backoff
+          max_attempts: 10
+          initial_delay: 10s
+          max_delay: 10m
+        notifications:
+          - type: pagerduty
+            target: payment-team
+            message: "CRITICAL: Payment refund failed for transaction {{.output.process-payment.transaction_id}}"
+          - type: email
+            target: "finance-alerts@company.com"
+            message: "Manual refund required for transaction {{.output.process-payment.transaction_id}}"
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 3
+      initial_delay: 1s
+      max_delay: 30s
+      multiplier: 2.0
+      jitter: true
+      retryable_errors:
+        - timeout
+        - network
+        - service_unavailable
+    timeout: 3m
+    dependencies:
+      - validate-order  # 依赖订单验证
+    on_success:
+      actions:
+        - service:
+            name: analytics-service
+            method: POST
+            path: /api/events/track
+            body:
+              event_type: payment_successful
+              order_id: "{{.output.validate-order.order_id}}"
+              amount: "{{.output.process-payment.amount}}"
+              timestamp: "{{.timestamp}}"
+      notifications:
+        - type: webhook
+          target: http://notification-service:8080/webhooks/payment-success
+          message: "Payment successful for order {{.output.validate-order.order_id}}"
+    on_failure:
+      notifications:
+        - type: slack
+          target: "#payment-alerts"
+          message: |
+            ❌ Payment failed
+            Order ID: {{.output.validate-order.order_id}}
+            Customer: {{.input.customer_id}}
+            Amount: {{.input.amount}} {{.input.currency}}
+            Error: {{.error.message}}
+        - type: email
+          target: "{{.input.customer_email}}"
+          message: "We were unable to process your payment. Please try again or contact support."
+    metadata:
+      step_type: payment
+      criticality: critical
+      pci_compliant: true
+
+  # ============================================================================
+  # 步骤 4: 确认订单
+  # ============================================================================
+  - id: confirm-order
+    name: Confirm Order
+    description: |
+      Confirms the order after successful payment and inventory reservation.
+      Updates order status to 'confirmed' and triggers downstream processes.
+    type: service
+    action:
+      service:
+        name: order-service
+        endpoint: http://order-service:8080
+        method: POST
+        path: /api/v1/orders/confirm
+        headers:
+          Content-Type: application/json
+          X-Request-ID: "{{.context.request_id}}"
+          X-Saga-ID: "{{.saga_id}}"
+        body:
+          order_id: "{{.output.validate-order.order_id}}"
+          transaction_id: "{{.output.process-payment.transaction_id}}"
+          reservation_id: "{{.output.reserve-inventory.reservation_id}}"
+          confirmation_timestamp: "{{.timestamp}}"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            payment_status: "paid"
+            inventory_status: "reserved"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: order-service
+          endpoint: http://order-service:8080
+          method: POST
+          path: /api/v1/orders/cancel
+          body:
+            order_id: "{{.output.validate-order.order_id}}"
+            reason: "saga_compensation"
+            cancellation_timestamp: "{{.timestamp}}"
+      timeout: 1m
+      max_attempts: 3
+    timeout: 1m
+    dependencies:
+      - reserve-inventory  # 依赖库存预留
+      - process-payment    # 依赖支付处理
+    on_success:
+      actions:
+        - message:
+            topic: orders.confirmed
+            broker: default
+            payload:
+              order_id: "{{.output.validate-order.order_id}}"
+              customer_id: "{{.input.customer_id}}"
+              total_amount: "{{.input.amount}}"
+              currency: "{{.input.currency}}"
+              timestamp: "{{.timestamp}}"
+            headers:
+              event_type: order_confirmed
+              source: order-processing-saga
+              version: "2.0"
+      notifications:
+        - type: email
+          target: "{{.input.customer_email}}"
+          message: |
+            Your order {{.output.validate-order.order_id}} has been confirmed!
+            
+            We'll send you shipping updates as your order is processed.
+            Thank you for your purchase!
+        - type: sms
+          target: "{{.input.customer_phone}}"
+          message: "Your order has been confirmed. Order ID: {{.output.validate-order.order_id}}"
+    metadata:
+      step_type: state_transition
+      criticality: high
+
+  # ============================================================================
+  # 步骤 5: 通知发货服务
+  # ============================================================================
+  - id: notify-shipping
+    name: Notify Shipping Service
+    description: |
+      Sends notification to shipping service to initiate the delivery process.
+      This is an asynchronous step that doesn't block the Saga completion.
+    type: message
+    action:
+      message:
+        topic: shipping.new-order
+        broker: default
+        payload:
+          order_id: "{{.output.validate-order.order_id}}"
+          customer_id: "{{.input.customer_id}}"
+          items: "{{.input.items}}"
+          shipping_address: "{{.input.shipping_address}}"
+          priority: "{{.input.shipping_priority}}"
+          reservation_id: "{{.output.reserve-inventory.reservation_id}}"
+          warehouse_id: "{{.input.warehouse_id}}"
+          estimated_ship_date: "{{.output.confirm-order.estimated_ship_date}}"
+        headers:
+          event_type: new_order
+          source: order-processing-saga
+          version: "2.0"
+          priority: high
+        routing_key: shipping.high-priority
+    compensation:
+      type: skip  # 消息通知不需要补偿，接收方会处理订单取消事件
+    async: true  # 异步执行，不阻塞 Saga 完成
+    timeout: 30s
+    dependencies:
+      - confirm-order
+    on_success:
+      notifications:
+        - type: webhook
+          target: http://monitoring-service:8080/webhooks/shipping-notified
+          message: "Shipping service notified for order {{.output.validate-order.order_id}}"
+    on_failure:
+      notifications:
+        - type: slack
+          target: "#shipping-alerts"
+          message: "⚠️ Failed to notify shipping service for order {{.output.validate-order.order_id}}"
+    metadata:
+      step_type: notification
+      criticality: medium
+      async: true
+
+  # ============================================================================
+  # 步骤 6: 更新客户积分（可选）
+  # ============================================================================
+  - id: update-loyalty-points
+    name: Update Customer Loyalty Points
+    description: |
+      Updates customer loyalty points based on the purchase amount.
+      This is an optional step that runs conditionally.
+    type: service
+    action:
+      service:
+        name: loyalty-service
+        endpoint: http://loyalty-service:8080
+        method: POST
+        path: /api/v1/loyalty/add-points
+        body:
+          customer_id: "{{.input.customer_id}}"
+          order_id: "{{.output.validate-order.order_id}}"
+          amount: "{{.input.amount}}"
+          currency: "{{.input.currency}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: loyalty-service
+          method: POST
+          path: /api/v1/loyalty/deduct-points
+          body:
+            customer_id: "{{.input.customer_id}}"
+            order_id: "{{.output.validate-order.order_id}}"
+            points: "{{.output.update-loyalty-points.points_added}}"
+    condition:
+      expression: "$input.loyalty_enabled == true && $input.amount > 50"
+    async: true
+    timeout: 30s
+    dependencies:
+      - confirm-order
+    metadata:
+      step_type: loyalty
+      criticality: low
+      optional: true
+
