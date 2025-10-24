@@ -24,6 +24,7 @@ package examples
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -750,9 +751,70 @@ func TestExecuteTransferStep_Execute_AddAmountError(t *testing.T) {
 	}
 }
 
-func TestExecuteTransferStep_Compensate_Success(t *testing.T) {
+func TestExecuteTransferStep_Compensate_CompletedTransfer(t *testing.T) {
+	// 记录补偿操作的调用顺序
+	var operations []string
+
+	mockAccountService := &mockAccountService{
+		addAmountFunc: func(ctx context.Context, accountID string, amount float64, transactionID string) error {
+			if amount < 0 {
+				operations = append(operations, fmt.Sprintf("deduct_from_%s", accountID))
+			} else {
+				operations = append(operations, fmt.Sprintf("refund_to_%s", accountID))
+			}
+			return nil
+		},
+	}
+	mockTransferService := &mockTransferService{
+		getTransferStatusFunc: func(ctx context.Context, transferID string) (string, error) {
+			return "completed", nil
+		},
+		cancelTransferFunc: func(ctx context.Context, transferID string, reason string) error {
+			operations = append(operations, "cancel_transfer")
+			return nil
+		},
+	}
+	step := &ExecuteTransferStep{
+		accountService:  mockAccountService,
+		transferService: mockTransferService,
+	}
+	ctx := context.Background()
+
+	transferResult := &TransferResult{
+		TransferID:  "TRF-001",
+		FromAccount: "ACC-001",
+		ToAccount:   "ACC-002",
+		Amount:      100.0,
+	}
+
+	err := step.Compensate(ctx, transferResult)
+	if err != nil {
+		t.Errorf("Compensate() 失败: %v", err)
+	}
+
+	// 验证操作顺序：先从目标账户扣除，再退款到源账户，最后取消记录
+	expectedOps := []string{
+		"deduct_from_ACC-002",
+		"refund_to_ACC-001",
+		"cancel_transfer",
+	}
+	if len(operations) != len(expectedOps) {
+		t.Errorf("操作数量不匹配，期望 %d，实际 %d", len(expectedOps), len(operations))
+	}
+	for i, op := range expectedOps {
+		if i >= len(operations) || operations[i] != op {
+			t.Errorf("操作顺序错误，步骤 %d 期望 %s，实际 %v", i+1, op, operations)
+		}
+	}
+}
+
+func TestExecuteTransferStep_Compensate_NotCompletedTransfer(t *testing.T) {
 	mockAccountService := &mockAccountService{}
-	mockTransferService := &mockTransferService{}
+	mockTransferService := &mockTransferService{
+		getTransferStatusFunc: func(ctx context.Context, transferID string) (string, error) {
+			return "pending", nil
+		},
+	}
 	step := &ExecuteTransferStep{
 		accountService:  mockAccountService,
 		transferService: mockTransferService,
@@ -767,6 +829,114 @@ func TestExecuteTransferStep_Compensate_Success(t *testing.T) {
 	if err != nil {
 		t.Errorf("Compensate() 失败: %v", err)
 	}
+}
+
+func TestExecuteTransferStep_Compensate_DeductFromDestinationFails(t *testing.T) {
+	mockAccountService := &mockAccountService{
+		addAmountFunc: func(ctx context.Context, accountID string, amount float64, transactionID string) error {
+			if amount < 0 { // 扣除操作
+				return errors.New("目标账户扣除失败")
+			}
+			return nil
+		},
+	}
+	mockTransferService := &mockTransferService{
+		getTransferStatusFunc: func(ctx context.Context, transferID string) (string, error) {
+			return "completed", nil
+		},
+	}
+	step := &ExecuteTransferStep{
+		accountService:  mockAccountService,
+		transferService: mockTransferService,
+	}
+	ctx := context.Background()
+
+	transferResult := &TransferResult{
+		TransferID:  "TRF-001",
+		FromAccount: "ACC-001",
+		ToAccount:   "ACC-002",
+		Amount:      100.0,
+	}
+
+	err := step.Compensate(ctx, transferResult)
+	if err == nil {
+		t.Error("Expected error when deducting from destination account fails")
+	}
+}
+
+func TestExecuteTransferStep_Compensate_RefundToSourceFails(t *testing.T) {
+	mockAccountService := &mockAccountService{
+		addAmountFunc: func(ctx context.Context, accountID string, amount float64, transactionID string) error {
+			if amount > 0 { // 退款操作
+				return errors.New("源账户退款失败")
+			}
+			return nil
+		},
+	}
+	mockTransferService := &mockTransferService{
+		getTransferStatusFunc: func(ctx context.Context, transferID string) (string, error) {
+			return "completed", nil
+		},
+	}
+	step := &ExecuteTransferStep{
+		accountService:  mockAccountService,
+		transferService: mockTransferService,
+	}
+	ctx := context.Background()
+
+	transferResult := &TransferResult{
+		TransferID:  "TRF-001",
+		FromAccount: "ACC-001",
+		ToAccount:   "ACC-002",
+		Amount:      100.0,
+	}
+
+	err := step.Compensate(ctx, transferResult)
+	if err == nil {
+		t.Error("Expected error when refunding to source account fails")
+	}
+	if err != nil && !contains(err.Error(), "需要紧急人工处理") {
+		t.Error("Error message should indicate urgent manual intervention needed")
+	}
+}
+
+func TestExecuteTransferStep_Compensate_GetStatusFails(t *testing.T) {
+	mockAccountService := &mockAccountService{}
+	mockTransferService := &mockTransferService{
+		getTransferStatusFunc: func(ctx context.Context, transferID string) (string, error) {
+			return "", errors.New("查询状态失败")
+		},
+	}
+	step := &ExecuteTransferStep{
+		accountService:  mockAccountService,
+		transferService: mockTransferService,
+	}
+	ctx := context.Background()
+
+	transferResult := &TransferResult{
+		TransferID: "TRF-001",
+	}
+
+	err := step.Compensate(ctx, transferResult)
+	if err == nil {
+		t.Error("Expected error when getting transfer status fails")
+	}
+}
+
+// contains 检查字符串是否包含子串
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
+		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+			containsHelper(s, substr)))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExecuteTransferStep_AllMethods(t *testing.T) {

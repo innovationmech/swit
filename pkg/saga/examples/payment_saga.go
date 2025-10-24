@@ -499,25 +499,59 @@ func (s *ExecuteTransferStep) Execute(ctx context.Context, data interface{}) (in
 }
 
 // Compensate 补偿操作：取消转账并退款
+// 此补偿操作至关重要，必须确保资金完全回退以保持账户余额一致性
 func (s *ExecuteTransferStep) Compensate(ctx context.Context, data interface{}) error {
 	transferResult, ok := data.(*TransferResult)
 	if !ok {
 		return errors.New("invalid compensation data type: expected *TransferResult")
 	}
 
-	// 1. 取消转账记录
-	err := s.transferService.CancelTransfer(ctx, transferResult.TransferID, "saga_compensation")
+	// 检查转账是否已完成（只有完成的转账才需要回退资金）
+	status, err := s.transferService.GetTransferStatus(ctx, transferResult.TransferID)
 	if err != nil {
-		return fmt.Errorf("取消转账失败: %w", err)
+		return fmt.Errorf("查询转账状态失败: %w", err)
 	}
 
-	// 2. 从目标账户扣除金额（如果已增加）
-	// 注意：这里需要根据实际情况判断是否已经增加到目标账户
-	// 实际实现中可能需要查询转账状态
+	// 如果转账未完成，只需取消记录即可
+	if status != "completed" {
+		err := s.transferService.CancelTransfer(ctx, transferResult.TransferID, "saga_compensation")
+		if err != nil {
+			return fmt.Errorf("取消转账失败: %w", err)
+		}
+		return nil
+	}
 
-	// 3. 退款到源账户
-	// 注意：这里的实现可能需要调用专门的退款接口
-	// 而不是直接增加金额
+	// 转账已完成，需要回退资金
+	// 注意：这些操作的顺序很重要，应该按照与正向操作相反的顺序执行
+
+	// 1. 从目标账户扣除金额（回退增加的金额）
+	// 使用负数金额来表示扣除操作，或者调用专门的扣除接口
+	err = s.accountService.AddAmount(ctx, transferResult.ToAccount, -transferResult.Amount,
+		fmt.Sprintf("compensation-%s", transferResult.TransactionID))
+	if err != nil {
+		// 目标账户扣除失败是严重问题，必须人工处理
+		return fmt.Errorf("从目标账户 %s 扣除金额 %.2f 失败，需要人工处理: %w",
+			transferResult.ToAccount, transferResult.Amount, err)
+	}
+
+	// 2. 退款到源账户（恢复被扣除的金额）
+	// 注意：源账户的资金是通过 DeductFrozenAmount 扣除的，现在需要退回
+	err = s.accountService.AddAmount(ctx, transferResult.FromAccount, transferResult.Amount,
+		fmt.Sprintf("refund-%s", transferResult.TransactionID))
+	if err != nil {
+		// 退款失败但目标账户已扣除，这是最严重的情况
+		// 此时资金既不在源账户也不在目标账户，必须立即处理
+		return fmt.Errorf("退款到源账户 %s 失败 (金额 %.2f 已从目标账户扣除)，需要紧急人工处理: %w",
+			transferResult.FromAccount, transferResult.Amount, err)
+	}
+
+	// 3. 取消转账记录（标记为已回退）
+	err = s.transferService.CancelTransfer(ctx, transferResult.TransferID, "saga_compensation")
+	if err != nil {
+		// 资金已回退但记录更新失败，记录日志但不返回错误
+		// 因为资金一致性比记录更新更重要
+		return fmt.Errorf("取消转账记录失败（资金已回退）: %w", err)
+	}
 
 	return nil
 }
