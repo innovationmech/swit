@@ -174,7 +174,7 @@ func (p *Parser) ParseFile(path string) (*SagaDefinition, error) {
 		}
 	}
 
-	// Check for circular dependencies
+	// Check for circular dependencies (only check current recursion stack)
 	if p.visitedFiles[absPath] {
 		return nil, &ParseError{
 			Message: "circular dependency detected",
@@ -182,6 +182,9 @@ func (p *Parser) ParseFile(path string) (*SagaDefinition, error) {
 		}
 	}
 	p.visitedFiles[absPath] = true
+	defer func() {
+		delete(p.visitedFiles, absPath)
+	}()
 
 	// Check include depth
 	if p.currentDepth > p.maxIncludeDepth {

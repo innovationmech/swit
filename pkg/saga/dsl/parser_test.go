@@ -744,6 +744,55 @@ func TestProcessIncludes_CircularDependency(t *testing.T) {
 	assert.Contains(t, err.Error(), "circular dependency")
 }
 
+func TestProcessIncludes_ReuseSharedFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a shared snippet that will be included multiple times
+	sharedFile := filepath.Join(tmpDir, "shared.yaml")
+	sharedContent := `
+saga:
+  id: shared-saga
+  name: Shared Configuration
+
+steps:
+  - id: shared-step
+    name: Shared Step
+    type: service
+    action:
+      service:
+        name: shared-service
+        method: GET
+`
+	err := os.WriteFile(sharedFile, []byte(sharedContent), 0644)
+	require.NoError(t, err)
+
+	// Create file1 that includes shared.yaml
+	file1 := filepath.Join(tmpDir, "file1.yaml")
+	file1Content := `!include shared.yaml`
+	err = os.WriteFile(file1, []byte(file1Content), 0644)
+	require.NoError(t, err)
+
+	// Create file2 that also includes shared.yaml
+	file2 := filepath.Join(tmpDir, "file2.yaml")
+	file2Content := `!include shared.yaml`
+	err = os.WriteFile(file2, []byte(file2Content), 0644)
+	require.NoError(t, err)
+
+	// Parse file1 successfully
+	parser := NewParser(WithBasePath(tmpDir), WithIncludes(true))
+	def1, err := parser.ParseFile("file1.yaml")
+	require.NoError(t, err)
+	require.NotNil(t, def1)
+	assert.Equal(t, "shared-saga", def1.Saga.ID)
+
+	// Parse file2 successfully using the same parser instance
+	// This should work because visitedFiles is cleared after each successful parse
+	def2, err := parser.ParseFile("file2.yaml")
+	require.NoError(t, err)
+	require.NotNil(t, def2)
+	assert.Equal(t, "shared-saga", def2.Saga.ID)
+}
+
 func TestProcessIncludes_MaxDepth(t *testing.T) {
 	tmpDir := t.TempDir()
 
