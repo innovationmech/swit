@@ -449,7 +449,13 @@ func NewMockLogger() *MockLogger {
 func (m *MockLogger) Debug(msg string, fields ...interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	args := make([]interface{}, 0, len(fields)+1)
+	// Pre-allocate with 1 for msg, plus fields length
+	// Using separate calculation to avoid potential overflow
+	capacity := 1
+	if len(fields) > 0 {
+		capacity += len(fields)
+	}
+	args := make([]interface{}, 0, capacity)
 	args = append(args, msg)
 	for _, field := range fields {
 		args = append(args, field)
@@ -461,7 +467,13 @@ func (m *MockLogger) Debug(msg string, fields ...interface{}) {
 func (m *MockLogger) Info(msg string, fields ...interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	args := make([]interface{}, 0, len(fields)+1)
+	// Pre-allocate with 1 for msg, plus fields length
+	// Using separate calculation to avoid potential overflow
+	capacity := 1
+	if len(fields) > 0 {
+		capacity += len(fields)
+	}
+	args := make([]interface{}, 0, capacity)
 	args = append(args, msg)
 	for _, field := range fields {
 		args = append(args, field)
@@ -473,7 +485,13 @@ func (m *MockLogger) Info(msg string, fields ...interface{}) {
 func (m *MockLogger) Warn(msg string, fields ...interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	args := make([]interface{}, 0, len(fields)+1)
+	// Pre-allocate with 1 for msg, plus fields length
+	// Using separate calculation to avoid potential overflow
+	capacity := 1
+	if len(fields) > 0 {
+		capacity += len(fields)
+	}
+	args := make([]interface{}, 0, capacity)
 	args = append(args, msg)
 	for _, field := range fields {
 		args = append(args, field)
