@@ -1,0 +1,1558 @@
+=== RUN   TestIntegrationMemoryStorageWithStateManager
+=== RUN   TestIntegrationMemoryStorageWithStateManager/Complete_Saga_workflow_with_StateManager
+=== RUN   TestIntegrationMemoryStorageWithStateManager/Direct_storage_operations
+=== RUN   TestIntegrationMemoryStorageWithStateManager/StateManager_with_event_listeners
+=== RUN   TestIntegrationMemoryStorageWithStateManager/Concurrent_operations
+=== RUN   TestIntegrationMemoryStorageWithStateManager/Storage_cleanup
+=== RUN   TestIntegrationMemoryStorageWithStateManager/Timeout_detection
+=== RUN   TestIntegrationMemoryStorageWithStateManager/Batch_updates
+--- PASS: TestIntegrationMemoryStorageWithStateManager (0.10s)
+    --- PASS: TestIntegrationMemoryStorageWithStateManager/Complete_Saga_workflow_with_StateManager (0.00s)
+    --- PASS: TestIntegrationMemoryStorageWithStateManager/Direct_storage_operations (0.00s)
+    --- PASS: TestIntegrationMemoryStorageWithStateManager/StateManager_with_event_listeners (0.10s)
+    --- PASS: TestIntegrationMemoryStorageWithStateManager/Concurrent_operations (0.00s)
+    --- PASS: TestIntegrationMemoryStorageWithStateManager/Storage_cleanup (0.00s)
+    --- PASS: TestIntegrationMemoryStorageWithStateManager/Timeout_detection (0.00s)
+    --- PASS: TestIntegrationMemoryStorageWithStateManager/Batch_updates (0.00s)
+=== RUN   TestMemoryStateStorage_ConcurrentSaveAndGet
+--- PASS: TestMemoryStateStorage_ConcurrentSaveAndGet (0.01s)
+=== RUN   TestMemoryStateStorage_ConcurrentUpdateSagaState
+--- PASS: TestMemoryStateStorage_ConcurrentUpdateSagaState (0.00s)
+=== RUN   TestMemoryStateStorage_ConcurrentSaveAndDeleteSaga
+    memory_concurrent_test.go:221: Saves: 1000, Deletes: 515, Remaining: 485
+--- PASS: TestMemoryStateStorage_ConcurrentSaveAndDeleteSaga (0.00s)
+=== RUN   TestMemoryStateStorage_ConcurrentStepStateOperations
+--- PASS: TestMemoryStateStorage_ConcurrentStepStateOperations (0.00s)
+=== RUN   TestMemoryStateStorage_ConcurrentMixedOperations
+    memory_concurrent_test.go:391: Mixed operations completed:
+    memory_concurrent_test.go:392:   Save:   260872 ops
+    memory_concurrent_test.go:393:   Get:    260962 ops
+    memory_concurrent_test.go:394:   Update: 260890 ops
+    memory_concurrent_test.go:395:   Delete: 261485 ops
+    memory_concurrent_test.go:396:   Filter: 261276 ops
+    memory_concurrent_test.go:397:   Step:   260589 ops
+    memory_concurrent_test.go:398:   Total:  1566074 ops
+--- PASS: TestMemoryStateStorage_ConcurrentMixedOperations (3.00s)
+=== RUN   TestMemoryStateStorage_ConcurrentGetActiveSagas
+--- PASS: TestMemoryStateStorage_ConcurrentGetActiveSagas (0.03s)
+=== RUN   TestMemoryStateStorage_ConcurrentGetTimeoutSagas
+--- PASS: TestMemoryStateStorage_ConcurrentGetTimeoutSagas (0.00s)
+=== RUN   TestMemoryStateStorage_ConcurrentCleanupExpiredSagas
+--- PASS: TestMemoryStateStorage_ConcurrentCleanupExpiredSagas (0.00s)
+=== RUN   TestMemoryStateStorage_StressTest
+    memory_concurrent_test.go:679: Stress test results:
+    memory_concurrent_test.go:680:   Duration:       5s
+    memory_concurrent_test.go:681:   Workers:        100
+    memory_concurrent_test.go:682:   Total ops:      44328
+    memory_concurrent_test.go:683:   Errors:         0
+    memory_concurrent_test.go:684:   Ops/sec:        8865.60
+    memory_concurrent_test.go:685:   Final sagas:    3670
+    memory_concurrent_test.go:689: WARNING: Performance below target (8865.60 ops/sec < 10000 ops/sec)
+--- PASS: TestMemoryStateStorage_StressTest (5.00s)
+=== RUN   TestMemoryStateStorage_DataConsistencyUnderLoad
+--- PASS: TestMemoryStateStorage_DataConsistencyUnderLoad (0.01s)
+=== RUN   TestNewMemoryStateStorage
+=== RUN   TestNewMemoryStateStorage/with_nil_config
+=== RUN   TestNewMemoryStateStorage/with_custom_config
+=== RUN   TestNewMemoryStateStorage/with_zero_initial_capacity
+--- PASS: TestNewMemoryStateStorage (0.00s)
+    --- PASS: TestNewMemoryStateStorage/with_nil_config (0.00s)
+    --- PASS: TestNewMemoryStateStorage/with_custom_config (0.00s)
+    --- PASS: TestNewMemoryStateStorage/with_zero_initial_capacity (0.00s)
+=== RUN   TestMemoryStateStorage_SaveSaga
+=== RUN   TestMemoryStateStorage_SaveSaga/save_valid_saga
+=== RUN   TestMemoryStateStorage_SaveSaga/save_nil_instance
+=== RUN   TestMemoryStateStorage_SaveSaga/save_instance_with_empty_ID
+=== RUN   TestMemoryStateStorage_SaveSaga/overwrite_existing_saga
+--- PASS: TestMemoryStateStorage_SaveSaga (0.00s)
+    --- PASS: TestMemoryStateStorage_SaveSaga/save_valid_saga (0.00s)
+    --- PASS: TestMemoryStateStorage_SaveSaga/save_nil_instance (0.00s)
+    --- PASS: TestMemoryStateStorage_SaveSaga/save_instance_with_empty_ID (0.00s)
+    --- PASS: TestMemoryStateStorage_SaveSaga/overwrite_existing_saga (0.00s)
+=== RUN   TestMemoryStateStorage_SaveSaga_ContextCancellation
+--- PASS: TestMemoryStateStorage_SaveSaga_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_GetSaga
+=== RUN   TestMemoryStateStorage_GetSaga/get_existing_saga
+=== RUN   TestMemoryStateStorage_GetSaga/get_non-existent_saga
+=== RUN   TestMemoryStateStorage_GetSaga/get_with_empty_ID
+--- PASS: TestMemoryStateStorage_GetSaga (0.00s)
+    --- PASS: TestMemoryStateStorage_GetSaga/get_existing_saga (0.00s)
+    --- PASS: TestMemoryStateStorage_GetSaga/get_non-existent_saga (0.00s)
+    --- PASS: TestMemoryStateStorage_GetSaga/get_with_empty_ID (0.00s)
+=== RUN   TestMemoryStateStorage_GetSaga_ContextCancellation
+--- PASS: TestMemoryStateStorage_GetSaga_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_DeleteSaga
+=== RUN   TestMemoryStateStorage_DeleteSaga/delete_existing_saga
+=== RUN   TestMemoryStateStorage_DeleteSaga/delete_non-existent_saga
+=== RUN   TestMemoryStateStorage_DeleteSaga/delete_with_empty_ID
+--- PASS: TestMemoryStateStorage_DeleteSaga (0.00s)
+    --- PASS: TestMemoryStateStorage_DeleteSaga/delete_existing_saga (0.00s)
+    --- PASS: TestMemoryStateStorage_DeleteSaga/delete_non-existent_saga (0.00s)
+    --- PASS: TestMemoryStateStorage_DeleteSaga/delete_with_empty_ID (0.00s)
+=== RUN   TestMemoryStateStorage_DeleteSaga_ContextCancellation
+--- PASS: TestMemoryStateStorage_DeleteSaga_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_UpdateSagaState
+=== RUN   TestMemoryStateStorage_UpdateSagaState/update_state_successfully
+=== RUN   TestMemoryStateStorage_UpdateSagaState/update_non-existent_saga
+=== RUN   TestMemoryStateStorage_UpdateSagaState/update_with_empty_ID
+--- PASS: TestMemoryStateStorage_UpdateSagaState (0.00s)
+    --- PASS: TestMemoryStateStorage_UpdateSagaState/update_state_successfully (0.00s)
+    --- PASS: TestMemoryStateStorage_UpdateSagaState/update_non-existent_saga (0.00s)
+    --- PASS: TestMemoryStateStorage_UpdateSagaState/update_with_empty_ID (0.00s)
+=== RUN   TestMemoryStateStorage_SaveStepState
+=== RUN   TestMemoryStateStorage_SaveStepState/save_step_state_successfully
+=== RUN   TestMemoryStateStorage_SaveStepState/save_nil_step_state
+=== RUN   TestMemoryStateStorage_SaveStepState/save_step_state_for_non-existent_saga
+--- PASS: TestMemoryStateStorage_SaveStepState (0.00s)
+    --- PASS: TestMemoryStateStorage_SaveStepState/save_step_state_successfully (0.00s)
+    --- PASS: TestMemoryStateStorage_SaveStepState/save_nil_step_state (0.00s)
+    --- PASS: TestMemoryStateStorage_SaveStepState/save_step_state_for_non-existent_saga (0.00s)
+=== RUN   TestMemoryStateStorage_GetStepStates
+=== RUN   TestMemoryStateStorage_GetStepStates/get_step_states_for_saga_with_steps
+=== RUN   TestMemoryStateStorage_GetStepStates/get_step_states_for_non-existent_saga
+=== RUN   TestMemoryStateStorage_GetStepStates/get_step_states_with_empty_ID
+--- PASS: TestMemoryStateStorage_GetStepStates (0.00s)
+    --- PASS: TestMemoryStateStorage_GetStepStates/get_step_states_for_saga_with_steps (0.00s)
+    --- PASS: TestMemoryStateStorage_GetStepStates/get_step_states_for_non-existent_saga (0.00s)
+    --- PASS: TestMemoryStateStorage_GetStepStates/get_step_states_with_empty_ID (0.00s)
+=== RUN   TestMemoryStateStorage_GetActiveSagas
+=== RUN   TestMemoryStateStorage_GetActiveSagas/get_all_sagas_without_filter
+=== RUN   TestMemoryStateStorage_GetActiveSagas/filter_by_state
+=== RUN   TestMemoryStateStorage_GetActiveSagas/filter_by_definition_ID
+=== RUN   TestMemoryStateStorage_GetActiveSagas/filter_by_state_and_definition_ID
+--- PASS: TestMemoryStateStorage_GetActiveSagas (0.00s)
+    --- PASS: TestMemoryStateStorage_GetActiveSagas/get_all_sagas_without_filter (0.00s)
+    --- PASS: TestMemoryStateStorage_GetActiveSagas/filter_by_state (0.00s)
+    --- PASS: TestMemoryStateStorage_GetActiveSagas/filter_by_definition_ID (0.00s)
+    --- PASS: TestMemoryStateStorage_GetActiveSagas/filter_by_state_and_definition_ID (0.00s)
+=== RUN   TestMemoryStateStorage_GetTimeoutSagas
+=== RUN   TestMemoryStateStorage_GetTimeoutSagas/get_timed_out_sagas
+=== RUN   TestMemoryStateStorage_GetTimeoutSagas/get_timed_out_sagas_with_earlier_cutoff
+--- PASS: TestMemoryStateStorage_GetTimeoutSagas (0.00s)
+    --- PASS: TestMemoryStateStorage_GetTimeoutSagas/get_timed_out_sagas (0.00s)
+    --- PASS: TestMemoryStateStorage_GetTimeoutSagas/get_timed_out_sagas_with_earlier_cutoff (0.00s)
+=== RUN   TestMemoryStateStorage_CleanupExpiredSagas
+--- PASS: TestMemoryStateStorage_CleanupExpiredSagas (0.00s)
+=== RUN   TestMemoryStateStorage_Close
+--- PASS: TestMemoryStateStorage_Close (0.00s)
+=== RUN   TestMemoryStateStorage_Concurrency
+--- PASS: TestMemoryStateStorage_Concurrency (0.00s)
+=== RUN   TestMemorySagaInstance_Methods
+--- PASS: TestMemorySagaInstance_Methods (0.00s)
+=== RUN   TestMemorySagaInstance_CompletedStepsCalculation
+--- PASS: TestMemorySagaInstance_CompletedStepsCalculation (0.00s)
+=== RUN   TestMemorySagaInstance_ActiveState
+=== RUN   TestMemorySagaInstance_ActiveState/running
+=== RUN   TestMemorySagaInstance_ActiveState/step_completed
+=== RUN   TestMemorySagaInstance_ActiveState/compensating
+--- PASS: TestMemorySagaInstance_ActiveState (0.00s)
+    --- PASS: TestMemorySagaInstance_ActiveState/running (0.00s)
+    --- PASS: TestMemorySagaInstance_ActiveState/step_completed (0.00s)
+    --- PASS: TestMemorySagaInstance_ActiveState/compensating (0.00s)
+=== RUN   TestMemorySagaInstance_TerminalState
+=== RUN   TestMemorySagaInstance_TerminalState/completed
+=== RUN   TestMemorySagaInstance_TerminalState/compensated
+=== RUN   TestMemorySagaInstance_TerminalState/failed
+=== RUN   TestMemorySagaInstance_TerminalState/cancelled
+=== RUN   TestMemorySagaInstance_TerminalState/timed_out
+--- PASS: TestMemorySagaInstance_TerminalState (0.00s)
+    --- PASS: TestMemorySagaInstance_TerminalState/completed (0.00s)
+    --- PASS: TestMemorySagaInstance_TerminalState/compensated (0.00s)
+    --- PASS: TestMemorySagaInstance_TerminalState/failed (0.00s)
+    --- PASS: TestMemorySagaInstance_TerminalState/cancelled (0.00s)
+    --- PASS: TestMemorySagaInstance_TerminalState/timed_out (0.00s)
+=== RUN   TestMemorySagaInstance_EndTimeForTimedOut
+--- PASS: TestMemorySagaInstance_EndTimeForTimedOut (0.00s)
+=== RUN   TestMemoryStateStorage_StepStateUpdate
+--- PASS: TestMemoryStateStorage_StepStateUpdate (0.00s)
+=== RUN   TestMemoryStateStorage_FilterByMetadata
+--- PASS: TestMemoryStateStorage_FilterByMetadata (0.00s)
+=== RUN   TestMemoryStateStorage_FilterByTimeRange
+--- PASS: TestMemoryStateStorage_FilterByTimeRange (0.00s)
+=== RUN   TestMemoryStateStorage_MaxCapacity
+--- PASS: TestMemoryStateStorage_MaxCapacity (0.00s)
+=== RUN   TestMemoryStateStorage_UpdateSagaState_ContextCancellation
+--- PASS: TestMemoryStateStorage_UpdateSagaState_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_GetActiveSagas_ContextCancellation
+--- PASS: TestMemoryStateStorage_GetActiveSagas_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_GetTimeoutSagas_ContextCancellation
+--- PASS: TestMemoryStateStorage_GetTimeoutSagas_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_CleanupExpiredSagas_ContextCancellation
+--- PASS: TestMemoryStateStorage_CleanupExpiredSagas_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_SaveStepState_ContextCancellation
+--- PASS: TestMemoryStateStorage_SaveStepState_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_GetStepStates_ContextCancellation
+--- PASS: TestMemoryStateStorage_GetStepStates_ContextCancellation (0.00s)
+=== RUN   TestMemoryStateStorage_ClosedOperations
+=== RUN   TestMemoryStateStorage_ClosedOperations/UpdateSagaState
+=== RUN   TestMemoryStateStorage_ClosedOperations/GetActiveSagas
+=== RUN   TestMemoryStateStorage_ClosedOperations/GetTimeoutSagas
+=== RUN   TestMemoryStateStorage_ClosedOperations/CleanupExpiredSagas
+=== RUN   TestMemoryStateStorage_ClosedOperations/SaveStepState
+=== RUN   TestMemoryStateStorage_ClosedOperations/GetStepStates
+--- PASS: TestMemoryStateStorage_ClosedOperations (0.00s)
+    --- PASS: TestMemoryStateStorage_ClosedOperations/UpdateSagaState (0.00s)
+    --- PASS: TestMemoryStateStorage_ClosedOperations/GetActiveSagas (0.00s)
+    --- PASS: TestMemoryStateStorage_ClosedOperations/GetTimeoutSagas (0.00s)
+    --- PASS: TestMemoryStateStorage_ClosedOperations/CleanupExpiredSagas (0.00s)
+    --- PASS: TestMemoryStateStorage_ClosedOperations/SaveStepState (0.00s)
+    --- PASS: TestMemoryStateStorage_ClosedOperations/GetStepStates (0.00s)
+=== RUN   TestMemoryStateStorage_UpdateSagaState_WithNilMetadata
+--- PASS: TestMemoryStateStorage_UpdateSagaState_WithNilMetadata (0.00s)
+=== RUN   TestMemoryStateStorage_GetStepStates_EmptySteps
+--- PASS: TestMemoryStateStorage_GetStepStates_EmptySteps (0.00s)
+=== RUN   TestMemoryStateStorage_GetTimeoutSagas_WithNonActiveStates
+--- PASS: TestMemoryStateStorage_GetTimeoutSagas_WithNonActiveStates (0.00s)
+=== RUN   TestMemoryStateStorage_GetTimeoutSagas_WithoutStartTime
+--- PASS: TestMemoryStateStorage_GetTimeoutSagas_WithoutStartTime (0.00s)
+=== RUN   TestMemoryStateStorage_FilterByMetadata_NoMatch
+--- PASS: TestMemoryStateStorage_FilterByMetadata_NoMatch (0.00s)
+=== RUN   TestMemoryStateStorage_FilterByMetadata_NoMetadata
+--- PASS: TestMemoryStateStorage_FilterByMetadata_NoMetadata (0.00s)
+=== RUN   TestMemoryStateStorage_StepStateConcurrency
+--- PASS: TestMemoryStateStorage_StepStateConcurrency (0.00s)
+=== RUN   TestMemoryStateStorage_SaveStepState_WithEmptySagaID
+--- PASS: TestMemoryStateStorage_SaveStepState_WithEmptySagaID (0.00s)
+=== RUN   TestMemoryStateStorage_DeleteSaga_RemovesStepStates
+--- PASS: TestMemoryStateStorage_DeleteSaga_RemovesStepStates (0.00s)
+=== RUN   TestDefaultPostgresConfig
+--- PASS: TestDefaultPostgresConfig (0.00s)
+=== RUN   TestPostgresConfigValidate
+=== RUN   TestPostgresConfigValidate/nil_config
+=== RUN   TestPostgresConfigValidate/empty_DSN
+=== RUN   TestPostgresConfigValidate/invalid_max_open_conns
+=== RUN   TestPostgresConfigValidate/negative_max_idle_conns
+=== RUN   TestPostgresConfigValidate/max_idle_exceeds_max_open
+=== RUN   TestPostgresConfigValidate/invalid_connection_timeout
+=== RUN   TestPostgresConfigValidate/invalid_query_timeout
+=== RUN   TestPostgresConfigValidate/negative_max_retries
+=== RUN   TestPostgresConfigValidate/retry_backoff_exceeds_max
+=== RUN   TestPostgresConfigValidate/valid_config
+--- PASS: TestPostgresConfigValidate (0.00s)
+    --- PASS: TestPostgresConfigValidate/nil_config (0.00s)
+    --- PASS: TestPostgresConfigValidate/empty_DSN (0.00s)
+    --- PASS: TestPostgresConfigValidate/invalid_max_open_conns (0.00s)
+    --- PASS: TestPostgresConfigValidate/negative_max_idle_conns (0.00s)
+    --- PASS: TestPostgresConfigValidate/max_idle_exceeds_max_open (0.00s)
+    --- PASS: TestPostgresConfigValidate/invalid_connection_timeout (0.00s)
+    --- PASS: TestPostgresConfigValidate/invalid_query_timeout (0.00s)
+    --- PASS: TestPostgresConfigValidate/negative_max_retries (0.00s)
+    --- PASS: TestPostgresConfigValidate/retry_backoff_exceeds_max (0.00s)
+    --- PASS: TestPostgresConfigValidate/valid_config (0.00s)
+=== RUN   TestPostgresConfigApplyDefaults
+--- PASS: TestPostgresConfigApplyDefaults (0.00s)
+=== RUN   TestPostgresConfigTableNames
+=== RUN   TestPostgresConfigTableNames/no_prefix
+=== RUN   TestPostgresConfigTableNames/with_prefix
+--- PASS: TestPostgresConfigTableNames (0.00s)
+    --- PASS: TestPostgresConfigTableNames/no_prefix (0.00s)
+    --- PASS: TestPostgresConfigTableNames/with_prefix (0.00s)
+=== RUN   TestPostgresIntegration_FullLifecycle
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_FullLifecycle (0.00s)
+=== RUN   TestPostgresIntegration_MultipleActiveSagas
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_MultipleActiveSagas (0.00s)
+=== RUN   TestPostgresIntegration_TransactionCommit
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_TransactionCommit (0.00s)
+=== RUN   TestPostgresIntegration_TransactionRollback
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_TransactionRollback (0.00s)
+=== RUN   TestPostgresIntegration_BatchOperations
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_BatchOperations (0.00s)
+=== RUN   TestPostgresIntegration_ConcurrentWrites
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_ConcurrentWrites (0.00s)
+=== RUN   TestPostgresIntegration_ConcurrentTransactions
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_ConcurrentTransactions (0.00s)
+=== RUN   TestPostgresIntegration_OptimisticLocking
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_OptimisticLocking (0.00s)
+=== RUN   TestPostgresIntegration_TimeoutDetection
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_TimeoutDetection (0.00s)
+=== RUN   TestPostgresIntegration_HealthCheck
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_HealthCheck (0.00s)
+=== RUN   TestPostgresIntegration_PoolStats
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_PoolStats (0.00s)
+=== RUN   TestPostgresIntegration_DataConsistency
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_DataConsistency (0.00s)
+=== RUN   TestPostgresIntegration_SchemaCreation
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_SchemaCreation (0.00s)
+=== RUN   TestPostgresIntegration_ConnectionFailure
+--- PASS: TestPostgresIntegration_ConnectionFailure (5.00s)
+=== RUN   TestPostgresIntegration_QueryTimeout
+    postgres_integration_test.go:42: Skipping PostgreSQL integration tests. Set POSTGRES_TEST_DSN to enable.
+--- SKIP: TestPostgresIntegration_QueryTimeout (0.00s)
+=== RUN   TestPostgresStateStorage_SaveSaga_Mock
+=== RUN   TestPostgresStateStorage_SaveSaga_Mock/successful_save_new_saga
+=== RUN   TestPostgresStateStorage_SaveSaga_Mock/database_error
+--- PASS: TestPostgresStateStorage_SaveSaga_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveSaga_Mock/successful_save_new_saga (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveSaga_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_GetSaga_Mock
+=== RUN   TestPostgresStateStorage_GetSaga_Mock/successful_get_saga
+=== RUN   TestPostgresStateStorage_GetSaga_Mock/saga_not_found
+=== RUN   TestPostgresStateStorage_GetSaga_Mock/database_error
+--- PASS: TestPostgresStateStorage_GetSaga_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_GetSaga_Mock/successful_get_saga (0.00s)
+    --- PASS: TestPostgresStateStorage_GetSaga_Mock/saga_not_found (0.00s)
+    --- PASS: TestPostgresStateStorage_GetSaga_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_UpdateSagaState_Mock
+=== RUN   TestPostgresStateStorage_UpdateSagaState_Mock/successful_update_without_metadata
+=== RUN   TestPostgresStateStorage_UpdateSagaState_Mock/successful_update_with_metadata
+=== RUN   TestPostgresStateStorage_UpdateSagaState_Mock/saga_not_found
+=== RUN   TestPostgresStateStorage_UpdateSagaState_Mock/database_error
+--- PASS: TestPostgresStateStorage_UpdateSagaState_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaState_Mock/successful_update_without_metadata (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaState_Mock/successful_update_with_metadata (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaState_Mock/saga_not_found (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaState_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_DeleteSaga_Mock
+=== RUN   TestPostgresStateStorage_DeleteSaga_Mock/successful_delete
+=== RUN   TestPostgresStateStorage_DeleteSaga_Mock/saga_not_found
+=== RUN   TestPostgresStateStorage_DeleteSaga_Mock/database_error
+--- PASS: TestPostgresStateStorage_DeleteSaga_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_DeleteSaga_Mock/successful_delete (0.00s)
+    --- PASS: TestPostgresStateStorage_DeleteSaga_Mock/saga_not_found (0.00s)
+    --- PASS: TestPostgresStateStorage_DeleteSaga_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_SaveStepState_Mock
+=== RUN   TestPostgresStateStorage_SaveStepState_Mock/successful_save
+=== RUN   TestPostgresStateStorage_SaveStepState_Mock/database_error
+--- PASS: TestPostgresStateStorage_SaveStepState_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveStepState_Mock/successful_save (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveStepState_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_GetStepStates_Mock
+=== RUN   TestPostgresStateStorage_GetStepStates_Mock/successful_get_with_steps
+=== RUN   TestPostgresStateStorage_GetStepStates_Mock/no_steps_found
+=== RUN   TestPostgresStateStorage_GetStepStates_Mock/database_error
+--- PASS: TestPostgresStateStorage_GetStepStates_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_GetStepStates_Mock/successful_get_with_steps (0.00s)
+    --- PASS: TestPostgresStateStorage_GetStepStates_Mock/no_steps_found (0.00s)
+    --- PASS: TestPostgresStateStorage_GetStepStates_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_GetActiveSagas_Mock
+=== RUN   TestPostgresStateStorage_GetActiveSagas_Mock/successful_get_with_filter_by_state
+=== RUN   TestPostgresStateStorage_GetActiveSagas_Mock/no_sagas_found
+=== RUN   TestPostgresStateStorage_GetActiveSagas_Mock/database_error
+--- PASS: TestPostgresStateStorage_GetActiveSagas_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_GetActiveSagas_Mock/successful_get_with_filter_by_state (0.00s)
+    --- PASS: TestPostgresStateStorage_GetActiveSagas_Mock/no_sagas_found (0.00s)
+    --- PASS: TestPostgresStateStorage_GetActiveSagas_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_GetTimeoutSagas_Mock
+=== RUN   TestPostgresStateStorage_GetTimeoutSagas_Mock/successful_get_timeout_sagas
+=== RUN   TestPostgresStateStorage_GetTimeoutSagas_Mock/no_timeout_sagas
+=== RUN   TestPostgresStateStorage_GetTimeoutSagas_Mock/database_error
+--- PASS: TestPostgresStateStorage_GetTimeoutSagas_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_GetTimeoutSagas_Mock/successful_get_timeout_sagas (0.00s)
+    --- PASS: TestPostgresStateStorage_GetTimeoutSagas_Mock/no_timeout_sagas (0.00s)
+    --- PASS: TestPostgresStateStorage_GetTimeoutSagas_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_BeginTransaction_Mock
+=== RUN   TestPostgresStateStorage_BeginTransaction_Mock/successful_begin_transaction
+=== RUN   TestPostgresStateStorage_BeginTransaction_Mock/database_error_on_begin
+--- PASS: TestPostgresStateStorage_BeginTransaction_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_BeginTransaction_Mock/successful_begin_transaction (0.00s)
+    --- PASS: TestPostgresStateStorage_BeginTransaction_Mock/database_error_on_begin (0.00s)
+=== RUN   TestSagaTransaction_Commit_Mock
+    postgres_mock_test.go:831: Transaction tests require fixing BeginTransaction implementation - context is cancelled too early
+--- SKIP: TestSagaTransaction_Commit_Mock (0.00s)
+=== RUN   TestSagaTransaction_Rollback_Mock
+=== RUN   TestSagaTransaction_Rollback_Mock/successful_rollback
+=== RUN   TestSagaTransaction_Rollback_Mock/rollback_error
+--- PASS: TestSagaTransaction_Rollback_Mock (0.00s)
+    --- PASS: TestSagaTransaction_Rollback_Mock/successful_rollback (0.00s)
+    --- PASS: TestSagaTransaction_Rollback_Mock/rollback_error (0.00s)
+=== RUN   TestSagaTransaction_SaveSaga_Mock
+    postgres_mock_test.go:882: Transaction tests require fixing BeginTransaction implementation - context is cancelled too early
+--- SKIP: TestSagaTransaction_SaveSaga_Mock (0.00s)
+=== RUN   TestPostgresStateStorage_HealthCheck_Mock
+=== RUN   TestPostgresStateStorage_HealthCheck_Mock/successful_health_check
+=== RUN   TestPostgresStateStorage_HealthCheck_Mock/ping_failure
+=== RUN   TestPostgresStateStorage_HealthCheck_Mock/query_failure
+--- PASS: TestPostgresStateStorage_HealthCheck_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_HealthCheck_Mock/successful_health_check (0.00s)
+    --- PASS: TestPostgresStateStorage_HealthCheck_Mock/ping_failure (0.00s)
+    --- PASS: TestPostgresStateStorage_HealthCheck_Mock/query_failure (0.00s)
+=== RUN   TestPostgresStateStorage_BatchSaveSagas_Mock
+    postgres_mock_test.go:944: Batch operations use transactions which have a context issue in BeginTransaction
+--- SKIP: TestPostgresStateStorage_BatchSaveSagas_Mock (0.00s)
+=== RUN   TestPostgresStateStorage_BatchSaveStepStates_Mock
+    postgres_mock_test.go:949: Batch operations use transactions which have a context issue in BeginTransaction
+--- SKIP: TestPostgresStateStorage_BatchSaveStepStates_Mock (0.00s)
+=== RUN   TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock
+=== RUN   TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock/successful_update_with_optimistic_lock
+=== RUN   TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock/version_mismatch
+=== RUN   TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock/saga_not_found
+--- PASS: TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock/successful_update_with_optimistic_lock (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock/version_mismatch (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaWithOptimisticLock_Mock/saga_not_found (0.00s)
+=== RUN   TestPostgresStateStorage_ContextCancellation_Mock
+=== RUN   TestPostgresStateStorage_ContextCancellation_Mock/SaveSaga_with_cancelled_context
+=== RUN   TestPostgresStateStorage_ContextCancellation_Mock/GetSaga_with_cancelled_context
+=== RUN   TestPostgresStateStorage_ContextCancellation_Mock/UpdateSagaState_with_cancelled_context
+=== RUN   TestPostgresStateStorage_ContextCancellation_Mock/DeleteSaga_with_cancelled_context
+--- PASS: TestPostgresStateStorage_ContextCancellation_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_ContextCancellation_Mock/SaveSaga_with_cancelled_context (0.00s)
+    --- PASS: TestPostgresStateStorage_ContextCancellation_Mock/GetSaga_with_cancelled_context (0.00s)
+    --- PASS: TestPostgresStateStorage_ContextCancellation_Mock/UpdateSagaState_with_cancelled_context (0.00s)
+    --- PASS: TestPostgresStateStorage_ContextCancellation_Mock/DeleteSaga_with_cancelled_context (0.00s)
+=== RUN   TestPostgresStateStorage_CountSagas_Mock
+=== RUN   TestPostgresStateStorage_CountSagas_Mock/successful_count
+=== RUN   TestPostgresStateStorage_CountSagas_Mock/count_with_filter
+=== RUN   TestPostgresStateStorage_CountSagas_Mock/database_error
+--- PASS: TestPostgresStateStorage_CountSagas_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_CountSagas_Mock/successful_count (0.00s)
+    --- PASS: TestPostgresStateStorage_CountSagas_Mock/count_with_filter (0.00s)
+    --- PASS: TestPostgresStateStorage_CountSagas_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_ListSagas_Mock
+=== RUN   TestPostgresStateStorage_ListSagas_Mock/successful_list_with_limit
+    postgres_mock_test.go:1257: ListSagas() error = failed to query active sagas: Query '
+        		SELECT 
+        			id, definition_id, name, description,
+        			state, current_step, total_steps,
+        			created_at, updated_at, started_at, completed_at, timed_out_at,
+        			initial_data, current_data, result_data,
+        			error, timeout_ms, retry_policy,
+        			metadata, trace_id, span_id, version
+        		FROM saga_instances
+        ORDER BY created_at DESC
+        LIMIT $1', arguments do not match: expected 2, but got 1 arguments, wantErr false
+    postgres_mock_test.go:1261: ListSagas() returned 0 sagas, want 2
+    postgres_mock_test.go:62: Unfulfilled expectations: there is a remaining expectation which was not matched: ExpectedQuery => expecting Query, QueryContext or QueryRow which:
+          - matches sql: 'SELECT'
+          - is with arguments:
+            0 - 5
+            1 - 0
+          - should return rows:
+            row 0 - [saga-1 def-1   1 1 3 2025-10-24 21:49:47.817408 +0800 CST m=+13.173752626 2025-10-24 21:49:47.817408 +0800 CST m=+13.173752626 2025-10-24 21:49:47.817408 +0800 CST m=+13.173752626 <nil> <nil> [123 125] [123 125] [123 125] [110 117 108 108] 30000 [110 117 108 108] [123 125] trace-123  1]
+            row 1 - [saga-2 def-2   3 3 3 2025-10-24 21:49:47.817408 +0800 CST m=+13.173752626 2025-10-24 21:49:47.817408 +0800 CST m=+13.173752626 2025-10-24 21:49:47.817408 +0800 CST m=+13.173752626 2025-10-24 21:49:47.817408 +0800 CST m=+13.173752626 <nil> [123 125] [123 125] [123 125] [110 117 108 108] 30000 [110 117 108 108] [123 125] trace-456  1]
+=== RUN   TestPostgresStateStorage_ListSagas_Mock/empty_result
+=== RUN   TestPostgresStateStorage_ListSagas_Mock/database_error
+--- FAIL: TestPostgresStateStorage_ListSagas_Mock (0.00s)
+    --- FAIL: TestPostgresStateStorage_ListSagas_Mock/successful_list_with_limit (0.00s)
+    --- PASS: TestPostgresStateStorage_ListSagas_Mock/empty_result (0.00s)
+    --- PASS: TestPostgresStateStorage_ListSagas_Mock/database_error (0.00s)
+=== RUN   TestPostgresStateStorage_FindByStatus_Mock
+=== RUN   TestPostgresStateStorage_FindByStatus_Mock/find_running_sagas
+    postgres_mock_test.go:1379: FindByStatus() error = failed to query active sagas: Query '
+        		SELECT 
+        			id, definition_id, name, description,
+        			state, current_step, total_steps,
+        			created_at, updated_at, started_at, completed_at, timed_out_at,
+        			initial_data, current_data, result_data,
+        			error, timeout_ms, retry_policy,
+        			metadata, trace_id, span_id, version
+        		FROM saga_instances
+        WHERE state IN ($1)
+        ORDER BY created_at DESC
+        LIMIT $2', arguments do not match: expected 3, but got 2 arguments, wantErr false
+    postgres_mock_test.go:1383: FindByStatus() returned 0 sagas, want 1
+    postgres_mock_test.go:62: Unfulfilled expectations: there is a remaining expectation which was not matched: ExpectedQuery => expecting Query, QueryContext or QueryRow which:
+          - matches sql: 'SELECT'
+          - is with arguments:
+            0 - 1
+            1 - 10
+            2 - 0
+          - should return rows:
+            row 0 - [saga-1 def-1   1 1 3 2025-10-24 21:49:47.817686 +0800 CST m=+13.174030793 2025-10-24 21:49:47.817686 +0800 CST m=+13.174030793 2025-10-24 21:49:47.817686 +0800 CST m=+13.174030793 <nil> <nil> [123 125] [123 125] [123 125] [110 117 108 108] 30000 [110 117 108 108] [123 125] trace-123  1]
+=== RUN   TestPostgresStateStorage_FindByStatus_Mock/find_multiple_states
+=== RUN   TestPostgresStateStorage_FindByStatus_Mock/no_sagas_found
+    postgres_mock_test.go:1379: FindByStatus() error = failed to query active sagas: Query '
+        		SELECT 
+        			id, definition_id, name, description,
+        			state, current_step, total_steps,
+        			created_at, updated_at, started_at, completed_at, timed_out_at,
+        			initial_data, current_data, result_data,
+        			error, timeout_ms, retry_policy,
+        			metadata, trace_id, span_id, version
+        		FROM saga_instances
+        WHERE state IN ($1)
+        ORDER BY created_at DESC
+        LIMIT $2', arguments do not match: expected 3, but got 2 arguments, wantErr false
+    postgres_mock_test.go:62: Unfulfilled expectations: there is a remaining expectation which was not matched: ExpectedQuery => expecting Query, QueryContext or QueryRow which:
+          - matches sql: 'SELECT'
+          - is with arguments:
+            0 - 6
+            1 - 10
+            2 - 0
+          - with empty rows
+--- FAIL: TestPostgresStateStorage_FindByStatus_Mock (0.00s)
+    --- FAIL: TestPostgresStateStorage_FindByStatus_Mock/find_running_sagas (0.00s)
+    --- PASS: TestPostgresStateStorage_FindByStatus_Mock/find_multiple_states (0.00s)
+    --- FAIL: TestPostgresStateStorage_FindByStatus_Mock/no_sagas_found (0.00s)
+=== RUN   TestPostgresStateStorage_FindByTimeRange_Mock
+=== RUN   TestPostgresStateStorage_FindByTimeRange_Mock/find_sagas_in_time_range
+    postgres_mock_test.go:1470: FindByTimeRange() error = failed to query active sagas: Query '
+        		SELECT 
+        			id, definition_id, name, description,
+        			state, current_step, total_steps,
+        			created_at, updated_at, started_at, completed_at, timed_out_at,
+        			initial_data, current_data, result_data,
+        			error, timeout_ms, retry_policy,
+        			metadata, trace_id, span_id, version
+        		FROM saga_instances
+        WHERE created_at >= $1 AND created_at <= $2
+        ORDER BY created_at DESC
+        LIMIT $3', arguments do not match: expected 4, but got 3 arguments, wantErr false
+    postgres_mock_test.go:1474: FindByTimeRange() returned 0 sagas, want 1
+    postgres_mock_test.go:62: Unfulfilled expectations: there is a remaining expectation which was not matched: ExpectedQuery => expecting Query, QueryContext or QueryRow which:
+          - matches sql: 'SELECT'
+          - is with arguments:
+            0 - {}
+            1 - {}
+            2 - 10
+            3 - 0
+          - should return rows:
+            row 0 - [saga-1 def-1   3 3 3 2025-10-24 20:49:47.817843 +0800 CST m=-3586.825812165 2025-10-24 20:49:47.817843 +0800 CST m=-3586.825812165 2025-10-24 20:49:47.817843 +0800 CST m=-3586.825812165 2025-10-24 20:49:47.817843 +0800 CST m=-3586.825812165 <nil> [123 125] [123 125] [123 125] [110 117 108 108] 30000 [110 117 108 108] [123 125] trace-123  1]
+=== RUN   TestPostgresStateStorage_FindByTimeRange_Mock/find_with_only_after_filter
+    postgres_mock_test.go:1470: FindByTimeRange() error = failed to query active sagas: Query '
+        		SELECT 
+        			id, definition_id, name, description,
+        			state, current_step, total_steps,
+        			created_at, updated_at, started_at, completed_at, timed_out_at,
+        			initial_data, current_data, result_data,
+        			error, timeout_ms, retry_policy,
+        			metadata, trace_id, span_id, version
+        		FROM saga_instances
+        WHERE created_at >= $1
+        ORDER BY created_at DESC
+        LIMIT $2', arguments do not match: expected 3, but got 2 arguments, wantErr false
+    postgres_mock_test.go:62: Unfulfilled expectations: there is a remaining expectation which was not matched: ExpectedQuery => expecting Query, QueryContext or QueryRow which:
+          - matches sql: 'SELECT'
+          - is with arguments:
+            0 - {}
+            1 - 5
+            2 - 0
+          - with empty rows
+--- FAIL: TestPostgresStateStorage_FindByTimeRange_Mock (0.00s)
+    --- FAIL: TestPostgresStateStorage_FindByTimeRange_Mock/find_sagas_in_time_range (0.00s)
+    --- FAIL: TestPostgresStateStorage_FindByTimeRange_Mock/find_with_only_after_filter (0.00s)
+=== RUN   TestSagaTransaction_CheckClosed
+--- PASS: TestSagaTransaction_CheckClosed (0.00s)
+=== RUN   TestSagaTransaction_CheckTimeout
+    postgres_mock_test.go:1522: Failed to begin transaction: failed to begin transaction: context deadline exceeded
+    postgres_mock_test.go:62: Unfulfilled expectations: there is a remaining expectation which was not matched: ExpectedBegin => expecting database transaction Begin
+--- FAIL: TestSagaTransaction_CheckTimeout (0.00s)
+=== RUN   TestSagaTransaction_Operations_OnClosedTx
+=== RUN   TestSagaTransaction_Operations_OnClosedTx/SaveSaga_on_closed_tx
+=== RUN   TestSagaTransaction_Operations_OnClosedTx/SaveStepState_on_closed_tx
+=== RUN   TestSagaTransaction_Operations_OnClosedTx/UpdateSagaState_on_closed_tx
+=== RUN   TestSagaTransaction_Operations_OnClosedTx/DeleteSaga_on_closed_tx
+=== RUN   TestSagaTransaction_Operations_OnClosedTx/Exec_on_closed_tx
+=== RUN   TestSagaTransaction_Operations_OnClosedTx/Commit_on_closed_tx
+--- PASS: TestSagaTransaction_Operations_OnClosedTx (0.00s)
+    --- PASS: TestSagaTransaction_Operations_OnClosedTx/SaveSaga_on_closed_tx (0.00s)
+    --- PASS: TestSagaTransaction_Operations_OnClosedTx/SaveStepState_on_closed_tx (0.00s)
+    --- PASS: TestSagaTransaction_Operations_OnClosedTx/UpdateSagaState_on_closed_tx (0.00s)
+    --- PASS: TestSagaTransaction_Operations_OnClosedTx/DeleteSaga_on_closed_tx (0.00s)
+    --- PASS: TestSagaTransaction_Operations_OnClosedTx/Exec_on_closed_tx (0.00s)
+    --- PASS: TestSagaTransaction_Operations_OnClosedTx/Commit_on_closed_tx (0.00s)
+=== RUN   TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock
+=== RUN   TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/successful_update_without_metadata
+=== RUN   TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/successful_update_with_metadata
+=== RUN   TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/version_mismatch
+=== RUN   TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/saga_not_found
+--- PASS: TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/successful_update_without_metadata (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/successful_update_with_metadata (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/version_mismatch (0.00s)
+    --- PASS: TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock_Mock/saga_not_found (0.00s)
+=== RUN   TestPostgresStateStorage_CleanupExpiredSagas_Mock
+--- PASS: TestPostgresStateStorage_CleanupExpiredSagas_Mock (0.00s)
+=== RUN   TestNewPostgresStateStorage_InvalidConfig
+=== RUN   TestNewPostgresStateStorage_InvalidConfig/empty_DSN
+=== RUN   TestNewPostgresStateStorage_InvalidConfig/invalid_max_connections
+--- PASS: TestNewPostgresStateStorage_InvalidConfig (0.00s)
+    --- PASS: TestNewPostgresStateStorage_InvalidConfig/empty_DSN (0.00s)
+    --- PASS: TestNewPostgresStateStorage_InvalidConfig/invalid_max_connections (0.00s)
+=== RUN   TestNewPostgresStateStorage_WithDefaults
+    postgres_test.go:83: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestNewPostgresStateStorage_WithDefaults (0.00s)
+=== RUN   TestPostgresStateStorage_Close
+    postgres_test.go:94: Requires PostgreSQL connection - testing close behavior requires valid connection
+--- SKIP: TestPostgresStateStorage_Close (0.00s)
+=== RUN   TestPostgresStateStorage_ConvertToSagaInstanceData
+--- PASS: TestPostgresStateStorage_ConvertToSagaInstanceData (0.00s)
+=== RUN   TestPostgresStateStorage_ConvertToSagaInstance
+--- PASS: TestPostgresStateStorage_ConvertToSagaInstance (0.00s)
+=== RUN   TestPostgresStateStorage_MarshalUnmarshalJSON
+=== RUN   TestPostgresStateStorage_MarshalUnmarshalJSON/nil_value
+=== RUN   TestPostgresStateStorage_MarshalUnmarshalJSON/simple_map
+=== RUN   TestPostgresStateStorage_MarshalUnmarshalJSON/nested_structure
+=== RUN   TestPostgresStateStorage_MarshalUnmarshalJSON/saga_error
+--- PASS: TestPostgresStateStorage_MarshalUnmarshalJSON (0.00s)
+    --- PASS: TestPostgresStateStorage_MarshalUnmarshalJSON/nil_value (0.00s)
+    --- PASS: TestPostgresStateStorage_MarshalUnmarshalJSON/simple_map (0.00s)
+    --- PASS: TestPostgresStateStorage_MarshalUnmarshalJSON/nested_structure (0.00s)
+    --- PASS: TestPostgresStateStorage_MarshalUnmarshalJSON/saga_error (0.00s)
+=== RUN   TestPostgresStateStorage_CheckClosed
+--- PASS: TestPostgresStateStorage_CheckClosed (0.00s)
+=== RUN   TestPostgresStateStorage_SaveSaga_InvalidInput
+=== RUN   TestPostgresStateStorage_SaveSaga_InvalidInput/nil_instance
+=== RUN   TestPostgresStateStorage_SaveSaga_InvalidInput/empty_saga_ID
+--- PASS: TestPostgresStateStorage_SaveSaga_InvalidInput (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveSaga_InvalidInput/nil_instance (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveSaga_InvalidInput/empty_saga_ID (0.00s)
+=== RUN   TestPostgresStateStorage_GetSaga_InvalidInput
+--- PASS: TestPostgresStateStorage_GetSaga_InvalidInput (0.00s)
+=== RUN   TestPostgresStateStorage_UpdateSagaState_InvalidInput
+--- PASS: TestPostgresStateStorage_UpdateSagaState_InvalidInput (0.00s)
+=== RUN   TestPostgresStateStorage_DeleteSaga_InvalidInput
+--- PASS: TestPostgresStateStorage_DeleteSaga_InvalidInput (0.00s)
+=== RUN   TestPostgresStateStorage_SaveStepState_InvalidInput
+=== RUN   TestPostgresStateStorage_SaveStepState_InvalidInput/empty_saga_ID
+=== RUN   TestPostgresStateStorage_SaveStepState_InvalidInput/nil_step
+--- PASS: TestPostgresStateStorage_SaveStepState_InvalidInput (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveStepState_InvalidInput/empty_saga_ID (0.00s)
+    --- PASS: TestPostgresStateStorage_SaveStepState_InvalidInput/nil_step (0.00s)
+=== RUN   TestPostgresStateStorage_GetStepStates_InvalidInput
+--- PASS: TestPostgresStateStorage_GetStepStates_InvalidInput (0.00s)
+=== RUN   TestPostgresSagaInstance_Methods
+--- PASS: TestPostgresSagaInstance_Methods (0.00s)
+=== RUN   TestPostgresStateStorage_SaveSaga_NotImplemented
+    postgres_test.go:547: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_SaveSaga_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_GetSaga_NotImplemented
+    postgres_test.go:553: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_GetSaga_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_UpdateSagaState_NotImplemented
+    postgres_test.go:559: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_UpdateSagaState_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_DeleteSaga_NotImplemented
+    postgres_test.go:565: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_DeleteSaga_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_GetActiveSagas_NotImplemented
+    postgres_test.go:571: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_GetActiveSagas_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_GetTimeoutSagas_NotImplemented
+    postgres_test.go:577: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_GetTimeoutSagas_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_SaveStepState_NotImplemented
+    postgres_test.go:583: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_SaveStepState_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_GetStepStates_NotImplemented
+    postgres_test.go:589: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_GetStepStates_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_CleanupExpiredSagas_NotImplemented
+    postgres_test.go:595: Requires PostgreSQL connection - will implement with actual DB
+--- SKIP: TestPostgresStateStorage_CleanupExpiredSagas_NotImplemented (0.00s)
+=== RUN   TestPostgresStateStorage_ImplementsInterface
+    postgres_test.go:603: PostgresStateStorage implements saga.StateStorage interface
+--- PASS: TestPostgresStateStorage_ImplementsInterface (0.00s)
+=== RUN   TestPostgresStateStorage_ValidationChecks
+=== RUN   TestPostgresStateStorage_ValidationChecks/SaveSaga_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/GetSaga_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/UpdateSagaState_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/DeleteSaga_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/GetActiveSagas_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/GetTimeoutSagas_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/SaveStepState_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/GetStepStates_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/CleanupExpiredSagas_with_closed_storage
+=== RUN   TestPostgresStateStorage_ValidationChecks/Close_already_closed_storage
+--- PASS: TestPostgresStateStorage_ValidationChecks (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/SaveSaga_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/GetSaga_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/UpdateSagaState_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/DeleteSaga_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/GetActiveSagas_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/GetTimeoutSagas_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/SaveStepState_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/GetStepStates_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/CleanupExpiredSagas_with_closed_storage (0.00s)
+    --- PASS: TestPostgresStateStorage_ValidationChecks/Close_already_closed_storage (0.00s)
+=== RUN   TestPostgresStateStorage_ContextCancellation
+=== RUN   TestPostgresStateStorage_ContextCancellation/SaveSaga_with_cancelled_context
+=== RUN   TestPostgresStateStorage_ContextCancellation/GetSaga_with_cancelled_context
+=== RUN   TestPostgresStateStorage_ContextCancellation/UpdateSagaState_with_cancelled_context
+--- PASS: TestPostgresStateStorage_ContextCancellation (0.00s)
+    --- PASS: TestPostgresStateStorage_ContextCancellation/SaveSaga_with_cancelled_context (0.00s)
+    --- PASS: TestPostgresStateStorage_ContextCancellation/GetSaga_with_cancelled_context (0.00s)
+    --- PASS: TestPostgresStateStorage_ContextCancellation/UpdateSagaState_with_cancelled_context (0.00s)
+=== RUN   TestPostgresStateStorage_InvalidInputs
+=== RUN   TestPostgresStateStorage_InvalidInputs/SaveSaga_with_nil_instance
+=== RUN   TestPostgresStateStorage_InvalidInputs/SaveSaga_with_empty_ID
+=== RUN   TestPostgresStateStorage_InvalidInputs/GetSaga_with_empty_ID
+=== RUN   TestPostgresStateStorage_InvalidInputs/UpdateSagaState_with_empty_ID
+=== RUN   TestPostgresStateStorage_InvalidInputs/DeleteSaga_with_empty_ID
+=== RUN   TestPostgresStateStorage_InvalidInputs/SaveStepState_with_empty_saga_ID
+=== RUN   TestPostgresStateStorage_InvalidInputs/SaveStepState_with_nil_step
+=== RUN   TestPostgresStateStorage_InvalidInputs/GetStepStates_with_empty_saga_ID
+--- PASS: TestPostgresStateStorage_InvalidInputs (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/SaveSaga_with_nil_instance (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/SaveSaga_with_empty_ID (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/GetSaga_with_empty_ID (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/UpdateSagaState_with_empty_ID (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/DeleteSaga_with_empty_ID (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/SaveStepState_with_empty_saga_ID (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/SaveStepState_with_nil_step (0.00s)
+    --- PASS: TestPostgresStateStorage_InvalidInputs/GetStepStates_with_empty_saga_ID (0.00s)
+=== RUN   TestPostgresStateStorage_BuildWhereClause
+=== RUN   TestPostgresStateStorage_BuildWhereClause/nil_filter
+=== RUN   TestPostgresStateStorage_BuildWhereClause/filter_by_single_state
+=== RUN   TestPostgresStateStorage_BuildWhereClause/filter_by_multiple_states
+=== RUN   TestPostgresStateStorage_BuildWhereClause/filter_by_definition_IDs
+=== RUN   TestPostgresStateStorage_BuildWhereClause/filter_by_time_range
+=== RUN   TestPostgresStateStorage_BuildWhereClause/filter_by_metadata
+=== RUN   TestPostgresStateStorage_BuildWhereClause/combined_filters
+--- PASS: TestPostgresStateStorage_BuildWhereClause (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildWhereClause/nil_filter (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildWhereClause/filter_by_single_state (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildWhereClause/filter_by_multiple_states (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildWhereClause/filter_by_definition_IDs (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildWhereClause/filter_by_time_range (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildWhereClause/filter_by_metadata (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildWhereClause/combined_filters (0.00s)
+=== RUN   TestPostgresStateStorage_BuildOrderByClause
+=== RUN   TestPostgresStateStorage_BuildOrderByClause/nil_filter_-_default_sorting
+=== RUN   TestPostgresStateStorage_BuildOrderByClause/sort_by_created_at_asc
+=== RUN   TestPostgresStateStorage_BuildOrderByClause/sort_by_updated_at_desc
+=== RUN   TestPostgresStateStorage_BuildOrderByClause/sort_by_state
+=== RUN   TestPostgresStateStorage_BuildOrderByClause/invalid_sort_field_-_fallback_to_created_at
+--- PASS: TestPostgresStateStorage_BuildOrderByClause (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildOrderByClause/nil_filter_-_default_sorting (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildOrderByClause/sort_by_created_at_asc (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildOrderByClause/sort_by_updated_at_desc (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildOrderByClause/sort_by_state (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildOrderByClause/invalid_sort_field_-_fallback_to_created_at (0.00s)
+=== RUN   TestPostgresStateStorage_BuildPaginationClause
+=== RUN   TestPostgresStateStorage_BuildPaginationClause/nil_filter
+=== RUN   TestPostgresStateStorage_BuildPaginationClause/with_limit_only
+=== RUN   TestPostgresStateStorage_BuildPaginationClause/with_limit_and_offset
+=== RUN   TestPostgresStateStorage_BuildPaginationClause/with_existing_args
+--- PASS: TestPostgresStateStorage_BuildPaginationClause (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildPaginationClause/nil_filter (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildPaginationClause/with_limit_only (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildPaginationClause/with_limit_and_offset (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildPaginationClause/with_existing_args (0.00s)
+=== RUN   TestPostgresStateStorage_SanitizeSortField
+=== RUN   TestPostgresStateStorage_SanitizeSortField/valid_field_-_id
+=== RUN   TestPostgresStateStorage_SanitizeSortField/valid_field_-_created_at
+=== RUN   TestPostgresStateStorage_SanitizeSortField/valid_field_-_state
+=== RUN   TestPostgresStateStorage_SanitizeSortField/invalid_field_-_SQL_injection_attempt
+=== RUN   TestPostgresStateStorage_SanitizeSortField/invalid_field_-_random_string
+--- PASS: TestPostgresStateStorage_SanitizeSortField (0.00s)
+    --- PASS: TestPostgresStateStorage_SanitizeSortField/valid_field_-_id (0.00s)
+    --- PASS: TestPostgresStateStorage_SanitizeSortField/valid_field_-_created_at (0.00s)
+    --- PASS: TestPostgresStateStorage_SanitizeSortField/valid_field_-_state (0.00s)
+    --- PASS: TestPostgresStateStorage_SanitizeSortField/invalid_field_-_SQL_injection_attempt (0.00s)
+    --- PASS: TestPostgresStateStorage_SanitizeSortField/invalid_field_-_random_string (0.00s)
+=== RUN   TestPostgresStateStorage_JoinStrings
+=== RUN   TestPostgresStateStorage_JoinStrings/empty_slice
+=== RUN   TestPostgresStateStorage_JoinStrings/single_element
+=== RUN   TestPostgresStateStorage_JoinStrings/multiple_elements
+=== RUN   TestPostgresStateStorage_JoinStrings/different_separator
+--- PASS: TestPostgresStateStorage_JoinStrings (0.00s)
+    --- PASS: TestPostgresStateStorage_JoinStrings/empty_slice (0.00s)
+    --- PASS: TestPostgresStateStorage_JoinStrings/single_element (0.00s)
+    --- PASS: TestPostgresStateStorage_JoinStrings/multiple_elements (0.00s)
+    --- PASS: TestPostgresStateStorage_JoinStrings/different_separator (0.00s)
+=== RUN   TestPostgresStateStorage_BuildListQuery
+=== RUN   TestPostgresStateStorage_BuildListQuery/empty_filter_-_default_query
+=== RUN   TestPostgresStateStorage_BuildListQuery/filter_with_states_and_pagination
+=== RUN   TestPostgresStateStorage_BuildListQuery/complex_filter_with_all_options
+--- PASS: TestPostgresStateStorage_BuildListQuery (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildListQuery/empty_filter_-_default_query (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildListQuery/filter_with_states_and_pagination (0.00s)
+    --- PASS: TestPostgresStateStorage_BuildListQuery/complex_filter_with_all_options (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionBasics
+    postgres_test.go:1281: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionBasics (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionCommit
+    postgres_test.go:1292: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionCommit (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionRollback
+    postgres_test.go:1303: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionRollback (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionTimeout
+    postgres_test.go:1313: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionTimeout (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionClosed
+    postgres_test.go:1323: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionClosed (0.00s)
+=== RUN   TestSagaTransaction_SaveSaga
+    postgres_test.go:1333: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestSagaTransaction_SaveSaga (0.00s)
+=== RUN   TestSagaTransaction_SaveStepState
+    postgres_test.go:1343: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestSagaTransaction_SaveStepState (0.00s)
+=== RUN   TestSagaTransaction_UpdateSagaState
+    postgres_test.go:1353: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestSagaTransaction_UpdateSagaState (0.00s)
+=== RUN   TestSagaTransaction_DeleteSaga
+    postgres_test.go:1363: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestSagaTransaction_DeleteSaga (0.00s)
+=== RUN   TestSagaTransaction_Exec
+    postgres_test.go:1373: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestSagaTransaction_Exec (0.00s)
+=== RUN   TestPostgresStateStorage_BatchSaveSagas
+    postgres_test.go:1383: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_BatchSaveSagas (0.00s)
+=== RUN   TestPostgresStateStorage_BatchSaveStepStates
+    postgres_test.go:1393: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_BatchSaveStepStates (0.00s)
+=== RUN   TestPostgresStateStorage_OptimisticLocking
+    postgres_test.go:1407: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_OptimisticLocking (0.00s)
+=== RUN   TestPostgresStateStorage_UpdateSagaWithOptimisticLock
+    postgres_test.go:1418: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_UpdateSagaWithOptimisticLock (0.00s)
+=== RUN   TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock
+    postgres_test.go:1429: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_UpdateSagaStateWithOptimisticLock (0.00s)
+=== RUN   TestPostgresStateStorage_ConcurrentTransactions
+    postgres_test.go:1444: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_ConcurrentTransactions (0.00s)
+=== RUN   TestPostgresStateStorage_ConcurrentOptimisticLocking
+    postgres_test.go:1456: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_ConcurrentOptimisticLocking (0.00s)
+=== RUN   TestPostgresStateStorage_ConcurrentMixedOperations
+    postgres_test.go:1468: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_ConcurrentMixedOperations (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionDeadlockHandling
+    postgres_test.go:1478: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionDeadlockHandling (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionScenario_OrderProcessing
+    postgres_test.go:1494: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionScenario_OrderProcessing (0.00s)
+=== RUN   TestPostgresStateStorage_TransactionScenario_Compensation
+    postgres_test.go:1506: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_TransactionScenario_Compensation (0.00s)
+=== RUN   TestPostgresStateStorage_VersionIncrement
+    postgres_test.go:1517: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_VersionIncrement (0.00s)
+=== RUN   TestPostgresStateStorage_HealthCheck
+    postgres_test.go:1526: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_HealthCheck (0.00s)
+=== RUN   TestPostgresStateStorage_HealthCheckWithRetry
+    postgres_test.go:1531: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_HealthCheckWithRetry (0.00s)
+=== RUN   TestPostgresStateStorage_GetPoolStats
+    postgres_test.go:1536: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_GetPoolStats (0.00s)
+=== RUN   TestPostgresStateStorage_DetectConnectionLeaks
+    postgres_test.go:1541: Requires PostgreSQL connection - will be tested in integration tests
+--- SKIP: TestPostgresStateStorage_DetectConnectionLeaks (0.00s)
+=== RUN   TestPostgresStateStorage_CalculateBackoff
+=== RUN   TestPostgresStateStorage_CalculateBackoff/first_retry
+=== RUN   TestPostgresStateStorage_CalculateBackoff/second_retry
+=== RUN   TestPostgresStateStorage_CalculateBackoff/third_retry
+=== RUN   TestPostgresStateStorage_CalculateBackoff/large_attempt_(should_be_capped)
+--- PASS: TestPostgresStateStorage_CalculateBackoff (0.00s)
+    --- PASS: TestPostgresStateStorage_CalculateBackoff/first_retry (0.00s)
+    --- PASS: TestPostgresStateStorage_CalculateBackoff/second_retry (0.00s)
+    --- PASS: TestPostgresStateStorage_CalculateBackoff/third_retry (0.00s)
+    --- PASS: TestPostgresStateStorage_CalculateBackoff/large_attempt_(should_be_capped) (0.00s)
+=== RUN   TestPostgresStateStorage_IsRetriableError
+=== RUN   TestPostgresStateStorage_IsRetriableError/nil_error
+=== RUN   TestPostgresStateStorage_IsRetriableError/context_canceled
+=== RUN   TestPostgresStateStorage_IsRetriableError/context_deadline_exceeded
+=== RUN   TestPostgresStateStorage_IsRetriableError/connection_refused
+=== RUN   TestPostgresStateStorage_IsRetriableError/connection_reset
+=== RUN   TestPostgresStateStorage_IsRetriableError/timeout_error
+=== RUN   TestPostgresStateStorage_IsRetriableError/deadlock_error
+=== RUN   TestPostgresStateStorage_IsRetriableError/too_many_connections
+=== RUN   TestPostgresStateStorage_IsRetriableError/serialization_error
+=== RUN   TestPostgresStateStorage_IsRetriableError/non-retriable_error
+--- PASS: TestPostgresStateStorage_IsRetriableError (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/nil_error (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/context_canceled (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/context_deadline_exceeded (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/connection_refused (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/connection_reset (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/timeout_error (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/deadlock_error (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/too_many_connections (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/serialization_error (0.00s)
+    --- PASS: TestPostgresStateStorage_IsRetriableError/non-retriable_error (0.00s)
+=== RUN   TestPostgresStateStorage_Contains
+=== RUN   TestPostgresStateStorage_Contains/exact_match
+=== RUN   TestPostgresStateStorage_Contains/substring_at_start
+=== RUN   TestPostgresStateStorage_Contains/substring_in_middle
+=== RUN   TestPostgresStateStorage_Contains/substring_at_end
+=== RUN   TestPostgresStateStorage_Contains/not_found
+=== RUN   TestPostgresStateStorage_Contains/empty_substring
+=== RUN   TestPostgresStateStorage_Contains/empty_string
+--- PASS: TestPostgresStateStorage_Contains (0.00s)
+    --- PASS: TestPostgresStateStorage_Contains/exact_match (0.00s)
+    --- PASS: TestPostgresStateStorage_Contains/substring_at_start (0.00s)
+    --- PASS: TestPostgresStateStorage_Contains/substring_in_middle (0.00s)
+    --- PASS: TestPostgresStateStorage_Contains/substring_at_end (0.00s)
+    --- PASS: TestPostgresStateStorage_Contains/not_found (0.00s)
+    --- PASS: TestPostgresStateStorage_Contains/empty_substring (0.00s)
+    --- PASS: TestPostgresStateStorage_Contains/empty_string (0.00s)
+=== RUN   TestPostgresStateStorage_HealthCheck_ClosedStorage
+--- PASS: TestPostgresStateStorage_HealthCheck_ClosedStorage (0.00s)
+=== RUN   TestPostgresStateStorage_GetPoolStats_ClosedStorage
+--- PASS: TestPostgresStateStorage_GetPoolStats_ClosedStorage (0.00s)
+=== RUN   TestPostgresStateStorage_DetectConnectionLeaks_ClosedStorage
+--- PASS: TestPostgresStateStorage_DetectConnectionLeaks_ClosedStorage (0.00s)
+=== RUN   TestNewClusterDiscovery
+--- PASS: TestNewClusterDiscovery (0.00s)
+=== RUN   TestNewClusterDiscovery_NotClusterMode
+--- PASS: TestNewClusterDiscovery_NotClusterMode (0.00s)
+=== RUN   TestNewClusterDiscovery_WrongClientType
+--- PASS: TestNewClusterDiscovery_WrongClientType (0.00s)
+=== RUN   TestParseClusterInfo
+=== RUN   TestParseClusterInfo/healthy_cluster
+=== RUN   TestParseClusterInfo/cluster_with_failures
+=== RUN   TestParseClusterInfo/partial_assignment
+--- PASS: TestParseClusterInfo (0.00s)
+    --- PASS: TestParseClusterInfo/healthy_cluster (0.00s)
+    --- PASS: TestParseClusterInfo/cluster_with_failures (0.00s)
+    --- PASS: TestParseClusterInfo/partial_assignment (0.00s)
+=== RUN   TestParseNodeLine
+=== RUN   TestParseNodeLine/master_node
+=== RUN   TestParseNodeLine/slave_node
+=== RUN   TestParseNodeLine/invalid_line
+--- PASS: TestParseNodeLine (0.00s)
+    --- PASS: TestParseNodeLine/master_node (0.00s)
+    --- PASS: TestParseNodeLine/slave_node (0.00s)
+    --- PASS: TestParseNodeLine/invalid_line (0.00s)
+=== RUN   TestParseNodeLine_SlotRanges
+--- PASS: TestParseNodeLine_SlotRanges (0.00s)
+=== RUN   TestCopyTopology
+--- PASS: TestCopyTopology (0.00s)
+=== RUN   TestCopyTopology_Nil
+--- PASS: TestCopyTopology_Nil (0.00s)
+=== RUN   TestGetLastTopology
+--- PASS: TestGetLastTopology (0.00s)
+=== RUN   TestStartDiscovery
+--- PASS: TestStartDiscovery (3.06s)
+=== RUN   TestStartDiscovery_Disabled
+--- PASS: TestStartDiscovery_Disabled (0.00s)
+=== RUN   TestGetMasterForSlot
+=== RUN   TestGetMasterForSlot/slot_in_first_master_range
+=== RUN   TestGetMasterForSlot/slot_in_second_master_range
+=== RUN   TestGetMasterForSlot/slot_not_assigned
+--- PASS: TestGetMasterForSlot (0.00s)
+    --- PASS: TestGetMasterForSlot/slot_in_first_master_range (0.00s)
+    --- PASS: TestGetMasterForSlot/slot_in_second_master_range (0.00s)
+    --- PASS: TestGetMasterForSlot/slot_not_assigned (0.00s)
+=== RUN   TestGetMasterForSlot_NoTopology
+--- PASS: TestGetMasterForSlot_NoTopology (0.00s)
+=== RUN   TestGetSlavesForMaster
+=== RUN   TestGetSlavesForMaster/master_with_two_slaves
+=== RUN   TestGetSlavesForMaster/master_with_one_slave
+=== RUN   TestGetSlavesForMaster/master_with_no_slaves
+--- PASS: TestGetSlavesForMaster (0.00s)
+    --- PASS: TestGetSlavesForMaster/master_with_two_slaves (0.00s)
+    --- PASS: TestGetSlavesForMaster/master_with_one_slave (0.00s)
+    --- PASS: TestGetSlavesForMaster/master_with_no_slaves (0.00s)
+=== RUN   TestGetSlavesForMaster_NoTopology
+--- PASS: TestGetSlavesForMaster_NoTopology (0.00s)
+=== RUN   TestDefaultRedisConfig
+--- PASS: TestDefaultRedisConfig (0.00s)
+=== RUN   TestRedisConfig_ApplyDefaults
+=== RUN   TestRedisConfig_ApplyDefaults/empty_config_gets_all_defaults
+=== RUN   TestRedisConfig_ApplyDefaults/partial_config_preserves_values
+=== RUN   TestRedisConfig_ApplyDefaults/max_idle_conns_defaults_to_pool_size
+--- PASS: TestRedisConfig_ApplyDefaults (0.00s)
+    --- PASS: TestRedisConfig_ApplyDefaults/empty_config_gets_all_defaults (0.00s)
+    --- PASS: TestRedisConfig_ApplyDefaults/partial_config_preserves_values (0.00s)
+    --- PASS: TestRedisConfig_ApplyDefaults/max_idle_conns_defaults_to_pool_size (0.00s)
+=== RUN   TestRedisConfig_Validate_Standalone
+=== RUN   TestRedisConfig_Validate_Standalone/valid_standalone_config
+=== RUN   TestRedisConfig_Validate_Standalone/valid_standalone_config_with_addrs
+=== RUN   TestRedisConfig_Validate_Standalone/missing_address
+=== RUN   TestRedisConfig_Validate_Standalone/invalid_DB_number
+=== RUN   TestRedisConfig_Validate_Standalone/nil_config
+--- PASS: TestRedisConfig_Validate_Standalone (0.00s)
+    --- PASS: TestRedisConfig_Validate_Standalone/valid_standalone_config (0.00s)
+    --- PASS: TestRedisConfig_Validate_Standalone/valid_standalone_config_with_addrs (0.00s)
+    --- PASS: TestRedisConfig_Validate_Standalone/missing_address (0.00s)
+    --- PASS: TestRedisConfig_Validate_Standalone/invalid_DB_number (0.00s)
+    --- PASS: TestRedisConfig_Validate_Standalone/nil_config (0.00s)
+=== RUN   TestRedisConfig_Validate_Cluster
+=== RUN   TestRedisConfig_Validate_Cluster/valid_cluster_config_with_addrs
+=== RUN   TestRedisConfig_Validate_Cluster/valid_cluster_config_with_addr
+=== RUN   TestRedisConfig_Validate_Cluster/missing_addresses
+--- PASS: TestRedisConfig_Validate_Cluster (0.00s)
+    --- PASS: TestRedisConfig_Validate_Cluster/valid_cluster_config_with_addrs (0.00s)
+    --- PASS: TestRedisConfig_Validate_Cluster/valid_cluster_config_with_addr (0.00s)
+    --- PASS: TestRedisConfig_Validate_Cluster/missing_addresses (0.00s)
+=== RUN   TestRedisConfig_Validate_Sentinel
+=== RUN   TestRedisConfig_Validate_Sentinel/valid_sentinel_config
+=== RUN   TestRedisConfig_Validate_Sentinel/missing_master_name
+=== RUN   TestRedisConfig_Validate_Sentinel/missing_sentinel_addresses
+--- PASS: TestRedisConfig_Validate_Sentinel (0.00s)
+    --- PASS: TestRedisConfig_Validate_Sentinel/valid_sentinel_config (0.00s)
+    --- PASS: TestRedisConfig_Validate_Sentinel/missing_master_name (0.00s)
+    --- PASS: TestRedisConfig_Validate_Sentinel/missing_sentinel_addresses (0.00s)
+=== RUN   TestRedisConfig_Validate_Timeouts
+=== RUN   TestRedisConfig_Validate_Timeouts/valid_timeouts
+=== RUN   TestRedisConfig_Validate_Timeouts/negative_dial_timeout
+=== RUN   TestRedisConfig_Validate_Timeouts/negative_read_timeout
+=== RUN   TestRedisConfig_Validate_Timeouts/negative_write_timeout
+--- PASS: TestRedisConfig_Validate_Timeouts (0.00s)
+    --- PASS: TestRedisConfig_Validate_Timeouts/valid_timeouts (0.00s)
+    --- PASS: TestRedisConfig_Validate_Timeouts/negative_dial_timeout (0.00s)
+    --- PASS: TestRedisConfig_Validate_Timeouts/negative_read_timeout (0.00s)
+    --- PASS: TestRedisConfig_Validate_Timeouts/negative_write_timeout (0.00s)
+=== RUN   TestRedisConfig_Validate_PoolConfig
+=== RUN   TestRedisConfig_Validate_PoolConfig/valid_pool_config
+=== RUN   TestRedisConfig_Validate_PoolConfig/negative_pool_size
+=== RUN   TestRedisConfig_Validate_PoolConfig/negative_min_idle_conns
+=== RUN   TestRedisConfig_Validate_PoolConfig/negative_max_idle_conns
+--- PASS: TestRedisConfig_Validate_PoolConfig (0.00s)
+    --- PASS: TestRedisConfig_Validate_PoolConfig/valid_pool_config (0.00s)
+    --- PASS: TestRedisConfig_Validate_PoolConfig/negative_pool_size (0.00s)
+    --- PASS: TestRedisConfig_Validate_PoolConfig/negative_min_idle_conns (0.00s)
+    --- PASS: TestRedisConfig_Validate_PoolConfig/negative_max_idle_conns (0.00s)
+=== RUN   TestRedisConfig_Validate_RetryConfig
+=== RUN   TestRedisConfig_Validate_RetryConfig/valid_retry_config
+=== RUN   TestRedisConfig_Validate_RetryConfig/negative_max_retries
+=== RUN   TestRedisConfig_Validate_RetryConfig/negative_min_retry_backoff
+=== RUN   TestRedisConfig_Validate_RetryConfig/min_retry_backoff_greater_than_max
+--- PASS: TestRedisConfig_Validate_RetryConfig (0.00s)
+    --- PASS: TestRedisConfig_Validate_RetryConfig/valid_retry_config (0.00s)
+    --- PASS: TestRedisConfig_Validate_RetryConfig/negative_max_retries (0.00s)
+    --- PASS: TestRedisConfig_Validate_RetryConfig/negative_min_retry_backoff (0.00s)
+    --- PASS: TestRedisConfig_Validate_RetryConfig/min_retry_backoff_greater_than_max (0.00s)
+=== RUN   TestRedisConfig_Validate_TTL
+=== RUN   TestRedisConfig_Validate_TTL/valid_TTL
+=== RUN   TestRedisConfig_Validate_TTL/zero_TTL_is_valid
+=== RUN   TestRedisConfig_Validate_TTL/negative_TTL
+--- PASS: TestRedisConfig_Validate_TTL (0.00s)
+    --- PASS: TestRedisConfig_Validate_TTL/valid_TTL (0.00s)
+    --- PASS: TestRedisConfig_Validate_TTL/zero_TTL_is_valid (0.00s)
+    --- PASS: TestRedisConfig_Validate_TTL/negative_TTL (0.00s)
+=== RUN   TestRedisConfig_ValidateTLSConfig
+=== RUN   TestRedisConfig_ValidateTLSConfig/valid_TLS_config_with_all_files
+=== RUN   TestRedisConfig_ValidateTLSConfig/valid_TLS_config_with_only_CA
+=== RUN   TestRedisConfig_ValidateTLSConfig/TLS_disabled
+=== RUN   TestRedisConfig_ValidateTLSConfig/cert_without_key
+=== RUN   TestRedisConfig_ValidateTLSConfig/key_without_cert
+=== RUN   TestRedisConfig_ValidateTLSConfig/non-existent_cert_file
+=== RUN   TestRedisConfig_ValidateTLSConfig/non-existent_key_file
+=== RUN   TestRedisConfig_ValidateTLSConfig/non-existent_CA_file
+--- PASS: TestRedisConfig_ValidateTLSConfig (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/valid_TLS_config_with_all_files (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/valid_TLS_config_with_only_CA (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/TLS_disabled (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/cert_without_key (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/key_without_cert (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/non-existent_cert_file (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/non-existent_key_file (0.00s)
+    --- PASS: TestRedisConfig_ValidateTLSConfig/non-existent_CA_file (0.00s)
+=== RUN   TestRedisConfig_BuildTLSConfig
+=== RUN   TestRedisConfig_BuildTLSConfig/no_TLS_config
+=== RUN   TestRedisConfig_BuildTLSConfig/TLS_disabled
+=== RUN   TestRedisConfig_BuildTLSConfig/TLS_enabled_with_insecure_skip_verify
+=== RUN   TestRedisConfig_BuildTLSConfig/TLS_enabled_with_server_name
+=== RUN   TestRedisConfig_BuildTLSConfig/TLS_with_client_certificate
+=== RUN   TestRedisConfig_BuildTLSConfig/TLS_with_CA_certificate
+=== RUN   TestRedisConfig_BuildTLSConfig/TLS_with_all_certificates
+=== RUN   TestRedisConfig_BuildTLSConfig/TLS_with_invalid_cert_file
+--- PASS: TestRedisConfig_BuildTLSConfig (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/no_TLS_config (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/TLS_disabled (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/TLS_enabled_with_insecure_skip_verify (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/TLS_enabled_with_server_name (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/TLS_with_client_certificate (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/TLS_with_CA_certificate (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/TLS_with_all_certificates (0.00s)
+    --- PASS: TestRedisConfig_BuildTLSConfig/TLS_with_invalid_cert_file (0.00s)
+=== RUN   TestNewRedisConnection_InvalidConfig
+=== RUN   TestNewRedisConnection_InvalidConfig/nil_config
+=== RUN   TestNewRedisConnection_InvalidConfig/invalid_standalone_config
+=== RUN   TestNewRedisConnection_InvalidConfig/invalid_DB_number
+--- PASS: TestNewRedisConnection_InvalidConfig (0.00s)
+    --- PASS: TestNewRedisConnection_InvalidConfig/nil_config (0.00s)
+    --- PASS: TestNewRedisConnection_InvalidConfig/invalid_standalone_config (0.00s)
+    --- PASS: TestNewRedisConnection_InvalidConfig/invalid_DB_number (0.00s)
+=== RUN   TestNewRedisConnection_ValidConfig
+=== RUN   TestNewRedisConnection_ValidConfig/standalone_mode
+=== RUN   TestNewRedisConnection_ValidConfig/standalone_mode_with_addrs
+=== RUN   TestNewRedisConnection_ValidConfig/cluster_mode
+=== RUN   TestNewRedisConnection_ValidConfig/cluster_mode_with_addr_string
+=== RUN   TestNewRedisConnection_ValidConfig/sentinel_mode
+--- PASS: TestNewRedisConnection_ValidConfig (0.00s)
+    --- PASS: TestNewRedisConnection_ValidConfig/standalone_mode (0.00s)
+    --- PASS: TestNewRedisConnection_ValidConfig/standalone_mode_with_addrs (0.00s)
+    --- PASS: TestNewRedisConnection_ValidConfig/cluster_mode (0.00s)
+    --- PASS: TestNewRedisConnection_ValidConfig/cluster_mode_with_addr_string (0.00s)
+    --- PASS: TestNewRedisConnection_ValidConfig/sentinel_mode (0.00s)
+=== RUN   TestNewRedisConnection_DefaultsApplied
+--- PASS: TestNewRedisConnection_DefaultsApplied (0.00s)
+=== RUN   TestNewRedisConnectionWithRetry_Success
+    redis_connection_test.go:171: Requires running Redis instance
+--- SKIP: TestNewRedisConnectionWithRetry_Success (0.00s)
+=== RUN   TestNewRedisConnectionWithRetry_Failure
+--- PASS: TestNewRedisConnectionWithRetry_Failure (0.17s)
+=== RUN   TestNewRedisConnectionWithRetry_ContextCancelled
+--- PASS: TestNewRedisConnectionWithRetry_ContextCancelled (0.00s)
+=== RUN   TestRedisConnection_GetClient
+--- PASS: TestRedisConnection_GetClient (0.00s)
+=== RUN   TestRedisConnection_Close
+--- PASS: TestRedisConnection_Close (0.00s)
+=== RUN   TestRedisConnection_IsClosed
+--- PASS: TestRedisConnection_IsClosed (0.00s)
+=== RUN   TestRedisConnection_GetConfig
+=== RUN   TestRedisConnection_GetConfig/basic_config_without_password
+=== RUN   TestRedisConnection_GetConfig/config_with_password
+=== RUN   TestRedisConnection_GetConfig/config_with_empty_password
+=== RUN   TestRedisConnection_GetConfig/config_with_TLS
+--- PASS: TestRedisConnection_GetConfig (0.00s)
+    --- PASS: TestRedisConnection_GetConfig/basic_config_without_password (0.00s)
+    --- PASS: TestRedisConnection_GetConfig/config_with_password (0.00s)
+    --- PASS: TestRedisConnection_GetConfig/config_with_empty_password (0.00s)
+    --- PASS: TestRedisConnection_GetConfig/config_with_TLS (0.00s)
+=== RUN   TestRedisConnection_Ping
+    redis_connection_test.go:364: Requires running Redis instance
+--- SKIP: TestRedisConnection_Ping (0.00s)
+=== RUN   TestRedisConnection_Ping_Timeout
+--- PASS: TestRedisConnection_Ping_Timeout (0.08s)
+=== RUN   TestRedisConnection_HealthCheck
+    redis_connection_test.go:410: Requires running Redis instance
+--- SKIP: TestRedisConnection_HealthCheck (0.00s)
+=== RUN   TestRedisConnection_CreateClient_StandaloneMode
+=== RUN   TestRedisConnection_CreateClient_StandaloneMode/with_addr
+=== RUN   TestRedisConnection_CreateClient_StandaloneMode/with_addrs
+=== RUN   TestRedisConnection_CreateClient_StandaloneMode/with_authentication
+=== RUN   TestRedisConnection_CreateClient_StandaloneMode/with_custom_pool_settings
+--- PASS: TestRedisConnection_CreateClient_StandaloneMode (0.00s)
+    --- PASS: TestRedisConnection_CreateClient_StandaloneMode/with_addr (0.00s)
+    --- PASS: TestRedisConnection_CreateClient_StandaloneMode/with_addrs (0.00s)
+    --- PASS: TestRedisConnection_CreateClient_StandaloneMode/with_authentication (0.00s)
+    --- PASS: TestRedisConnection_CreateClient_StandaloneMode/with_custom_pool_settings (0.00s)
+=== RUN   TestRedisConnection_CreateClient_ClusterMode
+=== RUN   TestRedisConnection_CreateClient_ClusterMode/with_addrs_list
+=== RUN   TestRedisConnection_CreateClient_ClusterMode/with_comma-separated_addr
+--- PASS: TestRedisConnection_CreateClient_ClusterMode (0.00s)
+    --- PASS: TestRedisConnection_CreateClient_ClusterMode/with_addrs_list (0.00s)
+    --- PASS: TestRedisConnection_CreateClient_ClusterMode/with_comma-separated_addr (0.00s)
+=== RUN   TestRedisConnection_CreateClient_SentinelMode
+--- PASS: TestRedisConnection_CreateClient_SentinelMode (0.00s)
+=== RUN   TestRedisConnection_CreateClient_UnsupportedMode
+--- PASS: TestRedisConnection_CreateClient_UnsupportedMode (0.00s)
+=== RUN   TestCleanupPolicy_Validate
+=== RUN   TestCleanupPolicy_Validate/nil_policy
+=== RUN   TestCleanupPolicy_Validate/valid_default_policy
+=== RUN   TestCleanupPolicy_Validate/negative_max_age
+=== RUN   TestCleanupPolicy_Validate/negative_max_count
+=== RUN   TestCleanupPolicy_Validate/zero_batch_size
+=== RUN   TestCleanupPolicy_Validate/negative_cleanup_interval
+=== RUN   TestCleanupPolicy_Validate/non-terminal_state_in_states_to_clean
+=== RUN   TestCleanupPolicy_Validate/valid_with_specific_states
+--- PASS: TestCleanupPolicy_Validate (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/nil_policy (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/valid_default_policy (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/negative_max_age (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/negative_max_count (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/zero_batch_size (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/negative_cleanup_interval (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/non-terminal_state_in_states_to_clean (0.00s)
+    --- PASS: TestCleanupPolicy_Validate/valid_with_specific_states (0.00s)
+=== RUN   TestDefaultCleanupPolicy
+--- PASS: TestDefaultCleanupPolicy (0.00s)
+=== RUN   TestCleanupStats
+--- PASS: TestCleanupStats (0.01s)
+=== RUN   TestExpirationManager_NewExpirationManager
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_NewExpirationManager (0.10s)
+=== RUN   TestExpirationManager_StartStop
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_StartStop (0.09s)
+=== RUN   TestExpirationManager_RunCleanup_AgeBased
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_RunCleanup_AgeBased (0.11s)
+=== RUN   TestExpirationManager_RunCleanup_CountBased
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_RunCleanup_CountBased (0.09s)
+=== RUN   TestExpirationManager_RunCleanup_MultipleStates
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_RunCleanup_MultipleStates (0.09s)
+=== RUN   TestExpirationManager_RunCleanup_SpecificStates
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_RunCleanup_SpecificStates (0.10s)
+=== RUN   TestExpirationManager_ConcurrentCleanup
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_ConcurrentCleanup (0.11s)
+=== RUN   TestRedisStateStorage_SetTTL
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_SetTTL (0.12s)
+=== RUN   TestRedisStateStorage_GetTTL
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_GetTTL (0.09s)
+=== RUN   TestRedisStateStorage_RefreshTTL
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_RefreshTTL (0.09s)
+=== RUN   TestRedisStateStorage_CleanupExpiredByTTL
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_CleanupExpiredByTTL (0.05s)
+=== RUN   TestExpirationManager_AutomaticCleanup
+    redis_expiration_test.go:675: Redis not available for testing: failed to ping redis: redis ping failed: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExpirationManager_AutomaticCleanup (0.11s)
+=== RUN   TestDefaultHealthCheckConfig
+--- PASS: TestDefaultHealthCheckConfig (0.00s)
+=== RUN   TestRedisHealthChecker_GetName
+--- PASS: TestRedisHealthChecker_GetName (0.00s)
+=== RUN   TestRedisHealthChecker_CheckHealth_Disabled
+--- PASS: TestRedisHealthChecker_CheckHealth_Disabled (0.00s)
+=== RUN   TestRedisHealthChecker_GetLastStatus
+--- PASS: TestRedisHealthChecker_GetLastStatus (0.00s)
+=== RUN   TestParseRedisInfo
+=== RUN   TestParseRedisInfo/empty_input
+=== RUN   TestParseRedisInfo/single_key-value
+=== RUN   TestParseRedisInfo/multiple_key-values
+=== RUN   TestParseRedisInfo/with_comments
+=== RUN   TestParseRedisInfo/with_newlines_only
+--- PASS: TestParseRedisInfo (0.00s)
+    --- PASS: TestParseRedisInfo/empty_input (0.00s)
+    --- PASS: TestParseRedisInfo/single_key-value (0.00s)
+    --- PASS: TestParseRedisInfo/multiple_key-values (0.00s)
+    --- PASS: TestParseRedisInfo/with_comments (0.00s)
+    --- PASS: TestParseRedisInfo/with_newlines_only (0.00s)
+=== RUN   TestParseRedisInfoInt
+=== RUN   TestParseRedisInfoInt/valid_integer
+=== RUN   TestParseRedisInfoInt/zero_value
+=== RUN   TestParseRedisInfoInt/large_number
+=== RUN   TestParseRedisInfoInt/non-existent_key
+=== RUN   TestParseRedisInfoInt/non-numeric_value
+=== RUN   TestParseRedisInfoInt/value_with_suffix
+--- PASS: TestParseRedisInfoInt (0.00s)
+    --- PASS: TestParseRedisInfoInt/valid_integer (0.00s)
+    --- PASS: TestParseRedisInfoInt/zero_value (0.00s)
+    --- PASS: TestParseRedisInfoInt/large_number (0.00s)
+    --- PASS: TestParseRedisInfoInt/non-existent_key (0.00s)
+    --- PASS: TestParseRedisInfoInt/non-numeric_value (0.00s)
+    --- PASS: TestParseRedisInfoInt/value_with_suffix (0.00s)
+=== RUN   TestHealthDetails_Warnings
+=== RUN   TestHealthDetails_Warnings/high_memory_usage
+=== RUN   TestHealthDetails_Warnings/very_high_memory_usage
+=== RUN   TestHealthDetails_Warnings/low_hit_rate_but_insufficient_operations
+=== RUN   TestHealthDetails_Warnings/normal_memory_and_good_hit_rate
+--- PASS: TestHealthDetails_Warnings (0.00s)
+    --- PASS: TestHealthDetails_Warnings/high_memory_usage (0.00s)
+    --- PASS: TestHealthDetails_Warnings/very_high_memory_usage (0.00s)
+    --- PASS: TestHealthDetails_Warnings/low_hit_rate_but_insufficient_operations (0.00s)
+    --- PASS: TestHealthDetails_Warnings/normal_memory_and_good_hit_rate (0.00s)
+=== RUN   TestRedisHealthChecker_StopPeriodicCheck
+--- PASS: TestRedisHealthChecker_StopPeriodicCheck (0.00s)
+=== RUN   TestRedisHealthChecker_PeriodicCheck_DisabledByConfig
+--- PASS: TestRedisHealthChecker_PeriodicCheck_DisabledByConfig (0.00s)
+=== RUN   TestRedisHealthChecker_PeriodicCheck_ZeroInterval
+--- PASS: TestRedisHealthChecker_PeriodicCheck_ZeroInterval (0.00s)
+=== RUN   TestRedisIntegration_FullLifecycle
+    redis_integration_test.go:37: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_FullLifecycle (0.10s)
+=== RUN   TestRedisIntegration_MultipleActiveSagas
+    redis_integration_test.go:141: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_MultipleActiveSagas (0.09s)
+=== RUN   TestRedisIntegration_TimeoutDetection
+    redis_integration_test.go:217: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_TimeoutDetection (0.08s)
+=== RUN   TestRedisIntegration_Cleanup
+    redis_integration_test.go:275: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_Cleanup (0.09s)
+=== RUN   TestRedisIntegration_ConcurrentWrites
+    redis_integration_test.go:338: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_ConcurrentWrites (0.04s)
+=== RUN   TestRedisIntegration_ConcurrentReadsWrites
+    redis_integration_test.go:400: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_ConcurrentReadsWrites (0.04s)
+=== RUN   TestRedisIntegration_NetworkFailure
+    redis_integration_test.go:495: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_NetworkFailure (0.10s)
+=== RUN   TestRedisIntegration_DataConsistency
+    redis_integration_test.go:534: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_DataConsistency (0.09s)
+=== RUN   TestRedisIntegration_HealthCheck
+    redis_integration_test.go:608: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_HealthCheck (0.06s)
+=== RUN   TestRedisIntegration_MetricsCollection
+    redis_integration_test.go:635: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_MetricsCollection (0.06s)
+=== RUN   TestRedisIntegration_ConnectionResilience
+    redis_integration_test.go:673: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_ConnectionResilience (0.07s)
+=== RUN   TestRedisIntegration_LargePayload
+    redis_integration_test.go:711: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_LargePayload (0.06s)
+=== RUN   TestRedisIntegration_ConnectionFailure
+--- PASS: TestRedisIntegration_ConnectionFailure (0.28s)
+=== RUN   TestRedisIntegration_TTLExpiration
+    redis_integration_test.go:780: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_TTLExpiration (0.12s)
+=== RUN   TestRedisIntegration_StateIndexConsistency
+    redis_integration_test.go:820: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_StateIndexConsistency (0.07s)
+=== RUN   TestRedisIntegration_FilterByCreatedTime
+    redis_integration_test.go:879: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_FilterByCreatedTime (0.12s)
+=== RUN   TestRedisIntegration_FilterByMetadata
+    redis_integration_test.go:941: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisIntegration_FilterByMetadata (0.07s)
+=== RUN   TestDefaultRedisMetricsConfig
+--- PASS: TestDefaultRedisMetricsConfig (0.00s)
+=== RUN   TestNewRedisStorageMetrics
+--- PASS: TestNewRedisStorageMetrics (0.00s)
+=== RUN   TestNewRedisStorageMetrics_NilConfig
+--- PASS: TestNewRedisStorageMetrics_NilConfig (0.00s)
+=== RUN   TestRedisStorageMetrics_RecordOperation
+=== RUN   TestRedisStorageMetrics_RecordOperation/successful_operation
+=== RUN   TestRedisStorageMetrics_RecordOperation/failed_operation
+=== RUN   TestRedisStorageMetrics_RecordOperation/timeout_operation
+=== RUN   TestRedisStorageMetrics_RecordOperation/canceled_operation
+--- PASS: TestRedisStorageMetrics_RecordOperation (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordOperation/successful_operation (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordOperation/failed_operation (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordOperation/timeout_operation (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordOperation/canceled_operation (0.00s)
+=== RUN   TestRedisStorageMetrics_RecordSlowQuery
+=== RUN   TestRedisStorageMetrics_RecordSlowQuery/fast_query
+=== RUN   TestRedisStorageMetrics_RecordSlowQuery/slow_query
+=== RUN   TestRedisStorageMetrics_RecordSlowQuery/exactly_at_threshold
+--- PASS: TestRedisStorageMetrics_RecordSlowQuery (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordSlowQuery/fast_query (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordSlowQuery/slow_query (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordSlowQuery/exactly_at_threshold (0.00s)
+=== RUN   TestRedisStorageMetrics_RecordSagaOperation
+--- PASS: TestRedisStorageMetrics_RecordSagaOperation (0.00s)
+=== RUN   TestRedisStorageMetrics_RecordStepOperation
+--- PASS: TestRedisStorageMetrics_RecordStepOperation (0.00s)
+=== RUN   TestRedisStorageMetrics_RecordHealthCheck
+=== RUN   TestRedisStorageMetrics_RecordHealthCheck/healthy_check
+=== RUN   TestRedisStorageMetrics_RecordHealthCheck/unhealthy_check
+--- PASS: TestRedisStorageMetrics_RecordHealthCheck (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordHealthCheck/healthy_check (0.00s)
+    --- PASS: TestRedisStorageMetrics_RecordHealthCheck/unhealthy_check (0.00s)
+=== RUN   TestRedisStorageMetrics_UpdatePoolMetrics
+--- PASS: TestRedisStorageMetrics_UpdatePoolMetrics (0.00s)
+=== RUN   TestRedisStorageMetrics_UpdatePoolMetrics_Nil
+--- PASS: TestRedisStorageMetrics_UpdatePoolMetrics_Nil (0.00s)
+=== RUN   TestRedisStorageMetrics_UpdateRedisInfo
+--- PASS: TestRedisStorageMetrics_UpdateRedisInfo (0.00s)
+=== RUN   TestRedisStorageMetrics_UpdateRedisInfo_Nil
+--- PASS: TestRedisStorageMetrics_UpdateRedisInfo_Nil (0.00s)
+=== RUN   TestRedisStorageMetrics_DisableEnable
+--- PASS: TestRedisStorageMetrics_DisableEnable (0.00s)
+=== RUN   TestRedisStorageMetrics_ConcurrentUpdates
+--- PASS: TestRedisStorageMetrics_ConcurrentUpdates (0.00s)
+=== RUN   TestNewPoolMonitor
+--- PASS: TestNewPoolMonitor (0.00s)
+=== RUN   TestCollectStats
+--- PASS: TestCollectStats (0.00s)
+=== RUN   TestGetLastStats
+--- PASS: TestGetLastStats (0.00s)
+=== RUN   TestCheckHealth
+--- PASS: TestCheckHealth (0.00s)
+=== RUN   TestHealthThresholds
+--- PASS: TestHealthThresholds (0.00s)
+=== RUN   TestGetUtilizationMetrics
+--- PASS: TestGetUtilizationMetrics (0.00s)
+=== RUN   TestStartMonitoring
+--- PASS: TestStartMonitoring (0.30s)
+=== RUN   TestStartMonitoring_MetricsDisabled
+--- PASS: TestStartMonitoring_MetricsDisabled (0.00s)
+=== RUN   TestDefaultPoolHealthThresholds
+=== RUN   TestDefaultPoolHealthThresholds/MaxUtilization
+=== RUN   TestDefaultPoolHealthThresholds/MinIdleRatio
+=== RUN   TestDefaultPoolHealthThresholds/MaxMissRate
+=== RUN   TestDefaultPoolHealthThresholds/MaxTimeoutRate
+--- PASS: TestDefaultPoolHealthThresholds (0.00s)
+    --- PASS: TestDefaultPoolHealthThresholds/MaxUtilization (0.00s)
+    --- PASS: TestDefaultPoolHealthThresholds/MinIdleRatio (0.00s)
+    --- PASS: TestDefaultPoolHealthThresholds/MaxMissRate (0.00s)
+    --- PASS: TestDefaultPoolHealthThresholds/MaxTimeoutRate (0.00s)
+=== RUN   TestCollectStats_CancelledContext
+--- PASS: TestCollectStats_CancelledContext (0.00s)
+=== RUN   TestCheckHealth_CancelledContext
+--- PASS: TestCheckHealth_CancelledContext (0.00s)
+=== RUN   TestPoolHealthStatus_HighUtilization
+    redis_pool_test.go:443: Pool is healthy, warnings: []
+--- PASS: TestPoolHealthStatus_HighUtilization (0.00s)
+=== RUN   TestSerializeSagaInstance
+--- PASS: TestSerializeSagaInstance (0.00s)
+=== RUN   TestSerializeSagaInstanceNil
+--- PASS: TestSerializeSagaInstanceNil (0.00s)
+=== RUN   TestDeserializeSagaInstanceEmpty
+--- PASS: TestDeserializeSagaInstanceEmpty (0.00s)
+=== RUN   TestSerializeWithCompression
+--- PASS: TestSerializeWithCompression (0.00s)
+=== RUN   TestSerializeWithoutCompression
+--- PASS: TestSerializeWithoutCompression (0.00s)
+=== RUN   TestSerializeWithPrettyPrint
+--- PASS: TestSerializeWithPrettyPrint (0.00s)
+=== RUN   TestSerializeStepState
+--- PASS: TestSerializeStepState (0.00s)
+=== RUN   TestSerializeStepStateNil
+--- PASS: TestSerializeStepStateNil (0.00s)
+=== RUN   TestDeserializeStepStateEmpty
+--- PASS: TestDeserializeStepStateEmpty (0.00s)
+=== RUN   TestVersionCompatibility
+=== RUN   TestVersionCompatibility/exact_match
+=== RUN   TestVersionCompatibility/minor_version
+=== RUN   TestVersionCompatibility/patch_version
+=== RUN   TestVersionCompatibility/major_version
+=== RUN   TestVersionCompatibility/invalid_version
+=== RUN   TestVersionCompatibility/empty_version
+--- PASS: TestVersionCompatibility (0.00s)
+    --- PASS: TestVersionCompatibility/exact_match (0.00s)
+    --- PASS: TestVersionCompatibility/minor_version (0.00s)
+    --- PASS: TestVersionCompatibility/patch_version (0.00s)
+    --- PASS: TestVersionCompatibility/major_version (0.00s)
+    --- PASS: TestVersionCompatibility/invalid_version (0.00s)
+    --- PASS: TestVersionCompatibility/empty_version (0.00s)
+=== RUN   TestBackwardCompatibility
+--- PASS: TestBackwardCompatibility (0.00s)
+=== RUN   TestTimestampHandling
+--- PASS: TestTimestampHandling (0.00s)
+=== RUN   TestTimedOutTimestamp
+--- PASS: TestTimedOutTimestamp (0.00s)
+=== RUN   TestMetadataHandling
+--- PASS: TestMetadataHandling (0.00s)
+=== RUN   TestErrorHandling
+--- PASS: TestErrorHandling (0.00s)
+=== RUN   TestNewRedisStateStorage
+    redis_test.go:151: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestNewRedisStateStorage (0.06s)
+=== RUN   TestNewRedisStateStorageWithRetry
+    redis_test.go:202: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestNewRedisStateStorageWithRetry (0.08s)
+=== RUN   TestRedisStateStorage_SaveSaga
+    redis_test.go:221: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_SaveSaga (0.13s)
+=== RUN   TestRedisStateStorage_GetSaga
+    redis_test.go:263: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_GetSaga (0.09s)
+=== RUN   TestRedisStateStorage_UpdateSagaState
+    redis_test.go:329: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_UpdateSagaState (0.04s)
+=== RUN   TestRedisStateStorage_DeleteSaga
+    redis_test.go:403: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_DeleteSaga (0.11s)
+=== RUN   TestRedisStateStorage_GetActiveSagas
+    redis_test.go:460: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_GetActiveSagas (0.12s)
+=== RUN   TestRedisStateStorage_GetTimeoutSagas
+    redis_test.go:530: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_GetTimeoutSagas (0.08s)
+=== RUN   TestRedisStateStorage_SaveStepState
+    redis_test.go:577: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_SaveStepState (0.11s)
+=== RUN   TestRedisStateStorage_GetStepStates
+    redis_test.go:644: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_GetStepStates (0.12s)
+=== RUN   TestRedisStateStorage_CleanupExpiredSagas
+    redis_test.go:727: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_CleanupExpiredSagas (0.13s)
+=== RUN   TestRedisStateStorage_Close
+    redis_test.go:776: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_Close (0.09s)
+=== RUN   TestRedisStateStorage_HealthCheck
+    redis_test.go:806: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_HealthCheck (0.11s)
+=== RUN   TestRedisStateStorage_KeyGeneration
+=== RUN   TestRedisStateStorage_KeyGeneration/saga_key
+=== RUN   TestRedisStateStorage_KeyGeneration/step_key
+=== RUN   TestRedisStateStorage_KeyGeneration/steps_set_key
+=== RUN   TestRedisStateStorage_KeyGeneration/state_index_key
+=== RUN   TestRedisStateStorage_KeyGeneration/timeout_key
+--- PASS: TestRedisStateStorage_KeyGeneration (0.00s)
+    --- PASS: TestRedisStateStorage_KeyGeneration/saga_key (0.00s)
+    --- PASS: TestRedisStateStorage_KeyGeneration/step_key (0.00s)
+    --- PASS: TestRedisStateStorage_KeyGeneration/steps_set_key (0.00s)
+    --- PASS: TestRedisStateStorage_KeyGeneration/state_index_key (0.00s)
+    --- PASS: TestRedisStateStorage_KeyGeneration/timeout_key (0.00s)
+=== RUN   TestRedisStateStorage_ConcurrentAccess
+    redis_test.go:882: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_ConcurrentAccess (0.08s)
+=== RUN   TestRedisStateStorage_FailureScenarios
+    redis_test.go:926: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_FailureScenarios (0.08s)
+=== RUN   TestRedisStateStorage_ContextCancellation
+    redis_test.go:1013: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_ContextCancellation (0.11s)
+=== RUN   TestRedisStateStorage_ClosedStorageOperations
+    redis_test.go:1038: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_ClosedStorageOperations (0.11s)
+=== RUN   TestRedisStateStorage_ConcurrentUpdates
+    redis_test.go:1104: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_ConcurrentUpdates (0.07s)
+=== RUN   TestRedisStateStorage_StressTest
+    redis_test.go:1160: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_StressTest (0.11s)
+=== RUN   TestRedisStateStorage_InvalidStateTransitions
+    redis_test.go:1229: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_InvalidStateTransitions (0.10s)
+=== RUN   TestRedisStateStorage_StepStatePersistence
+redis: 2025/10/24 21:49:56 sentinel.go:796: sentinel: GetMasterAddrByName addr=sentinel1:26379, master="mymaster" failed: dial tcp: lookup sentinel1: i/o timeout
+redis: 2025/10/24 21:49:56 sentinel.go:796: sentinel: GetMasterAddrByName addr=sentinel2:26379, master="mymaster" failed: dial tcp: lookup sentinel2: i/o timeout
+redis: 2025/10/24 21:49:56 sentinel.go:796: sentinel: GetMasterAddrByName addr=sentinel2:26379, master="mymaster" failed: context deadline exceeded
+redis: 2025/10/24 21:49:56 sentinel.go:796: sentinel: GetMasterAddrByName addr=sentinel1:26379, master="mymaster" failed: context deadline exceeded
+    redis_test.go:1267: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_StepStatePersistence (0.13s)
+=== RUN   TestRedisStateStorage_MetadataHandling
+    redis_test.go:1321: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_MetadataHandling (0.11s)
+=== RUN   TestRedisStateStorage_TimeoutIndexManagement
+    redis_test.go:1392: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_TimeoutIndexManagement (0.06s)
+=== RUN   TestRedisStateStorage_DeletionCleansUpIndexes
+    redis_test.go:1441: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestRedisStateStorage_DeletionCleansUpIndexes (0.06s)
+=== RUN   TestWithTransaction
+    redis_transaction_test.go:61: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestWithTransaction (0.08s)
+=== RUN   TestWithTransactionRollback
+    redis_transaction_test.go:109: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestWithTransactionRollback (0.12s)
+=== RUN   TestWithOptimisticLock
+    redis_transaction_test.go:152: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestWithOptimisticLock (0.08s)
+=== RUN   TestOptimisticLockConflict
+    redis_transaction_test.go:213: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestOptimisticLockConflict (0.07s)
+=== RUN   TestCompareAndSwap
+    redis_transaction_test.go:302: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestCompareAndSwap (0.08s)
+=== RUN   TestCompareAndSwapFailure
+    redis_transaction_test.go:341: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestCompareAndSwapFailure (0.03s)
+=== RUN   TestExecuteBatch
+    redis_transaction_test.go:379: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExecuteBatch (0.10s)
+=== RUN   TestExecuteBatchWithSteps
+    redis_transaction_test.go:451: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExecuteBatchWithSteps (0.05s)
+=== RUN   TestExecuteBatchDelete
+    redis_transaction_test.go:536: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestExecuteBatchDelete (0.05s)
+=== RUN   TestTransactionRetry
+    redis_transaction_test.go:591: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestTransactionRetry (0.08s)
+=== RUN   TestConcurrentCompareAndSwap
+    redis_transaction_test.go:656: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestConcurrentCompareAndSwap (0.12s)
+=== RUN   TestConcurrentBatchOperations
+    redis_transaction_test.go:720: Redis is not available for testing: dial tcp [::1]:6379: connect: connection refused
+--- SKIP: TestConcurrentBatchOperations (0.09s)
+=== RUN   TestIsRetryableError
+=== RUN   TestIsRetryableError/nil_error
+=== RUN   TestIsRetryableError/transaction_conflict
+=== RUN   TestIsRetryableError/redis_tx_failed
+=== RUN   TestIsRetryableError/redis_nil
+=== RUN   TestIsRetryableError/context_canceled
+=== RUN   TestIsRetryableError/context_deadline_exceeded
+=== RUN   TestIsRetryableError/generic_error
+--- PASS: TestIsRetryableError (0.00s)
+    --- PASS: TestIsRetryableError/nil_error (0.00s)
+    --- PASS: TestIsRetryableError/transaction_conflict (0.00s)
+    --- PASS: TestIsRetryableError/redis_tx_failed (0.00s)
+    --- PASS: TestIsRetryableError/redis_nil (0.00s)
+    --- PASS: TestIsRetryableError/context_canceled (0.00s)
+    --- PASS: TestIsRetryableError/context_deadline_exceeded (0.00s)
+    --- PASS: TestIsRetryableError/generic_error (0.00s)
+FAIL
+coverage: 48.9% of statements
+FAIL	github.com/innovationmech/swit/pkg/saga/state/storage	23.385s
+FAIL
