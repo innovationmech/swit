@@ -1109,6 +1109,69 @@ func TestSendTransferNotificationStep_Execute_Success(t *testing.T) {
 	if notificationResult.NotificationID == "" {
 		t.Error("NotificationID 不应为空")
 	}
+	if notificationResult.Status != "sent" {
+		t.Errorf("Status = %s, want sent", notificationResult.Status)
+	}
+}
+
+func TestSendTransferNotificationStep_Execute_NotificationFails(t *testing.T) {
+	// 模拟通知服务失败
+	mockService := &mockNotificationService{
+		sendTransferNotificationFunc: func(ctx context.Context, transferID string, recipients []string, data *TransferData) (*NotificationResult, error) {
+			return nil, errors.New("通知服务暂时不可用")
+		},
+	}
+	step := &SendTransferNotificationStep{service: mockService}
+	ctx := context.Background()
+
+	auditResult := &AuditRecordResult{
+		TransferID: "TRF-001",
+		Metadata: map[string]interface{}{
+			"transfer_id":  "TRF-001",
+			"from_account": "ACC-001",
+			"to_account":   "ACC-002",
+			"amount":       100.0,
+			"currency":     "CNY",
+			"customer_id":  "CUST-001",
+		},
+	}
+
+	// 关键：即使通知失败，Execute 也应该返回成功（nil error）
+	// 因为资金转账已完成，不应该因为通知失败而回滚交易
+	result, err := step.Execute(ctx, auditResult)
+	if err != nil {
+		t.Fatalf("Execute() 不应该因通知失败而返回错误: %v", err)
+	}
+
+	notificationResult, ok := result.(*NotificationResult)
+	if !ok {
+		t.Fatalf("结果类型错误，期望 *NotificationResult")
+	}
+
+	// 验证结果包含失败信息
+	if notificationResult.Status != "failed" {
+		t.Errorf("Status = %s, want failed", notificationResult.Status)
+	}
+	if notificationResult.Channel != "none" {
+		t.Errorf("Channel = %s, want none", notificationResult.Channel)
+	}
+	if notificationResult.TransferID != "TRF-001" {
+		t.Errorf("TransferID = %s, want TRF-001", notificationResult.TransferID)
+	}
+
+	// 验证元数据中包含错误信息和重试建议
+	if notificationResult.Metadata == nil {
+		t.Fatal("Metadata should not be nil")
+	}
+	if _, ok := notificationResult.Metadata["error"]; !ok {
+		t.Error("Metadata should contain error information")
+	}
+	if retry, ok := notificationResult.Metadata["retry_recommended"].(bool); !ok || !retry {
+		t.Error("Metadata should recommend retry")
+	}
+	if _, ok := notificationResult.Metadata["failure_timestamp"]; !ok {
+		t.Error("Metadata should contain failure timestamp")
+	}
 }
 
 func TestSendTransferNotificationStep_Compensate_Success(t *testing.T) {

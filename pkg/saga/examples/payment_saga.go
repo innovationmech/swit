@@ -790,6 +790,7 @@ func (s *SendTransferNotificationStep) GetDescription() string {
 // Execute 执行发送通知操作
 // 输入：AuditRecordResult（从上一步传递）
 // 输出：NotificationResult
+// 注意：此步骤不应因通知失败而导致整个 Saga 失败，因为资金转账已经完成
 func (s *SendTransferNotificationStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
 	auditResult, ok := data.(*AuditRecordResult)
 	if !ok {
@@ -814,12 +815,47 @@ func (s *SendTransferNotificationStep) Execute(ctx context.Context, data interfa
 	recipients := []string{customerID}
 	notificationResult, err := s.service.SendTransferNotification(ctx, transferID, recipients, transferData)
 	if err != nil {
-		// 通知发送失败不应导致整个 Saga 失败
-		// 可以记录日志并稍后重试
-		return nil, fmt.Errorf("发送通知失败: %w", err)
+		// 通知发送失败不应导致整个 Saga 失败，因为：
+		// 1. 资金转账已经完成，回滚会造成更大的问题
+		// 2. 通知是非关键操作，可以通过其他方式重试或补偿
+		// 3. 用户可以通过其他渠道（如查询交易记录）获知转账结果
+		//
+		// 处理策略：
+		// - 记录错误日志（实际生产中应使用日志系统）
+		// - 将错误信息存储在结果的元数据中，供后续异步重试
+		// - 返回部分成功的结果，而不是错误
+		//
+		// TODO: 在实际生产环境中，应该：
+		// 1. 将失败的通知任务写入消息队列或数据库
+		// 2. 通过后台任务定期重试
+		// 3. 设置告警以便运维人员关注通知失败情况
+
+		// 创建一个表示通知失败但不影响 Saga 的结果
+		notificationResult = &NotificationResult{
+			NotificationID: fmt.Sprintf("failed-%s-%d", transferID, time.Now().Unix()),
+			TransferID:     transferID,
+			Recipients:     recipients,
+			Channel:        "none",      // 表示未成功发送
+			SentAt:         time.Time{}, // 零值表示未发送
+			Status:         "failed",
+			Metadata: map[string]interface{}{
+				"error":             err.Error(),
+				"retry_recommended": true,
+				"failure_timestamp": time.Now(),
+				"original_transfer": transferID,
+			},
+		}
 	}
 
-	notificationResult.Metadata = auditResult.Metadata
+	// 合并审计记录的元数据
+	if notificationResult.Metadata == nil {
+		notificationResult.Metadata = make(map[string]interface{})
+	}
+	for k, v := range auditResult.Metadata {
+		if _, exists := notificationResult.Metadata[k]; !exists {
+			notificationResult.Metadata[k] = v
+		}
+	}
 
 	return notificationResult, nil
 }
