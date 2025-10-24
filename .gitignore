@@ -38,6 +38,7 @@ coverage.html
 # 测试输出
 test.log
 *.out
+*.txt
 
 .trae/
 .kiro/

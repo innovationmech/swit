@@ -30,6 +30,10 @@ import (
 	"github.com/innovationmech/swit/pkg/saga/state"
 )
 
+// ==========================
+// Unit Tests
+// ==========================
+
 // TestNewPostgresStateStorage_InvalidConfig tests that NewPostgresStateStorage
 // returns an error with invalid configuration.
 func TestNewPostgresStateStorage_InvalidConfig(t *testing.T) {
