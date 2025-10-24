@@ -1,0 +1,286 @@
+# Docker Compose configuration for Saga Example Applications
+# Provides a complete containerized environment for running Saga examples
+# including PostgreSQL, Redis, RabbitMQ, Jaeger for tracing, and Prometheus for monitoring
+
+services:
+  # PostgreSQL database for Saga state persistence
+  postgres:
+    image: postgres:15-alpine
+    container_name: saga-examples-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-saga}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../../scripts/sql/saga_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../../../scripts/sql/saga_migrations.sql:/docker-entrypoint-initdb.d/02_migrations.sql:ro
+    networks:
+      - saga-examples-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-saga}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=2621kB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+
+  # Redis for caching and state storage
+  redis:
+    image: redis:7-alpine
+    container_name: saga-examples-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory ${REDIS_MAX_MEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+      --tcp-backlog 511
+      --timeout 0
+      --tcp-keepalive 300
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    networks:
+      - saga-examples-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # RabbitMQ message broker for event publishing
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: saga-examples-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"          # AMQP port
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"  # Management UI
+      - "${RABBITMQ_METRICS_PORT:-15692}:15692"     # Prometheus metrics
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.8
+      RABBITMQ_DISK_FREE_LIMIT: 1GB
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - saga-examples-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # NATS message broker (alternative to RabbitMQ)
+  nats:
+    image: nats:2.10-alpine
+    container_name: saga-examples-nats
+    restart: unless-stopped
+    ports:
+      - "${NATS_PORT:-4222}:4222"              # Client connections
+      - "${NATS_HTTP_PORT:-8222}:8222"         # HTTP management
+      - "${NATS_CLUSTER_PORT:-6222}:6222"      # Cluster connections
+    command: >
+      --jetstream
+      --store_dir=/data
+      --max_memory_store=${NATS_MAX_MEMORY:-512MB}
+      --max_file_store=${NATS_MAX_FILE_STORE:-2GB}
+      --http_port=8222
+    volumes:
+      - nats_data:/data
+    networks:
+      - saga-examples-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    container_name: saga-examples-jaeger
+    restart: unless-stopped
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"       # Jaeger UI
+      - "${JAEGER_COLLECTOR_HTTP:-14268}:14268"  # HTTP collector
+      - "${JAEGER_COLLECTOR_GRPC:-14250}:14250"  # gRPC collector
+      - "${JAEGER_AGENT_COMPACT:-6831}:6831/udp" # Jaeger agent compact thrift
+      - "${JAEGER_AGENT_BINARY:-6832}:6832/udp"  # Jaeger agent binary thrift
+      - "${JAEGER_AGENT_CONFIG:-5778}:5778"      # Agent config server
+      - "${JAEGER_ZIPKIN:-9411}:9411"            # Zipkin compatible endpoint
+      - "4317:4317"                               # OTLP gRPC receiver
+      - "4318:4318"                               # OTLP HTTP receiver
+    environment:
+      COLLECTOR_ZIPKIN_HOST_PORT: :9411
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: ${JAEGER_STORAGE_TYPE:-badger}
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+      JAEGER_DISABLED: "false"
+      LOG_LEVEL: ${JAEGER_LOG_LEVEL:-info}
+      METRICS_BACKEND: prometheus
+      METRICS_HTTP_ROUTE: /metrics
+    volumes:
+      - jaeger_data:/badger
+    networks:
+      - saga-examples-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: saga-examples-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-30d}'
+      - '--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-10GB}'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - saga-examples-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: saga-examples-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-clock-panel
+      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3000}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_DEFAULT_THEME: ${GRAFANA_THEME:-dark}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - saga-examples-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Redis Exporter for Prometheus
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0-alpine
+    container_name: saga-examples-redis-exporter
+    restart: unless-stopped
+    ports:
+      - "${REDIS_EXPORTER_PORT:-9121}:9121"
+    environment:
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - saga-examples-network
+
+  # PostgreSQL Exporter for Prometheus
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: saga-examples-postgres-exporter
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-saga}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - saga-examples-network
+
+# Network configuration
+networks:
+  saga-examples-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.29.0.0/16}
+          gateway: ${DOCKER_GATEWAY:-172.29.0.1}
+
+# Persistent volumes
+volumes:
+  postgres_data:
+    driver: local
+    name: saga-examples-postgres-data
+  redis_data:
+    driver: local
+    name: saga-examples-redis-data
+  rabbitmq_data:
+    driver: local
+    name: saga-examples-rabbitmq-data
+  nats_data:
+    driver: local
+    name: saga-examples-nats-data
+  jaeger_data:
+    driver: local
+    name: saga-examples-jaeger-data
+  prometheus_data:
+    driver: local
+    name: saga-examples-prometheus-data
+  grafana_data:
+    driver: local
+    name: saga-examples-grafana-data
+

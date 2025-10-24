@@ -101,10 +101,26 @@ examples/
 
 ## 快速开始
 
+### 使用 Docker Compose（推荐）
+
+最简单的方式是使用 Docker Compose 启动所有依赖服务：
+
+```bash
+# 启动所有依赖服务
+cd pkg/saga/examples
+docker compose up -d
+
+# 运行示例
+go test -v -run TestOrderSaga
+```
+
+详细的 Docker 使用说明，请参考 [DOCKER.md](DOCKER.md)。
+
 ### 前置条件
 
 - Go 1.23+
 - 已安装 Swit 框架依赖
+- （可选）Docker 和 Docker Compose - 用于运行依赖服务
 
 ### 运行示例
 
@@ -563,11 +579,13 @@ func (s *Step) IsRetryable(err error) bool {
 
 ## 相关文档
 
+- [Docker 使用指南](DOCKER.md) - Docker Compose 配置和使用
+- [脚本使用指南](scripts/README.md) - 运行脚本和开发工具
+- [端到端测试](E2E_TESTING.md) - 端到端测试文档
+- [架构设计](docs/architecture.md) - 架构设计文档
 - [Saga 用户指南](../../../docs/saga-user-guide.md)
 - [Saga DSL 指南](../../../docs/saga-dsl-guide.md)
 - [Saga 监控指南](../../../docs/saga-monitoring-guide.md)
-- [架构设计](docs/architecture.md)
-- [端到端测试](E2E_TESTING.md)
 
 ## 贡献指南
 
