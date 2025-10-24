@@ -69,7 +69,11 @@ func TestHybrid_ModeSelection(t *testing.T) {
 	hybridConfig := &HybridConfig{
 		Orchestrator: orchestrator,
 		Choreography: choreography,
-		// ModeSelector will use default smart selector
+		ModeSelector: NewSmartModeSelector([]ModeSelectionRule{
+			NewSimpleLinearRule(5),
+			NewComplexParallelRule(5),
+			NewCrossDomainRule(),
+		}, ModeOrchestration),
 	}
 
 	hybrid, err := NewHybridCoordinator(hybridConfig)
@@ -270,6 +274,11 @@ func TestHybrid_ModeSwitchingCapability(t *testing.T) {
 	hybridConfig := &HybridConfig{
 		Orchestrator: orchestrator,
 		Choreography: choreography,
+		ModeSelector: NewSmartModeSelector([]ModeSelectionRule{
+			NewSimpleLinearRule(5),
+			NewComplexParallelRule(5),
+			NewCrossDomainRule(),
+		}, ModeOrchestration),
 	}
 
 	hybrid, err := NewHybridCoordinator(hybridConfig)
@@ -396,6 +405,11 @@ func TestHybrid_ConcurrentMixedModes(t *testing.T) {
 	hybridConfig := &HybridConfig{
 		Orchestrator: orchestrator,
 		Choreography: choreography,
+		ModeSelector: NewSmartModeSelector([]ModeSelectionRule{
+			NewSimpleLinearRule(5),
+			NewComplexParallelRule(5),
+			NewCrossDomainRule(),
+		}, ModeOrchestration),
 	}
 
 	hybrid, err := NewHybridCoordinator(hybridConfig)
@@ -509,9 +523,20 @@ func TestHybrid_HealthCheck(t *testing.T) {
 	}
 	defer choreography.Close()
 
+	// Start choreography coordinator for health check
+	ctx := context.Background()
+	if err := choreography.Start(ctx); err != nil {
+		t.Fatalf("failed to start choreography coordinator: %v", err)
+	}
+
 	hybridConfig := &HybridConfig{
 		Orchestrator: orchestrator,
 		Choreography: choreography,
+		ModeSelector: NewSmartModeSelector([]ModeSelectionRule{
+			NewSimpleLinearRule(5),
+			NewComplexParallelRule(5),
+			NewCrossDomainRule(),
+		}, ModeOrchestration),
 	}
 
 	hybrid, err := NewHybridCoordinator(hybridConfig)
@@ -519,8 +544,6 @@ func TestHybrid_HealthCheck(t *testing.T) {
 		t.Fatalf("Failed to create hybrid coordinator: %v", err)
 	}
 	defer hybrid.Close()
-
-	ctx := context.Background()
 
 	// Health check should succeed
 	err = hybrid.HealthCheck(ctx)
@@ -575,6 +598,11 @@ func TestHybrid_MetricsAggregation(t *testing.T) {
 	hybridConfig := &HybridConfig{
 		Orchestrator: orchestrator,
 		Choreography: choreography,
+		ModeSelector: NewSmartModeSelector([]ModeSelectionRule{
+			NewSimpleLinearRule(5),
+			NewComplexParallelRule(5),
+			NewCrossDomainRule(),
+		}, ModeOrchestration),
 	}
 
 	hybrid, err := NewHybridCoordinator(hybridConfig)
