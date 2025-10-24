@@ -85,19 +85,19 @@ type WarehouseInfo struct {
 
 // WarehouseInventory 表示仓库中的库存信息
 type WarehouseInventory struct {
-	WarehouseID    string // 仓库ID
-	ProductID      string // 商品ID
-	SKU            string // 库存单位
-	Available      int    // 可用数量
-	Reserved       int    // 已预留数量
-	Total          int    // 总数量
-	ReorderPoint   int    // 重新订货点
-	ReorderQty     int    // 重新订货量
-	SafetyStock    int    // 安全库存
-	LastRestockAt  time.Time
-	NextRestockAt  time.Time
-	WarehouseZone  string // 仓库区域
-	ShelfLocation  string // 货架位置
+	WarehouseID   string // 仓库ID
+	ProductID     string // 商品ID
+	SKU           string // 库存单位
+	Available     int    // 可用数量
+	Reserved      int    // 已预留数量
+	Total         int    // 总数量
+	ReorderPoint  int    // 重新订货点
+	ReorderQty    int    // 重新订货量
+	SafetyStock   int    // 安全库存
+	LastRestockAt time.Time
+	NextRestockAt time.Time
+	WarehouseZone string // 仓库区域
+	ShelfLocation string // 货架位置
 }
 
 // CheckInventoryResult 存储库存检查步骤的结果
@@ -114,24 +114,24 @@ type CheckInventoryResult struct {
 
 // InventoryShortage 表示库存短缺信息
 type InventoryShortage struct {
-	ProductID      string // 商品ID
-	SKU            string // 库存单位
-	RequestedQty   int    // 请求数量
-	AvailableQty   int    // 可用数量
-	ShortageQty    int    // 短缺数量
+	ProductID        string    // 商品ID
+	SKU              string    // 库存单位
+	RequestedQty     int       // 请求数量
+	AvailableQty     int       // 可用数量
+	ShortageQty      int       // 短缺数量
 	EstimatedRestock time.Time // 预计补货时间
 }
 
 // ReserveInventoryResult 存储库存预留步骤的结果
 type ReserveInventoryResult struct {
-	ReservationID       string                    // 预留ID
-	RequestID           string                    // 请求ID
-	ReservedItems       []ReservedWarehouseItem   // 预留的商品项（跨仓库）
-	ReservationPlan     []WarehouseAllocation     // 仓库分配计划
-	ExpiresAt           time.Time                 // 预留过期时间
-	TotalReserved       int                       // 总预留数量
-	Status              string                    // 预留状态
-	Metadata            map[string]interface{}    // 元数据
+	ReservationID   string                  // 预留ID
+	RequestID       string                  // 请求ID
+	ReservedItems   []ReservedWarehouseItem // 预留的商品项（跨仓库）
+	ReservationPlan []WarehouseAllocation   // 仓库分配计划
+	ExpiresAt       time.Time               // 预留过期时间
+	TotalReserved   int                     // 总预留数量
+	Status          string                  // 预留状态
+	Metadata        map[string]interface{}  // 元数据
 }
 
 // ReservedWarehouseItem 表示在特定仓库预留的商品项
@@ -147,24 +147,24 @@ type ReservedWarehouseItem struct {
 
 // WarehouseAllocation 表示仓库分配计划
 type WarehouseAllocation struct {
-	WarehouseID   string         // 仓库ID
-	WarehouseName string         // 仓库名称
+	WarehouseID   string          // 仓库ID
+	WarehouseName string          // 仓库名称
 	Items         []InventoryItem // 分配的商品项
-	Priority      int            // 分配优先级
-	EstimatedCost float64        // 预计成本
-	Distance      float64        // 距离（如果适用）
+	Priority      int             // 分配优先级
+	EstimatedCost float64         // 预计成本
+	Distance      float64         // 距离（如果适用）
 }
 
 // AllocateInventoryResult 存储库存分配/扣减步骤的结果
 type AllocateInventoryResult struct {
-	AllocationID      string                    // 分配ID
-	RequestID         string                    // 请求ID
-	ReservationID     string                    // 预留ID
-	AllocatedItems    []AllocatedWarehouseItem  // 已分配的商品项
-	AllocationPlan    []WarehouseAllocation     // 实际执行的分配计划
-	CompletedAt       time.Time                 // 完成时间
-	Status            string                    // 分配状态（completed、partial、failed）
-	Metadata          map[string]interface{}    // 元数据
+	AllocationID   string                   // 分配ID
+	RequestID      string                   // 请求ID
+	ReservationID  string                   // 预留ID
+	AllocatedItems []AllocatedWarehouseItem // 已分配的商品项
+	AllocationPlan []WarehouseAllocation    // 实际执行的分配计划
+	CompletedAt    time.Time                // 完成时间
+	Status         string                   // 分配状态（completed、partial、failed）
+	Metadata       map[string]interface{}   // 元数据
 }
 
 // AllocatedWarehouseItem 表示已分配的仓库商品项
@@ -199,13 +199,13 @@ type ReleasedItem struct {
 
 // AuditInventoryResult 存储库存审计步骤的结果
 type AuditInventoryResult struct {
-	AuditID        string                 // 审计ID
-	RequestID      string                 // 请求ID
-	AuditType      string                 // 审计类型
-	RecordedAt     time.Time              // 记录时间
-	AuditDetails   map[string]interface{} // 审计详情
-	Status         string                 // 审计状态
-	Metadata       map[string]interface{} // 元数据
+	AuditID      string                 // 审计ID
+	RequestID    string                 // 请求ID
+	AuditType    string                 // 审计类型
+	RecordedAt   time.Time              // 记录时间
+	AuditDetails map[string]interface{} // 审计详情
+	Status       string                 // 审计状态
+	Metadata     map[string]interface{} // 元数据
 }
 
 // NotifyInventoryResult 存储库存通知步骤的结果
@@ -227,22 +227,22 @@ type NotifyInventoryResult struct {
 type MultiWarehouseInventoryServiceClient interface {
 	// CheckAvailability 检查库存可用性
 	CheckAvailability(ctx context.Context, items []InventoryItem, preferredWarehouses []string) (*CheckInventoryResult, error)
-	
+
 	// ReserveInventory 预留库存（跨多个仓库）
 	ReserveInventory(ctx context.Context, requestID string, items []InventoryItem, warehouses []string) (*ReserveInventoryResult, error)
-	
+
 	// AllocateInventory 分配/扣减库存（实际扣减）
 	AllocateInventory(ctx context.Context, reservationID string) (*AllocateInventoryResult, error)
-	
+
 	// ReleaseReservation 释放预留的库存
 	ReleaseReservation(ctx context.Context, reservationID string, reason string) error
-	
+
 	// RestoreInventory 恢复已分配的库存（补偿操作）
 	RestoreInventory(ctx context.Context, allocationID string, items []AllocatedWarehouseItem) error
-	
+
 	// GetWarehouseInfo 获取仓库信息
 	GetWarehouseInfo(ctx context.Context, warehouseID string) (*WarehouseInfo, error)
-	
+
 	// GetInventoryDetails 获取库存详情
 	GetInventoryDetails(ctx context.Context, warehouseID string, sku string) (*WarehouseInventory, error)
 }
@@ -251,7 +251,7 @@ type MultiWarehouseInventoryServiceClient interface {
 type AuditInventoryServiceClient interface {
 	// CreateAuditRecord 创建审计记录
 	CreateAuditRecord(ctx context.Context, requestID string, operation string, details map[string]interface{}) (*AuditInventoryResult, error)
-	
+
 	// UpdateAuditRecord 更新审计记录
 	UpdateAuditRecord(ctx context.Context, auditID string, status string, details map[string]interface{}) error
 }
@@ -260,7 +260,7 @@ type AuditInventoryServiceClient interface {
 type NotificationInventoryServiceClient interface {
 	// SendInventoryNotification 发送库存通知
 	SendInventoryNotification(ctx context.Context, requestID string, recipients []string, message string) (*NotifyInventoryResult, error)
-	
+
 	// SendInventoryAlert 发送库存告警
 	SendInventoryAlert(ctx context.Context, requestID string, alertType string, details map[string]interface{}) error
 }
@@ -310,17 +310,18 @@ func (s *CheckInventoryStep) Execute(ctx context.Context, data interface{}) (int
 		return nil, fmt.Errorf("检查库存可用性失败: %w", err)
 	}
 
-	// 设置元数据
+	// 设置元数据（重要：必须存储原始请求的商品项）
 	result.Metadata = map[string]interface{}{
-		"request_id":            requestData.RequestID,
-		"order_id":              requestData.OrderID,
-		"customer_id":           requestData.CustomerID,
-		"request_type":          requestData.RequestType,
-		"priority":              requestData.Priority,
-		"is_urgent":             requestData.IsUrgent,
-		"items_count":           len(requestData.Items),
-		"preferred_warehouses":  requestData.PreferredWarehouses,
-		"allocation_strategy":   requestData.AllocationStrategy,
+		"request_id":           requestData.RequestID,
+		"order_id":             requestData.OrderID,
+		"customer_id":          requestData.CustomerID,
+		"request_type":         requestData.RequestType,
+		"priority":             requestData.Priority,
+		"is_urgent":            requestData.IsUrgent,
+		"items_count":          len(requestData.Items),
+		"requested_items":      requestData.Items, // 存储原始请求的商品项（带请求数量）
+		"preferred_warehouses": requestData.PreferredWarehouses,
+		"allocation_strategy":  requestData.AllocationStrategy,
 	}
 
 	// 检查是否能够满足请求
@@ -430,7 +431,7 @@ func (s *ReserveMultiWarehouseInventoryStep) Execute(ctx context.Context, data i
 	// 从元数据中获取请求信息
 	requestID, _ := checkResult.Metadata["request_id"].(string)
 
-	// 构建商品项列表
+	// 从元数据中获取原始请求的商品项（而不是总可用数量）
 	items := s.buildInventoryItems(checkResult)
 
 	// 选择仓库（基于可用性和优先级）
@@ -498,17 +499,22 @@ func (s *ReserveMultiWarehouseInventoryStep) GetMetadata() map[string]interface{
 	}
 }
 
-// buildInventoryItems 从检查结果构建库存项列表
+// buildInventoryItems 从检查结果的元数据中提取原始请求的商品项
+// 注意：必须使用原始请求的数量，而不是总可用数量，以避免过度预留
 func (s *ReserveMultiWarehouseInventoryStep) buildInventoryItems(checkResult *CheckInventoryResult) []InventoryItem {
 	items := []InventoryItem{}
-	// 从检查结果中提取商品信息
-	// 这里简化处理，实际应该从 metadata 或其他方式获取原始请求的商品项
-	for sku, qty := range checkResult.TotalAvailable {
-		items = append(items, InventoryItem{
-			SKU:      sku,
-			Quantity: qty,
-		})
+	
+	// 从元数据中获取原始请求的商品项
+	// 这些是在 CheckInventoryStep 中存储的原始请求数据
+	if itemsData, ok := checkResult.Metadata["requested_items"].([]InventoryItem); ok {
+		// 使用原始请求的数量，而不是可用数量
+		items = itemsData
+	} else {
+		// 向后兼容：如果没有存储原始商品项，尝试从其他元数据重建
+		// 但这种情况不应该发生，因为我们已经在 CheckInventoryStep 中存储了
+		// 这里保留为空，让后续逻辑处理错误
 	}
+	
 	return items
 }
 
@@ -520,12 +526,12 @@ func (s *ReserveMultiWarehouseInventoryStep) selectWarehouses(checkResult *Check
 			warehouses = append(warehouses, wh.WarehouseID)
 		}
 	}
-	
+
 	// 按优先级排序
 	sort.Slice(warehouses, func(i, j int) bool {
 		return checkResult.AvailableWarehouses[i].Priority > checkResult.AvailableWarehouses[j].Priority
 	})
-	
+
 	return warehouses
 }
 
@@ -744,12 +750,12 @@ func (s *CreateInventoryAuditRecordStep) Execute(ctx context.Context, data inter
 
 	// 构建审计详情
 	auditDetails := map[string]interface{}{
-		"request_id":      requestID,
-		"reservation_id":  releaseResult.ReservationID,
-		"released_items":  releaseResult.ReleasedItems,
-		"released_at":     releaseResult.ReleasedAt,
-		"operation":       "inventory_allocation",
-		"status":          "completed",
+		"request_id":     requestID,
+		"reservation_id": releaseResult.ReservationID,
+		"released_items": releaseResult.ReleasedItems,
+		"released_at":    releaseResult.ReleasedAt,
+		"operation":      "inventory_allocation",
+		"status":         "completed",
 	}
 
 	// 创建审计记录
@@ -1040,13 +1046,13 @@ func NewInventoryManagementSaga(
 var (
 	// ErrInsufficientInventory 库存不足错误
 	ErrInsufficientInventory = errors.New("insufficient inventory")
-	
+
 	// ErrReservationExpired 预留已过期错误
 	ErrReservationExpired = errors.New("reservation expired")
-	
+
 	// ErrWarehouseUnavailable 仓库不可用错误
 	ErrWarehouseUnavailable = errors.New("warehouse unavailable")
-	
+
 	// ErrInvalidAllocationPlan 无效的分配计划错误
 	ErrInvalidAllocationPlan = errors.New("invalid allocation plan")
 )
@@ -1059,4 +1065,3 @@ var (
 func generateReleaseID() string {
 	return fmt.Sprintf("REL-%d", time.Now().UnixNano())
 }
-

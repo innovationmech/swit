@@ -36,12 +36,12 @@ import (
 
 // mockMultiWarehouseInventoryService 模拟多仓库库存服务
 type mockMultiWarehouseInventoryService struct {
-	checkAvailabilityFunc  func(ctx context.Context, items []InventoryItem, preferredWarehouses []string) (*CheckInventoryResult, error)
-	reserveInventoryFunc   func(ctx context.Context, requestID string, items []InventoryItem, warehouses []string) (*ReserveInventoryResult, error)
-	allocateInventoryFunc  func(ctx context.Context, reservationID string) (*AllocateInventoryResult, error)
-	releaseReservationFunc func(ctx context.Context, reservationID string, reason string) error
-	restoreInventoryFunc   func(ctx context.Context, allocationID string, items []AllocatedWarehouseItem) error
-	getWarehouseInfoFunc   func(ctx context.Context, warehouseID string) (*WarehouseInfo, error)
+	checkAvailabilityFunc   func(ctx context.Context, items []InventoryItem, preferredWarehouses []string) (*CheckInventoryResult, error)
+	reserveInventoryFunc    func(ctx context.Context, requestID string, items []InventoryItem, warehouses []string) (*ReserveInventoryResult, error)
+	allocateInventoryFunc   func(ctx context.Context, reservationID string) (*AllocateInventoryResult, error)
+	releaseReservationFunc  func(ctx context.Context, reservationID string, reason string) error
+	restoreInventoryFunc    func(ctx context.Context, allocationID string, items []AllocatedWarehouseItem) error
+	getWarehouseInfoFunc    func(ctx context.Context, warehouseID string) (*WarehouseInfo, error)
 	getInventoryDetailsFunc func(ctx context.Context, warehouseID string, sku string) (*WarehouseInventory, error)
 }
 
@@ -343,6 +343,10 @@ func TestCheckInventoryStep_AllMethods(t *testing.T) {
 // ==========================
 
 func TestReserveMultiWarehouseInventoryStep_Execute_Success(t *testing.T) {
+	requestedItems := []InventoryItem{
+		{SKU: "SKU-001", Quantity: 50}, // 请求50个，而不是全部150个可用库存
+	}
+	
 	mockService := &mockMultiWarehouseInventoryService{}
 	step := &ReserveMultiWarehouseInventoryStep{service: mockService}
 
@@ -352,10 +356,11 @@ func TestReserveMultiWarehouseInventoryStep_Execute_Success(t *testing.T) {
 			{WarehouseID: "WH-001", Status: "active", Priority: 10},
 			{WarehouseID: "WH-002", Status: "active", Priority: 8},
 		},
-		TotalAvailable: map[string]int{"SKU-001": 150},
+		TotalAvailable: map[string]int{"SKU-001": 150}, // 总可用150个
 		CanFulfill:     true,
 		Metadata: map[string]interface{}{
-			"request_id": "REQ-001",
+			"request_id":      "REQ-001",
+			"requested_items": requestedItems, // 存储原始请求的商品项
 		},
 	}
 
@@ -410,6 +415,71 @@ func TestReserveMultiWarehouseInventoryStep_Compensate_Success(t *testing.T) {
 
 	if !releaseCalled {
 		t.Error("Expected ReleaseReservation to be called")
+	}
+}
+
+func TestReserveMultiWarehouseInventoryStep_UsesRequestedQuantity(t *testing.T) {
+	// 验证预留步骤使用请求的数量，而不是总可用数量
+	requestedItems := []InventoryItem{
+		{SKU: "SKU-001", Quantity: 10}, // 只请求10个
+	}
+	
+	var reservedQuantity int
+	mockService := &mockMultiWarehouseInventoryService{
+		reserveInventoryFunc: func(ctx context.Context, requestID string, items []InventoryItem, warehouses []string) (*ReserveInventoryResult, error) {
+			// 验证传递的是请求数量，而不是可用数量
+			if len(items) != 1 {
+				t.Errorf("Expected 1 item, got %d", len(items))
+			}
+			if items[0].Quantity != 10 {
+				t.Errorf("Expected quantity 10 (requested), got %d (should not be 100 which is available)", items[0].Quantity)
+			}
+			reservedQuantity = items[0].Quantity
+			
+			return &ReserveInventoryResult{
+				ReservationID: "RES-001",
+				RequestID:     requestID,
+				ReservedItems: []ReservedWarehouseItem{
+					{WarehouseID: "WH-001", SKU: "SKU-001", ReservedQty: items[0].Quantity},
+				},
+				Status:   "active",
+				Metadata: map[string]interface{}{},
+			}, nil
+		},
+	}
+	step := &ReserveMultiWarehouseInventoryStep{service: mockService}
+
+	checkResult := &CheckInventoryResult{
+		RequestID: "REQ-001",
+		AvailableWarehouses: []WarehouseInfo{
+			{WarehouseID: "WH-001", Status: "active", Priority: 10},
+		},
+		TotalAvailable: map[string]int{"SKU-001": 100}, // 可用100个
+		CanFulfill:     true,
+		Metadata: map[string]interface{}{
+			"request_id":      "REQ-001",
+			"requested_items": requestedItems, // 但只请求10个
+		},
+	}
+
+	ctx := context.Background()
+	result, err := step.Execute(ctx, checkResult)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if reservedQuantity != 10 {
+		t.Errorf("Expected to reserve 10 (requested quantity), but reserved %d", reservedQuantity)
+	}
+
+	reserveResult, ok := result.(*ReserveInventoryResult)
+	if !ok {
+		t.Fatalf("Expected *ReserveInventoryResult, got %T", result)
+	}
+
+	if reserveResult.ReservationID == "" {
+		t.Error("Expected ReservationID to be set")
 	}
 }
 
@@ -1162,4 +1232,3 @@ func TestErrorTypes(t *testing.T) {
 		})
 	}
 }
-
