@@ -1,0 +1,803 @@
+# 复杂旅行预订 Saga 示例
+# 本示例演示了一个复杂的多步骤工作流，包括多个并行和串行步骤、条件执行和复杂的依赖关系
+#
+# 业务场景：
+# 完整的旅行预订流程，包括：
+# - 航班预订（往返）
+# - 酒店预订
+# - 租车服务
+# - 旅游保险
+# - 签证申请（如需要）
+# - 行程安排和通知
+#
+# 特点：
+# - 多个并行步骤（航班、酒店、租车可以并行预订）
+# - 复杂的依赖关系
+# - 条件执行（签证、保险根据条件决定是否执行）
+# - 分阶段支付
+# - 完整的补偿机制
+# - 多渠道通知
+
+saga:
+  id: travel-booking-saga
+  name: Complete Travel Booking Saga
+  description: |
+    Complex travel booking workflow that coordinates multiple services
+    including flights, hotels, car rentals, insurance, and visa processing.
+    
+    This saga demonstrates advanced features:
+    - Parallel execution of independent steps
+    - Complex dependency chains
+    - Conditional step execution
+    - Multi-stage payment processing
+    - Comprehensive compensation logic
+    - Real-time customer notifications
+  version: "3.0.0"
+  timeout: 30m
+  mode: orchestration
+  tags:
+    - travel
+    - booking
+    - complex-workflow
+    - multi-service
+    - customer-facing
+  metadata:
+    owner: travel-booking-team
+    priority: high
+    business_unit: travel
+    sla: 99.5%
+    customer_facing: true
+    complexity: high
+
+global_retry_policy:
+  type: exponential_backoff
+  max_attempts: 3
+  initial_delay: 1s
+  max_delay: 1m
+  multiplier: 2.0
+  jitter: true
+  retryable_errors:
+    - timeout
+    - network
+    - service_unavailable
+    - rate_limit
+
+global_compensation:
+  strategy: sequential
+  timeout: 20m
+  max_attempts: 5
+
+steps:
+  # ============================================================================
+  # 阶段 1: 验证和准备
+  # ============================================================================
+  
+  - id: validate-booking-request
+    name: Validate Booking Request
+    description: |
+      Validates the complete booking request including:
+      - Customer eligibility and profile
+      - Travel dates and destinations
+      - Number of travelers
+      - Budget constraints
+      - Document requirements
+    type: service
+    action:
+      service:
+        name: booking-validator-service
+        endpoint: http://booking-validator:8080
+        method: POST
+        path: /api/v1/validate
+        body:
+          customer_id: "{{.input.customer_id}}"
+          travelers: "{{.input.travelers}}"
+          origin: "{{.input.origin}}"
+          destination: "{{.input.destination}}"
+          departure_date: "{{.input.departure_date}}"
+          return_date: "{{.input.return_date}}"
+          preferences: "{{.input.preferences}}"
+          budget: "{{.input.budget}}"
+    compensation:
+      type: skip
+    timeout: 30s
+    metadata:
+      phase: validation
+      criticality: high
+
+  - id: check-visa-requirement
+    name: Check Visa Requirements
+    description: |
+      Checks if travelers need visas for the destination country.
+      Analyzes passport information and destination requirements.
+    type: service
+    action:
+      service:
+        name: visa-service
+        endpoint: http://visa-service:8080
+        method: POST
+        path: /api/v1/check-requirements
+        body:
+          travelers: "{{.input.travelers}}"
+          destination: "{{.input.destination}}"
+          travel_dates:
+            departure: "{{.input.departure_date}}"
+            return: "{{.input.return_date}}"
+    compensation:
+      type: skip
+    timeout: 15s
+    dependencies:
+      - validate-booking-request
+    metadata:
+      phase: validation
+
+  - id: calculate-total-cost
+    name: Calculate Total Booking Cost
+    description: |
+      Calculates estimated total cost including:
+      - Flight prices
+      - Hotel rates
+      - Car rental fees
+      - Insurance premium
+      - Visa fees (if required)
+      - Service fees and taxes
+    type: function
+    action:
+      function:
+        name: calculateTravelCost
+        handler: pkg.travel.CalculateTotalCost
+        parameters:
+          origin: "{{.input.origin}}"
+          destination: "{{.input.destination}}"
+          dates:
+            departure: "{{.input.departure_date}}"
+            return: "{{.input.return_date}}"
+          travelers_count: "{{.input.travelers_count}}"
+          preferences: "{{.input.preferences}}"
+          requires_visa: "{{.output.check-visa-requirement.visa_required}}"
+    compensation:
+      type: skip
+    timeout: 10s
+    dependencies:
+      - check-visa-requirement
+    metadata:
+      phase: validation
+
+  # ============================================================================
+  # 阶段 2: 并行预订核心服务（航班、酒店、租车）
+  # ============================================================================
+
+  - id: reserve-outbound-flight
+    name: Reserve Outbound Flight
+    description: |
+      Reserves the outbound flight from origin to destination.
+      Holds the seats for 15 minutes before payment.
+    type: service
+    action:
+      service:
+        name: flight-booking-service
+        endpoint: http://flight-booking:8080
+        method: POST
+        path: /api/v1/flights/reserve
+        headers:
+          X-Idempotency-Key: "{{.saga_id}}-outbound-flight"
+        body:
+          flight_type: outbound
+          origin: "{{.input.origin}}"
+          destination: "{{.input.destination}}"
+          date: "{{.input.departure_date}}"
+          travelers: "{{.input.travelers}}"
+          cabin_class: "{{.input.preferences.cabin_class}}"
+          meal_preferences: "{{.input.preferences.meals}}"
+          seat_preferences: "{{.input.preferences.seats}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: flight-booking-service
+          method: POST
+          path: /api/v1/flights/cancel
+          body:
+            reservation_id: "{{.output.reserve-outbound-flight.reservation_id}}"
+            reason: "booking_cancelled"
+      timeout: 2m
+      max_attempts: 5
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 3
+      initial_delay: 2s
+    timeout: 2m
+    dependencies:
+      - calculate-total-cost
+    metadata:
+      phase: booking
+      criticality: critical
+      service_type: flight
+
+  - id: reserve-return-flight
+    name: Reserve Return Flight
+    description: |
+      Reserves the return flight from destination back to origin.
+    type: service
+    action:
+      service:
+        name: flight-booking-service
+        endpoint: http://flight-booking:8080
+        method: POST
+        path: /api/v1/flights/reserve
+        headers:
+          X-Idempotency-Key: "{{.saga_id}}-return-flight"
+        body:
+          flight_type: return
+          origin: "{{.input.destination}}"
+          destination: "{{.input.origin}}"
+          date: "{{.input.return_date}}"
+          travelers: "{{.input.travelers}}"
+          cabin_class: "{{.input.preferences.cabin_class}}"
+          linked_booking: "{{.output.reserve-outbound-flight.reservation_id}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: flight-booking-service
+          method: POST
+          path: /api/v1/flights/cancel
+          body:
+            reservation_id: "{{.output.reserve-return-flight.reservation_id}}"
+            reason: "booking_cancelled"
+      timeout: 2m
+      max_attempts: 5
+    timeout: 2m
+    dependencies:
+      - calculate-total-cost
+    metadata:
+      phase: booking
+      criticality: critical
+      service_type: flight
+
+  - id: reserve-hotel
+    name: Reserve Hotel Accommodation
+    description: |
+      Reserves hotel rooms for the duration of the stay.
+      Supports multiple room types and special requests.
+    type: service
+    action:
+      service:
+        name: hotel-booking-service
+        endpoint: http://hotel-booking:8080
+        method: POST
+        path: /api/v1/hotels/reserve
+        headers:
+          X-Idempotency-Key: "{{.saga_id}}-hotel"
+        body:
+          destination: "{{.input.destination}}"
+          check_in: "{{.input.departure_date}}"
+          check_out: "{{.input.return_date}}"
+          rooms: "{{.input.preferences.rooms}}"
+          travelers: "{{.input.travelers}}"
+          preferences:
+            star_rating: "{{.input.preferences.hotel_star_rating}}"
+            amenities: "{{.input.preferences.hotel_amenities}}"
+            location_preference: "{{.input.preferences.location}}"
+          special_requests: "{{.input.preferences.special_requests}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: hotel-booking-service
+          method: POST
+          path: /api/v1/hotels/cancel
+          body:
+            reservation_id: "{{.output.reserve-hotel.reservation_id}}"
+            cancellation_reason: "booking_cancelled"
+      timeout: 3m
+      max_attempts: 5
+      on_failure:
+        action: alert
+        notifications:
+          - type: email
+            target: "hotel-ops@company.com"
+            message: "Failed to cancel hotel reservation {{.output.reserve-hotel.reservation_id}}"
+    timeout: 3m
+    dependencies:
+      - calculate-total-cost
+    metadata:
+      phase: booking
+      criticality: high
+      service_type: hotel
+
+  - id: reserve-car-rental
+    name: Reserve Car Rental
+    description: |
+      Reserves a rental car at the destination (optional based on preferences).
+    type: service
+    action:
+      service:
+        name: car-rental-service
+        endpoint: http://car-rental:8080
+        method: POST
+        path: /api/v1/rentals/reserve
+        headers:
+          X-Idempotency-Key: "{{.saga_id}}-car-rental"
+        body:
+          location: "{{.input.destination}}"
+          pickup_date: "{{.input.departure_date}}"
+          return_date: "{{.input.return_date}}"
+          pickup_location: airport
+          vehicle_type: "{{.input.preferences.car_type}}"
+          driver_info: "{{.input.travelers[0]}}"
+          insurance: "{{.input.preferences.car_insurance}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: car-rental-service
+          method: POST
+          path: /api/v1/rentals/cancel
+          body:
+            reservation_id: "{{.output.reserve-car-rental.reservation_id}}"
+            cancellation_reason: "booking_cancelled"
+      timeout: 2m
+      max_attempts: 3
+    condition:
+      expression: "$input.preferences.needs_car == true"
+    timeout: 2m
+    dependencies:
+      - calculate-total-cost
+    metadata:
+      phase: booking
+      criticality: medium
+      service_type: car_rental
+      optional: true
+
+  # ============================================================================
+  # 阶段 3: 额外服务（保险、签证）
+  # ============================================================================
+
+  - id: purchase-travel-insurance
+    name: Purchase Travel Insurance
+    description: |
+      Purchases comprehensive travel insurance covering:
+      - Trip cancellation
+      - Medical emergencies
+      - Baggage loss
+      - Flight delays
+    type: service
+    action:
+      service:
+        name: insurance-service
+        endpoint: http://insurance:8080
+        method: POST
+        path: /api/v1/policies/purchase
+        body:
+          customer_id: "{{.input.customer_id}}"
+          travelers: "{{.input.travelers}}"
+          coverage_type: comprehensive
+          trip_details:
+            origin: "{{.input.origin}}"
+            destination: "{{.input.destination}}"
+            departure_date: "{{.input.departure_date}}"
+            return_date: "{{.input.return_date}}"
+            total_trip_cost: "{{.output.calculate-total-cost.total_amount}}"
+          coverage_options: "{{.input.preferences.insurance_coverage}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: insurance-service
+          method: POST
+          path: /api/v1/policies/cancel
+          body:
+            policy_number: "{{.output.purchase-travel-insurance.policy_number}}"
+            cancellation_reason: "booking_cancelled"
+      timeout: 2m
+      max_attempts: 5
+    condition:
+      expression: "$input.preferences.wants_insurance == true"
+    timeout: 1m
+    dependencies:
+      - reserve-outbound-flight
+      - reserve-return-flight
+      - reserve-hotel
+    metadata:
+      phase: additional_services
+      criticality: medium
+      optional: true
+
+  - id: apply-for-visa
+    name: Apply for Travel Visa
+    description: |
+      Initiates visa application process for travelers who need it.
+      This is a long-running process that may take days to complete.
+    type: service
+    action:
+      service:
+        name: visa-service
+        endpoint: http://visa-service:8080
+        method: POST
+        path: /api/v1/applications/submit
+        body:
+          travelers: "{{.input.travelers}}"
+          destination: "{{.input.destination}}"
+          travel_dates:
+            departure: "{{.input.departure_date}}"
+            return: "{{.input.return_date}}"
+          trip_details:
+            purpose: "{{.input.travel_purpose}}"
+            accommodation: "{{.output.reserve-hotel.hotel_info}}"
+            flight_bookings:
+              - "{{.output.reserve-outbound-flight.booking_reference}}"
+              - "{{.output.reserve-return-flight.booking_reference}}"
+          processing_priority: "{{.input.preferences.visa_priority}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: visa-service
+          method: POST
+          path: /api/v1/applications/withdraw
+          body:
+            application_id: "{{.output.apply-for-visa.application_id}}"
+            reason: "booking_cancelled"
+      timeout: 2m
+      max_attempts: 3
+    condition:
+      expression: "$output.check-visa-requirement.visa_required == true"
+    async: true  # 签证申请是长时间运行的，异步处理
+    timeout: 5m
+    dependencies:
+      - reserve-outbound-flight
+      - reserve-return-flight
+      - reserve-hotel
+    on_success:
+      notifications:
+        - type: email
+          target: "{{.input.travelers[0].email}}"
+          message: "Your visa application has been submitted. Application ID: {{.output.apply-for-visa.application_id}}"
+    metadata:
+      phase: additional_services
+      criticality: high
+      long_running: true
+      optional: true
+
+  # ============================================================================
+  # 阶段 4: 支付处理
+  # ============================================================================
+
+  - id: calculate-final-amount
+    name: Calculate Final Payment Amount
+    description: |
+      Calculates the final payment amount based on all confirmed reservations.
+    type: function
+    action:
+      function:
+        name: calculateFinalAmount
+        handler: pkg.travel.CalculateFinalAmount
+        parameters:
+          flight_cost:
+            outbound: "{{.output.reserve-outbound-flight.price}}"
+            return: "{{.output.reserve-return-flight.price}}"
+          hotel_cost: "{{.output.reserve-hotel.total_price}}"
+          car_rental_cost: "{{.output.reserve-car-rental.total_price}}"
+          insurance_cost: "{{.output.purchase-travel-insurance.premium}}"
+          visa_cost: "{{.output.apply-for-visa.application_fee}}"
+          taxes_and_fees: true
+    compensation:
+      type: skip
+    timeout: 5s
+    dependencies:
+      - reserve-outbound-flight
+      - reserve-return-flight
+      - reserve-hotel
+    metadata:
+      phase: payment
+
+  - id: process-payment
+    name: Process Customer Payment
+    description: |
+      Processes the customer's payment for the entire booking.
+      Supports multiple payment methods and installment plans.
+    type: service
+    action:
+      service:
+        name: payment-service
+        endpoint: http://payment:8080
+        method: POST
+        path: /api/v1/payments/charge
+        headers:
+          Authorization: "Bearer {{.context.payment_token}}"
+          X-Idempotency-Key: "{{.saga_id}}-payment"
+        body:
+          customer_id: "{{.input.customer_id}}"
+          amount: "{{.output.calculate-final-amount.total_amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          payment_details: "{{.input.payment_details}}"
+          description: "Complete travel booking"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            booking_type: travel_package
+            reservations:
+              flights: ["{{.output.reserve-outbound-flight.reservation_id}}", "{{.output.reserve-return-flight.reservation_id}}"]
+              hotel: "{{.output.reserve-hotel.reservation_id}}"
+              car: "{{.output.reserve-car-rental.reservation_id}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: payment-service
+          method: POST
+          path: /api/v1/payments/refund
+          body:
+            transaction_id: "{{.output.process-payment.transaction_id}}"
+            amount: "{{.output.process-payment.charged_amount}}"
+            reason: "booking_cancelled"
+      timeout: 5m
+      max_attempts: 10
+      on_failure:
+        action: alert
+        retry_policy:
+          type: exponential_backoff
+          max_attempts: 20
+          initial_delay: 30s
+          max_delay: 1h
+        notifications:
+          - type: pagerduty
+            target: payment-ops
+            message: "CRITICAL: Failed to refund payment {{.output.process-payment.transaction_id}}"
+          - type: email
+            target: "finance-emergency@company.com"
+            message: "Manual refund required for booking {{.saga_id}}"
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 3
+      initial_delay: 2s
+      max_delay: 30s
+    timeout: 3m
+    dependencies:
+      - calculate-final-amount
+    on_failure:
+      notifications:
+        - type: email
+          target: "{{.input.travelers[0].email}}"
+          message: "Payment failed. Your reservations have been cancelled."
+        - type: slack
+          target: "#booking-alerts"
+          message: "Payment failed for booking {{.saga_id}}"
+    metadata:
+      phase: payment
+      criticality: critical
+
+  # ============================================================================
+  # 阶段 5: 确认预订
+  # ============================================================================
+
+  - id: confirm-flight-bookings
+    name: Confirm Flight Bookings
+    description: |
+      Confirms both outbound and return flight bookings after payment.
+      Issues electronic tickets.
+    type: service
+    action:
+      service:
+        name: flight-booking-service
+        endpoint: http://flight-booking:8080
+        method: POST
+        path: /api/v1/flights/confirm
+        body:
+          reservations:
+            - "{{.output.reserve-outbound-flight.reservation_id}}"
+            - "{{.output.reserve-return-flight.reservation_id}}"
+          payment_confirmation: "{{.output.process-payment.transaction_id}}"
+          issue_tickets: true
+    compensation:
+      type: skip  # 航班确认后无法简单撤销，依赖于航班取消补偿
+    timeout: 2m
+    dependencies:
+      - process-payment
+    on_success:
+      actions:
+        - message:
+            topic: bookings.flight-confirmed
+            broker: default
+            payload:
+              booking_id: "{{.saga_id}}"
+              reservations: "{{.output.confirm-flight-bookings.ticket_numbers}}"
+    metadata:
+      phase: confirmation
+      criticality: critical
+
+  - id: confirm-hotel-booking
+    name: Confirm Hotel Booking
+    description: |
+      Confirms hotel reservation after payment.
+    type: service
+    action:
+      service:
+        name: hotel-booking-service
+        endpoint: http://hotel-booking:8080
+        method: POST
+        path: /api/v1/hotels/confirm
+        body:
+          reservation_id: "{{.output.reserve-hotel.reservation_id}}"
+          payment_confirmation: "{{.output.process-payment.transaction_id}}"
+    compensation:
+      type: skip
+    timeout: 1m
+    dependencies:
+      - process-payment
+    metadata:
+      phase: confirmation
+      criticality: high
+
+  - id: confirm-car-rental
+    name: Confirm Car Rental
+    description: |
+      Confirms car rental reservation after payment (if applicable).
+    type: service
+    action:
+      service:
+        name: car-rental-service
+        endpoint: http://car-rental:8080
+        method: POST
+        path: /api/v1/rentals/confirm
+        body:
+          reservation_id: "{{.output.reserve-car-rental.reservation_id}}"
+          payment_confirmation: "{{.output.process-payment.transaction_id}}"
+    compensation:
+      type: skip
+    condition:
+      expression: "$input.preferences.needs_car == true"
+    timeout: 1m
+    dependencies:
+      - process-payment
+    metadata:
+      phase: confirmation
+      optional: true
+
+  # ============================================================================
+  # 阶段 6: 生成文档和通知
+  # ============================================================================
+
+  - id: generate-booking-confirmation
+    name: Generate Booking Confirmation Document
+    description: |
+      Generates a comprehensive booking confirmation document with all details.
+    type: service
+    action:
+      service:
+        name: document-service
+        endpoint: http://document-service:8080
+        method: POST
+        path: /api/v1/generate/booking-confirmation
+        body:
+          booking_id: "{{.saga_id}}"
+          customer: "{{.input.travelers[0]}}"
+          flights:
+            outbound: "{{.output.confirm-flight-bookings.outbound_ticket}}"
+            return: "{{.output.confirm-flight-bookings.return_ticket}}"
+          hotel: "{{.output.confirm-hotel-booking.confirmation}}"
+          car_rental: "{{.output.confirm-car-rental.confirmation}}"
+          insurance: "{{.output.purchase-travel-insurance.policy_document}}"
+          total_paid: "{{.output.process-payment.charged_amount}}"
+          currency: "{{.input.currency}}"
+    compensation:
+      type: skip
+    timeout: 1m
+    dependencies:
+      - confirm-flight-bookings
+      - confirm-hotel-booking
+    metadata:
+      phase: documentation
+
+  - id: send-confirmation-email
+    name: Send Booking Confirmation Email
+    description: |
+      Sends detailed booking confirmation email to all travelers.
+    type: message
+    action:
+      message:
+        topic: notifications.booking-confirmation
+        broker: default
+        payload:
+          booking_id: "{{.saga_id}}"
+          travelers: "{{.input.travelers}}"
+          confirmation_document: "{{.output.generate-booking-confirmation.document_url}}"
+          flights:
+            outbound: "{{.output.confirm-flight-bookings.outbound_details}}"
+            return: "{{.output.confirm-flight-bookings.return_details}}"
+          hotel: "{{.output.confirm-hotel-booking.details}}"
+          car_rental: "{{.output.confirm-car-rental.details}}"
+          important_info:
+            visa_status: "{{.output.apply-for-visa.status}}"
+            insurance_policy: "{{.output.purchase-travel-insurance.policy_number}}"
+    compensation:
+      type: skip
+    async: true
+    timeout: 30s
+    dependencies:
+      - generate-booking-confirmation
+    on_success:
+      notifications:
+        - type: webhook
+          target: "{{.context.crm_webhook_url}}"
+          message: "Booking confirmed and customer notified"
+    metadata:
+      phase: notification
+      customer_facing: true
+
+  - id: create-calendar-events
+    name: Create Travel Calendar Events
+    description: |
+      Creates calendar events for all travel components and sends invites.
+    type: service
+    action:
+      service:
+        name: calendar-service
+        endpoint: http://calendar:8080
+        method: POST
+        path: /api/v1/events/create-travel-itinerary
+        body:
+          booking_id: "{{.saga_id}}"
+          travelers: "{{.input.travelers}}"
+          events:
+            - type: flight
+              title: "Flight to {{.input.destination}}"
+              start: "{{.output.reserve-outbound-flight.departure_time}}"
+              end: "{{.output.reserve-outbound-flight.arrival_time}}"
+              location: "{{.input.origin}} to {{.input.destination}}"
+            - type: hotel
+              title: "Hotel Stay - {{.output.reserve-hotel.hotel_name}}"
+              start: "{{.input.departure_date}}"
+              end: "{{.input.return_date}}"
+              location: "{{.output.reserve-hotel.hotel_address}}"
+            - type: flight
+              title: "Return Flight to {{.input.origin}}"
+              start: "{{.output.reserve-return-flight.departure_time}}"
+              end: "{{.output.reserve-return-flight.arrival_time}}"
+              location: "{{.input.destination}} to {{.input.origin}}"
+    compensation:
+      type: skip
+    async: true
+    timeout: 30s
+    dependencies:
+      - generate-booking-confirmation
+    metadata:
+      phase: notification
+      optional: true
+
+  - id: update-loyalty-points
+    name: Update Customer Loyalty Points
+    description: |
+      Awards loyalty points to customer for the booking.
+    type: service
+    action:
+      service:
+        name: loyalty-service
+        endpoint: http://loyalty:8080
+        method: POST
+        path: /api/v1/points/award
+        body:
+          customer_id: "{{.input.customer_id}}"
+          booking_id: "{{.saga_id}}"
+          amount_spent: "{{.output.process-payment.charged_amount}}"
+          currency: "{{.input.currency}}"
+          booking_type: travel_package
+    compensation:
+      type: custom
+      action:
+        service:
+          name: loyalty-service
+          method: POST
+          path: /api/v1/points/deduct
+          body:
+            customer_id: "{{.input.customer_id}}"
+            transaction_id: "{{.output.update-loyalty-points.transaction_id}}"
+            reason: "booking_cancelled"
+    async: true
+    timeout: 15s
+    dependencies:
+      - process-payment
+    metadata:
+      phase: post_booking
+      optional: true
+

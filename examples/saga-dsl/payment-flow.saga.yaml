@@ -1,0 +1,568 @@
+# 支付流程 Saga 示例
+# 本示例演示了一个完整的支付处理流程，包括风险评估、支付处理、账户更新和通知
+#
+# 业务场景：
+# 处理各种类型的支付交易，包括：
+# - 在线购物支付
+# - 账户充值
+# - 转账交易
+# - 退款处理
+#
+# 特点：
+# - 支持多种支付方式（信用卡、借记卡、数字钱包、银行转账）
+# - 实时风险评估和欺诈检测
+# - 3D Secure 认证集成
+# - 支付失败自动重试
+# - 完善的补偿机制
+# - 实时通知和监控
+
+saga:
+  id: payment-processing-saga
+  name: Payment Processing Saga
+  description: |
+    Comprehensive payment processing workflow with fraud detection,
+    multi-payment method support, and automatic reconciliation.
+    
+    Supports:
+    - Credit/Debit cards (Visa, Mastercard, Amex)
+    - Digital wallets (PayPal, Apple Pay, Google Pay)
+    - Bank transfers (ACH, SEPA, Wire)
+    - Buy Now Pay Later services
+  version: "3.1.0"
+  timeout: 5m
+  mode: orchestration
+  tags:
+    - payment
+    - finance
+    - security
+    - critical
+    - pci-compliant
+  metadata:
+    owner: payment-team
+    priority: critical
+    business_unit: finance
+    sla: 99.95%
+    compliance: PCI-DSS-v4.0
+    audit_level: high
+
+# 全局重试策略 - 针对支付操作优化
+global_retry_policy:
+  type: exponential_backoff
+  max_attempts: 3
+  initial_delay: 2s
+  max_delay: 30s
+  multiplier: 2.5
+  jitter: true
+  retryable_errors:
+    - timeout
+    - network
+    - service_unavailable
+    - gateway_timeout
+    - rate_limit
+
+# 全局补偿配置
+global_compensation:
+  strategy: sequential
+  timeout: 10m  # 支付补偿需要更长时间
+  max_attempts: 5
+
+steps:
+  # ============================================================================
+  # 步骤 1: 验证支付请求
+  # ============================================================================
+  - id: validate-payment-request
+    name: Validate Payment Request
+    description: |
+      Validates the payment request including:
+      - Customer identity verification
+      - Payment method validity
+      - Amount and currency validation
+      - Required fields completeness
+      - Business rules compliance
+    type: service
+    action:
+      service:
+        name: payment-validator-service
+        endpoint: http://payment-validator:8080
+        method: POST
+        path: /api/v1/validate
+        headers:
+          Content-Type: application/json
+          X-Request-ID: "{{.context.request_id}}"
+          X-Saga-ID: "{{.saga_id}}"
+        body:
+          transaction_id: "{{.input.transaction_id}}"
+          customer_id: "{{.input.customer_id}}"
+          amount: "{{.input.amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          payment_details: "{{.input.payment_details}}"
+          billing_address: "{{.input.billing_address}}"
+        timeout: 5s
+    compensation:
+      type: skip  # 验证步骤无副作用
+    timeout: 15s
+    metadata:
+      criticality: high
+      audit: true
+
+  # ============================================================================
+  # 步骤 2: 风险评估和欺诈检测
+  # ============================================================================
+  - id: assess-fraud-risk
+    name: Assess Fraud Risk
+    description: |
+      Performs real-time fraud detection and risk assessment using:
+      - Machine learning models
+      - Historical transaction patterns
+      - Device fingerprinting
+      - Geolocation analysis
+      - Velocity checks
+      - Blacklist/whitelist screening
+    type: service
+    action:
+      service:
+        name: fraud-detection-service
+        endpoint: http://fraud-detection:8080
+        method: POST
+        path: /api/v1/assess
+        headers:
+          Content-Type: application/json
+          X-Request-ID: "{{.context.request_id}}"
+          Authorization: "Bearer {{.context.fraud_service_token}}"
+        body:
+          transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+          customer_id: "{{.input.customer_id}}"
+          amount: "{{.input.amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          device_info: "{{.context.device_info}}"
+          ip_address: "{{.context.ip_address}}"
+          geolocation: "{{.context.geolocation}}"
+          customer_history: "{{.context.customer_history}}"
+        timeout: 10s
+    compensation:
+      type: skip
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 2
+      initial_delay: 1s
+      max_delay: 5s
+    timeout: 30s
+    dependencies:
+      - validate-payment-request
+    on_success:
+      actions:
+        - service:
+            name: analytics-service
+            method: POST
+            path: /api/events/fraud-check
+            body:
+              transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+              risk_score: "{{.output.assess-fraud-risk.risk_score}}"
+              risk_level: "{{.output.assess-fraud-risk.risk_level}}"
+    on_failure:
+      notifications:
+        - type: slack
+          target: "#fraud-alerts"
+          message: "Fraud detection service unavailable for transaction {{.input.transaction_id}}"
+    metadata:
+      criticality: high
+      security: true
+
+  # ============================================================================
+  # 步骤 3: 3D Secure 认证（条件执行）
+  # ============================================================================
+  - id: perform-3ds-authentication
+    name: Perform 3D Secure Authentication
+    description: |
+      Performs 3D Secure (3DS) authentication for card payments when required.
+      This step is conditionally executed based on:
+      - Risk assessment result
+      - Card issuer requirements
+      - Transaction amount
+      - Regulatory requirements
+    type: service
+    action:
+      service:
+        name: three-ds-service
+        endpoint: http://3ds-service:8080
+        method: POST
+        path: /api/v1/authenticate
+        headers:
+          Content-Type: application/json
+          X-Request-ID: "{{.context.request_id}}"
+        body:
+          transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+          card_number: "{{.input.payment_details.card_number}}"
+          amount: "{{.input.amount}}"
+          currency: "{{.input.currency}}"
+          merchant_id: "{{.context.merchant_id}}"
+          return_url: "{{.context.3ds_return_url}}"
+        timeout: 30s
+    compensation:
+      type: skip
+    condition:
+      expression: "$output.assess-fraud-risk.require_3ds == true || $input.amount > $variables.threshold"
+      variables:
+        threshold: 250  # 金额超过 250 时需要 3DS
+    timeout: 2m  # 3DS 认证可能需要用户交互
+    dependencies:
+      - assess-fraud-risk
+    metadata:
+      criticality: high
+      security: true
+      user_interaction: true
+
+  # ============================================================================
+  # 步骤 4: 授权支付
+  # ============================================================================
+  - id: authorize-payment
+    name: Authorize Payment
+    description: |
+      Authorizes the payment with the payment gateway or processor.
+      This step holds the funds but doesn't capture them yet.
+      
+      Supports multiple payment gateways:
+      - Stripe
+      - PayPal
+      - Adyen
+      - Braintree
+    type: service
+    action:
+      service:
+        name: payment-gateway-service
+        endpoint: http://payment-gateway:8080
+        method: POST
+        path: /api/v1/authorize
+        headers:
+          Content-Type: application/json
+          Authorization: "Bearer {{.context.gateway_api_key}}"
+          X-Request-ID: "{{.context.request_id}}"
+          X-Idempotency-Key: "{{.saga_id}}-authorize"
+        body:
+          transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+          customer_id: "{{.input.customer_id}}"
+          amount: "{{.input.amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          payment_details: "{{.input.payment_details}}"
+          three_ds_result: "{{.output.perform-3ds-authentication.authentication_result}}"
+          billing_address: "{{.input.billing_address}}"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            risk_score: "{{.output.assess-fraud-risk.risk_score}}"
+        timeout: 20s
+    compensation:
+      type: custom
+      action:
+        service:
+          name: payment-gateway-service
+          method: POST
+          path: /api/v1/void
+          headers:
+            Authorization: "Bearer {{.context.gateway_api_key}}"
+            X-Idempotency-Key: "{{.saga_id}}-void"
+          body:
+            authorization_id: "{{.output.authorize-payment.authorization_id}}"
+            reason: "saga_compensation"
+      timeout: 1m
+      max_attempts: 5
+      on_failure:
+        action: alert
+        notifications:
+          - type: pagerduty
+            target: payment-ops
+            message: "CRITICAL: Failed to void authorization {{.output.authorize-payment.authorization_id}}"
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 3
+      initial_delay: 2s
+      max_delay: 30s
+      retryable_errors:
+        - timeout
+        - network
+        - gateway_timeout
+    timeout: 1m
+    dependencies:
+      - assess-fraud-risk
+    on_failure:
+      notifications:
+        - type: slack
+          target: "#payment-alerts"
+          message: |
+            ❌ Payment authorization failed
+            Transaction: {{.output.validate-payment-request.validated_transaction_id}}
+            Amount: {{.input.amount}} {{.input.currency}}
+            Error: {{.error.message}}
+    metadata:
+      criticality: critical
+      financial_impact: high
+
+  # ============================================================================
+  # 步骤 5: 捕获支付
+  # ============================================================================
+  - id: capture-payment
+    name: Capture Payment
+    description: |
+      Captures the authorized payment, transferring funds from customer to merchant.
+      This is the point where money actually moves.
+    type: service
+    action:
+      service:
+        name: payment-gateway-service
+        endpoint: http://payment-gateway:8080
+        method: POST
+        path: /api/v1/capture
+        headers:
+          Content-Type: application/json
+          Authorization: "Bearer {{.context.gateway_api_key}}"
+          X-Idempotency-Key: "{{.saga_id}}-capture"
+        body:
+          authorization_id: "{{.output.authorize-payment.authorization_id}}"
+          amount: "{{.input.amount}}"
+          currency: "{{.input.currency}}"
+          final_amount: "{{.output.authorize-payment.authorized_amount}}"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+        timeout: 30s
+    compensation:
+      type: custom
+      action:
+        service:
+          name: payment-gateway-service
+          method: POST
+          path: /api/v1/refund
+          headers:
+            Authorization: "Bearer {{.context.gateway_api_key}}"
+            X-Idempotency-Key: "{{.saga_id}}-refund"
+          body:
+            capture_id: "{{.output.capture-payment.capture_id}}"
+            amount: "{{.output.capture-payment.captured_amount}}"
+            currency: "{{.input.currency}}"
+            reason: "saga_compensation"
+            metadata:
+              original_transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+      timeout: 3m
+      max_attempts: 10
+      on_failure:
+        action: alert
+        retry_policy:
+          type: exponential_backoff
+          max_attempts: 20
+          initial_delay: 10s
+          max_delay: 1h
+        notifications:
+          - type: pagerduty
+            target: payment-ops
+            message: "CRITICAL: Refund failed for capture {{.output.capture-payment.capture_id}}"
+          - type: email
+            target: "finance-emergency@company.com"
+            message: "Manual refund required: {{.output.capture-payment.capture_id}}"
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 5
+      initial_delay: 2s
+      max_delay: 1m
+    timeout: 2m
+    dependencies:
+      - authorize-payment
+    on_success:
+      actions:
+        - message:
+            topic: payments.captured
+            broker: default
+            payload:
+              transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+              capture_id: "{{.output.capture-payment.capture_id}}"
+              amount: "{{.output.capture-payment.captured_amount}}"
+              currency: "{{.input.currency}}"
+              timestamp: "{{.timestamp}}"
+      notifications:
+        - type: webhook
+          target: "{{.context.merchant_webhook_url}}"
+          message: "Payment captured successfully"
+    metadata:
+      criticality: critical
+      financial_impact: high
+      audit: true
+
+  # ============================================================================
+  # 步骤 6: 更新账户余额
+  # ============================================================================
+  - id: update-account-balance
+    name: Update Account Balance
+    description: |
+      Updates the merchant's account balance with the captured payment amount.
+      This step maintains the merchant's ledger.
+    type: service
+    action:
+      service:
+        name: accounting-service
+        endpoint: http://accounting:8080
+        method: POST
+        path: /api/v1/accounts/credit
+        headers:
+          Content-Type: application/json
+          Authorization: "Bearer {{.context.accounting_token}}"
+        body:
+          account_id: "{{.context.merchant_account_id}}"
+          amount: "{{.output.capture-payment.captured_amount}}"
+          currency: "{{.input.currency}}"
+          transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+          capture_id: "{{.output.capture-payment.capture_id}}"
+          description: "Payment captured"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            customer_id: "{{.input.customer_id}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: accounting-service
+          method: POST
+          path: /api/v1/accounts/debit
+          body:
+            account_id: "{{.context.merchant_account_id}}"
+            amount: "{{.output.capture-payment.captured_amount}}"
+            currency: "{{.input.currency}}"
+            transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+            reason: "payment_reversal"
+      timeout: 1m
+      max_attempts: 10
+    timeout: 30s
+    dependencies:
+      - capture-payment
+    metadata:
+      criticality: high
+      financial_impact: high
+
+  # ============================================================================
+  # 步骤 7: 记录交易
+  # ============================================================================
+  - id: record-transaction
+    name: Record Transaction
+    description: |
+      Records the complete transaction history for audit and reconciliation purposes.
+      Stores all transaction details, timeline, and related metadata.
+    type: service
+    action:
+      service:
+        name: transaction-ledger-service
+        endpoint: http://ledger:8080
+        method: POST
+        path: /api/v1/transactions
+        body:
+          transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+          saga_id: "{{.saga_id}}"
+          customer_id: "{{.input.customer_id}}"
+          merchant_id: "{{.context.merchant_id}}"
+          amount: "{{.output.capture-payment.captured_amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          authorization_id: "{{.output.authorize-payment.authorization_id}}"
+          capture_id: "{{.output.capture-payment.capture_id}}"
+          risk_score: "{{.output.assess-fraud-risk.risk_score}}"
+          status: "completed"
+          timestamp: "{{.timestamp}}"
+          metadata:
+            three_ds_used: "{{.output.perform-3ds-authentication.authenticated}}"
+            gateway: "{{.context.gateway_name}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: transaction-ledger-service
+          method: PUT
+          path: /api/v1/transactions/{{.output.validate-payment-request.validated_transaction_id}}/status
+          body:
+            status: "reversed"
+            reversal_reason: "saga_compensation"
+            reversal_timestamp: "{{.timestamp}}"
+    timeout: 30s
+    dependencies:
+      - update-account-balance
+    metadata:
+      audit: true
+      compliance: true
+
+  # ============================================================================
+  # 步骤 8: 发送支付确认通知
+  # ============================================================================
+  - id: send-payment-confirmation
+    name: Send Payment Confirmation
+    description: |
+      Sends payment confirmation notifications to the customer through multiple channels.
+      Includes receipt generation and delivery.
+    type: message
+    action:
+      message:
+        topic: notifications.payment-confirmation
+        broker: default
+        payload:
+          transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+          customer_id: "{{.input.customer_id}}"
+          customer_email: "{{.input.customer_email}}"
+          customer_phone: "{{.input.customer_phone}}"
+          amount: "{{.output.capture-payment.captured_amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          merchant_name: "{{.context.merchant_name}}"
+          receipt_url: "{{.output.record-transaction.receipt_url}}"
+          timestamp: "{{.timestamp}}"
+        headers:
+          notification_type: payment_confirmation
+          priority: high
+    compensation:
+      type: skip  # 通知无需补偿
+    async: true
+    timeout: 30s
+    dependencies:
+      - record-transaction
+    on_success:
+      notifications:
+        - type: webhook
+          target: "{{.context.merchant_webhook_url}}"
+          message: "Customer notification sent"
+    metadata:
+      criticality: medium
+      customer_facing: true
+
+  # ============================================================================
+  # 步骤 9: 更新分析指标
+  # ============================================================================
+  - id: update-analytics
+    name: Update Analytics Metrics
+    description: |
+      Updates real-time analytics and business intelligence metrics.
+      This step is optional and runs asynchronously.
+    type: service
+    action:
+      service:
+        name: analytics-service
+        endpoint: http://analytics:8080
+        method: POST
+        path: /api/v1/metrics/payment
+        body:
+          transaction_id: "{{.output.validate-payment-request.validated_transaction_id}}"
+          amount: "{{.output.capture-payment.captured_amount}}"
+          currency: "{{.input.currency}}"
+          payment_method: "{{.input.payment_method}}"
+          merchant_id: "{{.context.merchant_id}}"
+          customer_id: "{{.input.customer_id}}"
+          risk_score: "{{.output.assess-fraud-risk.risk_score}}"
+          processing_time: "{{.context.elapsed_time}}"
+          timestamp: "{{.timestamp}}"
+    compensation:
+      type: skip
+    async: true
+    timeout: 15s
+    dependencies:
+      - record-transaction
+    on_failure:
+      action: log  # 分析更新失败不影响主流程
+    metadata:
+      criticality: low
+      optional: true
+

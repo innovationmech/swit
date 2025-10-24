@@ -1,0 +1,588 @@
+# 库存管理 Saga 示例
+# 本示例演示了跨仓库的库存管理和调配流程
+#
+# 业务场景：
+# - 库存预留和释放
+# - 跨仓库库存调拨
+# - 库存补货
+# - 库存盘点和同步
+#
+# 特点：
+# - 支持多仓库场景
+# - 分布式库存管理
+# - 库存锁定机制
+# - 自动库存优化
+# - 实时库存同步
+
+saga:
+  id: inventory-management-saga
+  name: Inventory Management Saga
+  description: |
+    Multi-warehouse inventory management with automatic stock allocation,
+    rebalancing, and real-time synchronization across distributed systems.
+    
+    Features:
+    - Multi-warehouse inventory tracking
+    - Automatic stock reservation and release
+    - Cross-warehouse stock transfer
+    - Stock level optimization
+    - Real-time inventory synchronization
+  version: "2.0.0"
+  timeout: 15m
+  mode: orchestration
+  tags:
+    - inventory
+    - warehouse
+    - logistics
+    - supply-chain
+  metadata:
+    owner: inventory-team
+    priority: high
+    business_unit: operations
+    sla: 99.9%
+
+global_retry_policy:
+  type: exponential_backoff
+  max_attempts: 5
+  initial_delay: 500ms
+  max_delay: 30s
+  multiplier: 2.0
+  jitter: true
+  retryable_errors:
+    - timeout
+    - network
+    - service_unavailable
+    - resource_locked
+    - deadlock
+
+global_compensation:
+  strategy: sequential
+  timeout: 10m
+  max_attempts: 5
+
+steps:
+  # ============================================================================
+  # 步骤 1: 检查库存可用性
+  # ============================================================================
+  - id: check-inventory-availability
+    name: Check Inventory Availability
+    description: |
+      Checks inventory availability across all warehouses for the requested items.
+      Returns available quantities per warehouse and optimal allocation strategy.
+    type: service
+    action:
+      service:
+        name: inventory-service
+        endpoint: http://inventory:8080
+        method: POST
+        path: /api/v1/inventory/check-availability
+        headers:
+          Content-Type: application/json
+          X-Request-ID: "{{.context.request_id}}"
+          X-Saga-ID: "{{.saga_id}}"
+        body:
+          items: "{{.input.items}}"
+          required_quantities: "{{.input.quantities}}"
+          preferred_warehouse: "{{.input.preferred_warehouse}}"
+          customer_location: "{{.input.customer_location}}"
+          priority: "{{.input.priority}}"
+        timeout: 5s
+    compensation:
+      type: skip  # 只读操作
+    timeout: 15s
+    metadata:
+      criticality: high
+      operation_type: read
+
+  # ============================================================================
+  # 步骤 2: 优化库存分配
+  # ============================================================================
+  - id: optimize-allocation
+    name: Optimize Inventory Allocation
+    description: |
+      Optimizes inventory allocation across warehouses considering:
+      - Shipping costs and distance
+      - Warehouse capacity
+      - Stock levels and turnover rates
+      - Delivery time requirements
+    type: service
+    action:
+      service:
+        name: inventory-optimizer-service
+        endpoint: http://inventory-optimizer:8080
+        method: POST
+        path: /api/v1/optimize/allocation
+        body:
+          availability: "{{.output.check-inventory-availability.availability_map}}"
+          items: "{{.input.items}}"
+          quantities: "{{.input.quantities}}"
+          customer_location: "{{.input.customer_location}}"
+          delivery_deadline: "{{.input.delivery_deadline}}"
+          cost_optimization: true
+        timeout: 10s
+    compensation:
+      type: skip
+    timeout: 30s
+    dependencies:
+      - check-inventory-availability
+    metadata:
+      criticality: medium
+
+  # ============================================================================
+  # 步骤 3: 预留主仓库库存
+  # ============================================================================
+  - id: reserve-primary-warehouse
+    name: Reserve Primary Warehouse Inventory
+    description: |
+      Reserves inventory from the primary warehouse based on the optimized allocation.
+      Creates a timed reservation that auto-expires if not confirmed.
+    type: service
+    action:
+      service:
+        name: inventory-service
+        endpoint: http://inventory:8080
+        method: POST
+        path: /api/v1/inventory/reserve
+        headers:
+          X-Idempotency-Key: "{{.saga_id}}-primary-reserve"
+        body:
+          warehouse_id: "{{.output.optimize-allocation.primary_warehouse_id}}"
+          items: "{{.output.optimize-allocation.primary_allocation}}"
+          reservation_id: "{{.saga_id}}-primary"
+          reservation_timeout: "15m"
+          requester: "{{.context.service_name}}"
+          reason: "order_fulfillment"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            order_id: "{{.input.order_id}}"
+        timeout: 10s
+    compensation:
+      type: custom
+      action:
+        service:
+          name: inventory-service
+          method: POST
+          path: /api/v1/inventory/release
+          body:
+            reservation_id: "{{.output.reserve-primary-warehouse.reservation_id}}"
+            warehouse_id: "{{.output.optimize-allocation.primary_warehouse_id}}"
+            reason: "saga_compensation"
+            timestamp: "{{.timestamp}}"
+      timeout: 1m
+      max_attempts: 10
+      on_failure:
+        action: alert
+        notifications:
+          - type: slack
+            target: "#inventory-alerts"
+            message: "Failed to release primary warehouse reservation: {{.output.reserve-primary-warehouse.reservation_id}}"
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 5
+      initial_delay: 500ms
+      max_delay: 10s
+      retryable_errors:
+        - timeout
+        - resource_locked
+        - deadlock
+    timeout: 1m
+    dependencies:
+      - optimize-allocation
+    on_success:
+      actions:
+        - message:
+            topic: inventory.reserved
+            broker: default
+            payload:
+              reservation_id: "{{.output.reserve-primary-warehouse.reservation_id}}"
+              warehouse_id: "{{.output.optimize-allocation.primary_warehouse_id}}"
+              items: "{{.output.optimize-allocation.primary_allocation}}"
+    metadata:
+      criticality: high
+      operation_type: write
+
+  # ============================================================================
+  # 步骤 4: 预留备用仓库库存（条件执行）
+  # ============================================================================
+  - id: reserve-secondary-warehouse
+    name: Reserve Secondary Warehouse Inventory
+    description: |
+      Reserves inventory from secondary warehouse if needed.
+      This step only runs if the primary warehouse cannot fulfill the entire order.
+    type: service
+    action:
+      service:
+        name: inventory-service
+        endpoint: http://inventory:8080
+        method: POST
+        path: /api/v1/inventory/reserve
+        headers:
+          X-Idempotency-Key: "{{.saga_id}}-secondary-reserve"
+        body:
+          warehouse_id: "{{.output.optimize-allocation.secondary_warehouse_id}}"
+          items: "{{.output.optimize-allocation.secondary_allocation}}"
+          reservation_id: "{{.saga_id}}-secondary"
+          reservation_timeout: "15m"
+          requester: "{{.context.service_name}}"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            order_id: "{{.input.order_id}}"
+            allocation_type: "secondary"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: inventory-service
+          method: POST
+          path: /api/v1/inventory/release
+          body:
+            reservation_id: "{{.output.reserve-secondary-warehouse.reservation_id}}"
+            warehouse_id: "{{.output.optimize-allocation.secondary_warehouse_id}}"
+            reason: "saga_compensation"
+      timeout: 1m
+      max_attempts: 10
+    condition:
+      expression: "$output.optimize-allocation.requires_secondary == true"
+    timeout: 1m
+    dependencies:
+      - reserve-primary-warehouse
+    metadata:
+      criticality: high
+      optional: true
+
+  # ============================================================================
+  # 步骤 5: 锁定库存
+  # ============================================================================
+  - id: lock-inventory
+    name: Lock Reserved Inventory
+    description: |
+      Locks the reserved inventory to prevent concurrent modifications.
+      This creates a hard lock that must be explicitly released.
+    type: service
+    action:
+      service:
+        name: inventory-lock-service
+        endpoint: http://inventory-lock:8080
+        method: POST
+        path: /api/v1/locks/acquire
+        body:
+          reservations:
+            - reservation_id: "{{.output.reserve-primary-warehouse.reservation_id}}"
+              warehouse_id: "{{.output.optimize-allocation.primary_warehouse_id}}"
+            - reservation_id: "{{.output.reserve-secondary-warehouse.reservation_id}}"
+              warehouse_id: "{{.output.optimize-allocation.secondary_warehouse_id}}"
+          lock_timeout: "10m"
+          saga_id: "{{.saga_id}}"
+        timeout: 5s
+    compensation:
+      type: custom
+      action:
+        service:
+          name: inventory-lock-service
+          method: POST
+          path: /api/v1/locks/release
+          body:
+            lock_id: "{{.output.lock-inventory.lock_id}}"
+            force: true
+            reason: "saga_compensation"
+      timeout: 30s
+      max_attempts: 5
+    timeout: 30s
+    dependencies:
+      - reserve-primary-warehouse
+    metadata:
+      criticality: critical
+
+  # ============================================================================
+  # 步骤 6: 确认库存分配
+  # ============================================================================
+  - id: confirm-allocation
+    name: Confirm Inventory Allocation
+    description: |
+      Confirms the inventory allocation and converts reservations to committed allocations.
+      This step permanently reduces available inventory.
+    type: service
+    action:
+      service:
+        name: inventory-service
+        endpoint: http://inventory:8080
+        method: POST
+        path: /api/v1/inventory/confirm
+        headers:
+          X-Idempotency-Key: "{{.saga_id}}-confirm"
+        body:
+          reservations:
+            - "{{.output.reserve-primary-warehouse.reservation_id}}"
+            - "{{.output.reserve-secondary-warehouse.reservation_id}}"
+          order_id: "{{.input.order_id}}"
+          allocation_id: "{{.saga_id}}"
+          confirmation_timestamp: "{{.timestamp}}"
+          metadata:
+            saga_id: "{{.saga_id}}"
+            customer_id: "{{.input.customer_id}}"
+    compensation:
+      type: custom
+      action:
+        service:
+          name: inventory-service
+          method: POST
+          path: /api/v1/inventory/revert
+          body:
+            allocation_id: "{{.saga_id}}"
+            reason: "saga_compensation"
+            restore_to_available: true
+      timeout: 2m
+      max_attempts: 10
+      on_failure:
+        action: alert
+        retry_policy:
+          type: exponential_backoff
+          max_attempts: 20
+          initial_delay: 10s
+          max_delay: 1h
+        notifications:
+          - type: pagerduty
+            target: inventory-ops
+            message: "CRITICAL: Failed to revert inventory allocation {{.saga_id}}"
+    timeout: 1m
+    dependencies:
+      - lock-inventory
+    on_success:
+      actions:
+        - message:
+            topic: inventory.allocated
+            broker: default
+            payload:
+              allocation_id: "{{.saga_id}}"
+              order_id: "{{.input.order_id}}"
+              warehouses: "{{.output.confirm-allocation.warehouse_list}}"
+              total_items: "{{.output.confirm-allocation.total_items}}"
+    metadata:
+      criticality: critical
+      operation_type: write
+
+  # ============================================================================
+  # 步骤 7: 释放库存锁
+  # ============================================================================
+  - id: release-lock
+    name: Release Inventory Lock
+    description: |
+      Releases the inventory locks after successful allocation.
+    type: service
+    action:
+      service:
+        name: inventory-lock-service
+        endpoint: http://inventory-lock:8080
+        method: POST
+        path: /api/v1/locks/release
+        body:
+          lock_id: "{{.output.lock-inventory.lock_id}}"
+          reason: "allocation_confirmed"
+    compensation:
+      type: skip  # 锁已经释放，无需补偿
+    timeout: 30s
+    dependencies:
+      - confirm-allocation
+    metadata:
+      criticality: medium
+
+  # ============================================================================
+  # 步骤 8: 更新库存报告
+  # ============================================================================
+  - id: update-inventory-reports
+    name: Update Inventory Reports
+    description: |
+      Updates inventory reports and analytics with the new allocation.
+      Triggers low-stock alerts if necessary.
+    type: service
+    action:
+      service:
+        name: inventory-analytics-service
+        endpoint: http://inventory-analytics:8080
+        method: POST
+        path: /api/v1/reports/update
+        body:
+          allocation_id: "{{.saga_id}}"
+          warehouses:
+            - warehouse_id: "{{.output.optimize-allocation.primary_warehouse_id}}"
+              items: "{{.output.optimize-allocation.primary_allocation}}"
+            - warehouse_id: "{{.output.optimize-allocation.secondary_warehouse_id}}"
+              items: "{{.output.optimize-allocation.secondary_allocation}}"
+          timestamp: "{{.timestamp}}"
+    compensation:
+      type: skip
+    async: true
+    timeout: 30s
+    dependencies:
+      - confirm-allocation
+    metadata:
+      criticality: low
+      optional: true
+
+  # ============================================================================
+  # 步骤 9: 触发补货检查（异步）
+  # ============================================================================
+  - id: trigger-replenishment-check
+    name: Trigger Replenishment Check
+    description: |
+      Checks if any warehouse needs replenishment based on current stock levels.
+      Triggers automatic purchase orders or transfers if needed.
+    type: message
+    action:
+      message:
+        topic: inventory.replenishment-check
+        broker: default
+        payload:
+          warehouses: "{{.output.confirm-allocation.affected_warehouses}}"
+          items: "{{.output.confirm-allocation.items}}"
+          current_levels: "{{.output.confirm-allocation.remaining_stock}}"
+          trigger_reason: "allocation_completed"
+        headers:
+          event_type: replenishment_check
+          priority: normal
+    compensation:
+      type: skip
+    async: true
+    timeout: 15s
+    dependencies:
+      - confirm-allocation
+    condition:
+      expression: "$output.confirm-allocation.low_stock_detected == true"
+    metadata:
+      criticality: low
+      optional: true
+
+  # ============================================================================
+  # 步骤 10: 同步到 ERP 系统
+  # ============================================================================
+  - id: sync-to-erp
+    name: Sync to ERP System
+    description: |
+      Synchronizes the inventory allocation to the enterprise ERP system
+      for accounting and reporting purposes.
+    type: service
+    action:
+      service:
+        name: erp-integration-service
+        endpoint: http://erp-integration:8080
+        method: POST
+        path: /api/v1/sync/inventory-allocation
+        headers:
+          Authorization: "Bearer {{.context.erp_api_token}}"
+        body:
+          allocation_id: "{{.saga_id}}"
+          order_id: "{{.input.order_id}}"
+          customer_id: "{{.input.customer_id}}"
+          allocation_details: "{{.output.confirm-allocation}}"
+          timestamp: "{{.timestamp}}"
+        timeout: 20s
+    compensation:
+      type: custom
+      action:
+        service:
+          name: erp-integration-service
+          method: POST
+          path: /api/v1/sync/revert-allocation
+          body:
+            allocation_id: "{{.saga_id}}"
+            reason: "saga_compensation"
+      timeout: 1m
+      max_attempts: 5
+    retry_policy:
+      type: exponential_backoff
+      max_attempts: 3
+      initial_delay: 2s
+      max_delay: 30s
+    timeout: 1m
+    dependencies:
+      - confirm-allocation
+    on_failure:
+      notifications:
+        - type: slack
+          target: "#erp-integration-alerts"
+          message: "Failed to sync inventory allocation {{.saga_id}} to ERP"
+    metadata:
+      criticality: medium
+      integration: true
+
+  # ============================================================================
+  # 步骤 11: 生成拣货单
+  # ============================================================================
+  - id: generate-picking-lists
+    name: Generate Warehouse Picking Lists
+    description: |
+      Generates picking lists for warehouse staff to fulfill the order.
+      Creates optimized picking routes for efficiency.
+    type: service
+    action:
+      service:
+        name: warehouse-management-service
+        endpoint: http://wms:8080
+        method: POST
+        path: /api/v1/picking-lists/generate
+        body:
+          allocation_id: "{{.saga_id}}"
+          order_id: "{{.input.order_id}}"
+          warehouses:
+            - warehouse_id: "{{.output.optimize-allocation.primary_warehouse_id}}"
+              items: "{{.output.optimize-allocation.primary_allocation}}"
+              priority: high
+            - warehouse_id: "{{.output.optimize-allocation.secondary_warehouse_id}}"
+              items: "{{.output.optimize-allocation.secondary_allocation}}"
+              priority: high
+          optimize_route: true
+          generate_barcode: true
+    compensation:
+      type: custom
+      action:
+        service:
+          name: warehouse-management-service
+          method: DELETE
+          path: /api/v1/picking-lists/{{.output.generate-picking-lists.picking_list_ids}}
+          body:
+            reason: "order_cancelled"
+    timeout: 1m
+    dependencies:
+      - confirm-allocation
+    on_success:
+      notifications:
+        - type: webhook
+          target: "{{.context.warehouse_notification_url}}"
+          message: "New picking lists generated for order {{.input.order_id}}"
+    metadata:
+      criticality: high
+      operation_type: warehouse
+
+  # ============================================================================
+  # 步骤 12: 发送库存分配通知
+  # ============================================================================
+  - id: send-allocation-notification
+    name: Send Allocation Notification
+    description: |
+      Sends notifications about the successful inventory allocation
+      to relevant parties (fulfillment team, customer service, etc.)
+    type: message
+    action:
+      message:
+        topic: notifications.inventory-allocated
+        broker: default
+        payload:
+          allocation_id: "{{.saga_id}}"
+          order_id: "{{.input.order_id}}"
+          customer_id: "{{.input.customer_id}}"
+          warehouses: "{{.output.confirm-allocation.warehouse_list}}"
+          picking_lists: "{{.output.generate-picking-lists.picking_list_ids}}"
+          estimated_ship_date: "{{.output.confirm-allocation.estimated_ship_date}}"
+          timestamp: "{{.timestamp}}"
+        headers:
+          notification_type: inventory_allocated
+          priority: normal
+    compensation:
+      type: skip
+    async: true
+    timeout: 15s
+    dependencies:
+      - generate-picking-lists
+    metadata:
+      criticality: low
+
