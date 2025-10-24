@@ -38,15 +38,15 @@ func TestPostgresStateStorage_ErrOptimisticLockFailed(t *testing.T) {
 // TestPostgresPoolStats tests the PostgresPoolStats structure
 func TestPostgresPoolStats(t *testing.T) {
 	stats := &PostgresPoolStats{
-		MaxOpenConnections:  10,
-		OpenConnections:     5,
-		InUse:               3,
-		Idle:                2,
-		WaitCount:           100,
-		WaitDuration:        5 * time.Second,
-		MaxIdleClosed:       10,
-		MaxIdleTimeClosed:   20,
-		MaxLifetimeClosed:   30,
+		MaxOpenConnections: 10,
+		OpenConnections:    5,
+		InUse:              3,
+		Idle:               2,
+		WaitCount:          100,
+		WaitDuration:       5 * time.Second,
+		MaxIdleClosed:      10,
+		MaxIdleTimeClosed:  20,
+		MaxLifetimeClosed:  30,
 	}
 
 	if stats.MaxOpenConnections != 10 {
@@ -285,4 +285,3 @@ func TestSagaTransaction_Interface(t *testing.T) {
 		t.Error("checkTimeout() should return error when timeout exceeded")
 	}
 }
-
