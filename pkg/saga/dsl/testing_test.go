@@ -936,4 +936,3 @@ func createTempFile(t *testing.T, name, content string) string {
 
 	return tmpFile
 }
-

@@ -84,14 +84,14 @@ EXAMPLES:
 )
 
 type config struct {
-	command   string
-	format    string
-	strict    bool
-	verbose   bool
-	failFast  bool
-	pattern   string
+	command    string
+	format     string
+	strict     bool
+	verbose    bool
+	failFast   bool
+	pattern    string
 	outputFile string
-	files     []string
+	files      []string
 }
 
 func main() {
@@ -428,4 +428,3 @@ func collectFiles(paths []string, pattern string) ([]string, error) {
 
 	return sagaFiles, nil
 }
-

@@ -697,4 +697,3 @@ func ValidateFile(path string) error {
 	validator := NewValidator()
 	return validator.Validate(def)
 }
-
