@@ -708,7 +708,7 @@ func TestReleaseReservationStep_Execute_Success(t *testing.T) {
 	releaseCalled := false
 	var releasedReservationID string
 	var releaseReason string
-	
+
 	mockService := &mockMultiWarehouseInventoryService{
 		releaseReservationFunc: func(ctx context.Context, reservationID string, reason string) error {
 			releaseCalled = true
