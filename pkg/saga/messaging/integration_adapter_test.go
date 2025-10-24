@@ -92,7 +92,7 @@ func TestMessagingIntegrationAdapter_WithMultipleBrokers(t *testing.T) {
 // TestMessagingIntegrationAdapter_MessageFormatConversion tests message format conversion.
 func TestMessagingIntegrationAdapter_MessageFormatConversion(t *testing.T) {
 	t.Skip("Skipping due to API changes - needs update for event validation refactor")
-	
+
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -265,7 +265,7 @@ func TestMessagingIntegrationAdapter_ErrorHandlingAndRetry(t *testing.T) {
 // TestMessagingIntegrationAdapter_ConcurrentMessageProcessing tests concurrent message processing.
 func TestMessagingIntegrationAdapter_ConcurrentMessageProcessing(t *testing.T) {
 	t.Skip("Skipping due to API changes - needs update for lifecycle management")
-	
+
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -441,7 +441,7 @@ func TestMessagingIntegrationAdapter_MetricsTracking(t *testing.T) {
 // TestMessagingIntegrationAdapter_HealthMonitoring tests health monitoring.
 func TestMessagingIntegrationAdapter_HealthMonitoring(t *testing.T) {
 	t.Skip("Skipping due to API changes - needs update for mock interface")
-	
+
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -571,7 +571,7 @@ func TestMessagingIntegrationAdapter_GracefulShutdown(t *testing.T) {
 // TestMessagingIntegrationAdapter_ContextPropagation tests context propagation through messages.
 func TestMessagingIntegrationAdapter_ContextPropagation(t *testing.T) {
 	t.Skip("Skipping due to API changes - needs update for event validation refactor")
-	
+
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -679,7 +679,7 @@ func TestMessagingIntegrationAdapter_DeadLetterQueue(t *testing.T) {
 // TestMessagingIntegrationAdapter_ConnectionResilience tests connection resilience.
 func TestMessagingIntegrationAdapter_ConnectionResilience(t *testing.T) {
 	t.Skip("Skipping due to API changes - needs update for mock interface")
-	
+
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
