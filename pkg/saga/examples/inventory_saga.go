@@ -503,7 +503,7 @@ func (s *ReserveMultiWarehouseInventoryStep) GetMetadata() map[string]interface{
 // 注意：必须使用原始请求的数量，而不是总可用数量，以避免过度预留
 func (s *ReserveMultiWarehouseInventoryStep) buildInventoryItems(checkResult *CheckInventoryResult) []InventoryItem {
 	items := []InventoryItem{}
-	
+
 	// 从元数据中获取原始请求的商品项
 	// 这些是在 CheckInventoryStep 中存储的原始请求数据
 	if itemsData, ok := checkResult.Metadata["requested_items"].([]InventoryItem); ok {
@@ -514,7 +514,7 @@ func (s *ReserveMultiWarehouseInventoryStep) buildInventoryItems(checkResult *Ch
 		// 但这种情况不应该发生，因为我们已经在 CheckInventoryStep 中存储了
 		// 这里保留为空，让后续逻辑处理错误
 	}
-	
+
 	return items
 }
 
@@ -658,10 +658,18 @@ func (s *ReleaseReservationStep) GetDescription() string {
 // Execute 执行释放预留操作
 // 输入：AllocateInventoryResult（从上一步传递）
 // 输出：ReleaseInventoryResult
+// 重要：必须调用服务释放预留，否则预留的库存会一直被锁定
 func (s *ReleaseReservationStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
 	allocateResult, ok := data.(*AllocateInventoryResult)
 	if !ok {
 		return nil, errors.New("invalid data type: expected *AllocateInventoryResult")
+	}
+
+	// 调用服务释放预留（关键操作！）
+	// 由于库存已经分配完成，需要清理预留记录，释放预留的库存锁
+	err := s.service.ReleaseReservation(ctx, allocateResult.ReservationID, "allocation_completed")
+	if err != nil {
+		return nil, fmt.Errorf("释放预留失败: %w", err)
 	}
 
 	// 构建释放结果

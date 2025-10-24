@@ -24,6 +24,7 @@ package examples
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,7 +347,7 @@ func TestReserveMultiWarehouseInventoryStep_Execute_Success(t *testing.T) {
 	requestedItems := []InventoryItem{
 		{SKU: "SKU-001", Quantity: 50}, // 请求50个，而不是全部150个可用库存
 	}
-	
+
 	mockService := &mockMultiWarehouseInventoryService{}
 	step := &ReserveMultiWarehouseInventoryStep{service: mockService}
 
@@ -423,7 +424,7 @@ func TestReserveMultiWarehouseInventoryStep_UsesRequestedQuantity(t *testing.T) 
 	requestedItems := []InventoryItem{
 		{SKU: "SKU-001", Quantity: 10}, // 只请求10个
 	}
-	
+
 	var reservedQuantity int
 	mockService := &mockMultiWarehouseInventoryService{
 		reserveInventoryFunc: func(ctx context.Context, requestID string, items []InventoryItem, warehouses []string) (*ReserveInventoryResult, error) {
@@ -435,7 +436,7 @@ func TestReserveMultiWarehouseInventoryStep_UsesRequestedQuantity(t *testing.T) 
 				t.Errorf("Expected quantity 10 (requested), got %d (should not be 100 which is available)", items[0].Quantity)
 			}
 			reservedQuantity = items[0].Quantity
-			
+
 			return &ReserveInventoryResult{
 				ReservationID: "RES-001",
 				RequestID:     requestID,
@@ -704,7 +705,18 @@ func TestAllocateMultiWarehouseInventoryStep_AllMethods(t *testing.T) {
 // ==========================
 
 func TestReleaseReservationStep_Execute_Success(t *testing.T) {
-	mockService := &mockMultiWarehouseInventoryService{}
+	releaseCalled := false
+	var releasedReservationID string
+	var releaseReason string
+	
+	mockService := &mockMultiWarehouseInventoryService{
+		releaseReservationFunc: func(ctx context.Context, reservationID string, reason string) error {
+			releaseCalled = true
+			releasedReservationID = reservationID
+			releaseReason = reason
+			return nil
+		},
+	}
 	step := &ReleaseReservationStep{service: mockService}
 
 	allocateResult := &AllocateInventoryResult{
@@ -728,6 +740,19 @@ func TestReleaseReservationStep_Execute_Success(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
+	// 验证服务被调用
+	if !releaseCalled {
+		t.Error("Expected ReleaseReservation to be called")
+	}
+
+	if releasedReservationID != "RES-001" {
+		t.Errorf("Expected to release reservation RES-001, got %s", releasedReservationID)
+	}
+
+	if releaseReason != "allocation_completed" {
+		t.Errorf("Expected reason allocation_completed, got %s", releaseReason)
+	}
+
 	releaseResult, ok := result.(*ReleaseInventoryResult)
 	if !ok {
 		t.Fatalf("Expected *ReleaseInventoryResult, got %T", result)
@@ -739,6 +764,40 @@ func TestReleaseReservationStep_Execute_Success(t *testing.T) {
 
 	if len(releaseResult.ReleasedItems) != 2 {
 		t.Errorf("Expected 2 released items, got %d", len(releaseResult.ReleasedItems))
+	}
+}
+
+func TestReleaseReservationStep_Execute_ServiceError(t *testing.T) {
+	mockService := &mockMultiWarehouseInventoryService{
+		releaseReservationFunc: func(ctx context.Context, reservationID string, reason string) error {
+			return errors.New("service unavailable")
+		},
+	}
+	step := &ReleaseReservationStep{service: mockService}
+
+	allocateResult := &AllocateInventoryResult{
+		AllocationID:  "ALLOC-001",
+		RequestID:     "REQ-001",
+		ReservationID: "RES-001",
+		AllocatedItems: []AllocatedWarehouseItem{
+			{WarehouseID: "WH-001", SKU: "SKU-001", AllocatedQty: 30},
+		},
+		Status: "completed",
+		Metadata: map[string]interface{}{
+			"request_id": "REQ-001",
+		},
+	}
+
+	ctx := context.Background()
+	_, err := step.Execute(ctx, allocateResult)
+
+	if err == nil {
+		t.Fatal("Expected error when service fails, got nil")
+	}
+
+	expectedMsg := "释放预留失败"
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain '%s', got: %v", expectedMsg, err)
 	}
 }
 
