@@ -77,12 +77,12 @@ type Parser struct {
 	logger    Logger
 
 	// options
-	enableEnvVars    bool
-	enableIncludes   bool
-	maxIncludeDepth  int
-	basePath         string
-	visitedFiles     map[string]bool // track visited files for circular dependency detection
-	currentDepth     int
+	enableEnvVars   bool
+	enableIncludes  bool
+	maxIncludeDepth int
+	basePath        string
+	visitedFiles    map[string]bool // track visited files for circular dependency detection
+	currentDepth    int
 }
 
 // ParserOption configures the Parser.
@@ -598,4 +598,3 @@ func (e *ParseError) Error() string {
 func (e *ParseError) Unwrap() error {
 	return e.Cause
 }
-

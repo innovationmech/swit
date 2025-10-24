@@ -1092,4 +1092,3 @@ func TestValidateCompensation_Rules(t *testing.T) {
 		})
 	}
 }
-
