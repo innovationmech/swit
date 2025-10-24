@@ -169,19 +169,19 @@ build_test_command() {
     else
         case $example in
             "order")
-                cmd="$cmd -run TestOrderSaga"
+                cmd="$cmd -run 'Test(CreateOrder|ReserveInventory|ProcessPayment|ConfirmOrder|OrderProcessing)'"
                 ;;
             "payment")
-                cmd="$cmd -run TestPaymentSaga"
+                cmd="$cmd -run 'Test(ValidateAccounts|FreezeAmount|ExecuteTransfer|ReleaseFreeze|CreateAuditRecord|SendTransferNotification|PaymentProcessing|GenerateValidationCode|GenerateTransferID|GenerateUnfreezeID)'"
                 ;;
             "inventory")
-                cmd="$cmd -run TestInventorySaga"
+                cmd="$cmd -run 'Test(CheckInventory|ReserveMultiWarehouseInventory|AllocateMultiWarehouseInventory|ReleaseReservation|CreateInventoryAuditRecord|SendInventoryNotification|InventoryManagement|GenerateReleaseID|ErrorTypes)'"
                 ;;
             "user")
-                cmd="$cmd -run TestUserRegistrationSaga"
+                cmd="$cmd -run 'Test(CreateUserAccount|SendVerificationEmail|InitializeUserConfig|AllocateResources|TrackRegistrationEvent|UserRegistration|ValidationFunctions|InvalidDataTypes)'"
                 ;;
             "e2e")
-                cmd="$cmd -run TestE2E"
+                cmd="$cmd -run 'Test(OrderProcessingSaga_E2E|PaymentProcessingSaga_E2E|InventoryManagementSaga_E2E|UserRegistrationSaga_E2E|MultipleSagas_E2E)'"
                 ;;
             "all")
                 # 运行所有测试
