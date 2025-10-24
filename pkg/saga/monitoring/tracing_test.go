@@ -592,3 +592,100 @@ func createTestManager(t *testing.T, enabled bool) *SagaTracingManager {
 		TracingManager: tm,
 	})
 }
+
+// TestNoOpSpan tests the noOpSpan implementation.
+func TestNoOpSpan(t *testing.T) {
+	span := &noOpSpan{}
+
+	// Test all methods to ensure they don't panic
+	t.Run("SetAttribute", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			span.SetAttribute("key", "value")
+		})
+	})
+
+	t.Run("SetAttributes", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			span.SetAttributes()
+		})
+	})
+
+	t.Run("AddEvent", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			span.AddEvent("test-event")
+		})
+	})
+
+	t.Run("SetStatus", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			span.SetStatus(0, "test")
+		})
+	})
+
+	t.Run("End", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			span.End()
+		})
+	})
+
+	t.Run("RecordError", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			span.RecordError(errors.New("test error"))
+		})
+	})
+
+	t.Run("SpanContext", func(t *testing.T) {
+		ctx := span.SpanContext()
+		assert.False(t, ctx.IsValid(), "noOpSpan should return invalid span context")
+	})
+}
+
+// TestNoOpSpan_WithVariousAttributes tests noOpSpan with different attribute types.
+func TestNoOpSpan_WithVariousAttributes(t *testing.T) {
+	span := &noOpSpan{}
+
+	tests := []struct {
+		name  string
+		key   string
+		value interface{}
+	}{
+		{"string", "str_key", "string_value"},
+		{"int", "int_key", 42},
+		{"int64", "int64_key", int64(123456789)},
+		{"float64", "float_key", 3.14159},
+		{"bool", "bool_key", true},
+		{"nil", "nil_key", nil},
+		{"complex", "complex_key", map[string]interface{}{"nested": "value"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NotPanics(t, func() {
+				span.SetAttribute(tt.key, tt.value)
+			}, "SetAttribute should not panic for %s type", tt.name)
+		})
+	}
+}
+
+// TestNoOpSpan_ConcurrentAccess tests that noOpSpan is safe for concurrent use.
+func TestNoOpSpan_ConcurrentAccess(t *testing.T) {
+	span := &noOpSpan{}
+	done := make(chan bool)
+
+	// Spawn multiple goroutines calling different methods
+	for i := 0; i < 10; i++ {
+		go func(id int) {
+			span.SetAttribute("key", id)
+			span.AddEvent("event")
+			span.SetStatus(0, "status")
+			span.End()
+			_ = span.SpanContext()
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}

@@ -63,3 +63,84 @@ func TestRouteManager_SetRealtimePusher_NoPanic(t *testing.T) {
 		rm.SetRealtimePusher(nil)
 	}, "Setting realtime pusher multiple times should not cause panic")
 }
+
+// TestRouteManager_GetAPIGroup tests GetAPIGroup method.
+func TestRouteManager_GetAPIGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	config := DefaultServerConfig()
+	rm := NewRouteManager(router, config)
+
+	group := rm.GetAPIGroup()
+	assert.NotNil(t, group, "GetAPIGroup should return non-nil group")
+}
+
+// TestRouteManager_SetQueryAPI tests SetQueryAPI method.
+func TestRouteManager_SetQueryAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	config := DefaultServerConfig()
+	rm := NewRouteManager(router, config)
+
+	coordinator := new(MockSagaCoordinator)
+	queryAPI := NewSagaQueryAPI(coordinator)
+
+	rm.SetQueryAPI(queryAPI)
+	// Should not panic or error
+}
+
+// TestRouteManager_SetControlAPI tests SetControlAPI method.
+func TestRouteManager_SetControlAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	config := DefaultServerConfig()
+	rm := NewRouteManager(router, config)
+
+	coordinator := new(MockSagaCoordinator)
+	controlAPI := NewSagaControlAPI(coordinator, nil)
+
+	rm.SetControlAPI(controlAPI)
+	// Should not panic or error
+}
+
+// TestRouteManager_SetVisualizationAPI tests SetVisualizationAPI method.
+func TestRouteManager_SetVisualizationAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	config := DefaultServerConfig()
+	rm := NewRouteManager(router, config)
+
+	coordinator := new(MockSagaCoordinator)
+	visualizationAPI := NewSagaVisualizationAPI(coordinator)
+
+	rm.SetVisualizationAPI(visualizationAPI)
+	// Should not panic or error
+}
+
+// TestRouteManager_SetAlertsAPI tests SetAlertsAPI method.
+func TestRouteManager_SetAlertsAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	config := DefaultServerConfig()
+	rm := NewRouteManager(router, config)
+
+	// AlertIntegration requires a RecoveryAlertingManager, so we skip actual creation
+	// and just test that SetAlertsAPI doesn't panic with nil
+	rm.SetAlertsAPI(nil)
+	// Should not panic or error
+}
+
+// TestRouteManager_SetupSSERoute tests setupSSERoute method.
+func TestRouteManager_SetupSSERoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	config := DefaultServerConfig()
+	rm := NewRouteManager(router, config)
+
+	collector, _ := NewSagaMetricsCollector(nil)
+	pusherConfig := DefaultRealtimePusherConfig()
+	pusher := NewRealtimePusher(collector, pusherConfig)
+
+	rm.SetRealtimePusher(pusher)
+	// Should not panic or error
+}
