@@ -14,6 +14,7 @@ include $(MAKEFILE_DIR)scripts/mk/proto.mk
 include $(MAKEFILE_DIR)scripts/mk/dev.mk
 include $(MAKEFILE_DIR)scripts/mk/copyright.mk
 include $(MAKEFILE_DIR)scripts/mk/clean.mk
+include $(MAKEFILE_DIR)scripts/mk/saga-examples.mk
 
 # 主要组合目标（使用多平台构建系统）
 .PHONY: all
@@ -70,6 +71,19 @@ define USAGE_OPTIONS
   DOCKER-DEV       快速Docker构建 - 使用缓存，加速开发迭代
   DOCKER-SETUP     Docker开发环境 - 启动完整的开发环境
   DOCKER-ADVANCED  高级Docker管理 - 精确控制特定操作 (OPERATION=操作类型)
+
+【Saga 示例】
+  SAGA-EXAMPLES-RUN        运行指定示例 (EXAMPLE=示例名称)
+  SAGA-EXAMPLES-ORDER      运行订单处理示例
+  SAGA-EXAMPLES-PAYMENT    运行支付处理示例
+  SAGA-EXAMPLES-INVENTORY  运行库存管理示例
+  SAGA-EXAMPLES-USER       运行用户注册示例
+  SAGA-EXAMPLES-E2E        运行端到端测试
+  SAGA-EXAMPLES-ALL        运行所有示例
+  SAGA-EXAMPLES-STATUS     查看示例状态
+  SAGA-EXAMPLES-LOGS       查看示例日志
+  SAGA-EXAMPLES-STOP       停止并清理所有内容
+  SAGA-EXAMPLES-HELP       显示 Saga 示例帮助信息
 endef
 export USAGE_OPTIONS
 
