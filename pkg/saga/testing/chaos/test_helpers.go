@@ -34,13 +34,13 @@ import (
 // createTestCoordinator creates a coordinator with chaos state storage.
 func createTestCoordinator(chaosStorage saga.StateStorage, retryPolicy saga.RetryPolicy) (*coordinator.OrchestratorCoordinator, error) {
 	mockPublisher := &mockEventPublisher{}
-	
+
 	config := &coordinator.OrchestratorConfig{
 		StateStorage:   chaosStorage,
 		EventPublisher: mockPublisher,
 		RetryPolicy:    retryPolicy,
 	}
-	
+
 	return coordinator.NewOrchestratorCoordinator(config)
 }
 
@@ -113,23 +113,23 @@ type mockSagaInstance struct {
 	state saga.SagaState
 }
 
-func (m *mockSagaInstance) GetID() string                            { return m.id }
-func (m *mockSagaInstance) GetDefinitionID() string                  { return "test-def" }
-func (m *mockSagaInstance) GetState() saga.SagaState                 { return m.state }
-func (m *mockSagaInstance) GetCurrentStep() int                      { return 0 }
-func (m *mockSagaInstance) GetStartTime() time.Time                  { return time.Now() }
-func (m *mockSagaInstance) GetEndTime() time.Time                    { return time.Time{} }
-func (m *mockSagaInstance) GetResult() interface{}                   { return nil }
-func (m *mockSagaInstance) GetError() *saga.SagaError                { return nil }
-func (m *mockSagaInstance) GetTotalSteps() int                       { return 2 }
-func (m *mockSagaInstance) GetCompletedSteps() int                   { return 0 }
-func (m *mockSagaInstance) GetCreatedAt() time.Time                  { return time.Now() }
-func (m *mockSagaInstance) GetUpdatedAt() time.Time                  { return time.Now() }
-func (m *mockSagaInstance) GetTimeout() time.Duration                { return 5 * time.Second }
-func (m *mockSagaInstance) GetMetadata() map[string]interface{}      { return nil }
-func (m *mockSagaInstance) GetTraceID() string                       { return "" }
-func (m *mockSagaInstance) IsTerminal() bool                         { return m.state.IsTerminal() }
-func (m *mockSagaInstance) IsActive() bool                           { return m.state.IsActive() }
+func (m *mockSagaInstance) GetID() string                       { return m.id }
+func (m *mockSagaInstance) GetDefinitionID() string             { return "test-def" }
+func (m *mockSagaInstance) GetState() saga.SagaState            { return m.state }
+func (m *mockSagaInstance) GetCurrentStep() int                 { return 0 }
+func (m *mockSagaInstance) GetStartTime() time.Time             { return time.Now() }
+func (m *mockSagaInstance) GetEndTime() time.Time               { return time.Time{} }
+func (m *mockSagaInstance) GetResult() interface{}              { return nil }
+func (m *mockSagaInstance) GetError() *saga.SagaError           { return nil }
+func (m *mockSagaInstance) GetTotalSteps() int                  { return 2 }
+func (m *mockSagaInstance) GetCompletedSteps() int              { return 0 }
+func (m *mockSagaInstance) GetCreatedAt() time.Time             { return time.Now() }
+func (m *mockSagaInstance) GetUpdatedAt() time.Time             { return time.Now() }
+func (m *mockSagaInstance) GetTimeout() time.Duration           { return 5 * time.Second }
+func (m *mockSagaInstance) GetMetadata() map[string]interface{} { return nil }
+func (m *mockSagaInstance) GetTraceID() string                  { return "" }
+func (m *mockSagaInstance) IsTerminal() bool                    { return m.state.IsTerminal() }
+func (m *mockSagaInstance) IsActive() bool                      { return m.state.IsActive() }
 
 // mockSagaDefinition implements saga.SagaDefinition for testing.
 type mockSagaDefinition struct {
@@ -141,15 +141,15 @@ type mockSagaDefinition struct {
 	retryPolicy saga.RetryPolicy
 }
 
-func (m *mockSagaDefinition) GetID() string                                     { return m.id }
-func (m *mockSagaDefinition) GetName() string                                   { return m.name }
-func (m *mockSagaDefinition) GetDescription() string                            { return m.description }
-func (m *mockSagaDefinition) GetSteps() []saga.SagaStep                         { return m.steps }
-func (m *mockSagaDefinition) GetTimeout() time.Duration                         { return m.timeout }
-func (m *mockSagaDefinition) GetRetryPolicy() saga.RetryPolicy                  { return m.retryPolicy }
+func (m *mockSagaDefinition) GetID() string                                      { return m.id }
+func (m *mockSagaDefinition) GetName() string                                    { return m.name }
+func (m *mockSagaDefinition) GetDescription() string                             { return m.description }
+func (m *mockSagaDefinition) GetSteps() []saga.SagaStep                          { return m.steps }
+func (m *mockSagaDefinition) GetTimeout() time.Duration                          { return m.timeout }
+func (m *mockSagaDefinition) GetRetryPolicy() saga.RetryPolicy                   { return m.retryPolicy }
 func (m *mockSagaDefinition) GetCompensationStrategy() saga.CompensationStrategy { return nil }
-func (m *mockSagaDefinition) Validate() error                                   { return nil }
-func (m *mockSagaDefinition) GetMetadata() map[string]interface{}               { return nil }
+func (m *mockSagaDefinition) Validate() error                                    { return nil }
+func (m *mockSagaDefinition) GetMetadata() map[string]interface{}                { return nil }
 
 // mockStep implements saga.SagaStep for testing.
 type mockStep struct {
@@ -160,13 +160,13 @@ type mockStep struct {
 	shouldFail  bool
 }
 
-func (m *mockStep) GetID() string                          { return m.id }
-func (m *mockStep) GetName() string                        { return m.name }
-func (m *mockStep) GetDescription() string                 { return m.description }
-func (m *mockStep) GetTimeout() time.Duration              { return m.timeout }
-func (m *mockStep) GetRetryPolicy() saga.RetryPolicy       { return nil }
-func (m *mockStep) IsRetryable(err error) bool             { return true }
-func (m *mockStep) GetMetadata() map[string]interface{}    { return nil }
+func (m *mockStep) GetID() string                       { return m.id }
+func (m *mockStep) GetName() string                     { return m.name }
+func (m *mockStep) GetDescription() string              { return m.description }
+func (m *mockStep) GetTimeout() time.Duration           { return m.timeout }
+func (m *mockStep) GetRetryPolicy() saga.RetryPolicy    { return nil }
+func (m *mockStep) IsRetryable(err error) bool          { return true }
+func (m *mockStep) GetMetadata() map[string]interface{} { return nil }
 
 func (m *mockStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
 	if m.shouldFail {
@@ -206,4 +206,3 @@ func createTestStorage(injector *FaultInjector) saga.StateStorage {
 	memStorage := storage.NewMemoryStateStorage()
 	return NewChaosStateStorage(memStorage, injector)
 }
-

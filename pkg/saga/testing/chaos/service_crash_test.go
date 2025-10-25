@@ -95,7 +95,7 @@ func TestServiceCrash_DuringStepExecution(t *testing.T) {
 				}
 
 				t.Logf("Saga 最终状态: %s", finalInstance.GetState())
-				
+
 				// 验证是否执行了补偿
 				if tt.expectCompensation {
 					if finalInstance.GetState() != saga.StateCompensated && finalInstance.GetState() != saga.StateFailed {
@@ -200,7 +200,7 @@ func TestServiceCrash_StateRecovery(t *testing.T) {
 func TestServiceCrash_CompensationLogic(t *testing.T) {
 	// 创建故障注入器
 	injector := NewFaultInjector()
-	
+
 	// 在补偿阶段注入故障
 	injector.AddFault("compensation-crash", &FaultConfig{
 		Type:        FaultTypeServiceCrash,
@@ -312,4 +312,3 @@ func TestServiceCrash_PartialCompensation(t *testing.T) {
 }
 
 // Note: Helper functions are defined in test_helpers.go
-

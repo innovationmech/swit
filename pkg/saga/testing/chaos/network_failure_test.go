@@ -33,27 +33,27 @@ import (
 // TestNetworkPartition_StepExecution tests Saga behavior when network partition occurs during step execution.
 func TestNetworkPartition_StepExecution(t *testing.T) {
 	tests := []struct {
-		name           string
-		probability    float64
-		targetStep     string
-		expectFailure  bool
-		expectRetry    bool
+		name               string
+		probability        float64
+		targetStep         string
+		expectFailure      bool
+		expectRetry        bool
 		expectCompensation bool
 	}{
 		{
-			name:           "网络分区导致步骤失败",
-			probability:    1.0,
-			targetStep:     "step1",
-			expectFailure:  true,
-			expectRetry:    false,
+			name:               "网络分区导致步骤失败",
+			probability:        1.0,
+			targetStep:         "step1",
+			expectFailure:      true,
+			expectRetry:        false,
 			expectCompensation: true,
 		},
 		{
-			name:           "部分概率网络分区",
-			probability:    0.5,
-			targetStep:     "step2",
-			expectFailure:  false, // 可能成功或失败
-			expectRetry:    false,
+			name:               "部分概率网络分区",
+			probability:        0.5,
+			targetStep:         "step2",
+			expectFailure:      false, // 可能成功或失败
+			expectRetry:        false,
 			expectCompensation: false,
 		},
 	}
@@ -330,4 +330,3 @@ func TestNetworkPartition_ConcurrentSagas(t *testing.T) {
 }
 
 // Note: Mock implementations are now in test_helpers.go
-

@@ -182,7 +182,7 @@ func TestDatabaseFailure_QueryOperation(t *testing.T) {
 func TestDatabaseFailure_TransactionRollback(t *testing.T) {
 	// 创建故障注入器
 	injector := NewFaultInjector()
-	
+
 	// 在状态更新时注入故障，模拟事务回滚
 	injector.AddFault("db-transaction-fault", &FaultConfig{
 		Type:        FaultTypeDatabaseFailure,
@@ -338,7 +338,7 @@ func TestDatabaseFailure_PartialWrite(t *testing.T) {
 	// 验证注入统计
 	stats := injector.GetStats()
 	t.Logf("故障注入统计: %+v", stats)
-	
+
 	// 验证部分写入场景
 	if stats.TotalInjections > 0 {
 		t.Log("检测到数据库部分写入故障")
@@ -412,7 +412,7 @@ func TestDatabaseFailure_Consistency(t *testing.T) {
 func TestDatabaseFailure_RecoveryMechanism(t *testing.T) {
 	// 创建故障注入器
 	injector := NewFaultInjector()
-	
+
 	// 初始时有数据库故障
 	injector.AddFault("recoverable-db-fault", &FaultConfig{
 		Type:        FaultTypeDatabaseFailure,
@@ -439,7 +439,7 @@ func TestDatabaseFailure_RecoveryMechanism(t *testing.T) {
 	// 启动 Saga（初始会失败）
 	ctx := context.Background()
 	_, err = coord.StartSaga(ctx, sagaDef, map[string]interface{}{"test": "recovery"})
-	
+
 	t.Logf("初始启动结果: %v", err)
 
 	// 等待一段时间后禁用故障（模拟数据库恢复）
@@ -471,4 +471,3 @@ func TestDatabaseFailure_RecoveryMechanism(t *testing.T) {
 		t.Log("Saga 在数据库恢复后成功完成")
 	}
 }
-

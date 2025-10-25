@@ -33,11 +33,11 @@ import (
 // TestTimeout_StepExecution tests Saga behavior when steps timeout.
 func TestTimeout_StepExecution(t *testing.T) {
 	tests := []struct {
-		name           string
-		timeoutDelay   time.Duration
-		stepTimeout    time.Duration
-		expectTimeout  bool
-		description    string
+		name          string
+		timeoutDelay  time.Duration
+		stepTimeout   time.Duration
+		expectTimeout bool
+		description   string
 	}{
 		{
 			name:          "步骤执行超时",
@@ -197,7 +197,7 @@ func TestTimeout_SagaLevel(t *testing.T) {
 func TestTimeout_CompensationTimeout(t *testing.T) {
 	// 创建故障注入器
 	injector := NewFaultInjector()
-	
+
 	// 为补偿操作添加超时
 	injector.AddFault("compensation-timeout", &FaultConfig{
 		Type:        FaultTypeTimeout,
@@ -321,11 +321,11 @@ func TestTimeout_WithRetry(t *testing.T) {
 		}
 
 		t.Logf("Saga 最终状态: %s", finalInstance.GetState())
-		
+
 		// 验证是否执行了重试
 		stats := injector.GetStats()
 		t.Logf("故障注入统计: %+v", stats)
-		
+
 		if stats.TotalInjections > 1 {
 			t.Log("检测到多次故障注入，说明执行了重试")
 		}
@@ -392,4 +392,3 @@ func TestTimeout_ContextCancellation(t *testing.T) {
 		t.Errorf("期望在 context 超时后快速返回，但耗时: %v", duration)
 	}
 }
-

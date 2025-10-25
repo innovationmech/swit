@@ -108,22 +108,22 @@ type FaultConfig struct {
 
 // FaultInjector provides fault injection capabilities for chaos testing.
 type FaultInjector struct {
-	mu       sync.RWMutex
-	faults   map[string]*FaultConfig
-	enabled  bool
-	rng      *rand.Rand
-	stats    *InjectionStats
-	logFunc  func(string, ...interface{})
+	mu      sync.RWMutex
+	faults  map[string]*FaultConfig
+	enabled bool
+	rng     *rand.Rand
+	stats   *InjectionStats
+	logFunc func(string, ...interface{})
 }
 
 // InjectionStats tracks fault injection statistics.
 type InjectionStats struct {
-	mu                    sync.Mutex
-	TotalInjections       int64
-	SuccessfulInjections  int64
-	FailedInjections      int64
-	InjectionsByType      map[FaultType]int64
-	LastInjectionTime     time.Time
+	mu                   sync.Mutex
+	TotalInjections      int64
+	SuccessfulInjections int64
+	FailedInjections     int64
+	InjectionsByType     map[FaultType]int64
+	LastInjectionTime    time.Time
 }
 
 // NewFaultInjector creates a new fault injector instance.
@@ -194,7 +194,7 @@ func (fi *FaultInjector) IsEnabled() bool {
 func (fi *FaultInjector) GetStats() *InjectionStats {
 	fi.stats.mu.Lock()
 	defer fi.stats.mu.Unlock()
-	
+
 	// Return a copy
 	stats := &InjectionStats{
 		TotalInjections:      fi.stats.TotalInjections,
@@ -534,12 +534,12 @@ func (s *ChaosStateStorage) SaveSaga(ctx context.Context, sagaInstance saga.Saga
 func (s *ChaosStateStorage) GetSaga(ctx context.Context, sagaID string) (saga.SagaInstance, error) {
 	var result saga.SagaInstance
 	var err error
-	
+
 	storageErr := s.injector.InjectIntoStateStorage(ctx, "GetSaga", func(ctx context.Context) error {
 		result, err = s.wrapped.GetSaga(ctx, sagaID)
 		return err
 	})
-	
+
 	if storageErr != nil {
 		return nil, storageErr
 	}
@@ -564,12 +564,12 @@ func (s *ChaosStateStorage) DeleteSaga(ctx context.Context, sagaID string) error
 func (s *ChaosStateStorage) GetActiveSagas(ctx context.Context, filter *saga.SagaFilter) ([]saga.SagaInstance, error) {
 	var result []saga.SagaInstance
 	var err error
-	
+
 	storageErr := s.injector.InjectIntoStateStorage(ctx, "GetActiveSagas", func(ctx context.Context) error {
 		result, err = s.wrapped.GetActiveSagas(ctx, filter)
 		return err
 	})
-	
+
 	if storageErr != nil {
 		return nil, storageErr
 	}
@@ -580,12 +580,12 @@ func (s *ChaosStateStorage) GetActiveSagas(ctx context.Context, filter *saga.Sag
 func (s *ChaosStateStorage) GetTimeoutSagas(ctx context.Context, before time.Time) ([]saga.SagaInstance, error) {
 	var result []saga.SagaInstance
 	var err error
-	
+
 	storageErr := s.injector.InjectIntoStateStorage(ctx, "GetTimeoutSagas", func(ctx context.Context) error {
 		result, err = s.wrapped.GetTimeoutSagas(ctx, before)
 		return err
 	})
-	
+
 	if storageErr != nil {
 		return nil, storageErr
 	}
@@ -603,12 +603,12 @@ func (s *ChaosStateStorage) SaveStepState(ctx context.Context, sagaID string, st
 func (s *ChaosStateStorage) GetStepStates(ctx context.Context, sagaID string) ([]*saga.StepState, error) {
 	var result []*saga.StepState
 	var err error
-	
+
 	storageErr := s.injector.InjectIntoStateStorage(ctx, "GetStepStates", func(ctx context.Context) error {
 		result, err = s.wrapped.GetStepStates(ctx, sagaID)
 		return err
 	})
-	
+
 	if storageErr != nil {
 		return nil, storageErr
 	}
@@ -657,4 +657,3 @@ func (p *ChaosEventPublisher) Unsubscribe(subscription saga.EventSubscription) e
 func (p *ChaosEventPublisher) Close() error {
 	return p.wrapped.Close()
 }
-

@@ -432,4 +432,3 @@ func (p *dlqEventPublisher) Unsubscribe(subscription saga.EventSubscription) err
 func (p *dlqEventPublisher) Close() error {
 	return nil
 }
-
