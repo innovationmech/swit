@@ -680,16 +680,17 @@ func (a *MessagingIntegrationAdapter) messageToSagaEvent(msg *messaging.Message)
 		return nil, fmt.Errorf("message cannot be nil")
 	}
 
-	// Create deserializer
-	deserializer := NewDefaultMessageDeserializer()
+	// Create deserializer with lenient validation
+	deserializer := NewLenientMessageDeserializer()
 
-	// Deserialize the event using headers
+	// Deserialize the event using headers (without strict validation)
 	event, err := deserializer.Deserialize(context.Background(), msg.Payload, msg.Headers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to deserialize event: %w", err)
 	}
 
-	// Enrich event with metadata from headers
+	// Enrich event with metadata from headers BEFORE validation
+	// This ensures required fields are set from message metadata
 	if sagaID := msg.Headers["saga_id"]; sagaID != "" {
 		event.SagaID = sagaID
 	}
@@ -725,6 +726,11 @@ func (a *MessagingIntegrationAdapter) messageToSagaEvent(msg *messaging.Message)
 	// Set correlation ID from message
 	if event.CorrelationID == "" {
 		event.CorrelationID = msg.CorrelationID
+	}
+
+	// Now validate the fully enriched event
+	if err := validateSagaEvent(event); err != nil {
+		return nil, fmt.Errorf("event validation failed: %w", err)
 	}
 
 	return event, nil

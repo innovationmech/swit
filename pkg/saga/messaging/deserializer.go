@@ -126,6 +126,9 @@ type defaultMessageDeserializer struct {
 
 	// supportedFormats lists all supported serialization formats
 	supportedFormats []messaging.SerializationFormat
+
+	// validateOnDeserialize controls whether to validate the event during deserialization
+	validateOnDeserialize bool
 }
 
 // NewDefaultMessageDeserializer creates a new default message deserializer
@@ -141,6 +144,25 @@ func NewDefaultMessageDeserializer() MessageDeserializer {
 			messaging.FormatJSON,
 			messaging.FormatProtobuf,
 		},
+		validateOnDeserialize: true,
+	}
+}
+
+// NewLenientMessageDeserializer creates a lenient message deserializer that
+// skips validation during deserialization. This is useful when the event
+// will be enriched with required fields after deserialization.
+//
+// Returns:
+//   - MessageDeserializer: Configured deserializer instance
+func NewLenientMessageDeserializer() MessageDeserializer {
+	return &defaultMessageDeserializer{
+		jsonSerializer:     messaging.NewJSONSerializer(nil),
+		protobufSerializer: messaging.NewProtobufSerializer(nil),
+		supportedFormats: []messaging.SerializationFormat{
+			messaging.FormatJSON,
+			messaging.FormatProtobuf,
+		},
+		validateOnDeserialize: false,
 	}
 }
 
@@ -164,8 +186,9 @@ func NewMessageDeserializerWithSerializers(
 	}
 
 	return &defaultMessageDeserializer{
-		jsonSerializer:     jsonSerializer,
-		protobufSerializer: protobufSerializer,
+		jsonSerializer:        jsonSerializer,
+		protobufSerializer:    protobufSerializer,
+		validateOnDeserialize: true,
 		supportedFormats: []messaging.SerializationFormat{
 			messaging.FormatJSON,
 			messaging.FormatProtobuf,
@@ -235,9 +258,11 @@ func (d *defaultMessageDeserializer) DeserializeWithFormat(
 		}
 	}
 
-	// Validate the deserialized event
-	if err := d.validateEvent(&event); err != nil {
-		return nil, fmt.Errorf("event validation failed: %w", err)
+	// Validate the deserialized event only if validation is enabled
+	if d.validateOnDeserialize {
+		if err := d.validateEvent(&event); err != nil {
+			return nil, fmt.Errorf("event validation failed: %w", err)
+		}
 	}
 
 	return &event, nil
@@ -432,6 +457,65 @@ func (d *defaultMessageDeserializer) isFormatSupported(format messaging.Serializ
 
 // validateEvent validates a deserialized SagaEvent for required fields and consistency.
 func (d *defaultMessageDeserializer) validateEvent(event *saga.SagaEvent) error {
+	if event == nil {
+		return ErrInvalidEvent
+	}
+
+	// Validate required fields
+	if event.ID == "" {
+		return fmt.Errorf("event ID is required")
+	}
+	if event.SagaID == "" {
+		return fmt.Errorf("saga ID is required")
+	}
+	if event.Type == "" {
+		return fmt.Errorf("event type is required")
+	}
+
+	// Validate event type is a known type
+	validTypes := []saga.SagaEventType{
+		saga.EventSagaStarted,
+		saga.EventSagaStepStarted,
+		saga.EventSagaStepCompleted,
+		saga.EventSagaStepFailed,
+		saga.EventSagaCompleted,
+		saga.EventSagaFailed,
+		saga.EventSagaCancelled,
+		saga.EventSagaTimedOut,
+		saga.EventCompensationStarted,
+		saga.EventCompensationStepStarted,
+		saga.EventCompensationStepCompleted,
+		saga.EventCompensationStepFailed,
+		saga.EventCompensationCompleted,
+		saga.EventCompensationFailed,
+		saga.EventRetryAttempted,
+		saga.EventRetryExhausted,
+		saga.EventStateChanged,
+	}
+
+	isValidType := false
+	for _, validType := range validTypes {
+		if event.Type == validType {
+			isValidType = true
+			break
+		}
+	}
+
+	if !isValidType {
+		return fmt.Errorf("invalid event type: %s", event.Type)
+	}
+
+	// Validate timestamp
+	if event.Timestamp.IsZero() {
+		return fmt.Errorf("event timestamp is required")
+	}
+
+	return nil
+}
+
+// validateSagaEvent is a standalone validation function that can be used to validate
+// a saga event after enrichment. This is exported so it can be used by other packages.
+func validateSagaEvent(event *saga.SagaEvent) error {
 	if event == nil {
 		return ErrInvalidEvent
 	}

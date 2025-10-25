@@ -91,8 +91,6 @@ func TestMessagingIntegrationAdapter_WithMultipleBrokers(t *testing.T) {
 
 // TestMessagingIntegrationAdapter_MessageFormatConversion tests message format conversion.
 func TestMessagingIntegrationAdapter_MessageFormatConversion(t *testing.T) {
-	t.Skip("Skipping due to API changes - needs update for event validation refactor")
-
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -264,8 +262,6 @@ func TestMessagingIntegrationAdapter_ErrorHandlingAndRetry(t *testing.T) {
 
 // TestMessagingIntegrationAdapter_ConcurrentMessageProcessing tests concurrent message processing.
 func TestMessagingIntegrationAdapter_ConcurrentMessageProcessing(t *testing.T) {
-	t.Skip("Skipping due to API changes - needs update for lifecycle management")
-
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -306,11 +302,14 @@ func TestMessagingIntegrationAdapter_ConcurrentMessageProcessing(t *testing.T) {
 	// Start the adapter
 	err = adapter.Start(ctx)
 	require.NoError(t, err)
-	defer adapter.Stop(ctx)
 
 	// Verify concurrency settings
 	assert.Equal(t, 10, adapter.config.Concurrency)
 	assert.Equal(t, 100, adapter.config.MessageBufferSize)
+
+	// Stop the adapter before closing (proper lifecycle order: Start -> Stop -> Close)
+	err = adapter.Stop(ctx)
+	assert.NoError(t, err)
 
 	// Clean up
 	err = adapter.Close()
@@ -440,8 +439,6 @@ func TestMessagingIntegrationAdapter_MetricsTracking(t *testing.T) {
 
 // TestMessagingIntegrationAdapter_HealthMonitoring tests health monitoring.
 func TestMessagingIntegrationAdapter_HealthMonitoring(t *testing.T) {
-	t.Skip("Skipping due to API changes - needs update for mock interface")
-
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -467,27 +464,17 @@ func TestMessagingIntegrationAdapter_HealthMonitoring(t *testing.T) {
 	mockBroker.On("CreatePublisher", mock.AnythingOfType("messaging.PublisherConfig")).Return(mockPublisher, nil)
 	mockBroker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(mockSubscriber, nil)
 
-	// Mock health check - initially healthy
-	healthCheckCount := 0
-	mockBroker.On("HealthCheck", mock.Anything).
-		Return(func(ctx context.Context) *messaging.HealthStatus {
-			healthCheckCount++
-			if healthCheckCount <= 2 {
-				return &messaging.HealthStatus{
-					Status:  "healthy",
-					Message: "All systems operational",
-				}
-			}
-			return &messaging.HealthStatus{
-				Status:  "unhealthy",
-				Message: "Connection lost",
-			}
-		}, func(ctx context.Context) error {
-			if healthCheckCount <= 2 {
-				return nil
-			}
-			return fmt.Errorf("connection lost")
-		})
+	// Mock health check - return healthy status initially, then unhealthy
+	// Use Once() to make the first call succeed, then all subsequent calls fail
+	mockBroker.On("HealthCheck", mock.Anything).Return(&messaging.HealthStatus{
+		Status:  "healthy",
+		Message: "All systems operational",
+	}, nil).Once()
+
+	mockBroker.On("HealthCheck", mock.Anything).Return(&messaging.HealthStatus{
+		Status:  "unhealthy",
+		Message: "Connection lost",
+	}, fmt.Errorf("connection lost"))
 
 	adapter, err := NewMessagingIntegrationAdapter(mockBroker, config)
 	require.NoError(t, err)
@@ -500,10 +487,7 @@ func TestMessagingIntegrationAdapter_HealthMonitoring(t *testing.T) {
 	err = adapter.HealthCheck(ctx)
 	assert.NoError(t, err)
 
-	// Wait for health check interval
-	time.Sleep(2500 * time.Millisecond)
-
-	// Health check should now fail
+	// Second health check should fail
 	err = adapter.HealthCheck(ctx)
 	assert.Error(t, err)
 
@@ -570,8 +554,6 @@ func TestMessagingIntegrationAdapter_GracefulShutdown(t *testing.T) {
 
 // TestMessagingIntegrationAdapter_ContextPropagation tests context propagation through messages.
 func TestMessagingIntegrationAdapter_ContextPropagation(t *testing.T) {
-	t.Skip("Skipping due to API changes - needs update for event validation refactor")
-
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -678,8 +660,6 @@ func TestMessagingIntegrationAdapter_DeadLetterQueue(t *testing.T) {
 
 // TestMessagingIntegrationAdapter_ConnectionResilience tests connection resilience.
 func TestMessagingIntegrationAdapter_ConnectionResilience(t *testing.T) {
-	t.Skip("Skipping due to API changes - needs update for mock interface")
-
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -700,13 +680,11 @@ func TestMessagingIntegrationAdapter_ConnectionResilience(t *testing.T) {
 		},
 	}
 
-	// Simulate intermittent connection
-	connectionAttempts := 0
-	mockBroker.On("IsConnected").
-		Return(func() bool {
-			connectionAttempts++
-			return connectionAttempts%2 == 1 // Alternate between connected and disconnected
-		})
+	// Simulate intermittent connection - first call returns true (connected)
+	mockBroker.On("IsConnected").Return(true).Once()
+	// Subsequent calls alternate between false and true
+	mockBroker.On("IsConnected").Return(false).Once()
+	mockBroker.On("IsConnected").Return(true)
 
 	mockBroker.On("CreatePublisher", mock.AnythingOfType("messaging.PublisherConfig")).Return(mockPublisher, nil)
 	mockBroker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(mockSubscriber, nil)
