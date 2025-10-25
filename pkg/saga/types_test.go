@@ -22,6 +22,7 @@
 package saga
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -391,4 +392,434 @@ func TestCoordinatorMetrics(t *testing.T) {
 	if metrics.AverageSagaDuration != 5*time.Minute {
 		t.Errorf("Expected 5m average duration, got %v", metrics.AverageSagaDuration)
 	}
+}
+
+// TestMoreErrorConstructors tests additional error constructors not covered elsewhere
+func TestMoreErrorConstructors(t *testing.T) {
+	t.Run("NewStepExecutionError", func(t *testing.T) {
+		cause := NewSagaError("CAUSE", "original error", ErrorTypeSystem, false)
+		err := NewStepExecutionError("step-1", "Test Step", cause)
+
+		if err.Code != ErrCodeStepExecutionFailed {
+			t.Errorf("Expected %s, got %s", ErrCodeStepExecutionFailed, err.Code)
+		}
+		if err.Details["step_id"] != "step-1" {
+			t.Errorf("Expected step-1, got %v", err.Details["step_id"])
+		}
+		if err.Details["step_name"] != "Test Step" {
+			t.Errorf("Expected Test Step, got %v", err.Details["step_name"])
+		}
+		if err.Cause == nil {
+			t.Error("Expected cause to be wrapped")
+		}
+	})
+
+	t.Run("NewCompensationFailedError", func(t *testing.T) {
+		cause := NewSagaError("COMPENSATION_CAUSE", "compensation failed", ErrorTypeSystem, false)
+		err := NewCompensationFailedError("step-2", "Compensation Step", cause)
+
+		if err.Code != ErrCodeCompensationFailed {
+			t.Errorf("Expected %s, got %s", ErrCodeCompensationFailed, err.Code)
+		}
+		if err.Details["step_id"] != "step-2" {
+			t.Errorf("Expected step-2, got %v", err.Details["step_id"])
+		}
+		if err.Details["step_name"] != "Compensation Step" {
+			t.Errorf("Expected Compensation Step, got %v", err.Details["step_name"])
+		}
+		if err.Type != ErrorTypeCompensation {
+			t.Errorf("Expected %s, got %s", ErrorTypeCompensation, err.Type)
+		}
+	})
+
+	t.Run("NewStorageError", func(t *testing.T) {
+		cause := NewSagaError("DB_ERROR", "database error", ErrorTypeSystem, true)
+		err := NewStorageError("save", cause)
+
+		if err.Code != ErrCodeStorageError {
+			t.Errorf("Expected %s, got %s", ErrCodeStorageError, err.Code)
+		}
+		if err.Details["operation"] != "save" {
+			t.Errorf("Expected save, got %v", err.Details["operation"])
+		}
+		if !err.Retryable {
+			t.Error("Expected storage error to be retryable")
+		}
+	})
+
+	t.Run("NewConfigurationError", func(t *testing.T) {
+		err := NewConfigurationError("Invalid timeout value")
+
+		if err.Code != ErrCodeConfigurationError {
+			t.Errorf("Expected %s, got %s", ErrCodeConfigurationError, err.Code)
+		}
+		if err.Message != "Invalid timeout value" {
+			t.Errorf("Expected 'Invalid timeout value', got '%s'", err.Message)
+		}
+		if err.Type != ErrorTypeSystem {
+			t.Errorf("Expected %s, got %s", ErrorTypeSystem, err.Type)
+		}
+	})
+
+	t.Run("NewCoordinatorStoppedError", func(t *testing.T) {
+		err := NewCoordinatorStoppedError()
+
+		if err.Code != ErrCodeCoordinatorStopped {
+			t.Errorf("Expected %s, got %s", ErrCodeCoordinatorStopped, err.Code)
+		}
+		if err.Type != ErrorTypeSystem {
+			t.Errorf("Expected %s, got %s", ErrorTypeSystem, err.Type)
+		}
+	})
+
+	t.Run("NewRetryExhaustedError", func(t *testing.T) {
+		err := NewRetryExhaustedError("execute-step", 5)
+
+		if err.Code != ErrCodeRetryExhausted {
+			t.Errorf("Expected %s, got %s", ErrCodeRetryExhausted, err.Code)
+		}
+		if err.Details["operation"] != "execute-step" {
+			t.Errorf("Expected execute-step, got %v", err.Details["operation"])
+		}
+		if err.Details["attempts"] != 5 {
+			t.Errorf("Expected 5, got %v", err.Details["attempts"])
+		}
+	})
+
+	t.Run("NewEventPublishError", func(t *testing.T) {
+		cause := NewSagaError("PUBLISH_FAILED", "broker unavailable", ErrorTypeNetwork, true)
+		err := NewEventPublishError(EventSagaStarted, cause)
+
+		if err.Code != ErrCodeEventPublishFailed {
+			t.Errorf("Expected %s, got %s", ErrCodeEventPublishFailed, err.Code)
+		}
+		if err.Details["event_type"] != string(EventSagaStarted) {
+			t.Errorf("Expected %s, got %v", string(EventSagaStarted), err.Details["event_type"])
+		}
+		if !err.Retryable {
+			t.Error("Expected event publish error to be retryable")
+		}
+	})
+}
+
+// TestMoreErrorCheckers tests additional error checker functions
+func TestMoreErrorCheckers(t *testing.T) {
+	t.Run("IsStepExecutionFailed", func(t *testing.T) {
+		cause := NewSagaError("CAUSE", "error", ErrorTypeSystem, false)
+		err := NewStepExecutionError("step-1", "Test", cause)
+
+		if !IsStepExecutionFailed(err) {
+			t.Error("Expected true for StepExecutionError")
+		}
+
+		otherErr := NewValidationError("test")
+		if IsStepExecutionFailed(otherErr) {
+			t.Error("Expected false for non-StepExecutionError")
+		}
+	})
+
+	t.Run("IsCompensationFailed", func(t *testing.T) {
+		cause := NewSagaError("CAUSE", "error", ErrorTypeSystem, false)
+		err := NewCompensationFailedError("step-1", "Test", cause)
+
+		if !IsCompensationFailed(err) {
+			t.Error("Expected true for CompensationFailedError")
+		}
+
+		otherErr := NewValidationError("test")
+		if IsCompensationFailed(otherErr) {
+			t.Error("Expected false for non-CompensationFailedError")
+		}
+	})
+
+	t.Run("IsRetryExhausted", func(t *testing.T) {
+		err := NewRetryExhaustedError("operation", 3)
+
+		if !IsRetryExhausted(err) {
+			t.Error("Expected true for RetryExhaustedError")
+		}
+
+		otherErr := NewValidationError("test")
+		if IsRetryExhausted(otherErr) {
+			t.Error("Expected false for non-RetryExhaustedError")
+		}
+	})
+}
+
+// TestWrapErrorEdgeCases tests edge cases for WrapError
+func TestWrapErrorEdgeCases(t *testing.T) {
+	t.Run("WrapError with nil error", func(t *testing.T) {
+		err := WrapError(nil, "CODE", "message", ErrorTypeSystem, false)
+		if err != nil {
+			t.Error("Expected nil when wrapping nil error")
+		}
+	})
+
+	t.Run("WrapError with SagaError", func(t *testing.T) {
+		originalErr := NewSagaError("ORIGINAL", "original message", ErrorTypeSystem, true)
+		wrappedErr := WrapError(originalErr, "WRAPPER", "wrapper message", ErrorTypeValidation, false)
+
+		if wrappedErr.Cause != originalErr {
+			t.Error("Expected original SagaError to be preserved as cause")
+		}
+	})
+
+	t.Run("WrapError with non-SagaError", func(t *testing.T) {
+		originalErr := errors.New("standard error")
+		wrappedErr := WrapError(originalErr, "WRAPPER", "wrapper message", ErrorTypeValidation, false)
+
+		if wrappedErr.Cause == nil {
+			t.Error("Expected cause to be created")
+		}
+		if wrappedErr.Cause.Code != "WRAPPED_ERROR" {
+			t.Errorf("Expected WRAPPED_ERROR, got %s", wrappedErr.Cause.Code)
+		}
+	})
+}
+
+// TestEventTypeFilterGetDescription tests GetDescription method
+func TestEventTypeFilterGetDescription(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   *EventTypeFilter
+		expected string
+	}{
+		{
+			name:     "Empty filter",
+			filter:   &EventTypeFilter{},
+			expected: "all events",
+		},
+		{
+			name: "Filter with types only",
+			filter: &EventTypeFilter{
+				Types: []SagaEventType{EventSagaStarted, EventSagaCompleted},
+			},
+			expected: "events matching types: saga.started, saga.completed",
+		},
+		{
+			name: "Filter with exclusions only",
+			filter: &EventTypeFilter{
+				ExcludedTypes: []SagaEventType{EventSagaFailed},
+			},
+			expected: "events matching types:  (excluding: saga.failed)",
+		},
+		{
+			name: "Filter with types and exclusions",
+			filter: &EventTypeFilter{
+				Types:         []SagaEventType{EventSagaStarted},
+				ExcludedTypes: []SagaEventType{EventSagaFailed},
+			},
+			expected: "events matching types: saga.started (excluding: saga.failed)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			desc := tt.filter.GetDescription()
+			if desc != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, desc)
+			}
+		})
+	}
+}
+
+// TestSagaIDFilterGetDescription tests GetDescription method for SagaIDFilter
+func TestSagaIDFilterGetDescription(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   *SagaIDFilter
+		expected string
+	}{
+		{
+			name:     "Empty filter",
+			filter:   &SagaIDFilter{},
+			expected: "all Sagas",
+		},
+		{
+			name: "Filter with IDs only",
+			filter: &SagaIDFilter{
+				SagaIDs: []string{"saga-1", "saga-2"},
+			},
+			expected: "events for Sagas: saga-1, saga-2",
+		},
+		{
+			name: "Filter with exclusions only",
+			filter: &SagaIDFilter{
+				ExcludeSagaIDs: []string{"saga-3"},
+			},
+			expected: "events for Sagas:  (excluding: saga-3)",
+		},
+		{
+			name: "Filter with IDs and exclusions",
+			filter: &SagaIDFilter{
+				SagaIDs:        []string{"saga-1"},
+				ExcludeSagaIDs: []string{"saga-2"},
+			},
+			expected: "events for Sagas: saga-1 (excluding: saga-2)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			desc := tt.filter.GetDescription()
+			if desc != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, desc)
+			}
+		})
+	}
+}
+
+// TestCompositeFilterGetDescription tests GetDescription method for CompositeFilter
+func TestCompositeFilterGetDescription(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   *CompositeFilter
+		expected string
+	}{
+		{
+			name:     "Empty composite filter",
+			filter:   &CompositeFilter{},
+			expected: "all events",
+		},
+		{
+			name: "AND composite filter",
+			filter: &CompositeFilter{
+				Filters: []EventFilter{
+					&EventTypeFilter{Types: []SagaEventType{EventSagaStarted}},
+					&SagaIDFilter{SagaIDs: []string{"saga-1"}},
+				},
+				Operation: FilterOperationAND,
+			},
+			expected: "events matching (events matching types: saga.started AND events for Sagas: saga-1)",
+		},
+		{
+			name: "OR composite filter",
+			filter: &CompositeFilter{
+				Filters: []EventFilter{
+					&EventTypeFilter{Types: []SagaEventType{EventSagaStarted}},
+					&SagaIDFilter{SagaIDs: []string{"saga-1"}},
+				},
+				Operation: FilterOperationOR,
+			},
+			expected: "events matching (events matching types: saga.started OR events for Sagas: saga-1)",
+		},
+		{
+			name: "Default operation (empty)",
+			filter: &CompositeFilter{
+				Filters: []EventFilter{
+					&EventTypeFilter{Types: []SagaEventType{EventSagaStarted}},
+				},
+				Operation: "",
+			},
+			expected: "events matching (events matching types: saga.started)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			desc := tt.filter.GetDescription()
+			if desc != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, desc)
+			}
+		})
+	}
+}
+
+// TestBasicEventSubscriptionGetCreatedAt tests GetCreatedAt method
+func TestBasicEventSubscriptionGetCreatedAt(t *testing.T) {
+	now := time.Now()
+	subscription := &BasicEventSubscription{
+		ID:        "test-sub",
+		CreatedAt: now,
+	}
+
+	if subscription.GetCreatedAt() != now {
+		t.Errorf("Expected %v, got %v", now, subscription.GetCreatedAt())
+	}
+}
+
+// TestExponentialBackoffRetryPolicySetMultiplier tests SetMultiplier method
+func TestExponentialBackoffRetryPolicySetMultiplier(t *testing.T) {
+	policy := NewExponentialBackoffRetryPolicy(3, 100*time.Millisecond, 10*time.Second)
+
+	// Set custom multiplier
+	policy.SetMultiplier(3.0)
+	policy.SetJitter(false)
+
+	// Test with custom multiplier
+	delay1 := policy.GetRetryDelay(0) // 100ms
+	delay2 := policy.GetRetryDelay(1) // 100ms * 3 = 300ms
+	delay3 := policy.GetRetryDelay(2) // 100ms * 9 = 900ms
+
+	if delay1 != 100*time.Millisecond {
+		t.Errorf("Expected 100ms, got %v", delay1)
+	}
+	if delay2 != 300*time.Millisecond {
+		t.Errorf("Expected 300ms, got %v", delay2)
+	}
+	if delay3 != 900*time.Millisecond {
+		t.Errorf("Expected 900ms, got %v", delay3)
+	}
+}
+
+// TestExponentialBackoffRetryPolicyWithJitter tests jitter behavior
+func TestExponentialBackoffRetryPolicyWithJitter(t *testing.T) {
+	policy := NewExponentialBackoffRetryPolicy(3, 100*time.Millisecond, 10*time.Second)
+	policy.SetJitter(true)
+
+	// With jitter enabled, delays should vary
+	// We can't test exact values, but we can ensure it doesn't crash
+	delay := policy.GetRetryDelay(1)
+	if delay <= 0 {
+		t.Error("Expected positive delay")
+	}
+}
+
+// TestEventTypeFilterMatch_EdgeCases tests edge cases for EventTypeFilter.Match
+func TestEventTypeFilterMatch_EdgeCases(t *testing.T) {
+	t.Run("Match with empty exclusions", func(t *testing.T) {
+		filter := &EventTypeFilter{
+			Types:         []SagaEventType{EventSagaStarted},
+			ExcludedTypes: []SagaEventType{},
+		}
+		event := &SagaEvent{Type: EventSagaStarted}
+
+		if !filter.Match(event) {
+			t.Error("Expected match when exclusions are empty")
+		}
+	})
+
+	t.Run("Match with no types but with exclusions", func(t *testing.T) {
+		filter := &EventTypeFilter{
+			Types:         []SagaEventType{},
+			ExcludedTypes: []SagaEventType{EventSagaFailed},
+		}
+		event1 := &SagaEvent{Type: EventSagaStarted}
+		event2 := &SagaEvent{Type: EventSagaFailed}
+
+		if !filter.Match(event1) {
+			t.Error("Expected match for non-excluded event")
+		}
+		if filter.Match(event2) {
+			t.Error("Expected no match for excluded event")
+		}
+	})
+}
+
+// TestCompositeFilterMatch_EdgeCases tests edge cases for CompositeFilter.Match
+func TestCompositeFilterMatch_EdgeCases(t *testing.T) {
+	t.Run("Match with unknown operation defaults to AND", func(t *testing.T) {
+		filter := &CompositeFilter{
+			Filters: []EventFilter{
+				&EventTypeFilter{Types: []SagaEventType{EventSagaStarted}},
+				&SagaIDFilter{SagaIDs: []string{"saga-1"}},
+			},
+			Operation: "UNKNOWN",
+		}
+		event := &SagaEvent{Type: EventSagaStarted, SagaID: "saga-1"}
+
+		if !filter.Match(event) {
+			t.Error("Expected match when both filters match (default AND)")
+		}
+	})
 }
