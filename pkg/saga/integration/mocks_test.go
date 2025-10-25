@@ -154,9 +154,9 @@ func (m *mockPaymentService) RefundPayment(ctx context.Context, transactionID st
 // ==========================
 
 type mockUserService struct {
-	createUserFunc       func(ctx context.Context, data *examples.UserRegistrationData) (*examples.UserCreationResult, error)
-	deleteUserFunc       func(ctx context.Context, userID string, reason string) error
-	getUserByEmailFunc   func(ctx context.Context, email string) (*examples.UserCreationResult, error)
+	createUserFunc        func(ctx context.Context, data *examples.UserRegistrationData) (*examples.UserCreationResult, error)
+	deleteUserFunc        func(ctx context.Context, userID string, reason string) error
+	getUserByEmailFunc    func(ctx context.Context, email string) (*examples.UserCreationResult, error)
 	getUserByUsernameFunc func(ctx context.Context, username string) (*examples.UserCreationResult, error)
 }
 
@@ -201,7 +201,7 @@ func (m *mockUserService) GetUserByUsername(ctx context.Context, username string
 // ==========================
 
 type mockEmailService struct {
-	sendVerificationEmailFunc  func(ctx context.Context, userID string, email string, username string) (*examples.EmailVerificationResult, error)
+	sendVerificationEmailFunc   func(ctx context.Context, userID string, email string, username string) (*examples.EmailVerificationResult, error)
 	cancelVerificationEmailFunc func(ctx context.Context, verificationID string) error
 	resendVerificationEmailFunc func(ctx context.Context, verificationID string) error
 }
@@ -540,12 +540,12 @@ func (m *mockNotificationInventoryService) SendInventoryAlert(ctx context.Contex
 // ==========================
 
 type mockAccountService struct {
-	validateAccountFunc  func(ctx context.Context, accountID string) (*examples.AccountBalance, error)
-	getBalanceFunc       func(ctx context.Context, accountID string) (*examples.AccountBalance, error)
-	freezeAmountFunc     func(ctx context.Context, accountID string, amount float64, reason string) (*examples.FreezeResult, error)
-	unfreezeAmountFunc   func(ctx context.Context, freezeID string, reason string) error
+	validateAccountFunc    func(ctx context.Context, accountID string) (*examples.AccountBalance, error)
+	getBalanceFunc         func(ctx context.Context, accountID string) (*examples.AccountBalance, error)
+	freezeAmountFunc       func(ctx context.Context, accountID string, amount float64, reason string) (*examples.FreezeResult, error)
+	unfreezeAmountFunc     func(ctx context.Context, freezeID string, reason string) error
 	deductFrozenAmountFunc func(ctx context.Context, freezeID string) error
-	addAmountFunc        func(ctx context.Context, accountID string, amount float64, transactionID string) error
+	addAmountFunc          func(ctx context.Context, accountID string, amount float64, transactionID string) error
 }
 
 func (m *mockAccountService) ValidateAccount(ctx context.Context, accountID string) (*examples.AccountBalance, error) {
@@ -616,10 +616,10 @@ func (m *mockAccountService) AddAmount(ctx context.Context, accountID string, am
 // ==========================
 
 type mockTransferService struct {
-	createTransferFunc      func(ctx context.Context, data *examples.TransferData) (*examples.TransferResult, error)
-	executeTransferFunc     func(ctx context.Context, transferID string, freezeID string) (*examples.TransferResult, error)
-	cancelTransferFunc      func(ctx context.Context, transferID string, reason string) error
-	getTransferStatusFunc   func(ctx context.Context, transferID string) (string, error)
+	createTransferFunc    func(ctx context.Context, data *examples.TransferData) (*examples.TransferResult, error)
+	executeTransferFunc   func(ctx context.Context, transferID string, freezeID string) (*examples.TransferResult, error)
+	cancelTransferFunc    func(ctx context.Context, transferID string, reason string) error
+	getTransferStatusFunc func(ctx context.Context, transferID string) (string, error)
 }
 
 func (m *mockTransferService) CreateTransfer(ctx context.Context, data *examples.TransferData) (*examples.TransferResult, error) {
@@ -735,4 +735,3 @@ func (m *mockNotificationService) SendFailureNotification(ctx context.Context, t
 	}
 	return nil
 }
-
