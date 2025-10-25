@@ -29,7 +29,8 @@
 //  5. 消息发布性能测试
 //
 // 使用方法：
-//   go test -bench=. -benchmem -benchtime=5s
+//
+//	go test -bench=. -benchmem -benchtime=5s
 //
 // 查看 README.md 获取完整的基准测试文档
 package benchmarks
@@ -121,4 +122,3 @@ func BenchmarkExampleParallel(b *testing.B) {
 //  - 确保基准测试可以独立运行，不依赖外部服务
 //  - 使用 mock 对象模拟外部依赖
 //  - 记录关键性能指标（吞吐量、延迟、内存使用）
-
