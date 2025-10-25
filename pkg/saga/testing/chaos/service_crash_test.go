@@ -65,15 +65,11 @@ func TestServiceCrash_DuringStepExecution(t *testing.T) {
 			// 创建测试 Saga 定义
 			sagaDef := createMultiStepSagaDefinition(injector)
 
-			// 创建内存状态存储
-			storage := state.NewMemoryStateStorage()
-			chaosStorage := NewChaosStateStorage(storage, injector)
+			// 创建混沌状态存储
+			chaosStorage := createTestStorage(injector)
 
 			// 创建协调器（不重试）
-			coord, err := coordinator.NewOrchestratorCoordinator(
-				coordinator.WithStateStorage(chaosStorage),
-				coordinator.WithRetryPolicy(saga.NewNoRetryPolicy()),
-			)
+			coord, err := createTestCoordinator(chaosStorage, saga.NewNoRetryPolicy())
 			if err != nil {
 				t.Fatalf("创建协调器失败: %v", err)
 			}
@@ -119,16 +115,12 @@ func TestServiceCrash_StateRecovery(t *testing.T) {
 	injector := NewFaultInjector()
 	injector.Disable() // 初始禁用
 
-	// 创建持久化状态存储（内存模拟）
-	storage := state.NewMemoryStateStorage()
+	// 创建共享的混沌状态存储（模拟持久化存储）
+	chaosStorage := createTestStorage(injector)
 
 	// 第一阶段：正常启动 Saga
 	func() {
-		chaosStorage := NewChaosStateStorage(storage, injector)
-		coord, err := coordinator.NewOrchestratorCoordinator(
-			coordinator.WithStateStorage(chaosStorage),
-			coordinator.WithRetryPolicy(saga.NewFixedDelayRetryPolicy(2, 100*time.Millisecond)),
-		)
+		coord, err := createTestCoordinator(chaosStorage, saga.NewFixedDelayRetryPolicy(2, 100*time.Millisecond))
 		if err != nil {
 			t.Fatalf("创建协调器失败: %v", err)
 		}
@@ -159,10 +151,7 @@ func TestServiceCrash_StateRecovery(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		// 创建新的协调器（模拟服务重启）
-		coord2, err := coordinator.NewOrchestratorCoordinator(
-			coordinator.WithStateStorage(chaosStorage),
-			coordinator.WithRetryPolicy(saga.NewFixedDelayRetryPolicy(2, 100*time.Millisecond)),
-		)
+		coord2, err := createTestCoordinator(chaosStorage, saga.NewFixedDelayRetryPolicy(2, 100*time.Millisecond))
 		if err != nil {
 			t.Fatalf("创建恢复协调器失败: %v", err)
 		}
@@ -211,15 +200,11 @@ func TestServiceCrash_CompensationLogic(t *testing.T) {
 	// 创建会失败的 Saga 定义（触发补偿）
 	sagaDef := createFailingSagaDefinition(injector)
 
-	// 创建内存状态存储
-	storage := state.NewMemoryStateStorage()
-	chaosStorage := NewChaosStateStorage(storage, injector)
+	// 创建混沌状态存储
+	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewFixedDelayRetryPolicy(2, 100*time.Millisecond)),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewFixedDelayRetryPolicy(2, 100*time.Millisecond))
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}
@@ -263,15 +248,11 @@ func TestServiceCrash_PartialCompensation(t *testing.T) {
 	// 创建多步骤 Saga 定义
 	sagaDef := createMultiStepFailingSagaDefinition(injector)
 
-	// 创建内存状态存储
-	storage := state.NewMemoryStateStorage()
-	chaosStorage := NewChaosStateStorage(storage, injector)
+	// 创建混沌状态存储
+	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewNoRetryPolicy()),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewNoRetryPolicy())
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}

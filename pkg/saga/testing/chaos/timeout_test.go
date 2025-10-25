@@ -82,14 +82,10 @@ func TestTimeout_StepExecution(t *testing.T) {
 			}
 
 			// 创建内存状态存储
-			storage := state.NewMemoryStateStorage()
-			chaosStorage := NewChaosStateStorage(storage, injector)
+			chaosStorage := createTestStorage(injector)
 
 			// 创建协调器
-			coord, err := coordinator.NewOrchestratorCoordinator(
-				coordinator.WithStateStorage(chaosStorage),
-				coordinator.WithRetryPolicy(saga.NewNoRetryPolicy()),
-			)
+			coord, err := createTestCoordinator(chaosStorage, saga.NewNoRetryPolicy())
 			if err != nil {
 				t.Fatalf("创建协调器失败: %v", err)
 			}
@@ -150,14 +146,10 @@ func TestTimeout_SagaLevel(t *testing.T) {
 	}
 
 	// 创建内存状态存储
-	storage := state.NewMemoryStateStorage()
-	chaosStorage := NewChaosStateStorage(storage, injector)
+	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewNoRetryPolicy()),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewNoRetryPolicy())
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}
@@ -220,14 +212,10 @@ func TestTimeout_CompensationTimeout(t *testing.T) {
 	}
 
 	// 创建内存状态存储
-	storage := state.NewMemoryStateStorage()
-	chaosStorage := NewChaosStateStorage(storage, injector)
+	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewNoRetryPolicy()),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewNoRetryPolicy())
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}
@@ -289,14 +277,10 @@ func TestTimeout_WithRetry(t *testing.T) {
 	}
 
 	// 创建内存状态存储
-	storage := state.NewMemoryStateStorage()
-	chaosStorage := NewChaosStateStorage(storage, injector)
+	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器，带重试策略
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewExponentialBackoffRetryPolicy(3, 500*time.Millisecond, 2*time.Second)),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewExponentialBackoffRetryPolicy(3, 500*time.Millisecond, 2*time.Second))
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}
@@ -356,14 +340,10 @@ func TestTimeout_ContextCancellation(t *testing.T) {
 	}
 
 	// 创建内存状态存储
-	storage := state.NewMemoryStateStorage()
-	chaosStorage := NewChaosStateStorage(storage, injector)
+	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewNoRetryPolicy()),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewNoRetryPolicy())
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}

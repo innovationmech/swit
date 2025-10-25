@@ -228,10 +228,7 @@ func TestDatabaseFailure_ConnectionLoss(t *testing.T) {
 	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewExponentialBackoffRetryPolicy(3, 100*time.Millisecond, 1*time.Second)),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewExponentialBackoffRetryPolicy(3, 100*time.Millisecond, 1*time.Second))
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}
@@ -427,10 +424,7 @@ func TestDatabaseFailure_RecoveryMechanism(t *testing.T) {
 	chaosStorage := createTestStorage(injector)
 
 	// 创建协调器，带重试策略
-	coord, err := coordinator.NewOrchestratorCoordinator(
-		coordinator.WithStateStorage(chaosStorage),
-		coordinator.WithRetryPolicy(saga.NewExponentialBackoffRetryPolicy(5, 200*time.Millisecond, 2*time.Second)),
-	)
+	coord, err := createTestCoordinator(chaosStorage, saga.NewExponentialBackoffRetryPolicy(5, 200*time.Millisecond, 2*time.Second))
 	if err != nil {
 		t.Fatalf("创建协调器失败: %v", err)
 	}
