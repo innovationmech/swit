@@ -86,34 +86,34 @@ const (
 
 // SagaDefinitionFixture represents a Saga definition fixture.
 type SagaDefinitionFixture struct {
-	ID                    string                 `yaml:"id" json:"id"`
-	Name                  string                 `yaml:"name" json:"name"`
-	Description           string                 `yaml:"description" json:"description"`
-	Timeout               string                 `yaml:"timeout" json:"timeout"`
-	CompensationStrategy  string                 `yaml:"compensation_strategy" json:"compensation_strategy"`
-	Steps                 []StepDefinitionFixture `yaml:"steps" json:"steps"`
-	Metadata              map[string]interface{} `yaml:"metadata" json:"metadata"`
-	RetryConfig           *RetryConfigFixture    `yaml:"retry_config,omitempty" json:"retry_config,omitempty"`
+	ID                   string                  `yaml:"id" json:"id"`
+	Name                 string                  `yaml:"name" json:"name"`
+	Description          string                  `yaml:"description" json:"description"`
+	Timeout              string                  `yaml:"timeout" json:"timeout"`
+	CompensationStrategy string                  `yaml:"compensation_strategy" json:"compensation_strategy"`
+	Steps                []StepDefinitionFixture `yaml:"steps" json:"steps"`
+	Metadata             map[string]interface{}  `yaml:"metadata" json:"metadata"`
+	RetryConfig          *RetryConfigFixture     `yaml:"retry_config,omitempty" json:"retry_config,omitempty"`
 }
 
 // StepDefinitionFixture represents a step definition in a fixture.
 type StepDefinitionFixture struct {
-	ID              string                 `yaml:"id" json:"id"`
-	Name            string                 `yaml:"name" json:"name"`
-	Type            string                 `yaml:"type" json:"type"`
-	Timeout         string                 `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	Retryable       bool                   `yaml:"retryable" json:"retryable"`
-	Compensatable   bool                   `yaml:"compensatable" json:"compensatable"`
-	Metadata        map[string]interface{} `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	ID            string                 `yaml:"id" json:"id"`
+	Name          string                 `yaml:"name" json:"name"`
+	Type          string                 `yaml:"type" json:"type"`
+	Timeout       string                 `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	Retryable     bool                   `yaml:"retryable" json:"retryable"`
+	Compensatable bool                   `yaml:"compensatable" json:"compensatable"`
+	Metadata      map[string]interface{} `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 }
 
 // RetryConfigFixture represents retry configuration in a fixture.
 type RetryConfigFixture struct {
-	MaxAttempts      int    `yaml:"max_attempts" json:"max_attempts"`
-	InitialDelay     string `yaml:"initial_delay" json:"initial_delay"`
-	MaxDelay         string `yaml:"max_delay" json:"max_delay"`
+	MaxAttempts       int     `yaml:"max_attempts" json:"max_attempts"`
+	InitialDelay      string  `yaml:"initial_delay" json:"initial_delay"`
+	MaxDelay          string  `yaml:"max_delay" json:"max_delay"`
 	BackoffMultiplier float64 `yaml:"backoff_multiplier" json:"backoff_multiplier"`
-	Jitter           float64 `yaml:"jitter" json:"jitter"`
+	Jitter            float64 `yaml:"jitter" json:"jitter"`
 }
 
 // SagaInstanceFixture represents a Saga instance state fixture.
@@ -144,22 +144,22 @@ type SagaInstanceFixture struct {
 
 // StepStateFixture represents a step state fixture.
 type StepStateFixture struct {
-	ID              string                 `yaml:"id" json:"id"`
-	SagaID          string                 `yaml:"saga_id" json:"saga_id"`
-	StepIndex       int                    `yaml:"step_index" json:"step_index"`
-	Name            string                 `yaml:"name" json:"name"`
-	State           string                 `yaml:"state" json:"state"`
-	Attempts        int                    `yaml:"attempts" json:"attempts"`
-	MaxAttempts     int                    `yaml:"max_attempts" json:"max_attempts"`
-	CreatedAt       string                 `yaml:"created_at" json:"created_at"`
-	StartedAt       string                 `yaml:"started_at,omitempty" json:"started_at,omitempty"`
-	CompletedAt     string                 `yaml:"completed_at,omitempty" json:"completed_at,omitempty"`
-	LastAttemptAt   string                 `yaml:"last_attempt_at,omitempty" json:"last_attempt_at,omitempty"`
-	InputData       interface{}            `yaml:"input_data,omitempty" json:"input_data,omitempty"`
-	OutputData      interface{}            `yaml:"output_data,omitempty" json:"output_data,omitempty"`
-	Error           *ErrorFixture          `yaml:"error,omitempty" json:"error,omitempty"`
+	ID                string                    `yaml:"id" json:"id"`
+	SagaID            string                    `yaml:"saga_id" json:"saga_id"`
+	StepIndex         int                       `yaml:"step_index" json:"step_index"`
+	Name              string                    `yaml:"name" json:"name"`
+	State             string                    `yaml:"state" json:"state"`
+	Attempts          int                       `yaml:"attempts" json:"attempts"`
+	MaxAttempts       int                       `yaml:"max_attempts" json:"max_attempts"`
+	CreatedAt         string                    `yaml:"created_at" json:"created_at"`
+	StartedAt         string                    `yaml:"started_at,omitempty" json:"started_at,omitempty"`
+	CompletedAt       string                    `yaml:"completed_at,omitempty" json:"completed_at,omitempty"`
+	LastAttemptAt     string                    `yaml:"last_attempt_at,omitempty" json:"last_attempt_at,omitempty"`
+	InputData         interface{}               `yaml:"input_data,omitempty" json:"input_data,omitempty"`
+	OutputData        interface{}               `yaml:"output_data,omitempty" json:"output_data,omitempty"`
+	Error             *ErrorFixture             `yaml:"error,omitempty" json:"error,omitempty"`
 	CompensationState *CompensationStateFixture `yaml:"compensation_state,omitempty" json:"compensation_state,omitempty"`
-	Metadata        map[string]interface{} `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	Metadata          map[string]interface{}    `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 }
 
 // CompensationStateFixture represents compensation state in a fixture.
@@ -186,27 +186,27 @@ type ErrorFixture struct {
 
 // SagaEventFixture represents a Saga event fixture.
 type SagaEventFixture struct {
-	ID            string                 `yaml:"id" json:"id"`
-	SagaID        string                 `yaml:"saga_id" json:"saga_id"`
-	StepID        string                 `yaml:"step_id,omitempty" json:"step_id,omitempty"`
-	Type          string                 `yaml:"type" json:"type"`
-	Version       string                 `yaml:"version" json:"version"`
-	Timestamp     string                 `yaml:"timestamp" json:"timestamp"`
-	CorrelationID string                 `yaml:"correlation_id,omitempty" json:"correlation_id,omitempty"`
-	Data          interface{}            `yaml:"data,omitempty" json:"data,omitempty"`
-	PreviousState interface{}            `yaml:"previous_state,omitempty" json:"previous_state,omitempty"`
-	NewState      interface{}            `yaml:"new_state,omitempty" json:"new_state,omitempty"`
-	Error         *ErrorFixture          `yaml:"error,omitempty" json:"error,omitempty"`
-	Duration      string                 `yaml:"duration,omitempty" json:"duration,omitempty"`
-	Attempt       int                    `yaml:"attempt,omitempty" json:"attempt,omitempty"`
-	MaxAttempts   int                    `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
-	Metadata      map[string]interface{} `yaml:"metadata,omitempty" json:"metadata,omitempty"`
-	Source        string                 `yaml:"source,omitempty" json:"source,omitempty"`
-	Service       string                 `yaml:"service,omitempty" json:"service,omitempty"`
-	ServiceVersion string                `yaml:"service_version,omitempty" json:"service_version,omitempty"`
-	TraceID       string                 `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
-	SpanID        string                 `yaml:"span_id,omitempty" json:"span_id,omitempty"`
-	ParentSpanID  string                 `yaml:"parent_span_id,omitempty" json:"parent_span_id,omitempty"`
+	ID             string                 `yaml:"id" json:"id"`
+	SagaID         string                 `yaml:"saga_id" json:"saga_id"`
+	StepID         string                 `yaml:"step_id,omitempty" json:"step_id,omitempty"`
+	Type           string                 `yaml:"type" json:"type"`
+	Version        string                 `yaml:"version" json:"version"`
+	Timestamp      string                 `yaml:"timestamp" json:"timestamp"`
+	CorrelationID  string                 `yaml:"correlation_id,omitempty" json:"correlation_id,omitempty"`
+	Data           interface{}            `yaml:"data,omitempty" json:"data,omitempty"`
+	PreviousState  interface{}            `yaml:"previous_state,omitempty" json:"previous_state,omitempty"`
+	NewState       interface{}            `yaml:"new_state,omitempty" json:"new_state,omitempty"`
+	Error          *ErrorFixture          `yaml:"error,omitempty" json:"error,omitempty"`
+	Duration       string                 `yaml:"duration,omitempty" json:"duration,omitempty"`
+	Attempt        int                    `yaml:"attempt,omitempty" json:"attempt,omitempty"`
+	MaxAttempts    int                    `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
+	Metadata       map[string]interface{} `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	Source         string                 `yaml:"source,omitempty" json:"source,omitempty"`
+	Service        string                 `yaml:"service,omitempty" json:"service,omitempty"`
+	ServiceVersion string                 `yaml:"service_version,omitempty" json:"service_version,omitempty"`
+	TraceID        string                 `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
+	SpanID         string                 `yaml:"span_id,omitempty" json:"span_id,omitempty"`
+	ParentSpanID   string                 `yaml:"parent_span_id,omitempty" json:"parent_span_id,omitempty"`
 }
 
 // ==========================
@@ -489,15 +489,15 @@ func (g *FixtureGenerator) GenerateStepState(sagaID string, stepIndex int, state
 	startedAt := now.Add(-3 * time.Minute)
 
 	stepState := &saga.StepState{
-		ID:        fmt.Sprintf("%s-step-%d", sagaID, stepIndex),
-		SagaID:    sagaID,
-		StepIndex: stepIndex,
-		Name:      fmt.Sprintf("Step %d", stepIndex+1),
-		State:     state,
-		Attempts:  1,
+		ID:          fmt.Sprintf("%s-step-%d", sagaID, stepIndex),
+		SagaID:      sagaID,
+		StepIndex:   stepIndex,
+		Name:        fmt.Sprintf("Step %d", stepIndex+1),
+		State:       state,
+		Attempts:    1,
 		MaxAttempts: 3,
-		CreatedAt: createdAt,
-		StartedAt: &startedAt,
+		CreatedAt:   createdAt,
+		StartedAt:   &startedAt,
 		InputData: map[string]interface{}{
 			"input": "test",
 		},
@@ -550,9 +550,9 @@ func (g *FixtureGenerator) GenerateEvent(sagaID string, eventType saga.SagaEvent
 		Data: map[string]interface{}{
 			"test": "data",
 		},
-		Metadata: make(map[string]interface{}),
-		Source:   "test-service",
-		Service:  "test-service",
+		Metadata:       make(map[string]interface{}),
+		Source:         "test-service",
+		Service:        "test-service",
 		ServiceVersion: "1.0.0",
 	}
 
@@ -779,4 +779,3 @@ func CreateMockFromFixture(fixture *SagaDefinitionFixture) (*MockSagaDefinition,
 
 	return mock, nil
 }
-

@@ -134,9 +134,9 @@ func TestFixtureLoader_LoadByType(t *testing.T) {
 	loader := GetDefaultFixtureLoader()
 
 	tests := []struct {
-		name         string
-		fixtureType  FixtureType
-		minExpected  int
+		name        string
+		fixtureType FixtureType
+		minExpected int
 	}{
 		{
 			name:        "Load saga definitions",
@@ -881,4 +881,3 @@ func TestFixtureCache(t *testing.T) {
 		t.Error("Expected different fixture instance after cache clear")
 	}
 }
-
