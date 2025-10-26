@@ -1,0 +1,45 @@
+# Test Configuration - Integration Test
+id: config-integration-test
+name: Integration Test Configuration
+description: Configuration for integration testing with external services
+type: config
+tags:
+  - config
+  - integration
+  - full_stack
+metadata:
+  scenario: integration_testing
+  performance: moderate
+
+data:
+  timeout: 5m
+  step_timeout: 2m
+  retry:
+    max_attempts: 3
+    initial_delay: 100ms
+    max_delay: 5s
+    backoff_multiplier: 2.0
+    jitter: 0.1
+  concurrency:
+    max_concurrent_sagas: 50
+    max_workers: 10
+  logging:
+    level: debug
+    verbose: true
+  metrics:
+    enabled: true
+    collection_interval: 10s
+  tracing:
+    enabled: true
+    sample_rate: 1.0
+  cleanup:
+    auto_cleanup: true
+    cleanup_interval: 5m
+    retention_period: 1h
+  storage:
+    type: postgres
+    connection_pool_size: 20
+  messaging:
+    type: nats
+    max_reconnects: 5
+

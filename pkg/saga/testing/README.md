@@ -12,6 +12,7 @@
 - [断言函数](#断言函数)
 - [测试配置](#测试配置)
 - [测试日志](#测试日志)
+- [测试数据 Fixtures](#测试数据-fixtures)
 - [预定义场景](#预定义场景)
 - [最佳实践](#最佳实践)
 - [示例](#示例)
@@ -25,6 +26,7 @@
 3. **断言函数** - 丰富的断言辅助函数
 4. **测试配置** - 灵活的测试配置管理
 5. **测试日志** - 日志收集和分析工具
+6. **测试 Fixtures** - 标准化的测试数据
 
 ## 核心组件
 
@@ -57,6 +59,17 @@
 ### 5. 测试日志 (logger.go)
 
 提供日志收集和分析工具。
+
+### 6. 测试数据 Fixtures (fixtures.go)
+
+提供标准化的测试数据和加载器：
+
+- `FixtureLoader` - Fixture 加载器
+- `FixtureGenerator` - Fixture 生成器
+- `FixtureBuilder` - Fixture 构建器
+- 预定义的 YAML fixtures (fixtures/*.yaml)
+
+详见 [Fixtures README](fixtures/README.md)。
 
 ## 快速开始
 
@@ -517,6 +530,100 @@ sagatesting.LogSagaStarted(logger, sagaID, "Order Saga")
 sagatesting.LogSagaCompleted(logger, sagaID, duration)
 sagatesting.LogSagaFailed(logger, sagaID, err)
 ```
+
+## 测试数据 Fixtures
+
+### 概述
+
+Fixtures 提供标准化的、可复用的测试数据，包括 Saga 定义、实例状态、事件、配置和错误场景等。所有 fixtures 以 YAML 格式存储在 `fixtures/` 目录。
+
+详细文档请参阅 [Fixtures README](fixtures/README.md)。
+
+### 加载 Fixtures
+
+```go
+// 使用默认加载器
+loader := sagatesting.GetDefaultFixtureLoader()
+
+// 加载单个 fixture
+fixture, err := loader.Load("successful-saga")
+if err != nil {
+    t.Fatal(err)
+}
+
+// 按类型加载
+sagaDefFixtures, err := loader.LoadByType(sagatesting.FixtureTypeSagaDefinition)
+eventFixtures, err := loader.LoadByType(sagatesting.FixtureTypeSagaEvent)
+
+// 按标签加载
+successFixtures, err := loader.LoadByTags("success")
+errorFixtures, err := loader.LoadByTags("error", "payment")
+```
+
+### 预定义 Fixtures
+
+```go
+// 成功场景
+fixture, err := sagatesting.LoadSuccessfulSagaFixture()
+
+// 失败场景
+fixture, err := sagatesting.LoadFailingSagaFixture()
+
+// 补偿场景
+fixture, err := sagatesting.LoadCompensationSagaFixture()
+
+// 超时场景
+fixture, err := sagatesting.LoadTimeoutSagaFixture()
+```
+
+### 生成 Fixtures
+
+```go
+generator := sagatesting.NewFixtureGenerator()
+
+// 生成 Saga 定义
+sagaDef := generator.GenerateSagaDefinition("test-saga", "Test Saga", 5)
+
+// 生成不同状态的实例
+runningInstance := generator.GenerateSagaInstance("saga-001", "test-saga", saga.StateRunning)
+completedInstance := generator.GenerateSagaInstance("saga-002", "test-saga", saga.StateCompleted)
+
+// 生成步骤状态
+stepState := generator.GenerateStepState("saga-001", 0, saga.StepStateCompleted)
+
+// 生成事件
+event := generator.GenerateEvent("saga-001", saga.EventSagaStarted)
+
+// 生成错误
+error := generator.GenerateError("TEST_ERROR", "Test error", saga.ErrorTypeService, false)
+```
+
+### 创建自定义 Fixtures
+
+```go
+// 使用 FixtureBuilder
+fixture := sagatesting.NewFixtureBuilder(
+    "my-saga",
+    "My Saga",
+    sagatesting.FixtureTypeSagaDefinition,
+).
+    WithDescription("Custom saga for testing").
+    WithTags("custom", "test").
+    WithData(myData).
+    WithMetadata("author", "test-team").
+    Build()
+
+// 保存到文件
+err := builder.SaveToFile("fixtures/my-saga.yaml")
+```
+
+### 可用 Fixtures 类型
+
+- **Saga 定义**: successful-saga, failing-saga, compensation-saga, timeout-saga
+- **Saga 实例**: saga-instance-running, saga-instance-completed, saga-instance-failed, saga-instance-compensating
+- **事件**: saga-event-started, saga-event-step-completed, saga-event-step-failed, saga-event-compensation-started, saga-event-completed
+- **配置**: config-quick-test, config-integration-test
+- **错误**: error-network-timeout, error-business-logic, error-database-connection, error-compensation-failure
 
 ## 预定义场景
 

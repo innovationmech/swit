@@ -1,0 +1,44 @@
+# Error Scenario - Compensation Failure
+id: error-compensation-failure
+name: Compensation Step Failure
+description: Error during compensation execution
+type: error
+tags:
+  - error
+  - compensation
+  - critical
+metadata:
+  scenario: compensation_failure
+  severity: critical
+
+data:
+  code: COMPENSATION_FAILED
+  message: Failed to execute compensation for step 'charge-payment'
+  type: compensation
+  retryable: true
+  timestamp: "2025-01-15T12:06:00Z"
+  stack_trace: |
+    at refundPayment (payment-service.js:234)
+    at compensateStep (saga-coordinator.js:456)
+    at runCompensation (saga-coordinator.js:398)
+  details:
+    saga_id: saga-inst-004
+    step_id: step-2
+    step_name: Charge Payment
+    compensation_attempt: 2
+    max_compensation_attempts: 3
+    original_error: WAREHOUSE_UNAVAILABLE
+    compensation_error: REFUND_API_ERROR
+  cause:
+    code: REFUND_API_ERROR
+    message: Payment gateway returned error during refund
+    type: external_service
+    retryable: true
+    timestamp: "2025-01-15T12:06:00Z"
+    details:
+      gateway: stripe
+      transaction_id: TXN-777666
+      amount: 899.99
+      gateway_error_code: processing_error
+      gateway_message: Unable to process refund at this time
+

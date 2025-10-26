@@ -112,6 +112,11 @@ func TestMessageLoss_EventPublishing(t *testing.T) {
 
 // TestMessageLoss_EventOrdering tests that message loss doesn't violate event ordering guarantees.
 func TestMessageLoss_EventOrdering(t *testing.T) {
+	// Skip in short mode as this test is timing-sensitive and can be flaky in CI environments
+	if testing.Short() {
+		t.Skip("跳过不稳定的混沌测试（时序敏感）")
+	}
+
 	// 创建故障注入器，30% 消息丢失率
 	injector := NewFaultInjector()
 	injector.AddFault("random-message-loss", &FaultConfig{

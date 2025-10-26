@@ -1,0 +1,36 @@
+# Test Configuration - Quick Test
+id: config-quick-test
+name: Quick Test Configuration
+description: Minimal configuration for fast unit tests
+type: config
+tags:
+  - config
+  - quick
+  - unit_test
+metadata:
+  scenario: unit_testing
+  performance: fast
+
+data:
+  timeout: 30s
+  step_timeout: 5s
+  retry:
+    max_attempts: 2
+    initial_delay: 10ms
+    max_delay: 100ms
+    backoff_multiplier: 2.0
+    jitter: 0.1
+  concurrency:
+    max_concurrent_sagas: 10
+    max_workers: 2
+  logging:
+    level: info
+    verbose: false
+  metrics:
+    enabled: false
+  tracing:
+    enabled: false
+  cleanup:
+    auto_cleanup: true
+    cleanup_interval: 1m
+

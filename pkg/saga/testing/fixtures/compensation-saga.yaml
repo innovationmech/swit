@@ -1,0 +1,69 @@
+# Compensation Saga Definition Fixture
+id: compensation-saga
+name: Order Cancellation with Compensation
+description: A saga that requires compensation after partial execution
+type: saga_definition
+tags:
+  - compensation
+  - rollback
+  - order
+metadata:
+  scenario: compensation_required
+  complexity: medium
+
+data:
+  id: compensation-saga-001
+  name: Order Cancellation Saga
+  description: Order processing saga that triggers compensation
+  timeout: 10m
+  compensation_strategy: backward
+  retry_config:
+    max_attempts: 3
+    initial_delay: 100ms
+    max_delay: 5s
+    backoff_multiplier: 2.0
+    jitter: 0.1
+  steps:
+    - id: create-order
+      name: Create Order
+      type: order
+      timeout: 1m
+      retryable: true
+      compensatable: true
+      metadata:
+        compensation_action: delete_order
+    - id: reserve-inventory
+      name: Reserve Inventory
+      type: inventory
+      timeout: 1m
+      retryable: true
+      compensatable: true
+      metadata:
+        compensation_action: release_inventory
+    - id: charge-payment
+      name: Charge Payment
+      type: payment
+      timeout: 2m
+      retryable: true
+      compensatable: true
+      metadata:
+        compensation_action: refund_payment
+    - id: allocate-warehouse
+      name: Allocate Warehouse (Fails)
+      type: fulfillment
+      timeout: 1m
+      retryable: false
+      compensatable: false
+      metadata:
+        will_fail: true
+        error_code: WAREHOUSE_UNAVAILABLE
+    - id: notify-customer
+      name: Notify Customer
+      type: notification
+      timeout: 30s
+      retryable: true
+      compensatable: false
+  metadata:
+    version: 1.0
+    expected_outcome: compensated
+

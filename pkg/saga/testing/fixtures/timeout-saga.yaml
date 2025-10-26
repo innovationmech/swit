@@ -1,0 +1,57 @@
+# Timeout Saga Definition Fixture
+id: timeout-saga
+name: Slow Payment Timeout
+description: A saga that times out during payment processing
+type: saga_definition
+tags:
+  - timeout
+  - payment
+  - slow
+metadata:
+  scenario: timeout
+  complexity: simple
+
+data:
+  id: timeout-saga-001
+  name: Payment Timeout Saga
+  description: Order saga that times out during payment
+  timeout: 1m
+  compensation_strategy: backward
+  retry_config:
+    max_attempts: 2
+    initial_delay: 100ms
+    max_delay: 2s
+    backoff_multiplier: 2.0
+    jitter: 0.1
+  steps:
+    - id: validate-order
+      name: Validate Order
+      type: validation
+      timeout: 10s
+      retryable: true
+      compensatable: false
+    - id: reserve-inventory
+      name: Reserve Inventory
+      type: inventory
+      timeout: 15s
+      retryable: true
+      compensatable: true
+    - id: process-payment
+      name: Process Payment (Slow)
+      type: payment
+      timeout: 2m
+      retryable: false
+      compensatable: true
+      metadata:
+        will_timeout: true
+        simulated_delay: 3m
+    - id: create-shipment
+      name: Create Shipment
+      type: fulfillment
+      timeout: 20s
+      retryable: true
+      compensatable: true
+  metadata:
+    version: 1.0
+    expected_outcome: timed_out
+
