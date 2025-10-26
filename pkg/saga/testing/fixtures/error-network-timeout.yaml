@@ -1,0 +1,30 @@
+# Error Scenario - Network Timeout
+id: error-network-timeout
+name: Network Timeout Error
+description: Simulates a network timeout during step execution
+type: error
+tags:
+  - error
+  - timeout
+  - network
+metadata:
+  scenario: network_failure
+  severity: medium
+
+data:
+  code: NETWORK_TIMEOUT
+  message: Network request timed out after 30 seconds
+  type: timeout
+  retryable: true
+  timestamp: "2025-01-15T10:00:00Z"
+  stack_trace: |
+    at processPayment (payment-service.js:145)
+    at executeStep (saga-coordinator.js:289)
+    at runSaga (saga-coordinator.js:156)
+  details:
+    endpoint: https://payment-api.example.com/charge
+    timeout_ms: 30000
+    attempt: 1
+    max_attempts: 3
+    last_error_at: "2025-01-15T10:00:30Z"
+

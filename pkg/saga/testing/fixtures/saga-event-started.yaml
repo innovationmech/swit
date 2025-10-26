@@ -1,0 +1,37 @@
+# Saga Event - Started
+id: saga-event-started
+name: Saga Started Event
+description: Event emitted when a saga starts
+type: saga_event
+tags:
+  - event
+  - started
+  - lifecycle
+metadata:
+  scenario: saga_lifecycle
+  event_type: started
+
+data:
+  id: evt-start-001
+  saga_id: saga-inst-001
+  type: saga_started
+  version: "1.0"
+  timestamp: "2025-01-15T10:00:05Z"
+  correlation_id: corr-abc123
+  data:
+    definition_id: order-saga-001
+    saga_name: Order Processing Saga
+    initial_data:
+      order_id: ORD-12345
+      customer_id: CUST-789
+      total_amount: 299.99
+  new_state: pending
+  metadata:
+    initiator: api-gateway
+    request_id: req-xyz789
+  source: saga-coordinator
+  service: swit-serve
+  service_version: 1.0.0
+  trace_id: trace-abc123
+  span_id: span-start-001
+

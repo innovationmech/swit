@@ -1,0 +1,42 @@
+# Saga Event - Compensation Started
+id: saga-event-compensation-started
+name: Compensation Started Event
+description: Event emitted when saga compensation begins
+type: saga_event
+tags:
+  - event
+  - compensation
+  - started
+metadata:
+  scenario: compensation_flow
+  event_type: compensation_started
+
+data:
+  id: evt-comp-start-001
+  saga_id: saga-inst-004
+  type: compensation_started
+  version: "1.0"
+  timestamp: "2025-01-15T12:05:30Z"
+  correlation_id: corr-comp123
+  data:
+    trigger_step_index: 3
+    trigger_step_name: Allocate Warehouse (Fails)
+    steps_to_compensate: 3
+    compensation_strategy: backward
+  previous_state: running
+  new_state: compensating
+  error:
+    code: WAREHOUSE_UNAVAILABLE
+    message: No warehouse available for allocation
+    type: step_execution
+    retryable: false
+    timestamp: "2025-01-15T12:05:00Z"
+  metadata:
+    compensation_reason: step_failure
+    steps_completed: 3
+  source: saga-coordinator
+  service: swit-serve
+  service_version: 1.0.0
+  trace_id: trace-comp123
+  span_id: span-comp-start-001
+

@@ -1,0 +1,42 @@
+# Saga Event - Step Completed
+id: saga-event-step-completed
+name: Step Completed Event
+description: Event emitted when a saga step completes successfully
+type: saga_event
+tags:
+  - event
+  - step
+  - completed
+metadata:
+  scenario: step_execution
+  event_type: step_completed
+
+data:
+  id: evt-step-comp-001
+  saga_id: saga-inst-001
+  step_id: step-1
+  type: step_completed
+  version: "1.0"
+  timestamp: "2025-01-15T10:01:30Z"
+  correlation_id: corr-abc123
+  data:
+    step_index: 1
+    step_name: Reserve Inventory
+    output_data:
+      reservation_id: INV-RES-456
+      expires_at: "2025-01-15T11:00:00Z"
+  previous_state: running
+  new_state: completed
+  duration: 1m14s
+  attempt: 1
+  max_attempts: 3
+  metadata:
+    execution_host: worker-node-01
+    step_duration_ms: 74000
+  source: inventory-service
+  service: inventory-service
+  service_version: 2.3.0
+  trace_id: trace-abc123
+  span_id: span-step-001
+  parent_span_id: span-saga-001
+

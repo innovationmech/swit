@@ -1,0 +1,52 @@
+# Saga Event - Step Failed
+id: saga-event-step-failed
+name: Step Failed Event
+description: Event emitted when a saga step fails
+type: saga_event
+tags:
+  - event
+  - step
+  - failed
+  - error
+metadata:
+  scenario: step_failure
+  event_type: step_failed
+
+data:
+  id: evt-step-fail-001
+  saga_id: saga-inst-003
+  step_id: step-2
+  type: step_failed
+  version: "1.0"
+  timestamp: "2025-01-15T11:03:45Z"
+  correlation_id: corr-fail123
+  data:
+    step_index: 2
+    step_name: Process Payment (Fails)
+    input_data:
+      amount: 1299.99
+      payment_method: credit_card
+  previous_state: running
+  new_state: failed
+  error:
+    code: PAYMENT_DECLINED
+    message: Payment declined by processor
+    type: step_execution
+    retryable: false
+    timestamp: "2025-01-15T11:03:45Z"
+    details:
+      decline_reason: insufficient_funds
+      processor_code: "51"
+  duration: 1m44s
+  attempt: 2
+  max_attempts: 2
+  metadata:
+    execution_host: worker-node-02
+    error_category: business_error
+  source: payment-service
+  service: payment-service
+  service_version: 3.1.0
+  trace_id: trace-fail123
+  span_id: span-step-fail-001
+  parent_span_id: span-saga-fail-001
+

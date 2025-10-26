@@ -1,0 +1,43 @@
+# Saga Event - Completed
+id: saga-event-completed
+name: Saga Completed Event
+description: Event emitted when a saga completes successfully
+type: saga_event
+tags:
+  - event
+  - completed
+  - success
+  - lifecycle
+metadata:
+  scenario: saga_success
+  event_type: completed
+
+data:
+  id: evt-complete-001
+  saga_id: saga-inst-002
+  type: saga_completed
+  version: "1.0"
+  timestamp: "2025-01-15T09:10:30Z"
+  correlation_id: corr-xyz789
+  data:
+    total_steps: 5
+    steps_completed: 5
+    result_data:
+      order_id: ORD-67890
+      order_number: ORD-NUM-67890
+      status: confirmed
+      tracking_number: TRACK-123456
+      estimated_delivery: "2025-01-20T00:00:00Z"
+  previous_state: running
+  new_state: completed
+  duration: 10m25s
+  metadata:
+    execution_time_ms: 625000
+    total_attempts: 5
+    compensations: 0
+  source: saga-coordinator
+  service: swit-serve
+  service_version: 1.0.0
+  trace_id: trace-xyz789
+  span_id: span-complete-001
+

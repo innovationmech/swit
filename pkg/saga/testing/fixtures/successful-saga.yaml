@@ -1,0 +1,71 @@
+# Successful Saga Definition Fixture
+id: successful-saga
+name: Successful Order Processing Saga
+description: A saga that completes all steps successfully
+type: saga_definition
+tags:
+  - success
+  - order
+  - complete
+metadata:
+  scenario: happy_path
+  complexity: simple
+
+data:
+  id: order-saga-001
+  name: Order Processing Saga
+  description: Process customer order with inventory, payment, and fulfillment
+  timeout: 5m
+  compensation_strategy: backward
+  retry_config:
+    max_attempts: 3
+    initial_delay: 100ms
+    max_delay: 5s
+    backoff_multiplier: 2.0
+    jitter: 0.1
+  steps:
+    - id: validate-order
+      name: Validate Order
+      type: validation
+      timeout: 30s
+      retryable: true
+      compensatable: false
+      metadata:
+        critical: true
+    - id: reserve-inventory
+      name: Reserve Inventory
+      type: inventory
+      timeout: 1m
+      retryable: true
+      compensatable: true
+      metadata:
+        service: inventory-service
+    - id: process-payment
+      name: Process Payment
+      type: payment
+      timeout: 2m
+      retryable: true
+      compensatable: true
+      metadata:
+        service: payment-service
+        critical: true
+    - id: create-shipment
+      name: Create Shipment
+      type: fulfillment
+      timeout: 1m
+      retryable: true
+      compensatable: true
+      metadata:
+        service: fulfillment-service
+    - id: send-confirmation
+      name: Send Order Confirmation
+      type: notification
+      timeout: 30s
+      retryable: true
+      compensatable: false
+      metadata:
+        service: notification-service
+  metadata:
+    version: 1.0
+    owner: order-team
+

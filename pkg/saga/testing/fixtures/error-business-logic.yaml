@@ -1,0 +1,33 @@
+# Error Scenario - Business Logic Error
+id: error-business-logic
+name: Business Logic Validation Error
+description: Business rule validation failure
+type: error
+tags:
+  - error
+  - validation
+  - business_logic
+metadata:
+  scenario: business_validation
+  severity: high
+
+data:
+  code: BUSINESS_RULE_VIOLATION
+  message: Order total exceeds customer credit limit
+  type: validation
+  retryable: false
+  timestamp: "2025-01-15T10:00:00Z"
+  details:
+    customer_id: CUST-999
+    credit_limit: 1000.00
+    order_total: 1299.99
+    exceeded_by: 299.99
+    rule: credit_limit_check
+    step: validate-order
+  cause:
+    code: CREDIT_LIMIT_EXCEEDED
+    message: Customer credit limit of $1000.00 exceeded
+    type: business_error
+    retryable: false
+    timestamp: "2025-01-15T10:00:00Z"
+

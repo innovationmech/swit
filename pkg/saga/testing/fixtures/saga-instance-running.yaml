@@ -1,0 +1,103 @@
+# Saga Instance - Running State
+id: saga-instance-running
+name: Running Order Saga Instance
+description: A saga instance currently running
+type: saga_instance
+tags:
+  - running
+  - in_progress
+  - state
+metadata:
+  scenario: running_state
+  stage: execution
+
+data:
+  id: saga-inst-001
+  definition_id: order-saga-001
+  name: Order Processing Saga
+  description: Processing order ORD-12345
+  state: running
+  current_step: 2
+  total_steps: 5
+  created_at: "2025-01-15T10:00:00Z"
+  updated_at: "2025-01-15T10:02:30Z"
+  started_at: "2025-01-15T10:00:05Z"
+  initial_data:
+    order_id: ORD-12345
+    customer_id: CUST-789
+    total_amount: 299.99
+    items:
+      - product_id: PROD-001
+        quantity: 2
+        unit_price: 99.99
+      - product_id: PROD-002
+        quantity: 1
+        unit_price: 100.01
+  current_data:
+    order_id: ORD-12345
+    customer_id: CUST-789
+    total_amount: 299.99
+    inventory_reservation_id: INV-RES-456
+    items:
+      - product_id: PROD-001
+        quantity: 2
+        unit_price: 99.99
+      - product_id: PROD-002
+        quantity: 1
+        unit_price: 100.01
+  timeout: 5m
+  step_states:
+    - id: step-0
+      saga_id: saga-inst-001
+      step_index: 0
+      name: Validate Order
+      state: completed
+      attempts: 1
+      max_attempts: 3
+      created_at: "2025-01-15T10:00:05Z"
+      started_at: "2025-01-15T10:00:05Z"
+      completed_at: "2025-01-15T10:00:15Z"
+      input_data:
+        order_id: ORD-12345
+      output_data:
+        valid: true
+        validation_timestamp: "2025-01-15T10:00:15Z"
+    - id: step-1
+      saga_id: saga-inst-001
+      step_index: 1
+      name: Reserve Inventory
+      state: completed
+      attempts: 1
+      max_attempts: 3
+      created_at: "2025-01-15T10:00:15Z"
+      started_at: "2025-01-15T10:00:16Z"
+      completed_at: "2025-01-15T10:01:30Z"
+      input_data:
+        items:
+          - product_id: PROD-001
+            quantity: 2
+          - product_id: PROD-002
+            quantity: 1
+      output_data:
+        reservation_id: INV-RES-456
+        expires_at: "2025-01-15T11:00:00Z"
+    - id: step-2
+      saga_id: saga-inst-001
+      step_index: 2
+      name: Process Payment
+      state: running
+      attempts: 1
+      max_attempts: 3
+      created_at: "2025-01-15T10:01:30Z"
+      started_at: "2025-01-15T10:01:31Z"
+      input_data:
+        amount: 299.99
+        payment_method: credit_card
+  metadata:
+    trace_id: trace-abc123
+    span_id: span-def456
+    customer_tier: premium
+  trace_id: trace-abc123
+  span_id: span-def456
+  version: 3
+

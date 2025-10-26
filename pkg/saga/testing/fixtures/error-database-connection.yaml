@@ -1,0 +1,40 @@
+# Error Scenario - Database Connection Error
+id: error-database-connection
+name: Database Connection Error
+description: Failed to connect to database
+type: error
+tags:
+  - error
+  - database
+  - infrastructure
+metadata:
+  scenario: infrastructure_failure
+  severity: critical
+
+data:
+  code: DB_CONNECTION_ERROR
+  message: Failed to connect to database after 5 attempts
+  type: infrastructure
+  retryable: true
+  timestamp: "2025-01-15T10:00:00Z"
+  stack_trace: |
+    at connectDatabase (db-client.js:89)
+    at initStorage (state-storage.js:45)
+    at startCoordinator (coordinator.js:123)
+  details:
+    database: saga_store
+    host: db-primary.example.com
+    port: 5432
+    connection_attempts: 5
+    last_error: connection_refused
+    retry_after_ms: 5000
+  cause:
+    code: CONNECTION_REFUSED
+    message: Connection refused by database server
+    type: infrastructure
+    retryable: true
+    timestamp: "2025-01-15T10:00:25Z"
+    details:
+      errno: ECONNREFUSED
+      syscall: connect
+

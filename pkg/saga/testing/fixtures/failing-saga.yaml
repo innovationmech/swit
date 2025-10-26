@@ -1,0 +1,63 @@
+# Failing Saga Definition Fixture
+id: failing-saga
+name: Payment Failure Saga
+description: A saga where the payment step fails
+type: saga_definition
+tags:
+  - failure
+  - payment
+  - error
+metadata:
+  scenario: payment_failure
+  complexity: simple
+
+data:
+  id: payment-failure-saga
+  name: Payment Failure Saga
+  description: Order processing saga that fails at payment step
+  timeout: 5m
+  compensation_strategy: backward
+  retry_config:
+    max_attempts: 2
+    initial_delay: 200ms
+    max_delay: 2s
+    backoff_multiplier: 2.0
+    jitter: 0.1
+  steps:
+    - id: validate-order
+      name: Validate Order
+      type: validation
+      timeout: 30s
+      retryable: true
+      compensatable: false
+    - id: reserve-inventory
+      name: Reserve Inventory
+      type: inventory
+      timeout: 1m
+      retryable: true
+      compensatable: true
+    - id: process-payment
+      name: Process Payment (Fails)
+      type: payment
+      timeout: 2m
+      retryable: false
+      compensatable: false
+      metadata:
+        will_fail: true
+        error_code: PAYMENT_DECLINED
+    - id: create-shipment
+      name: Create Shipment
+      type: fulfillment
+      timeout: 1m
+      retryable: true
+      compensatable: true
+    - id: send-confirmation
+      name: Send Order Confirmation
+      type: notification
+      timeout: 30s
+      retryable: true
+      compensatable: false
+  metadata:
+    version: 1.0
+    expected_outcome: failed
+
