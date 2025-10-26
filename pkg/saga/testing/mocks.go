@@ -120,9 +120,14 @@ func (m *MockStateStorage) UpdateSagaState(ctx context.Context, sagaID string, s
 		return errors.New("saga not found")
 	}
 
-	// Update the state in the stored instance
-	// Note: This is a simplified version, actual implementation may vary
-	m.sagas[sagaID] = s
+	// Create a wrapper that updates state and metadata
+	// Since SagaInstance is an interface, we store a wrapper that reflects the updates
+	wrapper := &mockSagaInstanceWrapper{
+		instance: s,
+		state:    state,
+		metadata: metadata,
+	}
+	m.sagas[sagaID] = wrapper
 	return nil
 }
 
@@ -669,4 +674,105 @@ var idCounter int64
 func generateID() string {
 	idCounter++
 	return "mock-" + time.Now().Format("20060102150405") + "-" + string(rune(idCounter))
+}
+
+// ==========================
+// mockSagaInstanceWrapper
+// ==========================
+
+// mockSagaInstanceWrapper wraps a SagaInstance and allows overriding state and metadata.
+// This is used by UpdateSagaState to persist state changes while maintaining the interface.
+type mockSagaInstanceWrapper struct {
+	instance saga.SagaInstance
+	state    saga.SagaState
+	metadata map[string]interface{}
+}
+
+// Implement all SagaInstance methods, delegating to wrapped instance or overriding as needed
+
+func (w *mockSagaInstanceWrapper) GetID() string {
+	return w.instance.GetID()
+}
+
+func (w *mockSagaInstanceWrapper) GetDefinitionID() string {
+	return w.instance.GetDefinitionID()
+}
+
+func (w *mockSagaInstanceWrapper) GetState() saga.SagaState {
+	// Return overridden state if set, otherwise delegate
+	if w.state != 0 {
+		return w.state
+	}
+	return w.instance.GetState()
+}
+
+func (w *mockSagaInstanceWrapper) GetCurrentStep() int {
+	return w.instance.GetCurrentStep()
+}
+
+func (w *mockSagaInstanceWrapper) GetStartTime() time.Time {
+	return w.instance.GetStartTime()
+}
+
+func (w *mockSagaInstanceWrapper) GetEndTime() time.Time {
+	return w.instance.GetEndTime()
+}
+
+func (w *mockSagaInstanceWrapper) GetResult() interface{} {
+	return w.instance.GetResult()
+}
+
+func (w *mockSagaInstanceWrapper) GetError() *saga.SagaError {
+	return w.instance.GetError()
+}
+
+func (w *mockSagaInstanceWrapper) GetTotalSteps() int {
+	return w.instance.GetTotalSteps()
+}
+
+func (w *mockSagaInstanceWrapper) GetCompletedSteps() int {
+	return w.instance.GetCompletedSteps()
+}
+
+func (w *mockSagaInstanceWrapper) GetCreatedAt() time.Time {
+	return w.instance.GetCreatedAt()
+}
+
+func (w *mockSagaInstanceWrapper) GetUpdatedAt() time.Time {
+	return w.instance.GetUpdatedAt()
+}
+
+func (w *mockSagaInstanceWrapper) GetTimeout() time.Duration {
+	return w.instance.GetTimeout()
+}
+
+func (w *mockSagaInstanceWrapper) GetMetadata() map[string]interface{} {
+	// Merge overridden metadata with original
+	if w.metadata != nil {
+		merged := make(map[string]interface{})
+		// Copy original metadata
+		if original := w.instance.GetMetadata(); original != nil {
+			for k, v := range original {
+				merged[k] = v
+			}
+		}
+		// Overlay with updated metadata
+		for k, v := range w.metadata {
+			merged[k] = v
+		}
+		return merged
+	}
+	return w.instance.GetMetadata()
+}
+
+func (w *mockSagaInstanceWrapper) GetTraceID() string {
+	return w.instance.GetTraceID()
+}
+
+func (w *mockSagaInstanceWrapper) IsTerminal() bool {
+	return w.instance.IsTerminal()
+}
+
+func (w *mockSagaInstanceWrapper) IsActive() bool {
+	return w.instance.IsActive()
 }

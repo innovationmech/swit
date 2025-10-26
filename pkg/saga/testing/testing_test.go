@@ -73,6 +73,34 @@ func TestMockStateStorage(t *testing.T) {
 		t.Errorf("Expected custom error, got %v", err)
 	}
 
+	// Test UpdateSagaState actually updates the state
+	storage.GetSagaFunc = nil // Reset custom behavior
+	err = storage.UpdateSagaState(ctx, "saga-1", saga.StateRunning, map[string]interface{}{
+		"updated": true,
+		"counter": 42,
+	})
+	if err != nil {
+		t.Errorf("UpdateSagaState failed: %v", err)
+	}
+
+	// Verify the state was updated
+	updated, err := storage.GetSaga(ctx, "saga-1")
+	if err != nil {
+		t.Errorf("GetSaga after update failed: %v", err)
+	}
+	if updated.GetState() != saga.StateRunning {
+		t.Errorf("Expected state Running, got %v", updated.GetState())
+	}
+
+	// Verify metadata was updated
+	metadata := updated.GetMetadata()
+	if metadata["updated"] != true {
+		t.Errorf("Expected metadata 'updated' to be true, got %v", metadata["updated"])
+	}
+	if metadata["counter"] != 42 {
+		t.Errorf("Expected metadata 'counter' to be 42, got %v", metadata["counter"])
+	}
+
 	// Test Reset
 	storage.Reset()
 	if storage.SaveSagaCalls != 0 {
