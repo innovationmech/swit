@@ -159,13 +159,37 @@ func TestMessageLoss_EventOrdering(t *testing.T) {
 
 	// 验证发布的事件保持相对顺序
 	if len(publishedSequence) > 0 {
-		// 第一个应该是 Started
-		if publishedSequence[0] != saga.EventSagaStarted {
-			t.Errorf("期望第一个事件为 SagaStarted，实际为: %s", publishedSequence[0])
+		// 验证事件顺序：如果 SagaStarted 事件被发布了，它应该在序列开始处
+		hasStartedEvent := false
+		startedIndex := -1
+		for i, eventType := range publishedSequence {
+			if eventType == saga.EventSagaStarted {
+				hasStartedEvent = true
+				startedIndex = i
+				break
+			}
 		}
 
-		// 最后一个（如果完成事件没丢失）应该是 Completed
-		if publishedSequence[len(publishedSequence)-1] == saga.EventSagaCompleted {
+		if hasStartedEvent {
+			// 如果 Started 事件存在，它应该是第一个
+			if startedIndex != 0 {
+				t.Errorf("SagaStarted 事件应该在序列开始，但在位置 %d", startedIndex)
+			}
+		}
+
+		// 验证 Completed 事件（如果存在）应该在最后
+		hasCompletedEvent := false
+		for i, eventType := range publishedSequence {
+			if eventType == saga.EventSagaCompleted {
+				hasCompletedEvent = true
+				if i != len(publishedSequence)-1 {
+					t.Errorf("SagaCompleted 事件应该在序列末尾，但在位置 %d/%d", i, len(publishedSequence)-1)
+				}
+				break
+			}
+		}
+
+		if hasCompletedEvent {
 			t.Log("Saga 完成事件成功发布")
 		}
 	}
