@@ -47,6 +47,29 @@ SWIT 是一个现代化的微服务框架，提供用户认证、内容管理等
 - [开发环境设置](../DEVELOPMENT-CN.md) - 中文开发指南
 - [Development Guide](../DEVELOPMENT.md) - 英文开发指南
 
+## Saga 分布式事务
+
+### 📚 用户文档
+- [Saga 用户指南](./saga-user-guide.md) - Saga 使用指南和最佳实践
+- [Saga DSL 指南](./saga-dsl-guide.md) - DSL 定义和使用
+- [Saga DSL 参考](./saga-dsl-reference.md) - DSL 语法参考
+- [Saga 监控指南](./saga-monitoring-guide.md) - 监控和告警配置
+- [Saga 安全指南](./saga-security-guide.md) - 安全配置和最佳实践
+- [Saga Dashboard 指南](./saga-dashboard-guide.md) - Dashboard 使用指南
+
+### 🧪 测试文档
+- **[Saga 测试指南](./saga-testing-guide.md)** - 全面的测试指南，包括单元测试、集成测试、性能测试和混沌测试
+- **[测试覆盖率报告](./saga-test-coverage.md)** - 详细的覆盖率统计、分析和改进建议 (73.6%)
+- **[性能基准报告](./saga-performance-benchmarks.md)** - 吞吐量、延迟、资源使用和优化建议
+- [测试工具包文档](../pkg/saga/testing/README.md) - Mock、构建器、断言和 Fixtures
+
+### 🔧 技术文档
+- [Saga 数据库迁移](./saga-database-migrations.md) - 数据库迁移指南
+- [Saga 数据库设计](./saga-database-schema-design.md) - 数据库架构设计
+- [Saga 恢复监控](./saga-recovery-monitoring.md) - 故障恢复和监控
+- [Saga 敏感数据保护](./saga-sensitive-data-protection.md) - 数据保护策略
+- [Saga Dashboard API](./saga-dashboard-api.md) - Dashboard API 规范
+
 ## API 访问
 
 ### 开发环境
