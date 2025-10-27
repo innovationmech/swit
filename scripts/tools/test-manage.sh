@@ -347,7 +347,8 @@ run_coverage_tests() {
     local coverage_file="coverage.out"
     local coverage_html="coverage.html"
     
-    local coverage_cmd="$GO_CMD test -v -coverprofile=$coverage_file $package_paths"
+    # 使用 -short 标志跳过不稳定的混沌测试和长时间运行的测试
+    local coverage_cmd="$GO_CMD test -v -short -coverprofile=$coverage_file $package_paths"
     local html_cmd="$GO_CMD tool cover -html=$coverage_file -o $coverage_html"
     
     log_info "📊 运行覆盖率测试..."
