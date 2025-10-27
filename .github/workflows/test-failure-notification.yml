@@ -168,17 +168,16 @@ jobs:
         if: env.SLACK_WEBHOOK_URL != ''
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          COMMIT: ${{ github.event.workflow_run.head_sha }}
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           if [ -z "$SLACK_WEBHOOK_URL" ]; then
             echo "SLACK_WEBHOOK_URL not configured, skipping notification"
             exit 0
           fi
-          
-          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
-          COMMIT="${{ github.event.workflow_run.head_sha }}"
-          ACTOR="${{ github.event.workflow_run.actor.login }}"
-          RUN_URL="${{ github.event.workflow_run.html_url }}"
           
           PAYLOAD=$(cat <<EOF
           {
