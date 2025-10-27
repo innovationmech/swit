@@ -41,6 +41,41 @@ env:
   MIN_COVERAGE: 65
 
 jobs:
+  # 快速测试 - 最快反馈（使用 -short 标志）
+  quick-tests:
+    name: Quick Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile', 'scripts/**', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-
+
+      - name: Install dev tools
+        run: make setup-dev
+
+      - name: Generate proto code
+        run: make proto-dev
+
+      - name: Run quick tests
+        run: make test-dev
+
   # 单元测试矩阵 - 多 Go 版本并行测试
   unit-tests:
     name: Unit Tests (Go ${{ matrix.go-version }})
@@ -378,7 +413,7 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, race-detection, coverage]
+    needs: [quick-tests, unit-tests, integration-tests, race-detection, coverage]
     if: always()
     steps:
       - name: Check test results
@@ -390,10 +425,12 @@ jobs:
           fi
           
           # 检查关键测试
-          if [[ "${{ needs.unit-tests.result }}" == "success" && \
+          if [[ "${{ needs.quick-tests.result }}" == "success" && \
+                "${{ needs.unit-tests.result }}" == "success" && \
                 "${{ needs.integration-tests.result }}" == "success" && \
                 "${{ needs.coverage.result }}" == "success" ]]; then
             echo "✅ All critical tests passed!"
+            echo "Quick Tests: ${{ needs.quick-tests.result }}"
             echo "Unit Tests: ${{ needs.unit-tests.result }}"
             echo "Integration Tests: ${{ needs.integration-tests.result }}"
             echo "Coverage: ${{ needs.coverage.result }}"
@@ -401,6 +438,7 @@ jobs:
             exit 0
           else
             echo "❌ Some critical tests failed!"
+            echo "Quick Tests: ${{ needs.quick-tests.result }}"
             echo "Unit Tests: ${{ needs.unit-tests.result }}"
             echo "Integration Tests: ${{ needs.integration-tests.result }}"
             echo "Race Detection: $RACE_STATUS (optional)"
@@ -413,6 +451,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const quickTests = '${{ needs.quick-tests.result }}';
             const unitTests = '${{ needs.unit-tests.result }}';
             const integrationTests = '${{ needs.integration-tests.result }}';
             const raceDetection = '${{ needs.race-detection.result }}';
@@ -434,12 +473,13 @@ jobs:
             
             const body = `## 🧪 Test Suite Summary
             
-            | Test Type | Status |
-            |-----------|--------|
-            | Unit Tests | ${getEmoji(unitTests)} ${unitTests} |
-            | Integration Tests | ${getEmoji(integrationTests)} ${integrationTests} |
-            | Race Detection | ${getEmoji(raceDetection)} ${raceDetection}${getRaceNote(raceDetection)} |
-            | Coverage | ${getEmoji(coverage)} ${coverage} |
+            | Test Type | Status | Description |
+            |-----------|--------|-------------|
+            | Quick Tests | ${getEmoji(quickTests)} ${quickTests} | Fast feedback (< 1 min) |
+            | Unit Tests (Multi-version) | ${getEmoji(unitTests)} ${unitTests} | Go 1.23 & 1.24 |
+            | Integration Tests | ${getEmoji(integrationTests)} ${integrationTests} | End-to-end scenarios |
+            | Test Coverage | ${getEmoji(coverage)} ${coverage} | Minimum 65% required |
+            | Race Detection | ${getEmoji(raceDetection)} ${raceDetection}${getRaceNote(raceDetection)} | Concurrency issues |
             
             ${raceDetection !== 'success' ? '> ℹ️ **Note**: Race detection failures are informational and don\'t block PR merging.\n' : ''}
             ---
