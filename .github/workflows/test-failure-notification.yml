@@ -1,0 +1,235 @@
+name: Test Failure Notification
+
+on:
+  workflow_run:
+    workflows: ["Test Suite", "CI"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  notify:
+    name: Notify on Test Failure
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - name: Get workflow run info
+        id: workflow-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            return {
+              workflow_name: run.name,
+              run_number: run.run_number,
+              run_id: run.id,
+              html_url: run.html_url,
+              head_branch: run.head_branch,
+              head_sha: run.head_sha.substring(0, 7),
+              actor: run.actor.login,
+              event: run.event,
+              created_at: run.created_at,
+              updated_at: run.updated_at
+            };
+
+      - name: Comment on PR if applicable
+        if: github.event.workflow_run.event == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const info = ${{ steps.workflow-info.outputs.result }};
+            
+            // 获取 PR 编号
+            const pulls = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${info.head_branch}`,
+              state: 'open'
+            });
+            
+            if (pulls.data.length === 0) {
+              console.log('No open PR found for this branch');
+              return;
+            }
+            
+            const pr = pulls.data[0];
+            
+            const body = `## ❌ Test Failure Alert
+            
+            **Workflow**: ${info.workflow_name}
+            **Run**: [#${info.run_number}](${info.html_url})
+            **Commit**: ${info.head_sha}
+            **Branch**: ${info.head_branch}
+            **Triggered by**: @${info.actor}
+            
+            The test suite has failed. Please check the workflow logs for details.
+            
+            ### Quick Actions
+            - 📋 [View workflow run](${info.html_url})
+            - 🔍 [View commit](https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.payload.workflow_run.head_sha})
+            - 📊 [View test results](${info.html_url}/attempts/1)
+            
+            ---
+            *This is an automated notification. Fix the issues and push again to re-run tests.*`;
+            
+            await github.rest.issues.createComment({
+              issue_number: pr.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Create issue for master/dev branch failures
+        if: |
+          github.event.workflow_run.event == 'push' && 
+          contains(fromJSON('["master", "dev"]'), github.event.workflow_run.head_branch)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const info = ${{ steps.workflow-info.outputs.result }};
+            
+            // 检查是否已经有相同的问题
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'test-failure,automated',
+              per_page: 100
+            });
+            
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes(info.workflow_name) && 
+              issue.title.includes(info.head_branch)
+            );
+            
+            const issueBody = `## ❌ Test Failure on ${info.head_branch}
+            
+            **Workflow**: ${info.workflow_name}
+            **Run**: [#${info.run_number}](${info.html_url})
+            **Commit**: ${info.head_sha}
+            **Branch**: ${info.head_branch}
+            **Triggered by**: @${info.actor}
+            **Failed at**: ${info.updated_at}
+            
+            ### Description
+            The ${info.workflow_name} workflow has failed on the \`${info.head_branch}\` branch. This requires immediate attention to prevent blocking other developers.
+            
+            ### Quick Links
+            - 📋 [View workflow run](${info.html_url})
+            - 🔍 [View commit](https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.payload.workflow_run.head_sha})
+            - 📊 [View test artifacts](${info.html_url}#artifacts)
+            
+            ### Action Required
+            1. Review the workflow logs
+            2. Identify the failing test(s)
+            3. Fix the issue
+            4. Push a fix to the branch
+            
+            ---
+            *This issue was automatically created by the test failure notification workflow.*`;
+            
+            if (existingIssue) {
+              // 更新现有 issue
+              await github.rest.issues.createComment({
+                issue_number: existingIssue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `### 🔄 Another failure detected\n\n${issueBody}`
+              });
+              
+              console.log(`Updated existing issue #${existingIssue.number}`);
+            } else {
+              // 创建新 issue
+              const newIssue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🚨 Test Failure: ${info.workflow_name} on ${info.head_branch}`,
+                body: issueBody,
+                labels: ['test-failure', 'automated', 'priority-high']
+              });
+              
+              console.log(`Created new issue #${newIssue.data.number}`);
+            }
+
+  # 发送 Slack/Discord 通知（可选）
+  slack-notify:
+    name: Slack Notification
+    runs-on: ubuntu-latest
+    if: |
+      github.event.workflow_run.conclusion == 'failure' && 
+      github.event.workflow_run.event == 'push' &&
+      contains(fromJSON('["master", "dev"]'), github.event.workflow_run.head_branch)
+    steps:
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          COMMIT: ${{ github.event.workflow_run.head_sha }}
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not configured, skipping notification"
+            exit 0
+          fi
+          
+          PAYLOAD=$(cat <<EOF
+          {
+            "text": "❌ Test Failure Alert",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "❌ Test Suite Failed"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Workflow:*\n${WORKFLOW_NAME}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Branch:*\n${BRANCH}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Commit:*\n\`${COMMIT:0:7}\`"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Triggered by:*\n@${ACTOR}"
+                  }
+                ]
+              },
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "View Logs"
+                    },
+                    "url": "${RUN_URL}"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
+          
+          curl -X POST -H 'Content-type: application/json' \
+            --data "${PAYLOAD}" \
+            "${SLACK_WEBHOOK_URL}"
+
