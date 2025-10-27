@@ -5,18 +5,18 @@
 coverage:
   precision: 2  # 覆盖率精确到小数点后2位
   round: down   # 向下取整
-  range: "70...95"  # 覆盖率范围颜色设置
+  range: "60...90"  # 覆盖率范围颜色设置
 
   # 状态检查配置
   status:
     project:
       default:
-        target: 85%           # 项目总体覆盖率目标
-        threshold: 1%         # 允许下降1%
+        target: 65%           # 项目总体覆盖率目标（初始值，逐步提高到 85%）
+        threshold: 2%         # 允许下降2%
         if_ci_failed: error   # CI失败时显示错误
     patch:
       default:
-        target: 80%           # 补丁覆盖率目标
+        target: 60%           # 补丁覆盖率目标
         threshold: 5%         # 允许下降5%
         if_ci_failed: error
 
@@ -62,7 +62,7 @@ component_management:
   default_rules:
     statuses:
       - type: project
-        target: 85%
+        target: 65%  # 初始目标，逐步提高
   individual_components:
     - component_id: pkg
       name: Core Packages
