@@ -1,0 +1,438 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ master, dev ]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '**/*.go'
+      - 'api/**'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'pkg/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [ master, dev ]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '**/*.go'
+      - 'api/**'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'pkg/**'
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
+
+# 确保同一分支的工作流不会并行运行
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  # 测试覆盖率最低要求
+  MIN_COVERAGE: 85
+
+jobs:
+  # 单元测试矩阵 - 多 Go 版本并行测试
+  unit-tests:
+    name: Unit Tests (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.23', '1.24']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile', 'scripts/**', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-
+
+      - name: Install dev tools
+        run: make setup-dev
+
+      - name: Generate proto code
+        run: make proto-dev
+
+      - name: Run unit tests
+        run: make test-advanced TYPE=unit PACKAGE=all
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-go${{ matrix.go-version }}
+          path: |
+            **/test-report.xml
+            **/test-output.log
+          retention-days: 7
+
+  # 集成测试
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile', 'scripts/**', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-
+
+      - name: Install dev tools
+        run: make setup-dev
+
+      - name: Generate proto code
+        run: make proto-dev
+
+      - name: Run integration tests
+        run: |
+          # 运行带有 integration 标签的测试
+          go test -v -tags=integration ./pkg/... ./internal/... -timeout 10m
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: |
+            **/test-report.xml
+            **/test-output.log
+          retention-days: 7
+
+  # 竞态检测测试
+  race-detection:
+    name: Race Detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile', 'scripts/**', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-
+
+      - name: Install dev tools
+        run: make setup-dev
+
+      - name: Generate proto code
+        run: make proto-dev
+
+      - name: Run race detection
+        run: make test-advanced TYPE=race PACKAGE=all
+
+  # 性能基准测试
+  benchmark-tests:
+    name: Benchmark Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile', 'scripts/**', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-
+
+      - name: Install dev tools
+        run: make setup-dev
+
+      - name: Generate proto code
+        run: make proto-dev
+
+      - name: Run benchmark tests
+        run: |
+          make test-advanced TYPE=bench PACKAGE=all | tee benchmark-output.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-output.txt
+          retention-days: 30
+
+      - name: Compare benchmarks
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        continue-on-error: true
+        run: |
+          # 下载之前的基准测试结果并比较
+          echo "Benchmark comparison would go here"
+
+  # 测试覆盖率
+  coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-go-tools-${{ hashFiles('Makefile', 'scripts/**', 'go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-
+
+      - name: Install dev tools
+        run: make setup-dev
+
+      - name: Generate proto code
+        run: make proto-dev
+
+      - name: Run tests with coverage
+        run: make test-coverage
+
+      - name: Check coverage threshold
+        id: coverage-check
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}' || echo "0")
+          echo "coverage=${COVERAGE}" >> $GITHUB_OUTPUT
+          echo "Total coverage: ${COVERAGE}%"
+          
+          # 转换为整数进行比较
+          COVERAGE_INT=$(echo "$COVERAGE" | cut -d. -f1)
+          if [ "$COVERAGE_INT" -lt "$MIN_COVERAGE" ]; then
+            echo "❌ Coverage ${COVERAGE}% is below minimum threshold ${MIN_COVERAGE}%"
+            exit 1
+          else
+            echo "✅ Coverage ${COVERAGE}% meets minimum threshold ${MIN_COVERAGE}%"
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 30
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coverage = parseFloat('${{ steps.coverage-check.outputs.coverage }}');
+            const minCoverage = parseFloat('${{ env.MIN_COVERAGE }}');
+            
+            let emoji = '✅';
+            let status = 'Great coverage!';
+            let color = '🟢';
+            
+            if (coverage < minCoverage) {
+              emoji = '❌';
+              status = `Coverage is below minimum threshold (${minCoverage}%)`;
+              color = '🔴';
+            } else if (coverage < 90) {
+              emoji = '⚠️';
+              status = 'Coverage could be improved';
+              color = '🟡';
+            }
+            
+            const body = `## 📊 Test Coverage Report
+            
+            ${color} **Total Coverage**: ${coverage.toFixed(2)}%
+            **Minimum Required**: ${minCoverage}%
+            
+            ${emoji} ${status}
+            
+            ---
+            *Coverage report generated by GitHub Actions*`;
+            
+            // 查找现有的覆盖率评论
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const existingComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Test Coverage Report')
+            );
+            
+            if (existingComment) {
+              // 更新现有评论
+              await github.rest.issues.updateComment({
+                comment_id: existingComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            } else {
+              // 创建新评论
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+
+  # 测试报告汇总
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, race-detection, coverage]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.unit-tests.result }}" == "success" && \
+                "${{ needs.integration-tests.result }}" == "success" && \
+                "${{ needs.race-detection.result }}" == "success" && \
+                "${{ needs.coverage.result }}" == "success" ]]; then
+            echo "✅ All tests passed!"
+            exit 0
+          else
+            echo "❌ Some tests failed!"
+            echo "Unit Tests: ${{ needs.unit-tests.result }}"
+            echo "Integration Tests: ${{ needs.integration-tests.result }}"
+            echo "Race Detection: ${{ needs.race-detection.result }}"
+            echo "Coverage: ${{ needs.coverage.result }}"
+            exit 1
+          fi
+
+      - name: Post summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const unitTests = '${{ needs.unit-tests.result }}';
+            const integrationTests = '${{ needs.integration-tests.result }}';
+            const raceDetection = '${{ needs.race-detection.result }}';
+            const coverage = '${{ needs.coverage.result }}';
+            
+            const getEmoji = (status) => {
+              if (status === 'success') return '✅';
+              if (status === 'failure') return '❌';
+              if (status === 'skipped') return '⏭️';
+              return '⚠️';
+            };
+            
+            const body = `## 🧪 Test Suite Summary
+            
+            | Test Type | Status |
+            |-----------|--------|
+            | Unit Tests | ${getEmoji(unitTests)} ${unitTests} |
+            | Integration Tests | ${getEmoji(integrationTests)} ${integrationTests} |
+            | Race Detection | ${getEmoji(raceDetection)} ${raceDetection} |
+            | Coverage | ${getEmoji(coverage)} ${coverage} |
+            
+            ---
+            *Test summary generated by GitHub Actions*`;
+            
+            // 查找现有的测试摘要评论
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const existingComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Test Suite Summary')
+            );
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                comment_id: existingComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+

@@ -1,0 +1,80 @@
+# Codecov 配置文件
+# https://docs.codecov.com/docs/codecov-yaml
+
+# 覆盖率配置
+coverage:
+  precision: 2  # 覆盖率精确到小数点后2位
+  round: down   # 向下取整
+  range: "70...95"  # 覆盖率范围颜色设置
+
+  # 状态检查配置
+  status:
+    project:
+      default:
+        target: 85%           # 项目总体覆盖率目标
+        threshold: 1%         # 允许下降1%
+        if_ci_failed: error   # CI失败时显示错误
+    patch:
+      default:
+        target: 80%           # 补丁覆盖率目标
+        threshold: 5%         # 允许下降5%
+        if_ci_failed: error
+
+# 需要忽略的文件和目录
+ignore:
+  - "api/gen/**/*"           # 自动生成的 proto 代码
+  - "docs/generated/**/*"    # 自动生成的文档
+  - "**/mocks*.go"           # Mock 文件
+  - "**/*_test.go"           # 测试文件本身
+  - "examples/**/*"          # 示例代码
+  - "cmd/**/*"               # 命令行入口（通常不测试）
+  - "internal/testing/**/*"  # 测试辅助代码
+  - "pkg/testing/**/*"       # 测试辅助代码
+
+# 评论配置
+comment:
+  layout: "reach,diff,flags,tree,footer"
+  behavior: default
+  require_changes: true     # 只在有变更时评论
+  require_base: false       # 不要求基础分支
+  require_head: true        # 要求头部分支
+
+# GitHub 检查配置
+github_checks:
+  annotations: true         # 启用注释
+
+# Codecov 应用行为
+codecov:
+  require_ci_to_pass: true  # 要求 CI 通过
+  notify:
+    wait_for_ci: true       # 等待 CI 完成
+
+# 标志（Flags）配置
+flags:
+  unittests:
+    paths:
+      - pkg/
+      - internal/
+    carryforward: true      # 如果测试失败，保留之前的覆盖率
+
+# 用于组织覆盖率报告
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: 85%
+  individual_components:
+    - component_id: pkg
+      name: Core Packages
+      paths:
+        - pkg/**
+    - component_id: internal
+      name: Internal Services
+      paths:
+        - internal/**
+    - component_id: saga
+      name: Saga Module
+      paths:
+        - pkg/saga/**
+        - internal/*/saga/**
+
