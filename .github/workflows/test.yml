@@ -24,6 +24,7 @@ on:
       - 'pkg/**'
       - '.github/workflows/test.yml'
   workflow_dispatch:
+  workflow_call:  # 允许被其他工作流调用
 
 # 确保同一分支的工作流不会并行运行
 concurrency:

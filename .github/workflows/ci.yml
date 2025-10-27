@@ -159,15 +159,8 @@ jobs:
       if: needs.changes.outputs.code_changed != 'true'
       run: echo "No code changes detected. Skipping tests."
 
-  # 完整测试套件引用 - 仅在 PR 和 push 到主分支时运行
-  full-test-suite:
-    name: Full Test Suite
-    needs: [changes, test]
-    if: |
-      needs.changes.outputs.code_changed == 'true' && 
-      (github.event_name == 'push' && contains(fromJSON('["refs/heads/master", "refs/heads/dev"]'), github.ref))
-    uses: ./.github/workflows/test.yml
-    secrets: inherit
+  # 注意：完整测试套件在 test.yml 工作流中独立运行
+  # 不需要在这里重复调用以避免重复执行
 
   build:
     name: Build
