@@ -22,6 +22,7 @@ A comprehensive microservice framework for Go that provides a unified, productio
 - 🔍 **Service Discovery**: Consul-based registration with health check integration
 - 🛡️ **Middleware Stack**: Configurable CORS, rate limiting, authentication, and timeouts
 - ⚡ **Protocol Buffers**: Full Buf toolchain support for API development
+- 🔄 **Saga Distributed Transactions**: Enterprise-grade distributed transaction management with orchestration and choreography patterns
 - 📱 **Example Services**: Complete reference implementations and usage patterns
 
 ## Architecture Overview
@@ -31,6 +32,7 @@ A comprehensive microservice framework for Go that provides a unified, productio
 - **`pkg/transport/`** - HTTP/gRPC transport coordination layer
 - **`pkg/middleware/`** - Configurable middleware stack
 - **`pkg/discovery/`** - Service discovery integration
+- **`pkg/saga/`** - Distributed transaction orchestration and state management
 
 ### Example Services
 - **`examples/`** - Simple examples for getting started
@@ -108,6 +110,60 @@ go run main.go
 curl http://localhost:8080/hello
 ```
 
+## Saga Distributed Transactions
+
+Swit provides enterprise-grade distributed transaction management using the Saga pattern.
+
+### Quick Start with Saga
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/innovationmech/swit/pkg/saga"
+    "github.com/innovationmech/swit/pkg/saga/base"
+)
+
+func main() {
+    // Create Saga definition
+    def := saga.NewSagaDefinition("order-saga", "v1")
+    
+    // Add steps with compensation
+    def.AddStep("reserve-inventory", reserveInventory, compensateInventory)
+    def.AddStep("process-payment", processPayment, refundPayment)
+    def.AddStep("create-order", createOrder, cancelOrder)
+    
+    // Create coordinator
+    coordinator := saga.NewCoordinator(storage, publisher)
+    
+    // Execute Saga
+    instance, err := coordinator.Execute(context.Background(), def, orderData)
+    if err != nil {
+        // Saga failed, compensations executed automatically
+    }
+}
+```
+
+### Saga Features
+
+- **Orchestration & Choreography**: Support for centralized and event-driven patterns
+- **Reliable State Management**: PostgreSQL, MySQL, SQLite, and in-memory storage
+- **Flexible Retry Strategies**: Exponential backoff, fixed delay, linear backoff
+- **Compensation Patterns**: Sequential, parallel, and custom compensation
+- **DSL Support**: YAML-based workflow definition
+- **Dashboard**: Web UI for monitoring and management
+- **Security**: Authentication, RBAC, ACL, and data encryption
+- **Observability**: Prometheus metrics, OpenTelemetry tracing, health checks
+
+### Saga Documentation
+
+- 📖 [User Guide](https://innovationmech.github.io/swit/saga/user-guide.html) - Getting started and core concepts
+- 📚 [API Reference](https://innovationmech.github.io/swit/saga/api-reference.html) - Complete API documentation
+- 🎓 [Tutorials](https://innovationmech.github.io/swit/saga/tutorials.html) - Step-by-step guides and best practices
+- 🚀 [Deployment Guide](https://innovationmech.github.io/swit/saga/deployment-guide.html) - Production deployment
+- 🔧 [Developer Guide](https://innovationmech.github.io/swit/saga/developer-guide.html) - Architecture and extension development
+
 ## Examples
 
 ### Simple Examples
@@ -132,6 +188,22 @@ make build
 ./bin/swit-auth     # Authentication (HTTP: 9001, gRPC: 50051)
 ./bin/switctl --help # CLI tool
 ./bin/saga-migrate --help # Database migration tool
+./bin/saga-dsl-validate --help # Saga DSL validation tool
+```
+
+### Saga Examples
+```bash
+# Saga orchestrator example
+cd examples/saga-orchestrator && go run main.go
+
+# Saga choreography example  
+cd examples/saga-choreography && go run main.go
+
+# Saga with publisher
+cd examples/saga-publisher && go run main.go
+
+# Saga retry patterns
+cd examples/saga-retry && go run main.go
 ```
 
 ### Database Migrations (Saga Storage)

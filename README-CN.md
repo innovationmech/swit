@@ -22,6 +22,7 @@
 - 🔍 **服务发现**: 基于 Consul 的注册，支持健康检查集成
 - 🛡️ **中间件堆栈**: 可配置的 CORS、速率限制、身份验证和超时
 - ⚡ **Protocol Buffers**: 完整的 Buf 工具链支持 API 开发
+- 🔄 **Saga 分布式事务**: 企业级分布式事务管理，支持编排和协同模式
 - 📱 **示例服务**: 完整的参考实现和使用模式
 
 ## 架构概览
@@ -31,6 +32,7 @@
 - **`pkg/transport/`** - HTTP/gRPC 传输协调层
 - **`pkg/middleware/`** - 可配置的中间件堆栈
 - **`pkg/discovery/`** - 服务发现集成
+- **`pkg/saga/`** - 分布式事务编排和状态管理
 
 ### 示例服务
 - **`examples/`** - 简单的入门示例
@@ -108,6 +110,60 @@ go run main.go
 curl http://localhost:8080/hello
 ```
 
+## Saga 分布式事务
+
+Swit 提供企业级的分布式事务管理，使用 Saga 模式实现。
+
+### Saga 快速开始
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/innovationmech/swit/pkg/saga"
+    "github.com/innovationmech/swit/pkg/saga/base"
+)
+
+func main() {
+    // 创建 Saga 定义
+    def := saga.NewSagaDefinition("order-saga", "v1")
+    
+    // 添加步骤和补偿操作
+    def.AddStep("reserve-inventory", reserveInventory, compensateInventory)
+    def.AddStep("process-payment", processPayment, refundPayment)
+    def.AddStep("create-order", createOrder, cancelOrder)
+    
+    // 创建协调器
+    coordinator := saga.NewCoordinator(storage, publisher)
+    
+    // 执行 Saga
+    instance, err := coordinator.Execute(context.Background(), def, orderData)
+    if err != nil {
+        // Saga 失败，补偿操作自动执行
+    }
+}
+```
+
+### Saga 功能特性
+
+- **编排与协同模式**: 支持中心化和事件驱动模式
+- **可靠的状态管理**: PostgreSQL、MySQL、SQLite 和内存存储
+- **灵活的重试策略**: 指数退避、固定延迟、线性退避
+- **补偿模式**: 顺序、并行和自定义补偿
+- **DSL 支持**: 基于 YAML 的工作流定义
+- **Dashboard**: Web UI 监控和管理界面
+- **安全性**: 认证、RBAC、ACL 和数据加密
+- **可观测性**: Prometheus 指标、OpenTelemetry 追踪、健康检查
+
+### Saga 文档
+
+- 📖 [用户指南](https://innovationmech.github.io/swit/zh/saga/user-guide.html) - 快速开始和核心概念
+- 📚 [API 参考](https://innovationmech.github.io/swit/zh/saga/api-reference.html) - 完整的 API 文档
+- 🎓 [教程](https://innovationmech.github.io/swit/zh/saga/tutorials.html) - 分步指南和最佳实践
+- 🚀 [部署指南](https://innovationmech.github.io/swit/zh/saga/deployment-guide.html) - 生产环境部署
+- 🔧 [开发者指南](https://innovationmech.github.io/swit/zh/saga/developer-guide.html) - 架构设计和扩展开发
+
 ## 示例
 
 ### 简单示例
@@ -132,6 +188,22 @@ make build
 ./bin/swit-auth     # 身份验证 (HTTP: 9001, gRPC: 50051)
 ./bin/switctl --help # CLI 工具
 ./bin/saga-migrate --help # 数据库迁移工具
+./bin/saga-dsl-validate --help # Saga DSL 验证工具
+```
+
+### Saga 示例
+```bash
+# Saga 编排模式示例
+cd examples/saga-orchestrator && go run main.go
+
+# Saga 协同模式示例
+cd examples/saga-choreography && go run main.go
+
+# Saga 发布者示例
+cd examples/saga-publisher && go run main.go
+
+# Saga 重试模式示例
+cd examples/saga-retry && go run main.go
 ```
 
 ### 数据库迁移（Saga 存储）
