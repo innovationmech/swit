@@ -1,0 +1,514 @@
+# Saga 生产环境配置模板
+# 用途: 大规模高可用生产环境部署
+# 维护者: Swit Platform Team
+
+# ============================================================================
+# Saga 协调器配置
+# ============================================================================
+saga:
+  # 协调器基础配置
+  coordinator:
+    # 协调器类型: memory (开发), redis (小规模生产), postgresql (大规模生产)
+    type: redis
+    
+    # 工作线程池大小
+    # 推荐: CPU 核数 * 25
+    worker_pool_size: 100
+    
+    # 最大并发 Saga 数量
+    # 推荐: 可用内存(GB) * 100
+    max_concurrent_sagas: 500
+    
+    # 获取锁超时时间
+    acquire_timeout: 30s
+    
+    # 优雅关闭超时
+    shutdown_timeout: 2m
+    
+    # 心跳间隔（用于健康检查）
+    heartbeat_interval: 10s
+
+  # ============================================================================
+  # 状态存储配置
+  # ============================================================================
+  state_storage:
+    type: redis
+    
+    redis:
+      # Redis 集群配置
+      cluster:
+        enabled: true
+        nodes:
+          - redis-1.prod.company.com:6379
+          - redis-2.prod.company.com:6379
+          - redis-3.prod.company.com:6379
+      
+      # Redis 单机配置（与 cluster 二选一）
+      # standalone:
+      #   address: redis.prod.company.com:6379
+      
+      # 认证信息
+      password: ${REDIS_PASSWORD}  # 从环境变量或密钥管理服务获取
+      
+      # 连接池配置
+      pool_size: 200              # 连接池最大连接数
+      min_idle_conns: 10          # 最小空闲连接数
+      max_retries: 5              # 最大重试次数
+      
+      # 超时配置
+      dial_timeout: 5s
+      read_timeout: 3s
+      write_timeout: 3s
+      
+      # 键配置
+      key_prefix: "saga:"         # Redis 键前缀
+      ttl: 168h                   # Saga 状态保留时间 (7天)
+      
+      # TLS 配置（可选）
+      tls:
+        enabled: true
+        cert_file: /etc/certs/redis-client.crt
+        key_file: /etc/certs/redis-client.key
+        ca_file: /etc/certs/ca.crt
+        insecure_skip_verify: false
+    
+    # PostgreSQL 配置（可选，适用于需要强一致性的场景）
+    # postgresql:
+    #   host: postgres-master.prod.company.com
+    #   port: 5432
+    #   database: saga_db
+    #   username: saga_user
+    #   password: ${POSTGRES_PASSWORD}
+    #   
+    #   # 连接池配置
+    #   max_open_conns: 100
+    #   max_idle_conns: 10
+    #   conn_max_lifetime: 1h
+    #   conn_max_idle_time: 10m
+    #   
+    #   # SSL 配置
+    #   sslmode: require
+    #   sslcert: /etc/certs/client-cert.pem
+    #   sslkey: /etc/certs/client-key.pem
+    #   sslrootcert: /etc/certs/ca-cert.pem
+    #   
+    #   # 查询超时
+    #   query_timeout: 30s
+
+  # ============================================================================
+  # 事件发布器配置
+  # ============================================================================
+  event_publisher:
+    type: kafka
+    
+    kafka:
+      # Kafka 集群地址
+      brokers:
+        - kafka-1.prod.company.com:9092
+        - kafka-2.prod.company.com:9092
+        - kafka-3.prod.company.com:9092
+      
+      # 主题配置
+      topic: saga-events-prod
+      partition_count: 12          # 分区数量
+      replication_factor: 3        # 副本因子
+      
+      # 生产者配置
+      producer:
+        compression: snappy        # 压缩算法: none, gzip, snappy, lz4, zstd
+        batch_size: 1000          # 批量大小
+        linger_time: 10ms         # 批量等待时间
+        max_message_bytes: 1048576 # 最大消息大小 (1MB)
+        idempotent: true          # 启用幂等性
+        acks: all                 # 确认模式: 0, 1, all
+        
+      # 可靠性配置
+      retries: 10
+      retry_backoff: 100ms
+      
+      # TLS 配置（可选）
+      security:
+        protocol: SSL             # PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL
+        ssl:
+          ca_cert_file: /etc/certs/ca.crt
+          client_cert_file: /etc/certs/kafka-client.crt
+          client_key_file: /etc/certs/kafka-client.key
+    
+    # NATS 配置（可选，适用于小规模场景）
+    # nats:
+    #   url: nats://nats-1.prod:4222,nats://nats-2.prod:4222
+    #   subject: saga.events
+    #   cluster_id: saga-cluster
+    #   
+    #   # 认证
+    #   username: saga_user
+    #   password: ${NATS_PASSWORD}
+    #   
+    #   # TLS
+    #   tls:
+    #     enabled: true
+    #     cert_file: /etc/certs/nats-client.crt
+    #     key_file: /etc/certs/nats-client.key
+    #     ca_file: /etc/certs/ca.crt
+    
+    # RabbitMQ 配置（可选）
+    # rabbitmq:
+    #   url: amqp://saga_user:${RABBITMQ_PASSWORD}@rabbitmq.prod:5672/
+    #   exchange: saga-events
+    #   exchange_type: topic
+    #   routing_key: saga.#
+    #   queue: saga-events-queue
+    #   
+    #   # 可靠性
+    #   confirm_mode: true
+    #   durable: true
+    #   auto_ack: false
+
+  # ============================================================================
+  # 重试策略配置
+  # ============================================================================
+  retry:
+    # 默认重试策略
+    default_policy:
+      type: exponential_backoff  # fixed_delay, exponential_backoff, linear_backoff, no_retry
+      max_attempts: 5
+      initial_delay: 1s
+      max_delay: 2m
+      multiplier: 2.0
+      jitter: true               # 添加随机抖动避免重试风暴
+      
+    # 自定义重试策略
+    policies:
+      # 关键业务操作
+      critical:
+        type: exponential_backoff
+        max_attempts: 10
+        initial_delay: 500ms
+        max_delay: 5m
+        multiplier: 2.0
+        jitter: true
+      
+      # 快速失败操作
+      fast_fail:
+        type: fixed_delay
+        max_attempts: 2
+        delay: 100ms
+      
+      # 长时间重试
+      persistent:
+        type: exponential_backoff
+        max_attempts: 20
+        initial_delay: 1s
+        max_delay: 10m
+        multiplier: 1.5
+        jitter: true
+
+  # ============================================================================
+  # 超时配置
+  # ============================================================================
+  timeout:
+    # 默认超时时间
+    default_saga_timeout: 5m
+    default_step_timeout: 30s
+    default_compensation_timeout: 1m
+    
+    # 自定义超时配置（按 Saga 类型）
+    custom_timeouts:
+      order-processing:
+        saga_timeout: 10m
+        step_timeout: 1m
+      
+      payment-transfer:
+        saga_timeout: 3m
+        step_timeout: 30s
+
+  # ============================================================================
+  # 监控配置
+  # ============================================================================
+  monitoring:
+    enabled: true
+    
+    # Prometheus 指标
+    prometheus:
+      enabled: true
+      port: 9090
+      path: /metrics
+      
+      # 自定义标签
+      extra_labels:
+        environment: production
+        cluster: saga-prod
+        region: cn-north-1
+    
+    # 分布式追踪
+    tracing:
+      enabled: true
+      service_name: saga-coordinator
+      
+      # 导出器配置
+      exporter:
+        type: jaeger              # jaeger, zipkin, otlp
+        endpoint: http://jaeger-collector.observability.svc.cluster.local:14268/api/traces
+        timeout: 30s
+        batch_timeout: 5s
+        max_export_batch_size: 512
+        max_queue_size: 2048
+      
+      # 采样策略
+      sampling:
+        type: parentbased         # always_on, always_off, traceidratio, parentbased
+        rate: 0.1                 # 10% 采样率
+        
+        # 自定义采样规则
+        rules:
+          - operation: ExecuteSaga
+            rate: 0.5             # 关键操作提高采样率
+          
+          - operation: HealthCheck
+            rate: 0.01            # 健康检查降低采样率
+      
+      # 资源属性
+      resource_attributes:
+        deployment.environment: production
+        service.version: ${SERVICE_VERSION}
+        service.namespace: distributed-transactions
+        team.name: platform
+        cost.center: engineering
+    
+    # 日志配置
+    logging:
+      level: info                 # debug, info, warn, error
+      format: json                # json, text
+      output: stdout              # stdout, file
+      
+      # 文件输出配置（当 output=file 时）
+      file:
+        path: /var/log/saga/coordinator.log
+        max_size: 100MB
+        max_backups: 10
+        max_age: 30
+        compress: true
+
+  # ============================================================================
+  # 安全配置
+  # ============================================================================
+  security:
+    # 认证配置
+    authentication:
+      enabled: true
+      type: jwt                   # jwt, basic, api_key
+      
+      jwt:
+        secret: ${JWT_SECRET}     # 从环境变量或密钥管理服务获取
+        issuer: saga-coordinator
+        audience: saga-clients
+        expiration: 1h
+        refresh_enabled: true
+        refresh_expiration: 24h
+    
+    # 授权配置
+    authorization:
+      enabled: true
+      
+      # RBAC 配置
+      rbac:
+        enabled: true
+        roles:
+          admin:
+            permissions:
+              - saga:*
+          
+          operator:
+            permissions:
+              - saga:read
+              - saga:execute
+              - saga:cancel
+          
+          viewer:
+            permissions:
+              - saga:read
+    
+    # 加密配置
+    encryption:
+      enabled: true
+      algorithm: AES-256-GCM
+      
+      # 密钥管理
+      key_manager:
+        type: vault               # file, vault, aws_kms, azure_kv
+        vault:
+          address: https://vault.company.com
+          token: ${VAULT_TOKEN}
+          key_path: secret/data/saga/encryption-key
+      
+      # 需要加密的字段
+      encrypted_fields:
+        - password
+        - credit_card
+        - ssn
+        - api_key
+        - private_key
+    
+    # 审计日志
+    audit:
+      enabled: true
+      
+      # 输出配置
+      output:
+        type: file                # file, database, kafka
+        file:
+          path: /var/log/saga/audit.log
+          max_size: 100MB
+          max_backups: 30
+          compress: true
+      
+      # 审计事件
+      events:
+        - saga.created
+        - saga.started
+        - saga.completed
+        - saga.failed
+        - saga.compensated
+        - saga.cancelled
+        - auth.login
+        - auth.logout
+        - config.changed
+      
+      # 审计字段
+      fields:
+        - timestamp
+        - user_id
+        - client_ip
+        - action
+        - resource
+        - result
+        - error
+        - metadata
+
+  # ============================================================================
+  # 高级配置
+  # ============================================================================
+  advanced:
+    # 补偿策略
+    compensation:
+      strategy: sequential        # sequential, parallel
+      timeout: 2m
+      max_attempts: 3
+      continue_on_error: false
+    
+    # 并行执行
+    parallel_execution:
+      enabled: true
+      max_parallel_steps: 5
+    
+    # 状态清理
+    state_cleanup:
+      enabled: true
+      retention_period: 168h      # 7 天
+      cleanup_interval: 24h       # 每天清理一次
+      batch_size: 1000
+    
+    # 健康检查
+    health_check:
+      enabled: true
+      interval: 10s
+      timeout: 5s
+      
+      # 检查项
+      checks:
+        - redis
+        - kafka
+        - coordinator
+    
+    # 优雅关闭
+    graceful_shutdown:
+      enabled: true
+      timeout: 2m
+      drain_timeout: 1m
+
+# ============================================================================
+# 服务器配置
+# ============================================================================
+server:
+  # HTTP 服务配置
+  http:
+    enabled: true
+    port: 9000
+    read_timeout: 30s
+    write_timeout: 30s
+    idle_timeout: 60s
+    max_header_bytes: 1048576
+    
+    # TLS 配置
+    tls:
+      enabled: true
+      cert_file: /etc/certs/server.crt
+      key_file: /etc/certs/server.key
+      client_ca_file: /etc/certs/ca.crt
+      client_auth_type: RequireAndVerifyClientCert
+  
+  # gRPC 服务配置（可选）
+  grpc:
+    enabled: false
+    port: 9001
+    
+    # 连接配置
+    max_concurrent_streams: 100
+    max_recv_msg_size: 4194304    # 4MB
+    max_send_msg_size: 4194304    # 4MB
+    
+    # TLS 配置
+    tls:
+      enabled: true
+      cert_file: /etc/certs/server.crt
+      key_file: /etc/certs/server.key
+      client_ca_file: /etc/certs/ca.crt
+
+# ============================================================================
+# 运行时配置
+# ============================================================================
+runtime:
+  # Go 运行时配置
+  gomaxprocs: 0                   # 0 = 使用所有 CPU 核心
+  gogc: 100                       # GC 触发百分比
+  gomemlimit: 8GB                 # 内存软限制 (Go 1.19+)
+  
+  # Pprof 配置（用于性能分析）
+  pprof:
+    enabled: true
+    port: 6060
+    allowed_ips:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+
+# ============================================================================
+# 环境变量说明
+# ============================================================================
+# 以下环境变量需要在部署时设置:
+#
+# REDIS_PASSWORD          - Redis 密码
+# POSTGRES_PASSWORD       - PostgreSQL 密码 (如使用)
+# KAFKA_CLIENT_ID        - Kafka 客户端 ID (可选)
+# JWT_SECRET             - JWT 签名密钥
+# VAULT_TOKEN            - Vault 访问令牌 (如使用)
+# SERVICE_VERSION        - 服务版本号
+# NATS_PASSWORD          - NATS 密码 (如使用)
+# RABBITMQ_PASSWORD      - RabbitMQ 密码 (如使用)
+#
+# 推荐使用密钥管理服务（如 HashiCorp Vault）管理敏感信息
+
+# ============================================================================
+# 部署说明
+# ============================================================================
+# 1. 根据实际环境修改配置参数
+# 2. 设置所需的环境变量
+# 3. 验证配置: ./swit-serve --config=saga-production.yaml --validate-config
+# 4. 启动服务: ./swit-serve --config=saga-production.yaml
+#
+# Kubernetes 部署:
+# kubectl create configmap saga-config --from-file=saga-production.yaml
+# kubectl create secret generic saga-secrets \
+#   --from-literal=redis-password=${REDIS_PASSWORD} \
+#   --from-literal=jwt-secret=${JWT_SECRET}
+
