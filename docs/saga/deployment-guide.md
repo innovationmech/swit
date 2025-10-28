@@ -294,7 +294,7 @@ saga:
         jitter: true
       
       fast_fail:
-        type: fixed
+        type: fixed_delay
         max_attempts: 2
         delay: 100ms
 

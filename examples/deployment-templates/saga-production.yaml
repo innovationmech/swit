@@ -170,7 +170,7 @@ saga:
   retry:
     # 默认重试策略
     default_policy:
-      type: exponential_backoff  # fixed, exponential_backoff, custom
+      type: exponential_backoff  # fixed_delay, exponential_backoff, linear_backoff, no_retry
       max_attempts: 5
       initial_delay: 1s
       max_delay: 2m
@@ -190,7 +190,7 @@ saga:
       
       # 快速失败操作
       fast_fail:
-        type: fixed
+        type: fixed_delay
         max_attempts: 2
         delay: 100ms
       
