@@ -184,7 +184,6 @@ func TestRealtimePusher_HandleSSE(t *testing.T) {
 
 // TestRealtimePusher_MultipleClients tests multiple SSE connections.
 func TestRealtimePusher_MultipleClients(t *testing.T) {
-	t.Skip("Flaky test due to goroutine scheduling and timing dependencies. See issue #757")
 	gin.SetMode(gin.TestMode)
 
 	// Setup
@@ -209,14 +208,13 @@ func TestRealtimePusher_MultipleClients(t *testing.T) {
 	contexts := make([]context.Context, numClients)
 	cancels := make([]context.CancelFunc, numClients)
 	doneChannels := make([]chan bool, numClients)
-	startedChannels := make([]chan struct{}, numClients)
 
+	// Start all client handlers
 	for i := 0; i < numClients; i++ {
 		clients[i] = httptest.NewRecorder()
-		// Increase timeout to 2 seconds to ensure clients stay connected during test
-		contexts[i], cancels[i] = context.WithTimeout(context.Background(), 2*time.Second)
-		doneChannels[i] = make(chan bool)
-		startedChannels[i] = make(chan struct{})
+		// Use longer timeout to ensure clients stay connected during test
+		contexts[i], cancels[i] = context.WithTimeout(context.Background(), 5*time.Second)
+		doneChannels[i] = make(chan bool, 1)
 
 		c, _ := gin.CreateTestContext(clients[i])
 		req := httptest.NewRequest("GET", "/api/metrics/stream", nil)
@@ -225,56 +223,75 @@ func TestRealtimePusher_MultipleClients(t *testing.T) {
 
 		// Start each client handler
 		go func(idx int, ctx *gin.Context) {
-			// Signal that goroutine has started
-			close(startedChannels[idx])
 			pusher.HandleSSE(ctx)
 			doneChannels[idx] <- true
 		}(i, c)
+
+		// Add small delay between starting clients to reduce goroutine scheduling contention
+		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Wait for all goroutines to start
-	for i := 0; i < numClients; i++ {
-		<-startedChannels[i]
-	}
-
-	// Wait for all clients to be registered and connected
-	// Use polling with generous timeout to handle scheduler variations
-	var clientCount int
-	deadline := time.Now().Add(1 * time.Second)
-	for time.Now().Before(deadline) {
-		clientCount = pusher.GetConnectedClientsCount()
-		if clientCount == numClients {
+	// Wait for all clients to be registered using reliable polling
+	// This is more robust than relying on goroutine startup timing
+	allRegistered := false
+	registrationDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(registrationDeadline) {
+		if pusher.GetConnectedClientsCount() >= numClients {
+			allRegistered = true
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	assert.Equal(t, numClients, clientCount, "Expected all clients to be connected")
 
-	// Record some metrics
+	if !allRegistered {
+		t.Fatalf("Timeout waiting for all clients to register. Got %d clients, expected %d",
+			pusher.GetConnectedClientsCount(), numClients)
+	}
+
+	// Verify all clients are connected
+	assert.Equal(t, numClients, pusher.GetConnectedClientsCount(),
+		"Expected all clients to be connected")
+
+	// Record some metrics to verify broadcasting works
 	collector.RecordSagaStarted("saga-1")
 	collector.RecordSagaCompleted("saga-1", 100*time.Millisecond)
 
-	// Wait a bit for metrics to be broadcasted
-	time.Sleep(200 * time.Millisecond)
+	// Wait for at least one broadcast cycle
+	time.Sleep(150 * time.Millisecond)
 
 	// Cancel all client contexts to trigger disconnect
 	for i := 0; i < numClients; i++ {
 		cancels[i]()
 	}
 
-	// Wait for all clients to finish
+	// Wait for all clients to finish with individual timeouts
 	for i := 0; i < numClients; i++ {
 		select {
 		case <-doneChannels[i]:
-			// Client finished
-		case <-time.After(500 * time.Millisecond):
+			// Client finished successfully
+		case <-time.After(1 * time.Second):
 			t.Fatalf("Client %d did not complete in time", i)
 		}
 	}
 
 	// Verify all clients disconnected
-	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 0, pusher.GetConnectedClientsCount(), "Expected all clients to disconnect")
+	// Use polling to handle cleanup timing
+	disconnectDeadline := time.Now().Add(500 * time.Millisecond)
+	var finalCount int
+	for time.Now().Before(disconnectDeadline) {
+		finalCount = pusher.GetConnectedClientsCount()
+		if finalCount == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Equal(t, 0, finalCount, "Expected all clients to disconnect")
+
+	// Verify clients received some data
+	for i := 0; i < numClients; i++ {
+		body := clients[i].Body.String()
+		assert.Contains(t, body, "data:", "Client %d should have received SSE data", i)
+	}
 }
 
 // TestRealtimePusher_Broadcast tests the broadcast mechanism.
