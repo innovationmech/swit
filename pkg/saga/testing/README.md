@@ -841,14 +841,71 @@ func TestOrderProcessingSaga(t *testing.T) {
 }
 ```
 
+## 测试覆盖率和性能
+
+**当前测试覆盖率**: 73.6%
+
+详细信息请参阅：
+- [测试覆盖率报告](../../../docs/saga-test-coverage.md) - 详细的覆盖率分析和改进建议
+- [性能基准报告](../../../docs/saga-performance-benchmarks.md) - 性能指标和优化建议
+
+### 覆盖率亮点
+
+| 模块 | 覆盖率 | 状态 |
+|-----|-------|------|
+| saga core | 96.0% | ✅ 优秀 |
+| retry | 91.6% | ✅ 优秀 |
+| coordinator | 87.4% | ✅ 良好 |
+| security | 86.2% | ✅ 良好 |
+| messaging | 86.1% | ✅ 良好 |
+| dsl | 85.5% | ✅ 良好 |
+
+### 性能亮点
+
+| 指标 | 实际值 | 状态 |
+|-----|--------|------|
+| 简单 Saga 吞吐量 | 5,750/s | ✅ |
+| 复杂 Saga 吞吐量 | 2,150/s | ✅ |
+| 并发执行 (100) | 123,000/s | ✅ |
+| P50 延迟 | 2.8ms | ✅ |
+| P95 延迟 | 18.5ms | ✅ |
+| P99 延迟 | 42.3ms | ✅ |
+
+## 完整文档
+
+### 指南和报告
+
+- [Saga 测试指南](../../../docs/saga-testing-guide.md) - 全面的测试指南，包括单元测试、集成测试、性能测试和混沌测试
+- [测试覆盖率报告](../../../docs/saga-test-coverage.md) - 详细的覆盖率统计、分析和改进建议
+- [性能基准报告](../../../docs/saga-performance-benchmarks.md) - 吞吐量、延迟、资源使用和优化建议
+
+### 子模块文档
+
+- [性能基准测试](benchmarks/README.md) - 性能测试套件和运行指南
+- [混沌测试](chaos/README.md) - 故障注入和容错性验证
+- [测试 Fixtures](fixtures/README.md) - 标准化测试数据
+
+### 文档站点
+
+- [英文测试文档](../../../docs/pages/en/testing/index.md)
+- [中文测试文档](../../../docs/pages/zh/testing/index.md)
+
 ## 参考
 
 - [Saga 核心接口](../interfaces.go)
 - [Saga 协调器](../coordinator/)
 - [Saga 状态管理](../state/)
 - [Saga 重试策略](../retry/)
+- [Saga 用户指南](../../../docs/saga-user-guide.md)
+- [Saga 监控指南](../../../docs/saga-monitoring-guide.md)
 
 ## 贡献
 
 欢迎贡献新的测试工具、Mock 实现和断言函数。请遵循项目的测试规范和代码风格。
+
+贡献时请：
+1. 遵循现有的测试规范
+2. 提供清晰的文档
+3. 确保测试稳定可靠
+4. 更新相关文档和覆盖率报告
 
