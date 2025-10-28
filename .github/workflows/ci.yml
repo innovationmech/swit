@@ -154,6 +154,7 @@ jobs:
       run: make proto-dev
 
     # 使用快速构建模式，跳过质量检查
+    # 注意：必须先生成 proto 代码，因为 build-dev 会运行 go mod tidy
     - name: Build binaries
       if: github.event_name == 'push' && needs.changes.outputs.code_changed == 'true'
       run: make build-dev
