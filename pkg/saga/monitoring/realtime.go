@@ -189,12 +189,19 @@ func (rp *RealtimePusher) HandleSSE(c *gin.Context) {
 	// Cleanup on disconnect
 	defer func() {
 		rp.mu.Lock()
-		delete(rp.clients, client.id)
+		// Check if client still exists (may have been removed by Stop())
+		_, exists := rp.clients[client.id]
+		if exists {
+			delete(rp.clients, client.id)
+		}
 		clientCount := len(rp.clients)
 		rp.mu.Unlock()
 
 		cancel()
-		close(client.channel)
+		// Only close channel if we removed the client (not already closed by Stop())
+		if exists {
+			close(client.channel)
+		}
 
 		if logger.Logger != nil {
 			logger.Logger.Info("SSE client disconnected",

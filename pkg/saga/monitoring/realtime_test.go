@@ -208,11 +208,14 @@ func TestRealtimePusher_MultipleClients(t *testing.T) {
 	contexts := make([]context.Context, numClients)
 	cancels := make([]context.CancelFunc, numClients)
 	doneChannels := make([]chan bool, numClients)
+	startedChannels := make([]chan struct{}, numClients)
 
 	for i := 0; i < numClients; i++ {
 		clients[i] = httptest.NewRecorder()
-		contexts[i], cancels[i] = context.WithTimeout(context.Background(), 300*time.Millisecond)
+		// Increase timeout to 2 seconds to ensure clients stay connected during test
+		contexts[i], cancels[i] = context.WithTimeout(context.Background(), 2*time.Second)
 		doneChannels[i] = make(chan bool)
+		startedChannels[i] = make(chan struct{})
 
 		c, _ := gin.CreateTestContext(clients[i])
 		req := httptest.NewRequest("GET", "/api/metrics/stream", nil)
@@ -221,35 +224,55 @@ func TestRealtimePusher_MultipleClients(t *testing.T) {
 
 		// Start each client handler
 		go func(idx int, ctx *gin.Context) {
+			// Signal that goroutine has started
+			close(startedChannels[idx])
 			pusher.HandleSSE(ctx)
 			doneChannels[idx] <- true
 		}(i, c)
 	}
 
-	// Wait a bit to let clients connect
-	time.Sleep(50 * time.Millisecond)
+	// Wait for all goroutines to start
+	for i := 0; i < numClients; i++ {
+		<-startedChannels[i]
+	}
 
-	// Check that all clients are connected
-	clientCount := pusher.GetConnectedClientsCount()
+	// Wait for all clients to be registered and connected
+	// Use polling with generous timeout to handle scheduler variations
+	var clientCount int
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		clientCount = pusher.GetConnectedClientsCount()
+		if clientCount == numClients {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	assert.Equal(t, numClients, clientCount, "Expected all clients to be connected")
 
 	// Record some metrics
 	collector.RecordSagaStarted("saga-1")
 	collector.RecordSagaCompleted("saga-1", 100*time.Millisecond)
 
+	// Wait a bit for metrics to be broadcasted
+	time.Sleep(200 * time.Millisecond)
+
+	// Cancel all client contexts to trigger disconnect
+	for i := 0; i < numClients; i++ {
+		cancels[i]()
+	}
+
 	// Wait for all clients to finish
 	for i := 0; i < numClients; i++ {
 		select {
 		case <-doneChannels[i]:
 			// Client finished
-		case <-time.After(1 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 			t.Fatalf("Client %d did not complete in time", i)
 		}
-		cancels[i]()
 	}
 
 	// Verify all clients disconnected
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, 0, pusher.GetConnectedClientsCount(), "Expected all clients to disconnect")
 }
 
