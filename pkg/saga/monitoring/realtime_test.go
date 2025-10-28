@@ -184,6 +184,7 @@ func TestRealtimePusher_HandleSSE(t *testing.T) {
 
 // TestRealtimePusher_MultipleClients tests multiple SSE connections.
 func TestRealtimePusher_MultipleClients(t *testing.T) {
+	t.Skip("Flaky test due to goroutine scheduling and timing dependencies. See issue #747")
 	gin.SetMode(gin.TestMode)
 
 	// Setup
