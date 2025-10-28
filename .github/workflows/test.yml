@@ -12,6 +12,7 @@ on:
       - 'internal/**'
       - 'pkg/**'
       - '.github/workflows/test.yml'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [ master, dev ]
     paths:
@@ -23,6 +24,7 @@ on:
       - 'internal/**'
       - 'pkg/**'
       - '.github/workflows/test.yml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
   workflow_call:  # 允许被其他工作流调用
 
