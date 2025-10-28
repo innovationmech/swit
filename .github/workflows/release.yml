@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -14,191 +14,98 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
 
-    - name: Clean cache directories
-      run: |
-        # Clean up cache directories before restore
-        # Handle permission issues with read-only files in Go module cache
-        if [ -d "~/go/pkg/mod" ]; then
-          chmod -R u+w ~/go/pkg/mod || true
-          rm -rf ~/go/pkg/mod || true
-        fi
-        mkdir -p ~/go/pkg/mod
+      - name: Setup development tools
+        run: make setup-dev
 
-    # 生成必需的代码 - 必须在依赖安装之前
-    - name: Install Proto tools
-      run: make proto-setup
+      - name: Run tests
+        run: make test
 
-    - name: Install Swagger tools
-      run: make swagger-setup
+      - name: Run quality checks
+        run: make quality
 
-    - name: Generate proto code
-      run: make proto
+      - name: Build binaries
+        run: make build
 
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Generate checksums
+        run: |
+          cd bin
+          sha256sum * > checksums.txt
+          cat checksums.txt
 
-    - name: Install dependencies
-      run: |
-        # Update dependencies for Go compatibility
-        go mod tidy
-        go mod download
-        go mod verify
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-    - name: Verify working directory and Go files
-      run: |
-        # Ensure correct working directory and presence of Go files
-        pwd
-        ls -la
-        if [ ! -f "go.mod" ]; then
-          echo "Error: go.mod not found in current directory"
-          exit 1
-        fi
-        if [ ! -d "cmd" ]; then
-          echo "Error: cmd directory not found"
-          exit 1
-        fi
-        echo "Working directory verified successfully"
+      - name: Check for release notes
+        id: release_notes
+        run: |
+          if [ -f "RELEASE_NOTES.md" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Generate swagger docs
-      run: |
-        # Generate swagger docs with proper error handling
-        make swagger
-        # Verify swagger docs were generated
-        if [ ! -d "docs" ]; then
-          echo "Warning: docs directory not found after swagger generation"
-        fi
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.version.outputs.VERSION }}
+          body_path: ${{ steps.release_notes.outputs.exists == 'true' && 'RELEASE_NOTES.md' || '' }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+          files: |
+            bin/*
+            CHANGELOG.md
+            RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Run tests
-      run: make test
-
-    - name: Build binaries
-      run: |
-        make build-release
-        
-    - name: Verify build artifacts
-      run: |
-        # Confirm artifacts exist before upload
-        echo "Checking for build artifacts..."
-        
-        # Check for distribution files
-        if [ -d "_output/dist" ]; then
-          echo "Distribution directory found:"
-          ls -la _output/dist/
-        else
-          echo "Warning: _output/dist directory not found"
-        fi
-        
-        # Check for build binaries
-        if [ -d "_output/build" ]; then
-          echo "Build directory found:"
-          ls -la _output/build/
-        else
-          echo "Warning: _output/build directory not found"
-        fi
-        
-        # Verify at least some artifacts exist
-        ARTIFACT_COUNT=0
-        if ls _output/dist/*.tar.gz 1> /dev/null 2>&1; then
-          ARTIFACT_COUNT=$((ARTIFACT_COUNT + $(ls _output/dist/*.tar.gz | wc -l)))
-        fi
-        if ls _output/dist/*.zip 1> /dev/null 2>&1; then
-          ARTIFACT_COUNT=$((ARTIFACT_COUNT + $(ls _output/dist/*.zip | wc -l)))
-        fi
-        if ls _output/build/*-*-*-* 1> /dev/null 2>&1; then
-          ARTIFACT_COUNT=$((ARTIFACT_COUNT + $(ls _output/build/*-*-*-* | wc -l)))
-        fi
-        
-        echo "Total artifacts found: $ARTIFACT_COUNT"
-        if [ $ARTIFACT_COUNT -eq 0 ]; then
-          echo "Error: No build artifacts found for release"
-          exit 1
-        fi
-        echo "Build artifacts verification completed successfully"
-        
-    - name: Generate changelog
-      id: changelog
-      run: |
-        # 获取当前标签
-        TAG=${GITHUB_REF#refs/tags/}
-        echo "tag=${TAG}" >> $GITHUB_OUTPUT
-        
-        # 获取上一个标签
-        PREV_TAG=$(git describe --tags --abbrev=0 ${TAG}^ 2>/dev/null || echo "")
-        
-        echo "## 🚀 What's Changed" > CHANGELOG.md
-        echo "" >> CHANGELOG.md
-        
-        if [ -n "$PREV_TAG" ]; then
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${TAG}" >> CHANGELOG.md
-          echo "" >> CHANGELOG.md
-          
-          # 获取提交记录
-          git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges >> CHANGELOG.md
-        else
-          echo "🎉 Initial release" >> CHANGELOG.md
-        fi
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.changelog.outputs.tag }}
-        name: Release ${{ steps.changelog.outputs.tag }}
-        body_path: CHANGELOG.md
-        draft: false
-        prerelease: false
-        files: |
-          _output/dist/*.tar.gz
-          _output/dist/*.zip
-          _output/dist/checksums.txt
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-  docker-release:
+  docker:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
     needs: release
+    strategy:
+      matrix:
+        service:
+          - swit-serve
+          - swit-auth
+          - switctl
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: |
-          ghcr.io/innovationmech/swit
-        tags: |
-          type=ref,event=tag
-          type=raw,value=latest,enable={{is_default_branch}}
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-    - name: Build and push Docker images
-      env:
-        REGISTRY: ghcr.io/innovationmech
-        VERSION: ${{ github.ref_name }}
-      run: |
-        # 构建并推送各个服务的 Docker 镜像
-        ./scripts/tools/docker-manage.sh build --push
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: build/docker/${{ matrix.service }}.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
