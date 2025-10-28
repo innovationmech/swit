@@ -999,10 +999,742 @@ func (m *OTelTracingManager) StartSpan(ctx context.Context, name string, opts ..
 }
 ```
 
+## 常见使用场景和模式
+
+### 场景 1: 电商订单处理
+
+**业务流程**:
+1. 创建订单
+2. 预留库存
+3. 处理支付
+4. 发送通知
+5. 确认订单
+
+**实现示例**:
+```go
+func NewECommerceOrderSaga() saga.SagaDefinition {
+    return &OrderSagaDefinition{
+        id:   "ecommerce-order",
+        name: "电商订单处理",
+        steps: []saga.SagaStep{
+            NewCreateOrderStep(),       // 创建订单
+            NewReserveInventoryStep(),  // 预留库存
+            NewProcessPaymentStep(),    // 处理支付
+            NewSendNotificationStep(),  // 发送通知
+            NewConfirmOrderStep(),      // 确认订单
+        },
+        timeout:     30 * time.Minute,
+        retryPolicy: saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
+        strategy:    saga.NewSequentialCompensationStrategy(30 * time.Second),
+    }
+}
+```
+
+**关键点**:
+- 每个步骤都需要有对应的补偿操作
+- 支付失败时自动释放库存和取消订单
+- 使用指数退避重试处理临时网络问题
+
+### 场景 2: 旅游预订系统
+
+**业务流程**:
+1. 预订航班
+2. 预订酒店
+3. 预订租车
+4. 处理支付
+5. 发送确认邮件
+
+**实现示例**:
+```go
+func NewTravelBookingSaga() saga.SagaDefinition {
+    return &TravelSagaDefinition{
+        id:   "travel-booking",
+        name: "旅游预订",
+        steps: []saga.SagaStep{
+            NewBookFlightStep(),        // 预订航班
+            NewBookHotelStep(),         // 预订酒店
+            NewBookCarRentalStep(),     // 预订租车
+            NewProcessPaymentStep(),    // 处理支付
+            NewSendConfirmationStep(),  // 发送确认
+        },
+        timeout:     60 * time.Minute,
+        retryPolicy: saga.NewExponentialBackoffRetryPolicy(5, time.Second, time.Minute),
+        strategy:    saga.NewSequentialCompensationStrategy(60 * time.Second),
+    }
+}
+```
+
+**关键点**:
+- 多个独立服务的协调（航空、酒店、租车）
+- 任一预订失败时需要取消所有已完成的预订
+- 较长的超时时间以应对外部 API 延迟
+
+### 场景 3: 资金转账
+
+**业务流程**:
+1. 验证账户
+2. 锁定源账户资金
+3. 执行转账
+4. 更新余额
+5. 解锁账户
+
+**实现示例**:
+```go
+func NewMoneyTransferSaga() saga.SagaDefinition {
+    return &TransferSagaDefinition{
+        id:   "money-transfer",
+        name: "资金转账",
+        steps: []saga.SagaStep{
+            NewValidateAccountsStep(),  // 验证账户
+            NewLockFundsStep(),         // 锁定资金
+            NewExecuteTransferStep(),   // 执行转账
+            NewUpdateBalanceStep(),     // 更新余额
+            NewUnlockAccountsStep(),    // 解锁账户
+        },
+        timeout:     10 * time.Minute,
+        retryPolicy: saga.NewExponentialBackoffRetryPolicy(3, time.Second, 5*time.Second),
+        strategy:    saga.NewSequentialCompensationStrategy(20 * time.Second),
+    }
+}
+```
+
+**关键点**:
+- 强一致性要求，使用数据库事务确保原子性
+- 补偿操作必须解锁资金
+- 严格的超时控制防止资金长时间锁定
+
+### 场景 4: 微服务编排
+
+**业务流程**:
+1. 用户服务：创建用户
+2. 邮件服务：发送欢迎邮件
+3. 通知服务：推送通知
+4. 分析服务：记录事件
+
+**实现示例**:
+```go
+func NewUserRegistrationSaga() saga.SagaDefinition {
+    return &UserRegSagaDefinition{
+        id:   "user-registration",
+        name: "用户注册",
+        steps: []saga.SagaStep{
+            NewCreateUserStep(),        // 创建用户
+            NewSendWelcomeEmailStep(),  // 发送邮件
+            NewPushNotificationStep(),  // 推送通知
+            NewRecordAnalyticsStep(),   // 记录分析
+        },
+        timeout:     15 * time.Minute,
+        retryPolicy: saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
+        strategy:    saga.NewBestEffortCompensationStrategy(30 * time.Second),
+    }
+}
+```
+
+**关键点**:
+- 使用尽力而为补偿策略，因为邮件和通知的失败不应阻止补偿流程
+- 分析步骤失败不应影响整个流程
+- 可以考虑将非关键步骤设为可选
+
+### 设计模式总结
+
+#### 1. 顺序执行模式
+适用于步骤之间有强依赖关系的场景。
+
+```go
+steps := []saga.SagaStep{
+    StepA,  // 必须先完成
+    StepB,  // 依赖 A 的结果
+    StepC,  // 依赖 B 的结果
+}
+```
+
+#### 2. 并行执行模式
+虽然当前 Saga 框架主要支持顺序执行，但可以在单个步骤内并行处理独立任务。
+
+```go
+func (s *ParallelStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    var wg sync.WaitGroup
+    errors := make(chan error, 3)
+    
+    // 并行执行独立任务
+    wg.Add(3)
+    go func() {
+        defer wg.Done()
+        if err := s.taskA(ctx); err != nil {
+            errors <- err
+        }
+    }()
+    go func() {
+        defer wg.Done()
+        if err := s.taskB(ctx); err != nil {
+            errors <- err
+        }
+    }()
+    go func() {
+        defer wg.Done()
+        if err := s.taskC(ctx); err != nil {
+            errors <- err
+        }
+    }()
+    
+    wg.Wait()
+    close(errors)
+    
+    // 检查错误
+    for err := range errors {
+        if err != nil {
+            return nil, err
+        }
+    }
+    
+    return data, nil
+}
+```
+
+#### 3. 条件执行模式
+在步骤中根据条件决定是否执行某些逻辑。
+
+```go
+func (s *ConditionalStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    orderData := data.(*OrderData)
+    
+    // 根据订单金额决定是否需要额外验证
+    if orderData.TotalAmount > 1000 {
+        if err := s.performAdditionalVerification(ctx, orderData); err != nil {
+            return nil, err
+        }
+    }
+    
+    // 继续正常流程
+    return s.processOrder(ctx, orderData)
+}
+```
+
+#### 4. 重试与降级模式
+对于非关键步骤，失败时可以降级处理。
+
+```go
+func (s *NotificationStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    // 尝试发送实时通知
+    err := s.sendRealtimeNotification(ctx, data)
+    if err != nil {
+        // 降级：记录到队列，稍后处理
+        log.Warn("实时通知失败，降级到异步队列", zap.Error(err))
+        if err := s.queueNotificationForLater(ctx, data); err != nil {
+            // 即使队列失败，也不中断 Saga
+            log.Error("队列通知失败", zap.Error(err))
+        }
+    }
+    
+    // 通知步骤失败不应阻止 Saga 继续
+    return data, nil
+}
+```
+
+## 常见问题 (FAQ)
+
+### Q1: Saga 和传统的两阶段提交（2PC）有什么区别？
+
+**A**: 主要区别：
+- **锁定时间**: 2PC 需要在整个事务期间持有锁，而 Saga 不需要
+- **可用性**: 2PC 要求所有参与者同时可用，Saga 允许部分服务暂时不可用
+- **性能**: Saga 通常性能更好，因为不需要全局锁
+- **一致性**: 2PC 提供强一致性，Saga 提供最终一致性
+
+**选择建议**:
+- 需要强一致性且服务数量少 → 使用 2PC
+- 需要高可用性和良好性能 → 使用 Saga
+
+### Q2: 如何处理补偿操作失败的情况？
+
+**A**: 补偿失败的处理策略：
+
+1. **记录日志并继续**（推荐）:
+```go
+func (s *MyStep) Compensate(ctx context.Context, data interface{}) error {
+    if err := s.undoWork(ctx, data); err != nil {
+        // 记录错误但不返回，允许其他步骤继续补偿
+        log.Error("补偿失败", zap.Error(err))
+        // 可选：发送告警
+        alerting.SendAlert("Compensation failed", err)
+    }
+    return nil
+}
+```
+
+2. **使用重试机制**:
+```go
+func (s *MyStep) Compensate(ctx context.Context, data interface{}) error {
+    retryPolicy := saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second)
+    
+    return retryPolicy.Execute(func() error {
+        return s.undoWork(ctx, data)
+    })
+}
+```
+
+3. **人工介入**:
+- 将失败的补偿记录到专门的表或队列
+- 触发人工审核流程
+- 提供管理界面手动重试补偿
+
+### Q3: Saga 的超时时间应该如何设置？
+
+**A**: 超时设置建议：
+
+1. **步骤级超时** = 单个操作的预期时间 × 2-3
+```go
+func (s *MyStep) GetTimeout() time.Duration {
+    return 10 * time.Second  // 如果操作通常需要 3-5 秒
+}
+```
+
+2. **Saga 级超时** = 所有步骤超时之和 × 1.5 + 补偿时间
+```go
+func (d *MySagaDefinition) GetTimeout() time.Duration {
+    // 4个步骤，每个10秒，加上补偿预留
+    return 60 * time.Minute  
+}
+```
+
+3. **考虑因素**:
+- 网络延迟
+- 外部 API 响应时间
+- 数据库操作时间
+- 重试次数和延迟
+
+### Q4: 如何确保 Saga 步骤的幂等性？
+
+**A**: 实现幂等性的常见方法：
+
+1. **使用唯一标识符**:
+```go
+func (s *MyStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    orderData := data.(*OrderData)
+    
+    // 检查是否已执行
+    if exists, err := s.db.CheckExecutionRecord(orderData.OrderID, s.GetID()); err != nil {
+        return nil, err
+    } else if exists {
+        // 已执行，直接返回
+        return s.db.GetExecutionResult(orderData.OrderID, s.GetID())
+    }
+    
+    // 执行操作
+    result, err := s.doWork(ctx, orderData)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 记录执行
+    if err := s.db.SaveExecutionRecord(orderData.OrderID, s.GetID(), result); err != nil {
+        return nil, err
+    }
+    
+    return result, nil
+}
+```
+
+2. **使用数据库约束**:
+```sql
+CREATE TABLE orders (
+    order_id VARCHAR(50) PRIMARY KEY,
+    status VARCHAR(20),
+    created_at TIMESTAMP,
+    UNIQUE KEY uk_order_id (order_id)
+);
+```
+
+3. **使用版本号或时间戳**:
+```go
+func (s *MyStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    return s.db.UpdateWithVersion(
+        orderData.OrderID,
+        orderData.Version,  // 乐观锁
+        updates,
+    )
+}
+```
+
+### Q5: 如何在生产环境中选择状态存储？
+
+**A**: 不同存储的对比：
+
+| 存储类型 | 性能 | 持久性 | 一致性 | 适用场景 |
+|---------|------|--------|--------|----------|
+| 内存 | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐ | 开发/测试 |
+| Redis | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | 高性能生产环境 |
+| PostgreSQL | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 强一致性要求 |
+| MongoDB | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | 大规模数据 |
+
+**推荐配置**:
+
+- **开发环境**: 使用内存存储
+- **测试环境**: 使用 Redis 或轻量级数据库
+- **生产环境（高性能）**: 使用 Redis 集群
+- **生产环境（强一致性）**: 使用关系型数据库（PostgreSQL/MySQL）
+
+### Q6: Saga 执行失败后能否手动重试？
+
+**A**: 可以实现手动重试功能：
+
+```go
+// 查询失败的 Saga
+func GetFailedSagas(coordinator saga.SagaCoordinator) ([]saga.SagaInstance, error) {
+    filter := &saga.SagaFilter{
+        States: []saga.SagaState{
+            saga.StateFailed,
+            saga.StateCompensationFailed,
+        },
+        Limit: 100,
+    }
+    return coordinator.GetActiveSagas(filter)
+}
+
+// 手动重试失败的 Saga
+func RetryFailedSaga(coordinator saga.SagaCoordinator, sagaID string) error {
+    // 获取失败的 Saga 实例
+    instance, err := coordinator.GetSagaInstance(sagaID)
+    if err != nil {
+        return err
+    }
+    
+    // 检查状态
+    if instance.GetState() != saga.StateFailed {
+        return errors.New("saga is not in failed state")
+    }
+    
+    // 重新启动 Saga（从失败的步骤开始）
+    ctx := context.Background()
+    return coordinator.ResumeSaga(ctx, sagaID)
+}
+```
+
+**建议**:
+- 在管理界面提供重试功能
+- 记录重试历史
+- 设置重试次数限制
+- 需要人工审核后才允许重试
+
+### Q7: 如何监控 Saga 的执行状态？
+
+**A**: 多种监控方式：
+
+1. **实时事件订阅**:
+```go
+// 订阅所有 Saga 事件
+filter := &saga.EventTypeFilter{
+    Types: []saga.SagaEventType{
+        saga.EventSagaStarted,
+        saga.EventSagaCompleted,
+        saga.EventSagaFailed,
+    },
+}
+
+handler := &MonitoringEventHandler{
+    metrics: prometheusClient,
+}
+
+subscription, _ := eventPublisher.Subscribe(filter, handler)
+defer eventPublisher.Unsubscribe(subscription)
+```
+
+2. **定期查询指标**:
+```go
+func MonitorSagaHealth(coordinator saga.SagaCoordinator) {
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        metrics := coordinator.GetMetrics()
+        
+        // 发送到监控系统
+        prometheus.RecordGauge("saga_active_count", float64(metrics.ActiveSagas))
+        prometheus.RecordGauge("saga_failed_count", float64(metrics.FailedSagas))
+        prometheus.RecordHistogram("saga_duration", metrics.AverageSagaDuration.Seconds())
+        
+        // 告警检查
+        if metrics.FailedSagas > threshold {
+            alerting.SendAlert("High saga failure rate", metrics)
+        }
+    }
+}
+```
+
+3. **集成分布式追踪**:
+```go
+func (s *MyStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    // OpenTelemetry 集成
+    span := trace.SpanFromContext(ctx)
+    span.SetAttributes(
+        attribute.String("saga.step.id", s.GetID()),
+        attribute.String("saga.step.name", s.GetName()),
+    )
+    defer span.End()
+    
+    // 执行业务逻辑
+    result, err := s.doWork(ctx, data)
+    if err != nil {
+        span.RecordError(err)
+        return nil, err
+    }
+    
+    return result, nil
+}
+```
+
+### Q8: 如何处理长时间运行的 Saga？
+
+**A**: 长时间运行 Saga 的处理策略：
+
+1. **分段提交**:
+```go
+// 将长流程分解为多个小步骤
+func NewLongRunningSaga() saga.SagaDefinition {
+    return &LongSagaDefinition{
+        steps: []saga.SagaStep{
+            // 每个步骤完成一个小任务
+            NewProcessChunk1Step(),
+            NewProcessChunk2Step(),
+            NewProcessChunk3Step(),
+            // ...
+        },
+        timeout: 2 * time.Hour,  // 整体超时较长
+    }
+}
+
+func (s *ProcessChunkStep) GetTimeout() time.Duration {
+    return 5 * time.Minute  // 但单步超时较短
+}
+```
+
+2. **使用检查点**:
+```go
+func (s *LongRunningStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    jobData := data.(*JobData)
+    
+    // 从上次的检查点继续
+    startFrom := jobData.LastCheckpoint
+    
+    for i := startFrom; i < jobData.TotalItems; i++ {
+        // 处理单个项目
+        if err := s.processItem(ctx, jobData.Items[i]); err != nil {
+            return nil, err
+        }
+        
+        // 定期保存检查点
+        if i%100 == 0 {
+            jobData.LastCheckpoint = i
+            if err := s.saveCheckpoint(ctx, jobData); err != nil {
+                log.Error("保存检查点失败", zap.Error(err))
+            }
+        }
+    }
+    
+    return jobData, nil
+}
+```
+
+3. **异步处理**:
+```go
+// 主 Saga 快速返回，后台继续处理
+func (s *AsyncStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    jobData := data.(*JobData)
+    
+    // 启动异步任务
+    jobID := s.startAsyncJob(ctx, jobData)
+    jobData.AsyncJobID = jobID
+    
+    // 立即返回，让 Saga 继续
+    return jobData, nil
+}
+
+// 另一个步骤等待异步任务完成
+func (s *WaitAsyncStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    jobData := data.(*JobData)
+    
+    // 轮询检查任务状态
+    return s.waitForJobCompletion(ctx, jobData.AsyncJobID)
+}
+```
+
+### Q9: 可以在 Saga 中调用另一个 Saga 吗？
+
+**A**: 可以，这称为"Saga 嵌套"或"子 Saga"：
+
+```go
+func (s *ParentStep) Execute(ctx context.Context, data interface{}) (interface{}, error) {
+    parentData := data.(*ParentData)
+    
+    // 定义子 Saga
+    childDefinition := NewChildSagaDefinition()
+    childData := &ChildData{
+        ParentID: parentData.ID,
+        // ... 其他数据
+    }
+    
+    // 启动子 Saga
+    childInstance, err := s.coordinator.StartSaga(ctx, childDefinition, childData)
+    if err != nil {
+        return nil, fmt.Errorf("启动子 Saga 失败: %w", err)
+    }
+    
+    // 等待子 Saga 完成
+    if err := s.waitForChildSaga(ctx, childInstance.GetID()); err != nil {
+        return nil, err
+    }
+    
+    // 获取子 Saga 的结果
+    finalInstance, err := s.coordinator.GetSagaInstance(childInstance.GetID())
+    if err != nil {
+        return nil, err
+    }
+    
+    if finalInstance.GetState() != saga.StateCompleted {
+        return nil, errors.New("子 Saga 执行失败")
+    }
+    
+    // 使用子 Saga 的结果
+    parentData.ChildResult = finalInstance.GetResult()
+    return parentData, nil
+}
+```
+
+**注意事项**:
+- 父 Saga 的补偿需要考虑子 Saga 的状态
+- 超时时间需要累加
+- 监控和追踪会更复杂
+
+### Q10: 如何测试 Saga 实现？
+
+**A**: 测试策略：
+
+1. **单步测试**:
+```go
+func TestCreateOrderStep_Execute(t *testing.T) {
+    step := NewCreateOrderStep()
+    
+    tests := []struct {
+        name    string
+        input   *OrderData
+        wantErr bool
+    }{
+        {
+            name: "成功创建订单",
+            input: &OrderData{
+                OrderID:    "TEST-001",
+                CustomerID: "CUST-001",
+                Items:      []OrderItem{{ProductID: "PROD-001", Quantity: 1}},
+            },
+            wantErr: false,
+        },
+        {
+            name: "无效订单数据",
+            input: &OrderData{
+                OrderID: "",  // 无效的订单ID
+            },
+            wantErr: true,
+        },
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            ctx := context.Background()
+            result, err := step.Execute(ctx, tt.input)
+            
+            if tt.wantErr {
+                assert.Error(t, err)
+            } else {
+                assert.NoError(t, err)
+                assert.NotNil(t, result)
+            }
+        })
+    }
+}
+```
+
+2. **集成测试**:
+```go
+func TestOrderSaga_SuccessFlow(t *testing.T) {
+    // 设置测试环境
+    coordinator, cleanup := setupTestCoordinator(t)
+    defer cleanup()
+    
+    // 创建 Saga 定义
+    definition := NewOrderProcessingSaga(false)
+    
+    // 准备测试数据
+    testData := &OrderData{
+        OrderID:    "TEST-ORDER-001",
+        CustomerID: "TEST-CUST-001",
+        Items:      []OrderItem{{ProductID: "PROD-001", Quantity: 1, Price: 100}},
+        TotalAmount: 100,
+    }
+    
+    // 启动 Saga
+    ctx := context.Background()
+    instance, err := coordinator.StartSaga(ctx, definition, testData)
+    require.NoError(t, err)
+    
+    // 等待完成
+    err = waitForSagaCompletion(t, coordinator, instance.GetID(), 30*time.Second)
+    require.NoError(t, err)
+    
+    // 验证最终状态
+    finalInstance, err := coordinator.GetSagaInstance(instance.GetID())
+    require.NoError(t, err)
+    assert.Equal(t, saga.StateCompleted, finalInstance.GetState())
+    
+    // 验证结果
+    result := finalInstance.GetResult().(*OrderData)
+    assert.Equal(t, "CONFIRMED", result.Status)
+}
+```
+
+3. **补偿测试**:
+```go
+func TestOrderSaga_CompensationFlow(t *testing.T) {
+    coordinator, cleanup := setupTestCoordinator(t)
+    defer cleanup()
+    
+    // 创建会失败的 Saga（模拟支付失败）
+    definition := NewOrderProcessingSaga(true)
+    
+    testData := &OrderData{
+        OrderID:    "TEST-ORDER-002",
+        CustomerID: "TEST-CUST-002",
+        Items:      []OrderItem{{ProductID: "PROD-001", Quantity: 1, Price: 100}},
+        TotalAmount: 100,
+    }
+    
+    ctx := context.Background()
+    instance, err := coordinator.StartSaga(ctx, definition, testData)
+    require.NoError(t, err)
+    
+    // 等待补偿完成
+    err = waitForSagaCompletion(t, coordinator, instance.GetID(), 30*time.Second)
+    require.NoError(t, err)
+    
+    // 验证补偿状态
+    finalInstance, err := coordinator.GetSagaInstance(instance.GetID())
+    require.NoError(t, err)
+    assert.Equal(t, saga.StateCompensated, finalInstance.GetState())
+    
+    // 验证补偿效果
+    result := finalInstance.GetResult().(*OrderData)
+    assert.Equal(t, "CANCELLED", result.Status)
+    assert.False(t, result.InventoryReserved)
+    assert.False(t, result.PaymentProcessed)
+}
+```
+
 ## 参考资料
 
-- [完整示例代码](../examples/saga-orchestrator/)
-- [API 文档](./generated/saga.md)
-- [架构设计](../specs/saga-distributed-transactions/README.md)
-- [使用场景](../specs/saga-distributed-transactions/use-cases.md)
+- [完整示例代码](../examples/saga-orchestrator/) - 查看可运行的完整示例
+- [Saga API 参考文档](./saga-api-reference.md) - 详细的 API 文档
+- [Saga 监控指南](./saga-monitoring-guide.md) - 生产环境监控和告警
+- [Saga 安全指南](./saga-security-guide.md) - 安全最佳实践
+- [Saga DSL 参考](./saga-dsl-reference.md) - 使用 DSL 定义 Saga
+- [架构设计](../specs/saga-distributed-transactions/README.md) - 深入了解架构设计
+- [实现计划](../specs/saga-distributed-transactions/implementation-plan.md) - 了解实现细节
 
