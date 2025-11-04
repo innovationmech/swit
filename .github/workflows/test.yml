@@ -85,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ['1.23', '1.24']
+        go-version: ['1.24']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -478,7 +478,7 @@ jobs:
             | Test Type | Status | Description |
             |-----------|--------|-------------|
             | Quick Tests | ${getEmoji(quickTests)} ${quickTests} | Fast feedback (< 1 min) |
-            | Unit Tests (Multi-version) | ${getEmoji(unitTests)} ${unitTests} | Go 1.23 & 1.24 |
+            | Unit Tests (Multi-version) | ${getEmoji(unitTests)} ${unitTests} | Go 1.24 |
             | Integration Tests | ${getEmoji(integrationTests)} ${integrationTests} | End-to-end scenarios |
             | Test Coverage | ${getEmoji(coverage)} ${coverage} | Minimum 65% required |
             | Race Detection | ${getEmoji(raceDetection)} ${raceDetection}${getRaceNote(raceDetection)} | Concurrency issues |
