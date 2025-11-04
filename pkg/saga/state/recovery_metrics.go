@@ -286,16 +286,21 @@ func (rm *RecoveryMetrics) RecordRecoverySuccess(strategy, sagaType string, dura
 	rm.mu.Lock()
 	rm.successfulRecoveries++
 	rm.recordDuration(duration)
+	
+	// Calculate success rate while holding the lock
+	var successRate float64
+	total := float64(rm.totalAttempts)
+	if total > 0 {
+		successRate = float64(rm.successfulRecoveries) / total
+	}
 	rm.mu.Unlock()
 
 	if rm.prometheus != nil {
 		rm.prometheus.recoverySuccessTotal.WithLabelValues(strategy, sagaType).Inc()
 		rm.prometheus.recoveryDuration.WithLabelValues(strategy, sagaType).Observe(duration.Seconds())
 
-		// Calculate and record success rate
-		total := float64(rm.totalAttempts)
+		// Record success rate
 		if total > 0 {
-			successRate := float64(rm.successfulRecoveries) / total
 			rm.prometheus.recoverySuccessRate.Observe(successRate)
 		}
 	}
@@ -306,16 +311,21 @@ func (rm *RecoveryMetrics) RecordRecoveryFailure(strategy, sagaType, errorType s
 	rm.mu.Lock()
 	rm.failedRecoveries++
 	rm.recordDuration(duration)
+	
+	// Calculate success rate while holding the lock
+	var successRate float64
+	total := float64(rm.totalAttempts)
+	if total > 0 {
+		successRate = float64(rm.successfulRecoveries) / total
+	}
 	rm.mu.Unlock()
 
 	if rm.prometheus != nil {
 		rm.prometheus.recoveryFailureTotal.WithLabelValues(strategy, sagaType, errorType).Inc()
 		rm.prometheus.recoveryDuration.WithLabelValues(strategy, sagaType).Observe(duration.Seconds())
 
-		// Calculate and record success rate
-		total := float64(rm.totalAttempts)
+		// Record success rate
 		if total > 0 {
-			successRate := float64(rm.successfulRecoveries) / total
 			rm.prometheus.recoverySuccessRate.Observe(successRate)
 		}
 	}

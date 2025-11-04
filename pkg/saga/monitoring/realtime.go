@@ -318,8 +318,11 @@ func (rp *RealtimePusher) broadcast(update *MetricsUpdate) {
 
 // generateClientID generates a unique ID for a client.
 func (rp *RealtimePusher) generateClientID() string {
+	rp.mu.Lock()
 	rp.nextID++
-	return fmt.Sprintf("client-%d-%d", time.Now().Unix(), rp.nextID)
+	id := rp.nextID
+	rp.mu.Unlock()
+	return fmt.Sprintf("client-%d-%d", time.Now().Unix(), id)
 }
 
 // GetConnectedClientsCount returns the number of currently connected SSE clients.

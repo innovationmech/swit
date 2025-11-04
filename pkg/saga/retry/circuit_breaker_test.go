@@ -232,6 +232,7 @@ func TestCircuitBreaker_GetMetrics(t *testing.T) {
 }
 
 func TestCircuitBreaker_OnStateChange(t *testing.T) {
+	var mu sync.Mutex
 	var stateChanges []CircuitState
 
 	config := &CircuitBreakerConfig{
@@ -240,7 +241,9 @@ func TestCircuitBreaker_OnStateChange(t *testing.T) {
 		HalfOpenMaxRequests: 2,
 		SuccessThreshold:    2,
 		OnStateChange: func(from, to CircuitState) {
+			mu.Lock()
 			stateChanges = append(stateChanges, to)
+			mu.Unlock()
 		},
 	}
 
@@ -256,6 +259,9 @@ func TestCircuitBreaker_OnStateChange(t *testing.T) {
 	// Wait for callback to be called
 	time.Sleep(10 * time.Millisecond)
 
+	mu.Lock()
+	defer mu.Unlock()
+	
 	if len(stateChanges) < 1 {
 		t.Error("expected state change callback to be called")
 	}
