@@ -77,9 +77,9 @@ func TestAlertingManager_AddHandler(t *testing.T) {
 	config := DefaultAlertingConfig()
 	manager := NewAlertingManager(config, nil, nil)
 
-	handlerCalled := false
+	handlerCalled := make(chan bool, 1)
 	handler := func(alert *Alert) error {
-		handlerCalled = true
+		handlerCalled <- true
 		return nil
 	}
 
@@ -101,10 +101,11 @@ func TestAlertingManager_AddHandler(t *testing.T) {
 
 	manager.TriggerAlert(alert)
 
-	// Give goroutine time to execute
-	time.Sleep(100 * time.Millisecond)
-
-	if !handlerCalled {
+	// Wait for handler to be called with timeout
+	select {
+	case <-handlerCalled:
+		// Handler was called successfully
+	case <-time.After(200 * time.Millisecond):
 		t.Error("Expected handler to be called")
 	}
 }

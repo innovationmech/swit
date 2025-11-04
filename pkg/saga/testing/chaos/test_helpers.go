@@ -24,6 +24,7 @@ package chaos
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/saga"
@@ -181,11 +182,11 @@ func (m *mockStep) Compensate(ctx context.Context, data interface{}) error {
 
 // mockEventPublisher implements saga.EventPublisher for testing.
 type mockEventPublisher struct {
-	publishCount int
+	publishCount int64
 }
 
 func (m *mockEventPublisher) PublishEvent(ctx context.Context, event *saga.SagaEvent) error {
-	m.publishCount++
+	atomic.AddInt64(&m.publishCount, 1)
 	return nil
 }
 

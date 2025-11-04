@@ -24,6 +24,7 @@ package coordinator
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/innovationmech/swit/pkg/saga"
 )
@@ -73,6 +74,7 @@ type ModeSelectionRule interface {
 // It evaluates rules in priority order and selects the mode recommended by
 // the first matching rule.
 type SmartModeSelector struct {
+	mu          sync.RWMutex
 	rules       []ModeSelectionRule
 	lastReason  string
 	defaultMode CoordinationMode
@@ -94,13 +96,18 @@ func NewSmartModeSelector(rules []ModeSelectionRule, defaultMode CoordinationMod
 
 // SelectMode selects the coordination mode by evaluating rules in priority order.
 func (s *SmartModeSelector) SelectMode(def saga.SagaDefinition) CoordinationMode {
+	s.mu.Lock()
 	// Sort rules by priority on first use
 	if !s.sortedOnce {
 		s.sortRulesByPriority()
 		s.sortedOnce = true
 	}
+	s.mu.Unlock()
 
-	// Evaluate rules in priority order
+	// Evaluate rules in priority order (use read lock)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	for _, rule := range s.rules {
 		if rule.Matches(def) {
 			s.lastReason = rule.GetReason()
@@ -115,6 +122,8 @@ func (s *SmartModeSelector) SelectMode(def saga.SagaDefinition) CoordinationMode
 
 // GetReason returns the explanation for the last mode selection.
 func (s *SmartModeSelector) GetReason() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.lastReason
 }
 
@@ -128,12 +137,16 @@ func (s *SmartModeSelector) sortRulesByPriority() {
 // AddRule adds a new rule to the selector.
 // The rules will be re-sorted on the next SelectMode call.
 func (s *SmartModeSelector) AddRule(rule ModeSelectionRule) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.rules = append(s.rules, rule)
 	s.sortedOnce = false
 }
 
 // RemoveRule removes a rule by comparing with the given rule.
 func (s *SmartModeSelector) RemoveRule(rule ModeSelectionRule) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, r := range s.rules {
 		if r == rule {
 			s.rules = append(s.rules[:i], s.rules[i+1:]...)
@@ -145,6 +158,8 @@ func (s *SmartModeSelector) RemoveRule(rule ModeSelectionRule) bool {
 
 // GetRules returns a copy of the current rules.
 func (s *SmartModeSelector) GetRules() []ModeSelectionRule {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	rulesCopy := make([]ModeSelectionRule, len(s.rules))
 	copy(rulesCopy, s.rules)
 	return rulesCopy
