@@ -23,6 +23,7 @@ package retry
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
