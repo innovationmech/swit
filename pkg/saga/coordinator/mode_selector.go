@@ -107,7 +107,7 @@ func (s *SmartModeSelector) SelectMode(def saga.SagaDefinition) CoordinationMode
 	// Evaluate rules in priority order (use read lock)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	for _, rule := range s.rules {
 		if rule.Matches(def) {
 			s.lastReason = rule.GetReason()

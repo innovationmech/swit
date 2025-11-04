@@ -262,7 +262,7 @@ func TestCircuitBreaker_OnStateChange(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	
+
 	if len(stateChanges) < 1 {
 		t.Error("expected state change callback to be called")
 	}

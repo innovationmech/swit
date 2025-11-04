@@ -286,7 +286,7 @@ func (rm *RecoveryMetrics) RecordRecoverySuccess(strategy, sagaType string, dura
 	rm.mu.Lock()
 	rm.successfulRecoveries++
 	rm.recordDuration(duration)
-	
+
 	// Calculate success rate while holding the lock
 	var successRate float64
 	total := float64(rm.totalAttempts)
@@ -311,7 +311,7 @@ func (rm *RecoveryMetrics) RecordRecoveryFailure(strategy, sagaType, errorType s
 	rm.mu.Lock()
 	rm.failedRecoveries++
 	rm.recordDuration(duration)
-	
+
 	// Calculate success rate while holding the lock
 	var successRate float64
 	total := float64(rm.totalAttempts)
