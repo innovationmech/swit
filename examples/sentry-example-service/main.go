@@ -75,8 +75,8 @@ func NewExampleHTTPHandler() *ExampleHTTPHandler {
 func (h *ExampleHTTPHandler) RegisterRoutes(router interface{}) error {
 	ginRouter := router.(*gin.Engine)
 
-	// Health check endpoint (typically ignored by Sentry)
-	ginRouter.GET("/health", h.handleHealth)
+	// Note: /health endpoint is automatically registered by the framework's ObservabilityManager
+	// No need to register it here to avoid duplicate registration
 
 	// API endpoints that demonstrate Sentry integration
 	v1 := ginRouter.Group("/api/v1")
@@ -94,14 +94,6 @@ func (h *ExampleHTTPHandler) RegisterRoutes(router interface{}) error {
 // GetServiceName returns the service name
 func (h *ExampleHTTPHandler) GetServiceName() string {
 	return "sentry-example-service"
-}
-
-// handleHealth returns a health check response
-func (h *ExampleHTTPHandler) handleHealth(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"status": "healthy",
-		"time":   time.Now().UTC(),
-	})
 }
 
 // handleSuccess demonstrates a successful response (not captured by Sentry)
