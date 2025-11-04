@@ -62,17 +62,18 @@ func TestRabbitConsumerRetryRepublish(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Enqueue a delivery
-	mc := mconn.channels[0].(*mockChannel)
+	channels := mconn.getChannels()
+	mc := channels[0].(*mockChannel)
 	mc.enqueueDelivery(amqp.Delivery{Body: []byte("x"), DeliveryTag: 1, MessageId: "id-1"})
 
 	// Give time to process
 	time.Sleep(50 * time.Millisecond)
 
 	// Inspect publish calls: should have published to orders.retry
-	mc2 := mconn.channels[0].(*mockChannel)
-	require.NotEmpty(t, mc2.publishCalls)
+	channels2 := mconn.getChannels()
+	mc2 := channels2[0].(*mockChannel)
 	last := mc2.lastPublish()
-	require.NotNil(t, last)
+	require.NotNil(t, last, "expected at least one publish call")
 	require.Equal(t, "orders.retry", last.routingKey)
 }
 
@@ -99,7 +100,8 @@ func TestRabbitConsumerDeadLetterRepublish(t *testing.T) {
 	go func() { _ = rsub.Subscribe(context.Background(), h) }()
 	time.Sleep(50 * time.Millisecond)
 
-	mc := mconn.channels[0].(*mockChannel)
+	channels := mconn.getChannels()
+	mc := channels[0].(*mockChannel)
 	// First failure -> retry
 	mc.enqueueDelivery(amqp.Delivery{Body: []byte("x"), DeliveryTag: 1, MessageId: "id-1"})
 	time.Sleep(30 * time.Millisecond)

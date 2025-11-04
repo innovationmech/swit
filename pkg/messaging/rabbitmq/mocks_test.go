@@ -70,6 +70,15 @@ func (m *mockConnection) enqueueChannel(channel amqpChannel) {
 	m.mu.Unlock()
 }
 
+func (m *mockConnection) getChannels() []amqpChannel {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Return a copy to avoid race conditions
+	result := make([]amqpChannel, len(m.channels))
+	copy(result, m.channels)
+	return result
+}
+
 func (m *mockConnection) Close() error {
 	m.mu.Lock()
 	if m.closed {

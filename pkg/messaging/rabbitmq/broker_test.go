@@ -145,8 +145,9 @@ func TestRabbitBrokerSetupTopologyOnConnect(t *testing.T) {
 	require.True(t, broker.IsConnected())
 
 	// Inspect the first created channel during topology setup
-	require.GreaterOrEqual(t, len(mconn.channels), 1)
-	mc, ok := mconn.channels[0].(*mockChannel)
+	channels := mconn.getChannels()
+	require.GreaterOrEqual(t, len(channels), 1)
+	mc, ok := channels[0].(*mockChannel)
 	require.True(t, ok)
 
 	// At least one exchange and one queue declared and one bind performed
