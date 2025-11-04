@@ -1,6 +1,6 @@
 module github.com/innovationmech/swit/examples/symmetric_transport
 
-go 1.23.12
+go 1.24.8
 
 // Use the local swit module
 replace github.com/innovationmech/swit => ../../
