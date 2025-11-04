@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	notificationServiceV1 "github.com/innovationmech/swit/internal/switserve/service/notification/v1"
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/tracing"
 )
 
@@ -52,6 +53,9 @@ func TestTracingDemonstrationScenarios(t *testing.T) {
 }
 
 func setupTracingDemonstration(t *testing.T) *TracingDemonstrationTestSuite {
+	// Initialize logger to prevent nil pointer dereference
+	logger.InitLogger()
+
 	// Initialize basic tracing manager (simplified for demo)
 	tracingManager := tracing.NewTracingManager()
 
