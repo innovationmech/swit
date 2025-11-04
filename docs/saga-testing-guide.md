@@ -1038,7 +1038,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version: '1.24'
       
       - name: Run Unit Tests
         run: go test -v -coverprofile=coverage.out ./pkg/saga/...
@@ -1054,7 +1054,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version: '1.24'
       
       - name: Run Integration Tests
         run: go test -v -tags=integration ./pkg/saga/integration/...
@@ -1065,7 +1065,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: '1.23'
+          go-version: '1.24'
       
       - name: Run Benchmark Tests
         run: go test -bench=. -benchmem ./pkg/saga/testing/benchmarks/...

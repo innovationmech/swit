@@ -12,8 +12,8 @@ on:
   # 注意：不要忽略文档改动，否则必需的状态检查不会产生，PR 无法合并
 
 env:
-  GO_VERSION: '1.23'
-  GO_VERSION_MATRIX: '["1.23", "1.24"]'
+  GO_VERSION: '1.24'
+  GO_VERSION_MATRIX: '["1.24"]'
 
 # Set minimal permissions for GITHUB_TOKEN
 permissions:

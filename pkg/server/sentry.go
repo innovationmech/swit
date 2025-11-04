@@ -259,7 +259,7 @@ func (sm *SentryManager) createBeforeSendHook() sentry.EventProcessor {
 		// Filter out ignored errors
 		if event.Exception != nil && len(event.Exception) > 0 {
 			for _, ex := range event.Exception {
-				if ex.Value != "" && !sm.ShouldCaptureError(fmt.Errorf(ex.Value)) {
+				if ex.Value != "" && !sm.ShouldCaptureError(fmt.Errorf("%s", ex.Value)) {
 					return nil
 				}
 			}

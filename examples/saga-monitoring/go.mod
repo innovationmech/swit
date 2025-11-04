@@ -1,6 +1,6 @@
 module github.com/innovationmech/swit/examples/saga-monitoring
 
-go 1.23.12
+go 1.24.8
 
 replace github.com/innovationmech/swit => ../..
 
