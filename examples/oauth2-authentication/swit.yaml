@@ -1,0 +1,121 @@
+# OAuth2 Authentication Example Service Configuration
+
+service_name: "oauth2-authentication-example"
+shutdown_timeout: "30s"
+
+# HTTP Configuration
+http:
+  enabled: true
+  port: "8080"
+  enable_ready: true
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+
+# gRPC Configuration (disabled for this example)
+grpc:
+  enabled: false
+
+# OAuth2/OIDC Configuration
+oauth2:
+  enabled: true
+  
+  # Provider: keycloak, auth0, google, github, or custom
+  provider: "keycloak"
+  
+  # OAuth2 Client Credentials
+  # For Keycloak: Create a client in your realm with the following settings:
+  # - Client ID: swit-example
+  # - Client Protocol: openid-connect
+  # - Access Type: confidential
+  # - Valid Redirect URIs: http://localhost:8080/api/v1/public/callback
+  # - Web Origins: http://localhost:8080
+  client_id: "swit-example"
+  client_secret: "your-client-secret-here"  # Replace with your actual client secret
+  
+  # Redirect URL for OAuth2 callback
+  redirect_url: "http://localhost:8080/api/v1/public/callback"
+  
+  # OAuth2 Scopes
+  scopes:
+    - "openid"
+    - "profile"
+    - "email"
+  
+  # OIDC Discovery
+  # For Keycloak: http://localhost:8081/realms/{realm-name}
+  # For Auth0: https://{tenant}.auth0.com
+  issuer_url: "http://localhost:8081/realms/swit"
+  use_discovery: true
+  
+  # Manual Endpoint Configuration (used when use_discovery is false)
+  # auth_url: "http://localhost:8081/realms/swit/protocol/openid-connect/auth"
+  # token_url: "http://localhost:8081/realms/swit/protocol/openid-connect/token"
+  # jwks_url: "http://localhost:8081/realms/swit/protocol/openid-connect/certs"
+  # user_info_url: "http://localhost:8081/realms/swit/protocol/openid-connect/userinfo"
+  
+  # HTTP Timeout
+  http_timeout: "30s"
+  
+  # JWT Token Validation Configuration
+  jwt:
+    signing_method: "RS256"
+    clock_skew: "30s"
+    audience: "swit-example"
+    issuer: "http://localhost:8081/realms/swit"
+  
+  # Token Cache Configuration (optional)
+  cache:
+    enabled: true
+    type: "memory"
+    ttl: "5m"
+    max_entries: 1000
+    cleanup_interval: "10m"
+  
+  # TLS Configuration (optional)
+  tls:
+    enabled: false
+    # cert_file: "/path/to/cert.pem"
+    # key_file: "/path/to/key.pem"
+    # ca_file: "/path/to/ca.pem"
+    # min_version: "TLS1.2"
+
+# Middleware Configuration
+middleware:
+  enable_cors: true
+  enable_logging: true
+  enable_recovery: true
+  
+  # CORS Configuration
+  cors:
+    allow_origins:
+      - "http://localhost:8080"
+      - "http://localhost:3000"
+    allow_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allow_headers:
+      - "Authorization"
+      - "Content-Type"
+    expose_headers:
+      - "Content-Length"
+    allow_credentials: true
+    max_age: "12h"
+
+# Service Discovery (disabled for this example)
+discovery:
+  enabled: false
+
+# Prometheus Metrics (optional)
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "swit"
+  subsystem: "oauth2_example"
+  labels:
+    service: "oauth2-authentication-example"
+    version: "v1"
+
