@@ -162,10 +162,10 @@ func (h *OAuth2HTTPHandler) handleLogin(c *gin.Context) {
 	authURL := h.oauth2Client.AuthCodeURLWithFlow(flowState)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":          "Redirect to this URL to authenticate",
+		"message":           "Redirect to this URL to authenticate",
 		"authorization_url": authURL,
-		"state":            flowState.State,
-		"hint":             "Open the authorization_url in your browser",
+		"state":             flowState.State,
+		"hint":              "Open the authorization_url in your browser",
 	})
 }
 
@@ -241,13 +241,13 @@ func (h *OAuth2HTTPHandler) handleCallback(c *gin.Context) {
 	// 3. Redirect to the application
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":       "Authentication successful",
-		"access_token":  token.AccessToken,
-		"token_type":    token.TokenType,
-		"expires_in":    int(time.Until(token.Expiry).Seconds()),
-		"refresh_token": token.RefreshToken,
+		"message":         "Authentication successful",
+		"access_token":    token.AccessToken,
+		"token_type":      token.TokenType,
+		"expires_in":      int(time.Until(token.Expiry).Seconds()),
+		"refresh_token":   token.RefreshToken,
 		"id_token_claims": idTokenClaims,
-		"hint":          "Use the access_token in the Authorization header for protected endpoints",
+		"hint":            "Use the access_token in the Authorization header for protected endpoints",
 	})
 }
 
@@ -630,4 +630,3 @@ func getBoolEnv(key string, defaultValue bool) bool {
 	}
 	return defaultValue
 }
-

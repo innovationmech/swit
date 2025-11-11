@@ -81,25 +81,25 @@ func NewMockOIDCServer() (*MockOIDCServer, error) {
 
 	// Create HTTP server
 	mux := http.NewServeMux()
-	
+
 	// OIDC discovery endpoint
 	mux.HandleFunc("/.well-known/openid-configuration", mock.handleDiscovery)
-	
+
 	// JWKS endpoint
 	mux.HandleFunc("/jwks", mock.handleJWKS)
-	
+
 	// Authorization endpoint
 	mux.HandleFunc("/authorize", mock.handleAuthorize)
-	
+
 	// Token endpoint
 	mux.HandleFunc("/token", mock.handleToken)
-	
+
 	// UserInfo endpoint
 	mux.HandleFunc("/userinfo", mock.handleUserInfo)
-	
+
 	// Token introspection endpoint
 	mux.HandleFunc("/introspect", mock.handleIntrospect)
-	
+
 	// Token revocation endpoint
 	mux.HandleFunc("/revoke", mock.handleRevoke)
 
@@ -132,17 +132,17 @@ func (m *MockOIDCServer) GetClientSecret() string {
 // handleDiscovery handles OIDC discovery requests.
 func (m *MockOIDCServer) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	discovery := map[string]interface{}{
-		"issuer":                 m.issuer,
-		"authorization_endpoint": m.issuer + "/authorize",
-		"token_endpoint":         m.issuer + "/token",
-		"userinfo_endpoint":      m.issuer + "/userinfo",
-		"jwks_uri":               m.issuer + "/jwks",
-		"introspection_endpoint": m.issuer + "/introspect",
-		"revocation_endpoint":    m.issuer + "/revoke",
-		"scopes_supported":       []string{"openid", "profile", "email"},
-		"response_types_supported": []string{"code", "token", "id_token", "code id_token"},
-		"grant_types_supported":    []string{"authorization_code", "refresh_token"},
-		"subject_types_supported":  []string{"public"},
+		"issuer":                                m.issuer,
+		"authorization_endpoint":                m.issuer + "/authorize",
+		"token_endpoint":                        m.issuer + "/token",
+		"userinfo_endpoint":                     m.issuer + "/userinfo",
+		"jwks_uri":                              m.issuer + "/jwks",
+		"introspection_endpoint":                m.issuer + "/introspect",
+		"revocation_endpoint":                   m.issuer + "/revoke",
+		"scopes_supported":                      []string{"openid", "profile", "email"},
+		"response_types_supported":              []string{"code", "token", "id_token", "code id_token"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
+		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 	}
 
@@ -173,17 +173,17 @@ func (m *MockOIDCServer) handleJWKS(w http.ResponseWriter, r *http.Request) {
 // handleAuthorize handles authorization requests.
 func (m *MockOIDCServer) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	
+
 	clientID := query.Get("client_id")
 	redirectURI := query.Get("redirect_uri")
 	state := query.Get("state")
 	scopes := strings.Split(query.Get("scope"), " ")
-	
+
 	if clientID != m.clientID {
 		http.Error(w, "invalid client_id", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Generate authorization code
 	code, _ := generateRandomString(32)
 	m.mu.Lock()
@@ -196,7 +196,7 @@ func (m *MockOIDCServer) handleAuthorize(w http.ResponseWriter, r *http.Request)
 		Used:        false,
 	}
 	m.mu.Unlock()
-	
+
 	// Redirect back with code and state
 	redirectURL, _ := url.Parse(redirectURI)
 	q := redirectURL.Query()
@@ -205,7 +205,7 @@ func (m *MockOIDCServer) handleAuthorize(w http.ResponseWriter, r *http.Request)
 		q.Set("state", state)
 	}
 	redirectURL.RawQuery = q.Encode()
-	
+
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 
@@ -215,17 +215,40 @@ func (m *MockOIDCServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	grantType := r.Form.Get("grant_type")
-	clientID := r.Form.Get("client_id")
-	clientSecret := r.Form.Get("client_secret")
-	
+
+	// Extract client credentials from Authorization header (HTTP Basic Auth) or form parameters
+	// OAuth2 spec (RFC 6749 Section 2.3.1) recommends HTTP Basic Auth for confidential clients
+	var clientID, clientSecret string
+
+	// Try HTTP Basic Auth first (standard method used by golang.org/x/oauth2)
+	if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Basic ") {
+		// Decode Basic auth credentials
+		basicAuth := strings.TrimPrefix(authHeader, "Basic ")
+		decoded, err := base64.StdEncoding.DecodeString(basicAuth)
+		if err == nil {
+			// Split username:password
+			parts := strings.SplitN(string(decoded), ":", 2)
+			if len(parts) == 2 {
+				clientID = parts[0]
+				clientSecret = parts[1]
+			}
+		}
+	}
+
+	// Fall back to form parameters if Basic Auth not present
+	if clientID == "" {
+		clientID = r.Form.Get("client_id")
+		clientSecret = r.Form.Get("client_secret")
+	}
+
 	// Validate client credentials
 	if clientID != m.clientID || clientSecret != m.clientSecret {
 		http.Error(w, "invalid client credentials", http.StatusUnauthorized)
 		return
 	}
-	
+
 	switch grantType {
 	case "authorization_code":
 		m.handleAuthorizationCodeGrant(w, r)
@@ -240,26 +263,26 @@ func (m *MockOIDCServer) handleToken(w http.ResponseWriter, r *http.Request) {
 func (m *MockOIDCServer) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request) {
 	code := r.Form.Get("code")
 	redirectURI := r.Form.Get("redirect_uri")
-	
+
 	m.mu.Lock()
 	authCode, exists := m.authCodes[code]
 	m.mu.Unlock()
-	
+
 	if !exists || authCode.Used || time.Now().After(authCode.ExpiresAt) {
 		http.Error(w, "invalid or expired authorization code", http.StatusBadRequest)
 		return
 	}
-	
+
 	if authCode.RedirectURI != redirectURI {
 		http.Error(w, "redirect_uri mismatch", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Mark code as used
 	m.mu.Lock()
 	authCode.Used = true
 	m.mu.Unlock()
-	
+
 	// Generate tokens with timestamp for uniqueness
 	baseAccessToken, _ := generateRandomString(24)
 	baseRefreshToken, _ := generateRandomString(24)
@@ -267,7 +290,7 @@ func (m *MockOIDCServer) handleAuthorizationCodeGrant(w http.ResponseWriter, r *
 	accessToken := baseAccessToken + timestamp
 	refreshToken := baseRefreshToken + timestamp
 	idToken := m.generateIDToken("test-user", authCode.Scopes)
-	
+
 	// Store tokens
 	m.mu.Lock()
 	m.tokens[accessToken] = &mockToken{
@@ -285,7 +308,7 @@ func (m *MockOIDCServer) handleAuthorizationCodeGrant(w http.ResponseWriter, r *
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	m.mu.Unlock()
-	
+
 	// Return token response
 	response := map[string]interface{}{
 		"access_token":  accessToken,
@@ -294,7 +317,7 @@ func (m *MockOIDCServer) handleAuthorizationCodeGrant(w http.ResponseWriter, r *
 		"refresh_token": refreshToken,
 		"id_token":      idToken,
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -302,27 +325,27 @@ func (m *MockOIDCServer) handleAuthorizationCodeGrant(w http.ResponseWriter, r *
 // handleRefreshTokenGrant handles refresh token grant.
 func (m *MockOIDCServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request) {
 	refreshTokenStr := r.Form.Get("refresh_token")
-	
+
 	m.mu.Lock()
 	refreshToken, exists := m.refreshTokens[refreshTokenStr]
 	m.mu.Unlock()
-	
+
 	if !exists || time.Now().After(refreshToken.ExpiresAt) {
 		http.Error(w, "invalid or expired refresh token", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Generate new tokens (different from old ones by adding timestamp)
 	baseAccessToken, _ := generateRandomString(24)
 	baseRefreshToken, _ := generateRandomString(24)
-	
+
 	// Add timestamp suffix to ensure uniqueness
 	timestamp := fmt.Sprintf("-%d", time.Now().UnixNano())
 	accessToken := baseAccessToken + timestamp
 	newRefreshToken := baseRefreshToken + timestamp
-	
+
 	idToken := m.generateIDToken(refreshToken.Subject, refreshToken.Scopes)
-	
+
 	// Store new tokens
 	m.mu.Lock()
 	m.tokens[accessToken] = &mockToken{
@@ -342,7 +365,7 @@ func (m *MockOIDCServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 	m.mu.Unlock()
-	
+
 	// Return token response
 	response := map[string]interface{}{
 		"access_token":  accessToken,
@@ -351,7 +374,7 @@ func (m *MockOIDCServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.
 		"refresh_token": newRefreshToken,
 		"id_token":      idToken,
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -364,25 +387,25 @@ func (m *MockOIDCServer) handleUserInfo(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "missing or invalid authorization header", http.StatusUnauthorized)
 		return
 	}
-	
+
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	
+
 	m.mu.Lock()
 	_, exists := m.tokens[token]
 	m.mu.Unlock()
-	
+
 	if !exists {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Return user info
 	userInfo := map[string]interface{}{
 		"sub":   "test-user",
 		"name":  "Test User",
 		"email": "test@example.com",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(userInfo)
 }
@@ -393,13 +416,13 @@ func (m *MockOIDCServer) handleIntrospect(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	token := r.Form.Get("token")
-	
+
 	m.mu.Lock()
 	mockToken, exists := m.tokens[token]
 	m.mu.Unlock()
-	
+
 	if !exists {
 		// Return inactive token
 		response := map[string]interface{}{
@@ -409,10 +432,10 @@ func (m *MockOIDCServer) handleIntrospect(w http.ResponseWriter, r *http.Request
 		json.NewEncoder(w).Encode(response)
 		return
 	}
-	
+
 	// Check if token is expired
 	active := time.Since(mockToken.IssuedAt) < time.Duration(mockToken.ExpiresIn)*time.Second
-	
+
 	response := map[string]interface{}{
 		"active":     active,
 		"sub":        "test-user",
@@ -422,7 +445,7 @@ func (m *MockOIDCServer) handleIntrospect(w http.ResponseWriter, r *http.Request
 		"iat":        mockToken.IssuedAt.Unix(),
 		"scope":      "openid profile email",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -433,15 +456,15 @@ func (m *MockOIDCServer) handleRevoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	token := r.Form.Get("token")
-	
+
 	// Remove token from storage
 	m.mu.Lock()
 	delete(m.tokens, token)
 	delete(m.refreshTokens, token)
 	m.mu.Unlock()
-	
+
 	// RFC 7009: always return 200 OK
 	w.WriteHeader(http.StatusOK)
 }
@@ -449,7 +472,7 @@ func (m *MockOIDCServer) handleRevoke(w http.ResponseWriter, r *http.Request) {
 // generateIDToken generates a mock ID token.
 func (m *MockOIDCServer) generateIDToken(subject string, scopes []string) string {
 	now := time.Now()
-	
+
 	claims := jwt.MapClaims{
 		"iss":   m.issuer,
 		"sub":   subject,
@@ -458,7 +481,7 @@ func (m *MockOIDCServer) generateIDToken(subject string, scopes []string) string
 		"iat":   now.Unix(),
 		"nonce": "test-nonce",
 	}
-	
+
 	// Add email claim if email scope is present
 	for _, scope := range scopes {
 		if scope == "email" {
@@ -469,10 +492,10 @@ func (m *MockOIDCServer) generateIDToken(subject string, scopes []string) string
 			claims["name"] = "Test User"
 		}
 	}
-	
+
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = "test-key-1"
-	
+
 	signedToken, _ := token.SignedString(m.privateKey)
 	return signedToken
 }
@@ -482,14 +505,14 @@ func TestIntegrationAuthorizationCodeFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Create mock OIDC server
 	mockServer, err := NewMockOIDCServer()
 	if err != nil {
 		t.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	// Create OAuth2 client with OIDC discovery
 	config := &Config{
 		Enabled:      true,
@@ -502,59 +525,59 @@ func TestIntegrationAuthorizationCodeFlow(t *testing.T) {
 		UseDiscovery: true,
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
 	client, err := NewClient(ctx, config)
 	if err != nil {
 		t.Fatalf("Failed to create OAuth2 client: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Test 1: Generate authorization URL
 	state := "test-state"
 	authURL := client.AuthCodeURL(state)
-	
+
 	if !strings.Contains(authURL, mockServer.GetIssuerURL()) {
 		t.Errorf("Authorization URL does not contain issuer URL")
 	}
 	if !strings.Contains(authURL, "state="+state) {
 		t.Errorf("Authorization URL does not contain state parameter")
 	}
-	
+
 	// Test 2: Simulate authorization and get code
 	// In real flow, user would be redirected to authorization endpoint
 	// Here we directly call the mock server to get a code
 	code := simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
-	
+
 	// Test 3: Exchange code for token
 	token, err := client.Exchange(ctx, code)
 	if err != nil {
 		t.Fatalf("Failed to exchange code for token: %v", err)
 	}
-	
+
 	if token.AccessToken == "" {
 		t.Error("Access token is empty")
 	}
 	if token.RefreshToken == "" {
 		t.Error("Refresh token is empty")
 	}
-	
+
 	// Test 4: Verify ID token
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
 		t.Fatal("ID token not found in token response")
 	}
-	
+
 	idToken, err := client.VerifyIDToken(ctx, rawIDToken)
 	if err != nil {
 		t.Fatalf("Failed to verify ID token: %v", err)
 	}
-	
+
 	var claims map[string]interface{}
 	if err := idToken.Claims(&claims); err != nil {
 		t.Fatalf("Failed to extract ID token claims: %v", err)
 	}
-	
+
 	if claims["sub"] != "test-user" {
 		t.Errorf("Expected subject 'test-user', got %v", claims["sub"])
 	}
@@ -565,14 +588,14 @@ func TestIntegrationTokenRefresh(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Create mock OIDC server
 	mockServer, err := NewMockOIDCServer()
 	if err != nil {
 		t.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	// Create OAuth2 client
 	config := &Config{
 		Enabled:      true,
@@ -585,39 +608,39 @@ func TestIntegrationTokenRefresh(t *testing.T) {
 		UseDiscovery: true,
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
 	client, err := NewClient(ctx, config)
 	if err != nil {
 		t.Fatalf("Failed to create OAuth2 client: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Get initial token
 	code := simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
 	token, err := client.Exchange(ctx, code)
 	if err != nil {
 		t.Fatalf("Failed to exchange code for token: %v", err)
 	}
-	
+
 	originalAccessToken := token.AccessToken
 	originalRefreshToken := token.RefreshToken
-	
+
 	t.Logf("Original access token: %s", originalAccessToken[:20]+"...")
 	t.Logf("Original refresh token: %s", originalRefreshToken[:20]+"...")
-	
+
 	// Force token expiry to trigger refresh
 	token.Expiry = time.Now().Add(-1 * time.Hour)
-	
+
 	// Refresh token
 	newToken, err := client.RefreshToken(ctx, token)
 	if err != nil {
 		t.Fatalf("Failed to refresh token: %v", err)
 	}
-	
+
 	t.Logf("New access token: %s", newToken.AccessToken[:20]+"...")
 	t.Logf("New refresh token: %s", newToken.RefreshToken[:20]+"...")
-	
+
 	if newToken.AccessToken == originalAccessToken {
 		t.Errorf("Access token was not refreshed - same token returned")
 	}
@@ -634,14 +657,14 @@ func TestIntegrationTokenIntrospection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Create mock OIDC server
 	mockServer, err := NewMockOIDCServer()
 	if err != nil {
 		t.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	// Create OAuth2 client with explicit token URL for introspection
 	config := &Config{
 		Enabled:      true,
@@ -652,30 +675,30 @@ func TestIntegrationTokenIntrospection(t *testing.T) {
 		Scopes:       []string{"openid", "profile", "email"},
 		IssuerURL:    mockServer.GetIssuerURL(),
 		UseDiscovery: true,
-		TokenURL:     mockServer.GetIssuerURL() + "/token",  // Explicitly set TokenURL
+		TokenURL:     mockServer.GetIssuerURL() + "/token", // Explicitly set TokenURL
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
 	client, err := NewClient(ctx, config)
 	if err != nil {
 		t.Fatalf("Failed to create OAuth2 client: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Get token
 	code := simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
 	token, err := client.Exchange(ctx, code)
 	if err != nil {
 		t.Fatalf("Failed to exchange code for token: %v", err)
 	}
-	
+
 	// Introspect token
 	introspection, err := client.IntrospectToken(ctx, token.AccessToken)
 	if err != nil {
 		t.Fatalf("Failed to introspect token: %v", err)
 	}
-	
+
 	if !introspection.Active {
 		t.Error("Token should be active")
 	}
@@ -689,14 +712,14 @@ func TestIntegrationTokenRevocation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Create mock OIDC server
 	mockServer, err := NewMockOIDCServer()
 	if err != nil {
 		t.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	// Create OAuth2 client with explicit token URL for revocation
 	config := &Config{
 		Enabled:      true,
@@ -707,36 +730,36 @@ func TestIntegrationTokenRevocation(t *testing.T) {
 		Scopes:       []string{"openid", "profile", "email"},
 		IssuerURL:    mockServer.GetIssuerURL(),
 		UseDiscovery: true,
-		TokenURL:     mockServer.GetIssuerURL() + "/token",  // Explicitly set TokenURL
+		TokenURL:     mockServer.GetIssuerURL() + "/token", // Explicitly set TokenURL
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
 	client, err := NewClient(ctx, config)
 	if err != nil {
 		t.Fatalf("Failed to create OAuth2 client: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Get token
 	code := simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
 	token, err := client.Exchange(ctx, code)
 	if err != nil {
 		t.Fatalf("Failed to exchange code for token: %v", err)
 	}
-	
+
 	// Revoke token
 	err = client.RevokeToken(ctx, token.AccessToken)
 	if err != nil {
 		t.Fatalf("Failed to revoke token: %v", err)
 	}
-	
+
 	// Try to introspect revoked token
 	introspection, err := client.IntrospectToken(ctx, token.AccessToken)
 	if err != nil {
 		t.Fatalf("Failed to introspect token: %v", err)
 	}
-	
+
 	if introspection.Active {
 		t.Error("Token should be inactive after revocation")
 	}
@@ -771,7 +794,7 @@ func BenchmarkOAuth2ClientCreation(b *testing.B) {
 		b.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	config := &Config{
 		Enabled:      true,
 		Provider:     "keycloak",
@@ -781,9 +804,9 @@ func BenchmarkOAuth2ClientCreation(b *testing.B) {
 		UseDiscovery: true,
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		client, err := NewClient(ctx, config)
@@ -801,7 +824,7 @@ func BenchmarkTokenExchange(b *testing.B) {
 		b.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	config := &Config{
 		Enabled:      true,
 		Provider:     "keycloak",
@@ -812,20 +835,20 @@ func BenchmarkTokenExchange(b *testing.B) {
 		UseDiscovery: true,
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
 	client, err := NewClient(ctx, config)
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Pre-generate codes
 	codes := make([]string, b.N)
 	for i := 0; i < b.N; i++ {
 		codes[i] = simulateAuthorizationFlow(b, mockServer, config.RedirectURL, config.Scopes)
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := client.Exchange(ctx, codes[i])
@@ -842,7 +865,7 @@ func BenchmarkTokenIntrospection(b *testing.B) {
 		b.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	config := &Config{
 		Enabled:      true,
 		Provider:     "keycloak",
@@ -853,21 +876,21 @@ func BenchmarkTokenIntrospection(b *testing.B) {
 		UseDiscovery: true,
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
 	client, err := NewClient(ctx, config)
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Get a token
 	code := simulateAuthorizationFlow(b, mockServer, config.RedirectURL, config.Scopes)
 	token, err := client.Exchange(ctx, code)
 	if err != nil {
 		b.Fatalf("Failed to exchange token: %v", err)
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := client.IntrospectToken(ctx, token.AccessToken)
@@ -884,7 +907,7 @@ func BenchmarkIDTokenVerification(b *testing.B) {
 		b.Fatalf("Failed to create mock OIDC server: %v", err)
 	}
 	defer mockServer.Close()
-	
+
 	config := &Config{
 		Enabled:      true,
 		Provider:     "keycloak",
@@ -895,26 +918,26 @@ func BenchmarkIDTokenVerification(b *testing.B) {
 		UseDiscovery: true,
 		HTTPTimeout:  10 * time.Second,
 	}
-	
+
 	ctx := context.Background()
 	client, err := NewClient(ctx, config)
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Get a token with ID token
 	code := simulateAuthorizationFlow(b, mockServer, config.RedirectURL, []string{"openid", "profile", "email"})
 	token, err := client.Exchange(ctx, code)
 	if err != nil {
 		b.Fatalf("Failed to exchange token: %v", err)
 	}
-	
+
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
 		b.Fatal("ID token not found")
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := client.VerifyIDToken(ctx, rawIDToken)
@@ -939,4 +962,3 @@ func (m *MockOIDCServer) generateAuthCode(clientID, redirectURI string, scopes [
 	m.mu.Unlock()
 	return code
 }
-
