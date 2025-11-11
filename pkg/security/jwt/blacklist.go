@@ -140,4 +140,3 @@ func WithBlacklist(blacklist TokenBlacklist) ValidatorOption {
 		v.blacklist = blacklist
 	}
 }
-

@@ -6,6 +6,7 @@ package jwt
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -354,3 +355,73 @@ func TestJWKSCacheConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestJWKSCache_ECKeys(t *testing.T) {
+	// Create a test server that returns JWKS with EC keys
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwks := JWKSet{
+			Keys: []JWK{
+				{
+					Kid: "ec-key-p256",
+					Kty: "EC",
+					Alg: "ES256",
+					Use: "sig",
+					Crv: "P-256",
+					// Valid P-256 key
+					X: "WKn-ZIGevcwGIyyrzFoZNBdaq9_TsqzGl96oc0CWuis",
+					Y: "y77t-RvAHRKTsSGdIYUfweuOvwrvDD-Q3Hv5J0fSKbE",
+				},
+				{
+					Kid: "ec-key-p384",
+					Kty: "EC",
+					Alg: "ES384",
+					Use: "sig",
+					Crv: "P-384",
+					// Valid P-384 key
+					X: "N81v7PoRSYA49_mZs6i0ZA1d0GM_JvVSUN5vy_gseBn27vGYvg93egeX9CQ8u6lW",
+					Y: "Bxe0kV_Sfr2S9EOFz1U7AHIrcfWStljsaBjuibefei0jYog4Xw9BqdncwZxQsDVM",
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(jwks)
+	}))
+	defer server.Close()
+
+	cache, err := NewJWKSCache(&JWKSCacheConfig{
+		URL:         server.URL,
+		RefreshTTL:  1 * time.Hour,
+		AutoRefresh: false,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create JWKS cache: %v", err)
+	}
+	defer cache.Stop()
+
+	// Test P-256 key
+	key256, err := cache.GetKey("ec-key-p256")
+	if err != nil {
+		t.Errorf("GetKey(ec-key-p256) error = %v", err)
+	}
+	if key256 == nil {
+		t.Fatal("Expected P-256 key to be non-nil")
+	}
+	if _, ok := key256.(*ecdsa.PublicKey); !ok {
+		t.Errorf("Expected P-256 key to be *ecdsa.PublicKey, got %T", key256)
+	}
+
+	// Test P-384 key
+	key384, err := cache.GetKey("ec-key-p384")
+	if err != nil {
+		t.Errorf("GetKey(ec-key-p384) error = %v", err)
+	}
+	if key384 == nil {
+		t.Fatal("Expected P-384 key to be non-nil")
+	}
+	if _, ok := key384.(*ecdsa.PublicKey); !ok {
+		t.Errorf("Expected P-384 key to be *ecdsa.PublicKey, got %T", key384)
+	}
+
+	// Verify we have 2 keys cached
+	if cache.KeyCount() != 2 {
+		t.Errorf("Expected 2 keys, got %d", cache.KeyCount())
+	}
+}

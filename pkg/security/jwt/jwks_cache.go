@@ -6,8 +6,9 @@ package jwt
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -264,7 +265,7 @@ func parseRSAKey(jwk *JWK) (*rsa.PublicKey, error) {
 }
 
 // parseECKey parses an EC public key from a JWK.
-func parseECKey(jwk *JWK) (interface{}, error) {
+func parseECKey(jwk *JWK) (*ecdsa.PublicKey, error) {
 	// Decode X coordinate
 	xBytes, err := base64.RawURLEncoding.DecodeString(jwk.X)
 	if err != nil {
@@ -278,35 +279,32 @@ func parseECKey(jwk *JWK) (interface{}, error) {
 	}
 
 	// Determine curve
-	var curve string
+	var curve elliptic.Curve
 	switch jwk.Crv {
 	case "P-256":
-		curve = "P-256"
+		curve = elliptic.P256()
 	case "P-384":
-		curve = "P-384"
+		curve = elliptic.P384()
 	case "P-521":
-		curve = "P-521"
+		curve = elliptic.P521()
 	default:
 		return nil, fmt.Errorf("jwks: unsupported curve: %s", jwk.Crv)
 	}
 
-	// Create public key using x509 parsing
-	pubKeyBytes := make([]byte, 1+len(xBytes)+len(yBytes))
-	pubKeyBytes[0] = 4 // uncompressed point
-	copy(pubKeyBytes[1:], xBytes)
-	copy(pubKeyBytes[1+len(xBytes):], yBytes)
+	// Create EC public key from coordinates
+	x := new(big.Int).SetBytes(xBytes)
+	y := new(big.Int).SetBytes(yBytes)
 
-	// Parse based on curve
-	switch curve {
-	case "P-256":
-		return x509.ParsePKIXPublicKey(pubKeyBytes)
-	case "P-384":
-		return x509.ParsePKIXPublicKey(pubKeyBytes)
-	case "P-521":
-		return x509.ParsePKIXPublicKey(pubKeyBytes)
-	default:
-		return nil, fmt.Errorf("jwks: unsupported curve: %s", curve)
+	// Verify point is on curve
+	if !curve.IsOnCurve(x, y) {
+		return nil, fmt.Errorf("jwks: point (%d, %d) is not on curve %s", x, y, jwk.Crv)
 	}
+
+	return &ecdsa.PublicKey{
+		Curve: curve,
+		X:     x,
+		Y:     y,
+	}, nil
 }
 
 // KeyCount returns the number of cached keys.
@@ -322,4 +320,3 @@ func (c *JWKSCache) LastRefreshTime() time.Time {
 	defer c.mu.RUnlock()
 	return c.lastRefresh
 }
-

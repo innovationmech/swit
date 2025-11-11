@@ -221,7 +221,7 @@ func TestClaimsBuilder(t *testing.T) {
 		WithSubject("subject123").
 		WithIssuer("https://auth.example.com").
 		WithAudience("https://api.example.com").
-		WithExpiresAt(now.Add(1 * time.Hour)).
+		WithExpiresAt(now.Add(1*time.Hour)).
 		WithNotBefore(now).
 		WithIssuedAt(now).
 		WithID("jti123").
@@ -449,4 +449,3 @@ func TestMapClaimsToCustomClaims(t *testing.T) {
 		t.Error("Expected custom_key in metadata")
 	}
 }
-

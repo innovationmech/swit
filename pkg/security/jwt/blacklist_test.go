@@ -227,4 +227,3 @@ func TestWithBlacklist(t *testing.T) {
 		t.Error("Expected validator blacklist to match provided blacklist")
 	}
 }
-

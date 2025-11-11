@@ -555,4 +555,3 @@ func TestExtractConfig_BuildExtractor(t *testing.T) {
 		})
 	}
 }
-

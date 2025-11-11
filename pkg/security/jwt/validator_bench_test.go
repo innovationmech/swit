@@ -365,4 +365,3 @@ func BenchmarkInMemoryBlacklist_Blacklist(b *testing.B) {
 		}
 	}
 }
-
