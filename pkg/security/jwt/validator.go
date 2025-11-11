@@ -23,6 +23,10 @@ var (
 	ErrTokenNotYetValid = errors.New("jwt: token not yet valid")
 	// ErrInvalidSigningMethod indicates that the signing method is not supported.
 	ErrInvalidSigningMethod = errors.New("jwt: invalid signing method")
+	// ErrInvalidIssuer indicates that the token issuer does not match the expected issuer.
+	ErrInvalidIssuer = errors.New("jwt: invalid issuer")
+	// ErrInvalidAudience indicates that the token audience does not match the expected audience.
+	ErrInvalidAudience = errors.New("jwt: invalid audience")
 )
 
 // Validator provides JWT token validation functionality.
@@ -63,6 +67,11 @@ func (v *Validator) ValidateToken(tokenString string) (*jwt.Token, error) {
 		return nil, ErrInvalidToken
 	}
 
+	// Validate issuer and audience claims against configuration
+	if err := v.validateClaims(token.Claims); err != nil {
+		return nil, err
+	}
+
 	return token, nil
 }
 
@@ -81,6 +90,11 @@ func (v *Validator) ValidateTokenWithClaims(tokenString string, claims jwt.Claim
 
 	if !token.Valid {
 		return ErrInvalidToken
+	}
+
+	// Validate issuer and audience claims against configuration
+	if err := v.validateClaims(token.Claims); err != nil {
+		return err
 	}
 
 	return nil
@@ -136,6 +150,75 @@ func (v *Validator) isAllowedSigningMethod(alg string) bool {
 	}
 
 	return false
+}
+
+// validateClaims validates the issuer and audience claims against the configuration.
+func (v *Validator) validateClaims(claims jwt.Claims) error {
+	// Try to extract claims as MapClaims first
+	var issuer string
+	var audiences []string
+
+	switch c := claims.(type) {
+	case jwt.MapClaims:
+		// Extract issuer
+		if iss, ok := c["iss"].(string); ok {
+			issuer = iss
+		}
+
+		// Extract audience (can be string or array)
+		switch aud := c["aud"].(type) {
+		case string:
+			audiences = []string{aud}
+		case []string:
+			audiences = aud
+		case []interface{}:
+			for _, a := range aud {
+				if audStr, ok := a.(string); ok {
+					audiences = append(audiences, audStr)
+				}
+			}
+		}
+
+	case *jwt.RegisteredClaims:
+		issuer = c.Issuer
+		audiences = c.Audience
+
+	default:
+		// For other claim types, we can't validate
+		// This is acceptable as not all tokens will have these claims
+		return nil
+	}
+
+	// Validate issuer if configured and not skipped
+	if v.config.Issuer != "" && !v.config.SkipIssuer {
+		if issuer == "" {
+			return fmt.Errorf("%w: missing issuer claim", ErrInvalidIssuer)
+		}
+		if issuer != v.config.Issuer {
+			return fmt.Errorf("%w: expected %q, got %q", ErrInvalidIssuer, v.config.Issuer, issuer)
+		}
+	}
+
+	// Validate audience if configured
+	if v.config.Audience != "" {
+		if len(audiences) == 0 {
+			return fmt.Errorf("%w: missing audience claim", ErrInvalidAudience)
+		}
+
+		// Check if configured audience is in the token's audience list
+		found := false
+		for _, aud := range audiences {
+			if aud == v.config.Audience {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("%w: expected %q in audience, got %v", ErrInvalidAudience, v.config.Audience, audiences)
+		}
+	}
+
+	return nil
 }
 
 // ExtractClaims extracts claims from a validated token.

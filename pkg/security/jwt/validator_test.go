@@ -5,6 +5,7 @@
 package jwt
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -176,6 +177,221 @@ func TestValidator_ValidateToken(t *testing.T) {
 		_, err := validator.ValidateToken("not.a.valid.token")
 		if err == nil {
 			t.Error("Expected validation to fail for malformed token")
+		}
+	})
+
+	t.Run("valid token with correct issuer", func(t *testing.T) {
+		configWithIssuer := &Config{
+			Secret: secret,
+			Issuer: "https://auth.example.com",
+		}
+		validatorWithIssuer, err := NewValidator(configWithIssuer)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"iss": "https://auth.example.com",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorWithIssuer.ValidateToken(tokenString)
+		if err != nil {
+			t.Errorf("ValidateToken() error = %v, want nil for correct issuer", err)
+		}
+	})
+
+	t.Run("invalid issuer", func(t *testing.T) {
+		configWithIssuer := &Config{
+			Secret: secret,
+			Issuer: "https://auth.example.com",
+		}
+		validatorWithIssuer, err := NewValidator(configWithIssuer)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"iss": "https://evil.com",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorWithIssuer.ValidateToken(tokenString)
+		if !errors.Is(err, ErrInvalidIssuer) {
+			t.Errorf("ValidateToken() error = %v, want ErrInvalidIssuer", err)
+		}
+	})
+
+	t.Run("missing issuer claim when required", func(t *testing.T) {
+		configWithIssuer := &Config{
+			Secret: secret,
+			Issuer: "https://auth.example.com",
+		}
+		validatorWithIssuer, err := NewValidator(configWithIssuer)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorWithIssuer.ValidateToken(tokenString)
+		if !errors.Is(err, ErrInvalidIssuer) {
+			t.Errorf("ValidateToken() error = %v, want ErrInvalidIssuer for missing issuer", err)
+		}
+	})
+
+	t.Run("skip issuer validation", func(t *testing.T) {
+		configSkipIssuer := &Config{
+			Secret:     secret,
+			Issuer:     "https://auth.example.com",
+			SkipIssuer: true,
+		}
+		validatorSkipIssuer, err := NewValidator(configSkipIssuer)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"iss": "https://different.com",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorSkipIssuer.ValidateToken(tokenString)
+		if err != nil {
+			t.Errorf("ValidateToken() error = %v, want nil when skipping issuer", err)
+		}
+	})
+
+	t.Run("valid token with correct audience", func(t *testing.T) {
+		configWithAudience := &Config{
+			Secret:   secret,
+			Audience: "https://api.example.com",
+		}
+		validatorWithAudience, err := NewValidator(configWithAudience)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"aud": "https://api.example.com",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorWithAudience.ValidateToken(tokenString)
+		if err != nil {
+			t.Errorf("ValidateToken() error = %v, want nil for correct audience", err)
+		}
+	})
+
+	t.Run("valid token with multiple audiences", func(t *testing.T) {
+		configWithAudience := &Config{
+			Secret:   secret,
+			Audience: "https://api.example.com",
+		}
+		validatorWithAudience, err := NewValidator(configWithAudience)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"aud": []string{"https://api.example.com", "https://other.example.com"},
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorWithAudience.ValidateToken(tokenString)
+		if err != nil {
+			t.Errorf("ValidateToken() error = %v, want nil for correct audience in list", err)
+		}
+	})
+
+	t.Run("invalid audience", func(t *testing.T) {
+		configWithAudience := &Config{
+			Secret:   secret,
+			Audience: "https://api.example.com",
+		}
+		validatorWithAudience, err := NewValidator(configWithAudience)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"aud": "https://evil.com",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorWithAudience.ValidateToken(tokenString)
+		if !errors.Is(err, ErrInvalidAudience) {
+			t.Errorf("ValidateToken() error = %v, want ErrInvalidAudience", err)
+		}
+	})
+
+	t.Run("missing audience claim when required", func(t *testing.T) {
+		configWithAudience := &Config{
+			Secret:   secret,
+			Audience: "https://api.example.com",
+		}
+		validatorWithAudience, err := NewValidator(configWithAudience)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		_, err = validatorWithAudience.ValidateToken(tokenString)
+		if !errors.Is(err, ErrInvalidAudience) {
+			t.Errorf("ValidateToken() error = %v, want ErrInvalidAudience for missing audience", err)
 		}
 	})
 }
