@@ -142,6 +142,44 @@ make swagger-switauth    # 为switauth生成
 - `docs/generated/switauth/` - SwitAuth API 文档
 - `docs/generated/` - 统一文档根目录
 
+## 依赖项
+
+Swit 框架使用以下主要依赖项：
+
+### 核心框架
+- **Go 1.24+**: 要求的 Go 版本
+- **gin-gonic/gin**: HTTP Web 框架
+- **grpc/grpc-go**: gRPC 框架
+- **uber-go/zap**: 结构化日志
+- **spf13/viper**: 配置管理
+- **spf13/cobra**: CLI 框架（用于 switctl）
+
+### 安全与认证
+- **golang.org/x/oauth2**: OAuth2 客户端库，支持标准 OAuth2 流程
+- **coreos/go-oidc/v3**: OpenID Connect (OIDC) 支持和发现
+- **golang-jwt/jwt/v5**: JWT 令牌验证和管理
+- **golang.org/x/crypto**: 加密工具
+
+### 消息传递与流式处理
+- **nats-io/nats.go**: NATS 消息传递
+- **streadway/amqp**: RabbitMQ 客户端
+- **segmentio/kafka-go**: Kafka 客户端
+
+### 可观测性
+- **opentelemetry**: 分布式追踪
+- **prometheus/client_golang**: 指标收集
+- **getsentry/sentry-go**: 错误追踪
+
+### 数据库与存储
+- **gorm.io/gorm**: ORM 框架
+- **redis/go-redis**: Redis 客户端
+- **lib/pq**: PostgreSQL 驱动
+
+### 服务发现
+- **hashicorp/consul/api**: Consul 集成
+
+完整的依赖项列表请查看 `go.mod`。
+
 ## 项目结构
 
 ```
