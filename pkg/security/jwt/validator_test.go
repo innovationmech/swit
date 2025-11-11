@@ -5,6 +5,7 @@
 package jwt
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -566,4 +567,275 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestValidator_ValidateWithContext(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	t.Run("valid token with context", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+			"iat": time.Now().Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		ctx := context.Background()
+		validatedToken, err := validator.ValidateWithContext(ctx, tokenString)
+		if err != nil {
+			t.Errorf("ValidateWithContext() error = %v, want nil", err)
+		}
+		if validatedToken == nil || !validatedToken.Valid {
+			t.Error("Expected token to be valid")
+		}
+	})
+
+	t.Run("expired token with context", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(-1 * time.Hour).Unix(),
+			"iat": time.Now().Add(-2 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		ctx := context.Background()
+		_, err = validator.ValidateWithContext(ctx, tokenString)
+		if err != ErrTokenExpired {
+			t.Errorf("ValidateWithContext() error = %v, want ErrTokenExpired", err)
+		}
+	})
+}
+
+func TestValidator_ParseToken(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	t.Run("parse valid token", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		parsedToken, err := validator.ParseToken(tokenString)
+		if err != nil {
+			t.Errorf("ParseToken() error = %v, want nil", err)
+		}
+		if parsedToken == nil {
+			t.Error("Expected parsed token to be non-nil")
+		}
+	})
+
+	t.Run("parse invalid token", func(t *testing.T) {
+		_, err := validator.ParseToken("not.a.valid.token")
+		if err == nil {
+			t.Error("Expected error for invalid token")
+		}
+	})
+}
+
+func TestGetClaimTime(t *testing.T) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"exp": now.Unix(),
+		"iat": float64(now.Unix()),
+	}
+
+	tests := []struct {
+		name    string
+		key     string
+		wantOk  bool
+		wantVal time.Time
+	}{
+		{
+			name:    "existing time claim",
+			key:     "exp",
+			wantOk:  true,
+			wantVal: time.Unix(now.Unix(), 0),
+		},
+		{
+			name:   "non-existent claim",
+			key:    "missing",
+			wantOk: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotVal, gotOk := GetClaimTime(claims, tt.key)
+			if gotOk != tt.wantOk {
+				t.Errorf("GetClaimTime() ok = %v, want %v", gotOk, tt.wantOk)
+			}
+			if gotOk && gotVal.Unix() != tt.wantVal.Unix() {
+				t.Errorf("GetClaimTime() value = %v, want %v", gotVal, tt.wantVal)
+			}
+		})
+	}
+}
+
+func TestValidatorOptions(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+
+	t.Run("WithSkipExpiry", func(t *testing.T) {
+		config := &Config{
+			Secret: secret,
+		}
+
+		validator, err := NewValidator(config, WithSkipExpiry())
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		if !validator.config.SkipExpiry {
+			t.Error("Expected SkipExpiry to be true")
+		}
+	})
+
+	t.Run("WithSkipIssuer", func(t *testing.T) {
+		config := &Config{
+			Secret: secret,
+			Issuer: "https://auth.example.com",
+		}
+
+		validator, err := NewValidator(config, WithSkipIssuer())
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		if !validator.config.SkipIssuer {
+			t.Error("Expected SkipIssuer to be true")
+		}
+	})
+}
+
+func TestValidator_isAllowedSigningMethod(t *testing.T) {
+	tests := []struct {
+		name              string
+		allowedAlgorithms []string
+		alg               string
+		want              bool
+	}{
+		{
+			name:              "allowed algorithm",
+			allowedAlgorithms: []string{"HS256", "RS256"},
+			alg:               "HS256",
+			want:              true,
+		},
+		{
+			name:              "disallowed algorithm",
+			allowedAlgorithms: []string{"HS256", "RS256"},
+			alg:               "ES256",
+			want:              false,
+		},
+		{
+			name:              "empty allowed algorithms - allow all",
+			allowedAlgorithms: []string{},
+			alg:               "HS256",
+			want:              true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				Secret:            "test-secret",
+				AllowedAlgorithms: tt.allowedAlgorithms,
+			}
+			validator, err := NewValidator(config)
+			if err != nil {
+				t.Fatalf("Failed to create validator: %v", err)
+			}
+
+			got := validator.isAllowedSigningMethod(tt.alg)
+			if got != tt.want {
+				t.Errorf("isAllowedSigningMethod() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractClaims(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+
+	t.Run("extract from MapClaims", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub":  "user123",
+			"name": "John Doe",
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		config := &Config{
+			Secret: secret,
+		}
+		validator, err := NewValidator(config)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		validatedToken, err := validator.ValidateToken(tokenString)
+		if err != nil {
+			t.Fatalf("Failed to validate token: %v", err)
+		}
+
+		extractedClaims, err := ExtractClaims(validatedToken)
+		if err != nil {
+			t.Errorf("ExtractClaims() error = %v", err)
+		}
+		if extractedClaims == nil {
+			t.Error("Expected extracted claims to be non-nil")
+		}
+		if sub, ok := extractedClaims["sub"].(string); !ok || sub != "user123" {
+			t.Error("Expected sub claim to be user123")
+		}
+	})
+}
+
+func TestNewValidator_WithOptions(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+	blacklist := NewInMemoryBlacklist()
+	defer blacklist.Stop()
+
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config, WithBlacklist(blacklist))
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	if validator.blacklist == nil {
+		t.Error("Expected validator to have blacklist configured")
+	}
 }
