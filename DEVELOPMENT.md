@@ -142,6 +142,44 @@ Documentation is generated in:
 - `docs/generated/switauth/` - SwitAuth API docs
 - `docs/generated/` - Root for generated documentation
 
+## Dependencies
+
+The Swit framework uses the following key dependencies:
+
+### Core Framework
+- **Go 1.24+**: Required Go version
+- **gin-gonic/gin**: HTTP web framework
+- **grpc/grpc-go**: gRPC framework
+- **uber-go/zap**: Structured logging
+- **spf13/viper**: Configuration management
+- **spf13/cobra**: CLI framework (for switctl)
+
+### Security & Authentication
+- **golang.org/x/oauth2**: OAuth2 client library for standard OAuth2 flows
+- **coreos/go-oidc/v3**: OpenID Connect (OIDC) support and discovery
+- **golang-jwt/jwt/v5**: JWT token validation and management
+- **golang.org/x/crypto**: Cryptographic utilities
+
+### Messaging & Streaming
+- **nats-io/nats.go**: NATS messaging
+- **streadway/amqp**: RabbitMQ client
+- **segmentio/kafka-go**: Kafka client
+
+### Observability
+- **opentelemetry**: Distributed tracing
+- **prometheus/client_golang**: Metrics collection
+- **getsentry/sentry-go**: Error tracking
+
+### Database & Storage
+- **gorm.io/gorm**: ORM framework
+- **redis/go-redis**: Redis client
+- **lib/pq**: PostgreSQL driver
+
+### Service Discovery
+- **hashicorp/consul/api**: Consul integration
+
+For a complete list of dependencies, see `go.mod`.
+
 ## Project Structure
 
 ```
