@@ -23,31 +23,31 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
 	"github.com/innovationmech/swit/pkg/security/jwt"
-	"github.com/innovationmech/swit/pkg/security/oauth2"
+	switoauth2 "github.com/innovationmech/swit/pkg/security/oauth2"
 	"github.com/innovationmech/swit/pkg/server"
-	"github.com/innovationmech/swit/pkg/types"
 )
 
 // OAuth2ExampleService implements the ServiceRegistrar interface.
 type OAuth2ExampleService struct {
 	name         string
-	oauth2Client *oauth2.Client
+	oauth2Client *switoauth2.Client
 	jwtValidator *jwt.Validator
-	flowManager  *oauth2.FlowManager
+	flowManager  *switoauth2.FlowManager
 }
 
 // NewOAuth2ExampleService creates a new OAuth2 example service.
-func NewOAuth2ExampleService(name string, oauth2Client *oauth2.Client, jwtValidator *jwt.Validator) *OAuth2ExampleService {
+func NewOAuth2ExampleService(name string, oauth2Client *switoauth2.Client, jwtValidator *jwt.Validator) *OAuth2ExampleService {
 	return &OAuth2ExampleService{
 		name:         name,
 		oauth2Client: oauth2Client,
 		jwtValidator: jwtValidator,
-		flowManager:  oauth2.NewFlowManager(),
+		flowManager:  switoauth2.NewFlowManager(),
 	}
 }
 
@@ -76,9 +76,9 @@ func (s *OAuth2ExampleService) RegisterServices(registry server.BusinessServiceR
 // OAuth2HTTPHandler implements the HTTPHandler interface.
 type OAuth2HTTPHandler struct {
 	serviceName  string
-	oauth2Client *oauth2.Client
+	oauth2Client *switoauth2.Client
 	jwtValidator *jwt.Validator
-	flowManager  *oauth2.FlowManager
+	flowManager  *switoauth2.FlowManager
 }
 
 // RegisterRoutes registers HTTP routes with the router.
@@ -223,7 +223,7 @@ func (h *OAuth2HTTPHandler) handleCallback(c *gin.Context) {
 			if err := idToken.Claims(&idTokenClaims); err == nil {
 				// Verify nonce if present
 				if nonce, ok := idTokenClaims["nonce"].(string); ok && flowState.Nonce != "" {
-					if err := oauth2.ValidateNonce(flowState.Nonce, nonce); err != nil {
+					if err := switoauth2.ValidateNonce(flowState.Nonce, nonce); err != nil {
 						c.JSON(http.StatusBadRequest, gin.H{
 							"error":   "Nonce validation failed",
 							"details": err.Error(),
@@ -266,7 +266,7 @@ func (h *OAuth2HTTPHandler) handleRefresh(c *gin.Context) {
 	}
 
 	// Create a token with the refresh token
-	token := &types.OAuth2Token{
+	token := &oauth2.Token{
 		RefreshToken: request.RefreshToken,
 	}
 
@@ -407,7 +407,7 @@ type OAuth2DependencyContainer struct {
 }
 
 // NewOAuth2DependencyContainer creates a new dependency container.
-func NewOAuth2DependencyContainer(oauth2Client *oauth2.Client, jwtValidator *jwt.Validator) *OAuth2DependencyContainer {
+func NewOAuth2DependencyContainer(oauth2Client *switoauth2.Client, jwtValidator *jwt.Validator) *OAuth2DependencyContainer {
 	container := &OAuth2DependencyContainer{
 		services: make(map[string]interface{}),
 		closed:   false,
@@ -441,7 +441,7 @@ func (d *OAuth2DependencyContainer) Close() error {
 	}
 
 	// Close OAuth2 client
-	if oauth2Client, ok := d.services["oauth2_client"].(*oauth2.Client); ok {
+	if oauth2Client, ok := d.services["oauth2_client"].(*switoauth2.Client); ok {
 		if err := oauth2Client.Close(); err != nil {
 			logger.GetLogger().Warn("Failed to close OAuth2 client", zap.Error(err))
 		}
@@ -533,7 +533,7 @@ func main() {
 	}
 
 	// Load OAuth2 configuration from file or environment
-	oauth2Config := &oauth2.Config{
+	oauth2Config := &switoauth2.Config{
 		Enabled:      true,
 		Provider:     getEnv("OAUTH2_PROVIDER", "keycloak"),
 		ClientID:     getEnv("OAUTH2_CLIENT_ID", "swit-example"),
@@ -550,22 +550,25 @@ func main() {
 
 	// Create OAuth2 client with OIDC discovery
 	ctx := context.Background()
-	oauth2Client, err := oauth2.NewClient(ctx, oauth2Config)
+	oauth2Client, err := switoauth2.NewClient(ctx, oauth2Config)
 	if err != nil {
 		logger.GetLogger().Fatal("Failed to create OAuth2 client", zap.Error(err))
 	}
 
 	// Create JWT validator for local token validation
-	jwtConfig := &jwt.ValidatorConfig{
-		Enabled:       true,
-		JWKSURL:       oauth2Client.GetJWKSURL(),
-		Issuer:        oauth2Client.GetIssuerURL(),
-		Audience:      oauth2Config.ClientID,
-		SigningMethod: oauth2Config.JWTConfig.SigningMethod,
-		ClockSkew:     oauth2Config.JWTConfig.ClockSkew,
+	jwtConfig := &jwt.Config{
+		Issuer:         oauth2Client.GetIssuerURL(),
+		Audience:       oauth2Config.ClientID,
+		LeewayDuration: oauth2Config.JWTConfig.ClockSkew,
+		JWKSConfig: &jwt.JWKSCacheConfig{
+			URL:            oauth2Client.GetJWKSURL(),
+			RefreshTTL:     15 * time.Minute,
+			AutoRefresh:    true,
+			MinRefreshWait: 1 * time.Minute,
+		},
 	}
 
-	jwtValidator, err := jwt.NewValidator(ctx, jwtConfig)
+	jwtValidator, err := jwt.NewValidator(jwtConfig)
 	if err != nil {
 		logger.GetLogger().Fatal("Failed to create JWT validator", zap.Error(err))
 	}
