@@ -402,8 +402,12 @@ func (c *Config) SetDefaults() {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Secret == "" && c.PublicKey == nil {
-		return fmt.Errorf("jwt: either secret or public_key must be configured")
+	// At least one key source must be configured:
+	// 1. Secret (for HMAC algorithms)
+	// 2. PublicKey (for RSA/ECDSA with static key)
+	// 3. JWKSConfig (for RSA/ECDSA with dynamic key discovery)
+	if c.Secret == "" && c.PublicKey == nil && c.JWKSConfig == nil {
+		return fmt.Errorf("jwt: at least one of secret, public_key, or jwks_config must be configured")
 	}
 
 	return nil

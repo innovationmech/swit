@@ -6,7 +6,10 @@ package jwt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -84,7 +87,16 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "invalid - no secret or public key",
+			name: "valid with JWKS config",
+			config: &Config{
+				JWKSConfig: &JWKSCacheConfig{
+					URL: "https://example.com/.well-known/jwks.json",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "invalid - no key source configured",
 			config:  &Config{},
 			wantErr: true,
 		},
@@ -837,5 +849,57 @@ func TestNewValidator_WithOptions(t *testing.T) {
 
 	if validator.blacklist == nil {
 		t.Error("Expected validator to have blacklist configured")
+	}
+}
+
+func TestValidator_JWKSOnlyConfig(t *testing.T) {
+	// Create a test server that returns JWKS with RSA key
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwks := JWKSet{
+			Keys: []JWK{
+				{
+					Kid: "test-rsa-key",
+					Kty: "RSA",
+					Alg: "RS256",
+					Use: "sig",
+					N:   "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw",
+					E:   "AQAB",
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(jwks)
+	}))
+	defer server.Close()
+
+	// Create validator with JWKS-only configuration
+	config := &Config{
+		JWKSConfig: &JWKSCacheConfig{
+			URL:         server.URL,
+			RefreshTTL:  1 * time.Hour,
+			AutoRefresh: false,
+		},
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		t.Fatalf("Failed to create validator with JWKS-only config: %v", err)
+	}
+
+	if validator.jwksCache == nil {
+		t.Error("Expected validator to have JWKS cache configured")
+	}
+
+	// Verify JWKS cache is initialized and has the key
+	if validator.jwksCache.KeyCount() != 1 {
+		t.Errorf("Expected JWKS cache to have 1 key, got %d", validator.jwksCache.KeyCount())
+	}
+
+	// Verify we can get the key from cache
+	key, err := validator.jwksCache.GetKey("test-rsa-key")
+	if err != nil {
+		t.Errorf("Failed to get key from JWKS cache: %v", err)
+	}
+	if key == nil {
+		t.Error("Expected key to be non-nil")
 	}
 }
