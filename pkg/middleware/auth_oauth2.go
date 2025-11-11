@@ -174,9 +174,9 @@ func validateTokenWithIntrospection(ctx context.Context, config *OAuth2Middlewar
 		Claims:   make(map[string]interface{}),
 	}
 
-	// Parse scopes
+	// Parse scopes (OAuth2 scopes are space-delimited)
 	if introspection.Scope != "" {
-		userInfo.Scopes = strings.Split(introspection.Scope, " ")
+		userInfo.Scopes = splitScopes(introspection.Scope)
 	}
 
 	// Build claims map
@@ -232,7 +232,7 @@ func validateTokenLocally(ctx context.Context, config *OAuth2MiddlewareConfig, t
 		Username: customClaims.Username,
 		Email:    customClaims.Email,
 		Roles:    customClaims.Roles,
-		Scopes:   customClaims.Permissions, // Permissions are treated as scopes
+		Scopes:   expandScopes(customClaims.Permissions), // Expand space-delimited scopes
 		Claims:   customClaims.Metadata,
 	}
 
@@ -355,4 +355,45 @@ func MustGetClaims(c *gin.Context) jwt.MapClaims {
 		panic("oauth2: claims not found in context")
 	}
 	return claims
+}
+
+// splitScopes splits a space-delimited scope string into individual scopes.
+// This handles the standard OAuth2 scope format (RFC 6749).
+func splitScopes(scopeString string) []string {
+	if scopeString == "" {
+		return nil
+	}
+
+	scopes := strings.Split(scopeString, " ")
+	result := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		trimmed := strings.TrimSpace(scope)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// expandScopes expands a slice of scopes that may contain space-delimited strings
+// into individual scope values. This handles both array format and OAuth2 standard
+// space-delimited format.
+func expandScopes(scopes []string) []string {
+	if len(scopes) == 0 {
+		return nil
+	}
+
+	result := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		// Check if this scope contains spaces (OAuth2 standard format)
+		if strings.Contains(scope, " ") {
+			// Split and add individual scopes
+			expanded := splitScopes(scope)
+			result = append(result, expanded...)
+		} else {
+			// Single scope, add directly
+			result = append(result, scope)
+		}
+	}
+	return result
 }

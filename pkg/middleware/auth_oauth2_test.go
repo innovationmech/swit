@@ -1206,3 +1206,146 @@ func TestHasAllRoles(t *testing.T) {
 		})
 	}
 }
+
+// TestSplitScopes tests the splitScopes helper function
+func TestSplitScopes(t *testing.T) {
+	tests := []struct {
+		name        string
+		scopeString string
+		expected    []string
+	}{
+		{
+			name:        "standard OAuth2 space-delimited scopes",
+			scopeString: "read write delete",
+			expected:    []string{"read", "write", "delete"},
+		},
+		{
+			name:        "single scope",
+			scopeString: "read",
+			expected:    []string{"read"},
+		},
+		{
+			name:        "scopes with extra spaces",
+			scopeString: "read  write   delete",
+			expected:    []string{"read", "write", "delete"},
+		},
+		{
+			name:        "scopes with leading/trailing spaces",
+			scopeString: "  read write delete  ",
+			expected:    []string{"read", "write", "delete"},
+		},
+		{
+			name:        "empty string",
+			scopeString: "",
+			expected:    nil,
+		},
+		{
+			name:        "only spaces",
+			scopeString: "   ",
+			expected:    []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := splitScopes(tt.scopeString)
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected length %d, got %d", len(tt.expected), len(result))
+				return
+			}
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Errorf("at index %d: expected %q, got %q", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+// TestExpandScopes tests the expandScopes helper function
+func TestExpandScopes(t *testing.T) {
+	tests := []struct {
+		name     string
+		scopes   []string
+		expected []string
+	}{
+		{
+			name:     "already expanded scopes",
+			scopes:   []string{"read", "write", "delete"},
+			expected: []string{"read", "write", "delete"},
+		},
+		{
+			name:     "single space-delimited scope string",
+			scopes:   []string{"read write delete"},
+			expected: []string{"read", "write", "delete"},
+		},
+		{
+			name:     "mixed format",
+			scopes:   []string{"read write", "delete", "admin:full"},
+			expected: []string{"read", "write", "delete", "admin:full"},
+		},
+		{
+			name:     "empty slice",
+			scopes:   []string{},
+			expected: nil,
+		},
+		{
+			name:     "nil slice",
+			scopes:   nil,
+			expected: nil,
+		},
+		{
+			name:     "OAuth2 standard format with colons",
+			scopes:   []string{"read:users write:users delete:users"},
+			expected: []string{"read:users", "write:users", "delete:users"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := expandScopes(tt.scopes)
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected length %d, got %d", len(tt.expected), len(result))
+				return
+			}
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Errorf("at index %d: expected %q, got %q", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+// TestRequireScopesWithSpaceDelimitedToken tests that RequireScopes works with space-delimited scope strings
+func TestRequireScopesWithSpaceDelimitedToken(t *testing.T) {
+	validator := createTestJWTValidator(t)
+
+	// Create a token with space-delimited scopes (OAuth2 standard)
+	token := createTestToken(t, jwt.MapClaims{
+		"username":    "testuser",
+		"permissions": "read write delete", // Space-delimited scopes
+	})
+
+	router := gin.New()
+	router.Use(OAuth2Middleware(nil, validator))
+	router.Use(RequireScopes("write")) // Should match "write" from "read write delete"
+	router.GET("/protected", func(c *gin.Context) {
+		userInfo, _ := GetUserInfo(c)
+		// Verify scopes were properly expanded
+		if len(userInfo.Scopes) != 3 {
+			t.Errorf("expected 3 scopes, got %d", len(userInfo.Scopes))
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "success"})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
