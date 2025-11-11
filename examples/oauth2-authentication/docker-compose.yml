@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Keycloak - OIDC Provider
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: swit-keycloak
+    environment:
+      # Admin credentials
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      
+      # Database configuration
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      
+      # Hostname configuration
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8081
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      
+      # HTTP configuration
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: 8080
+      KC_HEALTH_ENABLED: "true"
+      
+      # Proxy configuration
+      KC_PROXY: edge
+    ports:
+      - "8081:8080"
+    command:
+      - start-dev
+      - --import-realm
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - keycloak_data:/opt/keycloak/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    networks:
+      - swit-network
+
+  # PostgreSQL - Database for Keycloak
+  postgres:
+    image: postgres:15-alpine
+    container_name: swit-postgres
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - swit-network
+
+  # OAuth2 Example Service
+  oauth2-example:
+    build:
+      context: ../..
+      dockerfile: examples/oauth2-authentication/Dockerfile
+    container_name: swit-oauth2-example
+    environment:
+      # Server configuration
+      HTTP_PORT: "8080"
+      CONFIG_PATH: "/app/swit.yaml"
+      
+      # OAuth2 configuration
+      OAUTH2_ENABLED: "true"
+      OAUTH2_PROVIDER: "keycloak"
+      OAUTH2_CLIENT_ID: "swit-example"
+      OAUTH2_CLIENT_SECRET: "swit-example-secret"
+      OAUTH2_REDIRECT_URL: "http://localhost:8080/api/v1/public/callback"
+      OAUTH2_ISSUER_URL: "http://keycloak:8080/realms/swit"
+      OAUTH2_USE_DISCOVERY: "true"
+      
+      # JWT configuration
+      OAUTH2_JWT_SIGNING_METHOD: "RS256"
+      OAUTH2_JWT_AUDIENCE: "swit-example"
+      OAUTH2_JWT_ISSUER: "http://localhost:8081/realms/swit"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./swit.yaml:/app/swit.yaml:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - swit-network
+
+volumes:
+  postgres_data:
+    driver: local
+  keycloak_data:
+    driver: local
+
+networks:
+  swit-network:
+    driver: bridge
+
