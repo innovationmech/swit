@@ -296,6 +296,11 @@ func TestCreateHTTPClient(t *testing.T) {
 			if transport.TLSClientConfig == nil {
 				t.Error("TLSClientConfig is nil")
 			}
+
+			// Verify proxy is configured to respect environment
+			if transport.Proxy == nil {
+				t.Error("Proxy function is nil, should be http.ProxyFromEnvironment")
+			}
 		})
 	}
 }
@@ -558,8 +563,7 @@ func TestClientGetters(t *testing.T) {
 	providerConfig := client.GetProviderConfig()
 	if providerConfig == nil {
 		t.Error("GetProviderConfig() returned nil")
-	}
-	if providerConfig.Type != ProviderCustom {
+	} else if providerConfig.Type != ProviderCustom {
 		t.Errorf("GetProviderConfig().Type = %v, want %v", providerConfig.Type, ProviderCustom)
 	}
 

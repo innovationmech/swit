@@ -83,23 +83,26 @@ func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
 func createHTTPClient(cfg *Config) (*http.Client, error) {
 	// Create custom transport with connection pooling
 	transport := &http.Transport{
+		// Proxy settings - respect environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
+		Proxy: http.ProxyFromEnvironment,
+		
 		// Connection pooling settings
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 10,
 		MaxConnsPerHost:     100,
 		IdleConnTimeout:     90 * time.Second,
-
+		
 		// Timeout settings
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-
+		
 		// Dial settings
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-
+		
 		// Force HTTP/2
 		ForceAttemptHTTP2: true,
 	}
