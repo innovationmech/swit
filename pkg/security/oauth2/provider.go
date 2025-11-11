@@ -62,6 +62,12 @@ type ProviderConfig struct {
 	// IssuerURLTemplate is a template for constructing the issuer URL.
 	// Placeholders: {realm}, {tenant}, {domain}
 	IssuerURLTemplate string
+
+	// IntrospectionEndpoint is the URL of the token introspection endpoint (if not using discovery).
+	IntrospectionEndpoint string
+
+	// RevocationEndpoint is the URL of the token revocation endpoint (if not using discovery).
+	RevocationEndpoint string
 }
 
 // GetProviderConfig returns the provider configuration for the given provider type.

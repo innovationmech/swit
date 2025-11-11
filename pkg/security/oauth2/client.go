@@ -7,9 +7,13 @@ package oauth2
 import (
 	"context"
 	cryptotls "crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -337,6 +341,125 @@ func (c *Client) GetJWKSURL() string {
 		return c.metadata.JWKSEndpoint
 	}
 	return c.config.JWKSURL
+}
+
+// IntrospectToken introspects an OAuth2 token to check its validity and retrieve metadata.
+// This requires the OAuth2 server to support the token introspection endpoint (RFC 7662).
+func (c *Client) IntrospectToken(ctx context.Context, token string) (*TokenIntrospection, error) {
+	if token == "" {
+		return nil, fmt.Errorf("oauth2: token cannot be empty")
+	}
+
+	// Construct introspection endpoint URL
+	// Most providers use a standard /introspect endpoint
+	introspectionURL := c.config.TokenURL
+	if introspectionURL == "" {
+		return nil, fmt.Errorf("oauth2: token URL not configured")
+	}
+
+	// Replace /token with /introspect for standard OAuth2 providers
+	// This is a common pattern, but can be overridden by provider configuration
+	if c.providerConfig != nil && c.providerConfig.IntrospectionEndpoint != "" {
+		introspectionURL = c.providerConfig.IntrospectionEndpoint
+	} else {
+		// Try to construct introspection URL from token URL
+		introspectionURL = c.metadata.TokenEndpoint
+		if introspectionURL == "" {
+			introspectionURL = c.config.TokenURL
+		}
+		// This is a heuristic - most providers have /introspect alongside /token
+		introspectionURL = strings.Replace(introspectionURL, "/token", "/introspect", 1)
+	}
+
+	// Prepare the request
+	data := url.Values{}
+	data.Set("token", token)
+	data.Set("client_id", c.config.ClientID)
+	data.Set("client_secret", c.config.ClientSecret)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", introspectionURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("oauth2: failed to create introspection request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	// Send the request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("oauth2: introspection request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("oauth2: introspection failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var introspection TokenIntrospection
+	if err := json.NewDecoder(resp.Body).Decode(&introspection); err != nil {
+		return nil, fmt.Errorf("oauth2: failed to decode introspection response: %w", err)
+	}
+
+	return &introspection, nil
+}
+
+// RevokeToken revokes an OAuth2 token (access token or refresh token).
+// This requires the OAuth2 server to support the token revocation endpoint (RFC 7009).
+func (c *Client) RevokeToken(ctx context.Context, token string) error {
+	if token == "" {
+		return fmt.Errorf("oauth2: token cannot be empty")
+	}
+
+	// Construct revocation endpoint URL
+	revocationURL := c.config.TokenURL
+	if revocationURL == "" {
+		return fmt.Errorf("oauth2: token URL not configured")
+	}
+
+	// Replace /token with /revoke for standard OAuth2 providers
+	// This is a common pattern, but can be overridden by provider configuration
+	if c.providerConfig != nil && c.providerConfig.RevocationEndpoint != "" {
+		revocationURL = c.providerConfig.RevocationEndpoint
+	} else {
+		// Try to construct revocation URL from token URL
+		revocationURL = c.metadata.TokenEndpoint
+		if revocationURL == "" {
+			revocationURL = c.config.TokenURL
+		}
+		// This is a heuristic - most providers have /revoke alongside /token
+		revocationURL = strings.Replace(revocationURL, "/token", "/revoke", 1)
+	}
+
+	// Prepare the request
+	data := url.Values{}
+	data.Set("token", token)
+	data.Set("client_id", c.config.ClientID)
+	data.Set("client_secret", c.config.ClientSecret)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", revocationURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return fmt.Errorf("oauth2: failed to create revocation request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// Send the request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("oauth2: revocation request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// RFC 7009 states that the authorization server responds with HTTP status code 200
+	// if the token has been revoked successfully or if the client submitted an invalid token.
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("oauth2: revocation failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
 }
 
 // Close closes the HTTP client and releases resources.
