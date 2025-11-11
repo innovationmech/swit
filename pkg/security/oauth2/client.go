@@ -6,7 +6,9 @@ package oauth2
 
 import (
 	"context"
+	cryptotls "crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -16,11 +18,13 @@ import (
 
 // Client represents an OAuth2/OIDC client.
 type Client struct {
-	config       *Config
-	oauth2Config *oauth2.Config
-	provider     *oidc.Provider
-	verifier     *oidc.IDTokenVerifier
-	httpClient   *http.Client
+	config         *Config
+	oauth2Config   *oauth2.Config
+	provider       *oidc.Provider
+	verifier       *oidc.IDTokenVerifier
+	httpClient     *http.Client
+	providerConfig *ProviderConfig
+	metadata       *ProviderMetadata
 }
 
 // NewClient creates a new OAuth2/OIDC client.
@@ -32,15 +36,33 @@ func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
 
 	// Set defaults and validate
 	cfg.SetDefaults()
+
+	// Apply provider-specific defaults
+	if err := cfg.ApplyProviderDefaults(); err != nil {
+		return nil, fmt.Errorf("oauth2: failed to apply provider defaults: %w", err)
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("oauth2: invalid config: %w", err)
 	}
 
+	// Get provider configuration
+	providerConfig, err := GetProviderConfig(cfg.Provider)
+	if err != nil {
+		return nil, fmt.Errorf("oauth2: failed to get provider config: %w", err)
+	}
+
+	// Create HTTP client with TLS and connection pooling
+	httpClient, err := createHTTPClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("oauth2: failed to create HTTP client: %w", err)
+	}
+
 	client := &Client{
-		config: cfg,
-		httpClient: &http.Client{
-			Timeout: cfg.HTTPTimeout,
-		},
+		config:         cfg,
+		httpClient:     httpClient,
+		providerConfig: providerConfig,
+		metadata:       &ProviderMetadata{},
 	}
 
 	// Perform OIDC discovery if enabled
@@ -57,8 +79,68 @@ func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
 	return client, nil
 }
 
+// createHTTPClient creates an HTTP client with TLS configuration and connection pooling.
+func createHTTPClient(cfg *Config) (*http.Client, error) {
+	// Create custom transport with connection pooling
+	transport := &http.Transport{
+		// Proxy settings - respect environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
+		Proxy: http.ProxyFromEnvironment,
+
+		// Connection pooling settings
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		MaxConnsPerHost:     100,
+		IdleConnTimeout:     90 * time.Second,
+
+		// Timeout settings
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+
+		// Dial settings
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+
+		// Force HTTP/2
+		ForceAttemptHTTP2: true,
+	}
+
+	// Configure TLS if enabled
+	if cfg.TLSConfig.Enabled {
+		tlsConfig, err := cfg.TLSConfig.ToGoTLSConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+		}
+		transport.TLSClientConfig = tlsConfig
+	} else {
+		// Use default secure TLS settings
+		transport.TLSClientConfig = &cryptotls.Config{
+			MinVersion: cryptotls.VersionTLS12,
+		}
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   cfg.HTTPTimeout,
+	}, nil
+}
+
+// Initialize initializes the client.
+// This method can be called to reinitialize the client with a new context.
+func (c *Client) Initialize(ctx context.Context) error {
+	if c.config.UseDiscovery {
+		return c.initWithDiscovery(ctx)
+	}
+	return c.initManual()
+}
+
 // initWithDiscovery initializes the client using OIDC discovery.
 func (c *Client) initWithDiscovery(ctx context.Context) error {
+	// Use custom HTTP client for OIDC discovery
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
+
 	// Create OIDC provider
 	provider, err := oidc.NewProvider(ctx, c.config.IssuerURL)
 	if err != nil {
@@ -66,12 +148,29 @@ func (c *Client) initWithDiscovery(ctx context.Context) error {
 	}
 	c.provider = provider
 
+	// Extract provider metadata
+	endpoint := provider.Endpoint()
+	c.metadata.Issuer = c.config.IssuerURL
+	c.metadata.AuthorizationEndpoint = endpoint.AuthURL
+	c.metadata.TokenEndpoint = endpoint.TokenURL
+
+	// Get JWKS URL from provider claims
+	var claims struct {
+		Issuer      string `json:"issuer"`
+		JWKSURL     string `json:"jwks_uri"`
+		UserInfoURL string `json:"userinfo_endpoint"`
+	}
+	if err := provider.Claims(&claims); err == nil {
+		c.metadata.JWKSEndpoint = claims.JWKSURL
+		c.metadata.UserInfoEndpoint = claims.UserInfoURL
+	}
+
 	// Create OAuth2 config
 	c.oauth2Config = &oauth2.Config{
 		ClientID:     c.config.ClientID,
 		ClientSecret: c.config.ClientSecret,
 		RedirectURL:  c.config.RedirectURL,
-		Endpoint:     provider.Endpoint(),
+		Endpoint:     endpoint,
 		Scopes:       c.config.Scopes,
 	}
 
@@ -100,6 +199,13 @@ func (c *Client) initManual() error {
 		},
 		Scopes: c.config.Scopes,
 	}
+
+	// Populate metadata from manual configuration
+	c.metadata.AuthorizationEndpoint = c.config.AuthURL
+	c.metadata.TokenEndpoint = c.config.TokenURL
+	c.metadata.UserInfoEndpoint = c.config.UserInfoURL
+	c.metadata.JWKSEndpoint = c.config.JWKSURL
+	c.metadata.Issuer = c.config.IssuerURL
 
 	// Note: Without OIDC discovery, we cannot create a verifier.
 	// Token verification will need to be done manually using JWT libraries.
@@ -200,4 +306,43 @@ func IsTokenExpiring(token *oauth2.Token, within time.Duration) bool {
 		return false
 	}
 	return time.Now().Add(within).After(token.Expiry)
+}
+
+// GetProviderConfig returns the provider configuration.
+func (c *Client) GetProviderConfig() *ProviderConfig {
+	return c.providerConfig
+}
+
+// GetMetadata returns the provider metadata.
+func (c *Client) GetMetadata() *ProviderMetadata {
+	return c.metadata
+}
+
+// GetHTTPClient returns the HTTP client used by the OAuth2 client.
+func (c *Client) GetHTTPClient() *http.Client {
+	return c.httpClient
+}
+
+// GetIssuerURL returns the issuer URL.
+func (c *Client) GetIssuerURL() string {
+	if c.metadata != nil {
+		return c.metadata.Issuer
+	}
+	return c.config.IssuerURL
+}
+
+// GetJWKSURL returns the JWKS URL.
+func (c *Client) GetJWKSURL() string {
+	if c.metadata != nil && c.metadata.JWKSEndpoint != "" {
+		return c.metadata.JWKSEndpoint
+	}
+	return c.config.JWKSURL
+}
+
+// Close closes the HTTP client and releases resources.
+func (c *Client) Close() error {
+	if c.httpClient != nil {
+		c.httpClient.CloseIdleConnections()
+	}
+	return nil
 }
