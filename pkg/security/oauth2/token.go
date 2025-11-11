@@ -236,3 +236,52 @@ func FromJSON(data []byte) (*Token, error) {
 	}
 	return &token, nil
 }
+
+// TokenIntrospection represents the result of a token introspection request.
+type TokenIntrospection struct {
+	Active     bool                   `json:"active"`
+	Scope      string                 `json:"scope,omitempty"`
+	ClientID   string                 `json:"client_id,omitempty"`
+	Username   string                 `json:"username,omitempty"`
+	TokenType  string                 `json:"token_type,omitempty"`
+	Exp        int64                  `json:"exp,omitempty"`
+	Iat        int64                  `json:"iat,omitempty"`
+	Nbf        int64                  `json:"nbf,omitempty"`
+	Sub        string                 `json:"sub,omitempty"`
+	Aud        string                 `json:"aud,omitempty"`
+	Iss        string                 `json:"iss,omitempty"`
+	Jti        string                 `json:"jti,omitempty"`
+	Extensions map[string]interface{} `json:"-"`
+}
+
+// IsExpired checks if the introspected token is expired.
+func (ti *TokenIntrospection) IsExpired() bool {
+	if ti.Exp == 0 {
+		return false
+	}
+	return time.Now().Unix() > ti.Exp
+}
+
+// ExpiresAt returns the expiration time of the introspected token.
+func (ti *TokenIntrospection) ExpiresAt() time.Time {
+	if ti.Exp == 0 {
+		return time.Time{}
+	}
+	return time.Unix(ti.Exp, 0)
+}
+
+// IssuedAt returns the issued time of the introspected token.
+func (ti *TokenIntrospection) IssuedAt() time.Time {
+	if ti.Iat == 0 {
+		return time.Time{}
+	}
+	return time.Unix(ti.Iat, 0)
+}
+
+// NotBefore returns the not-before time of the introspected token.
+func (ti *TokenIntrospection) NotBefore() time.Time {
+	if ti.Nbf == 0 {
+		return time.Time{}
+	}
+	return time.Unix(ti.Nbf, 0)
+}
