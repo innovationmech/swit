@@ -224,17 +224,16 @@ func (c *Client) AuthCodeURLWithFlow(flowState *FlowState, opts ...oauth2.AuthCo
 		opts = append(opts, oauth2.SetAuthURLParam("nonce", flowState.Nonce))
 	}
 
-	// Add PKCE if present
+	// Add PKCE if present - derive challenge from existing verifier
 	if flowState.PKCEVerifier != "" {
-		pkceParams, err := GeneratePKCEParams()
-		if err == nil {
-			opts = append(opts,
-				oauth2.SetAuthURLParam("code_challenge", pkceParams.CodeChallenge),
-				oauth2.SetAuthURLParam("code_challenge_method", pkceParams.Method),
-			)
-			// Update the flow state with the actual verifier used
-			flowState.PKCEVerifier = pkceParams.CodeVerifier
-		}
+		// Compute code_challenge from the existing code_verifier (S256 method)
+		hash := sha256.Sum256([]byte(flowState.PKCEVerifier))
+		codeChallenge := base64.RawURLEncoding.EncodeToString(hash[:])
+
+		opts = append(opts,
+			oauth2.SetAuthURLParam("code_challenge", codeChallenge),
+			oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+		)
 	}
 
 	return c.oauth2Config.AuthCodeURL(flowState.State, opts...)

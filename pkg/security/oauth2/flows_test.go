@@ -414,6 +414,9 @@ func TestClientAuthCodeURLWithFlow(t *testing.T) {
 			OriginalScope: []string{"openid", "profile"},
 		}
 
+		// Store original verifier to ensure it doesn't change
+		originalVerifier := flowState.PKCEVerifier
+
 		authURL := client.AuthCodeURLWithFlow(flowState)
 
 		if authURL == "" {
@@ -428,9 +431,19 @@ func TestClientAuthCodeURLWithFlow(t *testing.T) {
 			t.Error("AuthCodeURLWithFlow missing nonce parameter")
 		}
 
-		// Note: PKCE will be regenerated in the method, so we just check if it's present
 		if !strings.Contains(authURL, "code_challenge=") {
 			t.Error("AuthCodeURLWithFlow missing code_challenge parameter")
+		}
+
+		// Verify that the verifier wasn't modified
+		if flowState.PKCEVerifier != originalVerifier {
+			t.Errorf("AuthCodeURLWithFlow modified PKCEVerifier: got %v, want %v", flowState.PKCEVerifier, originalVerifier)
+		}
+
+		// Call again to verify idempotency - URL should be identical
+		authURL2 := client.AuthCodeURLWithFlow(flowState)
+		if authURL != authURL2 {
+			t.Error("AuthCodeURLWithFlow is not idempotent - generates different URLs on subsequent calls")
 		}
 	})
 
