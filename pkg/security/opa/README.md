@@ -7,6 +7,10 @@
 - **双模式支持**：支持嵌入式模式和远程模式
   - 嵌入式模式：OPA 引擎运行在同一进程中
   - 远程模式：连接到外部 OPA 服务器
+- **统一路径格式**：自动处理路径格式转换
+  - 支持斜杠格式：`rbac/allow`、`authz/rules/allow`
+  - 支持点分隔格式：`rbac.allow`、`authz.rules.allow`
+  - 两种格式在嵌入式和远程模式下均可互换使用
 - **策略管理**：动态加载、更新和移除策略
 - **决策缓存**：内置决策缓存机制，提升性能
 - **策略模板**：提供 RBAC 和 ABAC 策略模板
@@ -28,6 +32,30 @@ pkg/security/opa/
     ├── abac.rego       # ABAC 策略模板
     └── examples/       # 示例策略
 ```
+
+## 决策路径格式
+
+本包支持两种决策路径格式，并在嵌入式和远程模式下自动转换：
+
+### 斜杠格式（推荐用于 REST API）
+
+```go
+// 这些格式均有效
+result, _ := client.Evaluate(ctx, "rbac/allow", input)
+result, _ := client.Evaluate(ctx, "authz/rules/allow", input)
+```
+
+### 点分隔格式（Rego 原生格式）
+
+```go
+// 这些格式也有效
+result, _ := client.Evaluate(ctx, "rbac.allow", input)
+result, _ := client.Evaluate(ctx, "authz.rules.allow", input)
+```
+
+**注意**：两种格式可以互换使用，无论是嵌入式还是远程模式。路径会自动规范化：
+- 嵌入式模式：转换为点分隔格式用于 Rego 查询
+- 远程模式：转换为斜杠格式用于 REST API URL
 
 ## 快速开始
 

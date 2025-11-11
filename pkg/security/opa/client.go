@@ -17,6 +17,7 @@ package opa
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/open-policy-agent/opa/rego"
 )
@@ -138,5 +139,29 @@ func NewClientWithOptions(ctx context.Context, opts ...ClientOption) (Client, er
 		opt(config)
 	}
 	return NewClient(ctx, config)
+}
+
+// normalizePath 规范化决策路径格式
+// 接受两种格式：
+// - 点分隔（用于嵌入式模式）: "rbac.allow"
+// - 斜杠分隔（用于 REST API）: "rbac/allow"
+// 返回两种格式：dotPath（用于 Rego 查询）和 slashPath（用于 REST URL）
+func normalizePath(path string) (dotPath, slashPath string) {
+	if path == "" {
+		return "", ""
+	}
+
+	// 检测是否为斜杠分隔格式
+	if strings.Contains(path, "/") {
+		// 转换 rbac/allow -> rbac.allow
+		slashPath = path
+		dotPath = strings.ReplaceAll(path, "/", ".")
+	} else {
+		// 已经是点分隔格式
+		dotPath = path
+		slashPath = strings.ReplaceAll(path, ".", "/")
+	}
+
+	return dotPath, slashPath
 }
 

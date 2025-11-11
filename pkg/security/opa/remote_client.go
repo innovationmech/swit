@@ -133,8 +133,11 @@ func (c *remoteClient) Evaluate(ctx context.Context, path string, input interfac
 		}
 	}
 
-	// 构建请求
-	url := strings.TrimRight(c.config.RemoteConfig.URL, "/") + "/v1/data/" + strings.TrimPrefix(path, "/")
+	// 规范化路径：支持 "rbac/allow" 和 "rbac.allow" 两种格式
+	_, slashPath := normalizePath(path)
+
+	// 构建请求 - 使用斜杠分隔的路径
+	url := strings.TrimRight(c.config.RemoteConfig.URL, "/") + "/v1/data/" + strings.TrimPrefix(slashPath, "/")
 
 	requestBody := map[string]interface{}{
 		"input": input,

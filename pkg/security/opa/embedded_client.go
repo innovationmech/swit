@@ -114,8 +114,11 @@ func (c *embeddedClient) Evaluate(ctx context.Context, path string, input interf
 		}
 	}
 
+	// 规范化路径：支持 "rbac/allow" 和 "rbac.allow" 两种格式
+	dotPath, _ := normalizePath(path)
+
 	// 构建查询 - 使用完整的赋值查询避免未绑定变量错误
-	query := fmt.Sprintf("result = data.%s", path)
+	query := fmt.Sprintf("result = data.%s", dotPath)
 	
 	// 使用 rego.Module 逐个添加模块
 	opts := []func(*rego.Rego){
