@@ -195,12 +195,12 @@ func (tm *tracingManager) createResource(config *TracingConfig) (*resource.Resou
 		attrs = append(attrs, attribute.String(key, value))
 	}
 
+	// Use NewSchemaless to avoid schema URL conflicts in tests
+	// This prevents "conflicting Schema URL" errors when multiple tests
+	// initialize TracingManager with different dependency versions
 	return resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			"https://opentelemetry.io/schemas/1.26.0",
-			attrs...,
-		),
+		resource.NewSchemaless(attrs...),
 	)
 }
 

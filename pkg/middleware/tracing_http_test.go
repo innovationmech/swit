@@ -22,6 +22,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,11 +31,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/innovationmech/swit/pkg/tracing"
 )
 
 func TestTracingMiddleware(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	// Setup test tracing manager
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
@@ -43,6 +51,11 @@ func TestTracingMiddleware(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
+	
+	// Shutdown the tracing manager after test
+	t.Cleanup(func() {
+		_ = tm.Shutdown(context.Background())
+	})
 
 	// Setup Gin router with tracing middleware
 	gin.SetMode(gin.TestMode)
@@ -80,6 +93,11 @@ func TestTracingMiddleware(t *testing.T) {
 }
 
 func TestTracingMiddlewareWithConfig(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
@@ -87,6 +105,11 @@ func TestTracingMiddlewareWithConfig(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
+	
+	// Shutdown the tracing manager after test
+	t.Cleanup(func() {
+		_ = tm.Shutdown(context.Background())
+	})
 
 	tracingConfig := &HTTPTracingConfig{
 		SkipPaths:        []string{"/health"},
@@ -128,6 +151,11 @@ func TestTracingMiddlewareWithConfig(t *testing.T) {
 }
 
 func TestHTTPClientTracingRoundTripper(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
@@ -135,6 +163,11 @@ func TestHTTPClientTracingRoundTripper(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
+	
+	// Shutdown the tracing manager after test
+	t.Cleanup(func() {
+		_ = tm.Shutdown(context.Background())
+	})
 
 	// Create test server
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

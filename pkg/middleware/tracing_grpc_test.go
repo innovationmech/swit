@@ -27,6 +27,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,6 +37,11 @@ import (
 )
 
 func TestUnaryServerInterceptor(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	// Setup test tracing manager
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
@@ -43,6 +50,11 @@ func TestUnaryServerInterceptor(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
+	
+	// Shutdown the tracing manager after test
+	t.Cleanup(func() {
+		_ = tm.Shutdown(context.Background())
+	})
 
 	interceptor := UnaryServerInterceptor(tm)
 
@@ -81,6 +93,11 @@ func TestUnaryServerInterceptor(t *testing.T) {
 }
 
 func TestUnaryServerInterceptorWithConfig(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
@@ -88,6 +105,11 @@ func TestUnaryServerInterceptorWithConfig(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
+	
+	// Shutdown the tracing manager after test
+	t.Cleanup(func() {
+		_ = tm.Shutdown(context.Background())
+	})
 
 	tracingConfig := &GRPCTracingConfig{
 		SkipMethods:       []string{"/grpc.health.v1.Health/Check"},
@@ -130,6 +152,11 @@ func TestUnaryServerInterceptorWithConfig(t *testing.T) {
 }
 
 func TestUnaryClientInterceptor(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	config := tracing.DefaultTracingConfig()
 	config.Enabled = true
 	config.Exporter.Type = "console"
@@ -137,6 +164,11 @@ func TestUnaryClientInterceptor(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
+	
+	// Shutdown the tracing manager after test
+	t.Cleanup(func() {
+		_ = tm.Shutdown(context.Background())
+	})
 
 	interceptor := UnaryClientInterceptor(tm)
 

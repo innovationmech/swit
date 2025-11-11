@@ -28,6 +28,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/innovationmech/swit/pkg/tracing"
 )
@@ -84,6 +86,11 @@ func TestNewSagaTracingManager(t *testing.T) {
 }
 
 func TestSagaTracingManager_StartSagaSpan(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name       string
 		enabled    bool
@@ -122,6 +129,11 @@ func TestSagaTracingManager_StartSagaSpan(t *testing.T) {
 }
 
 func TestSagaTracingManager_StartStepSpan(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name     string
 		enabled  bool
@@ -164,6 +176,11 @@ func TestSagaTracingManager_StartStepSpan(t *testing.T) {
 }
 
 func TestSagaTracingManager_RecordSagaEvent(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name       string
 		enabled    bool
@@ -213,6 +230,11 @@ func TestSagaTracingManager_RecordSagaEvent(t *testing.T) {
 }
 
 func TestSagaTracingManager_RecordSagaSuccess(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name    string
 		enabled bool
@@ -245,6 +267,11 @@ func TestSagaTracingManager_RecordSagaSuccess(t *testing.T) {
 }
 
 func TestSagaTracingManager_RecordSagaFailure(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name    string
 		enabled bool
@@ -290,6 +317,11 @@ func TestSagaTracingManager_RecordSagaFailure(t *testing.T) {
 }
 
 func TestSagaTracingManager_RecordSagaCompensated(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name    string
 		enabled bool
@@ -325,6 +357,11 @@ func TestSagaTracingManager_RecordSagaCompensated(t *testing.T) {
 }
 
 func TestSagaTracingManager_RecordStepSuccess(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name     string
 		enabled  bool
@@ -360,6 +397,11 @@ func TestSagaTracingManager_RecordStepSuccess(t *testing.T) {
 }
 
 func TestSagaTracingManager_RecordStepFailure(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name     string
 		enabled  bool
@@ -408,6 +450,11 @@ func TestSagaTracingManager_RecordStepFailure(t *testing.T) {
 }
 
 func TestSagaTracingManager_InjectExtractContext(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	tests := []struct {
 		name    string
 		enabled bool
@@ -450,6 +497,11 @@ func TestSagaTracingManager_InjectExtractContext(t *testing.T) {
 }
 
 func TestSagaTracingManager_CompleteWorkflow(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	// This test simulates a complete Saga workflow with tracing
 	manager := createTestManager(t, true)
 	ctx := context.Background()
@@ -502,6 +554,11 @@ func TestSagaTracingManager_CompleteWorkflow(t *testing.T) {
 }
 
 func TestSagaTracingManager_CompensationWorkflow(t *testing.T) {
+	// Cleanup: Reset global TracerProvider after test to avoid schema conflicts
+	t.Cleanup(func() {
+		otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	})
+
 	// This test simulates a Saga compensation workflow
 	manager := createTestManager(t, true)
 	ctx := context.Background()
@@ -586,6 +643,11 @@ func createTestManager(t *testing.T, enabled bool) *SagaTracingManager {
 
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err, "failed to initialize tracing manager")
+	
+	// Cleanup: Shutdown the tracing manager after test
+	t.Cleanup(func() {
+		_ = tm.Shutdown(context.Background())
+	})
 
 	return NewSagaTracingManager(&SagaTracingConfig{
 		Enabled:        true,
