@@ -7,6 +7,7 @@
 package jwt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -31,11 +32,13 @@ var (
 
 // Validator provides JWT token validation functionality.
 type Validator struct {
-	config *Config
+	config    *Config
+	jwksCache *JWKSCache
+	blacklist TokenBlacklist
 }
 
 // NewValidator creates a new JWT validator with the given configuration.
-func NewValidator(config *Config) (*Validator, error) {
+func NewValidator(config *Config, opts ...ValidatorOption) (*Validator, error) {
 	if config == nil {
 		return nil, fmt.Errorf("jwt: config cannot be nil")
 	}
@@ -45,14 +48,48 @@ func NewValidator(config *Config) (*Validator, error) {
 		return nil, fmt.Errorf("jwt: invalid config: %w", err)
 	}
 
-	return &Validator{
+	validator := &Validator{
 		config: config,
-	}, nil
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(validator)
+	}
+
+	// Initialize JWKS cache if configured
+	if config.JWKSConfig != nil {
+		cache, err := NewJWKSCache(config.JWKSConfig)
+		if err != nil {
+			return nil, fmt.Errorf("jwt: failed to initialize JWKS cache: %w", err)
+		}
+		validator.jwksCache = cache
+	}
+
+	return validator, nil
 }
 
 // ValidateToken validates a JWT token string and returns the parsed token.
 func (v *Validator) ValidateToken(tokenString string) (*jwt.Token, error) {
-	token, err := jwt.Parse(tokenString, v.keyFunc)
+	return v.ValidateWithContext(context.Background(), tokenString)
+}
+
+// ValidateWithContext validates a JWT token string with context and returns the parsed token.
+func (v *Validator) ValidateWithContext(ctx context.Context, tokenString string) (*jwt.Token, error) {
+	// Check blacklist if configured
+	if v.blacklist != nil {
+		blacklisted, err := v.blacklist.IsBlacklisted(ctx, tokenString)
+		if err != nil {
+			return nil, fmt.Errorf("jwt: failed to check blacklist: %w", err)
+		}
+		if blacklisted {
+			return nil, fmt.Errorf("%w: token is blacklisted", ErrInvalidToken)
+		}
+	}
+
+	// Parse and validate token with leeway
+	parser := jwt.NewParser(jwt.WithLeeway(v.config.LeewayDuration))
+	token, err := parser.Parse(tokenString, v.keyFunc)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired
@@ -122,16 +159,29 @@ func (v *Validator) keyFunc(token *jwt.Token) (interface{}, error) {
 	switch token.Method.(type) {
 	case *jwt.SigningMethodHMAC:
 		return []byte(v.config.Secret), nil
-	case *jwt.SigningMethodRSA:
+	case *jwt.SigningMethodRSA, *jwt.SigningMethodECDSA:
+		// Try JWKS cache first if available
+		if v.jwksCache != nil {
+			kid, ok := token.Header["kid"].(string)
+			if ok {
+				key, err := v.jwksCache.GetKey(kid)
+				if err == nil {
+					return key, nil
+				}
+				// If key not found in cache, try to refresh and get again
+				if err := v.jwksCache.Refresh(context.Background()); err == nil {
+					if key, err := v.jwksCache.GetKey(kid); err == nil {
+						return key, nil
+					}
+				}
+			}
+		}
+
+		// Fallback to configured public key
 		if v.config.PublicKey != nil {
 			return v.config.PublicKey, nil
 		}
-		return nil, fmt.Errorf("jwt: RSA public key not configured")
-	case *jwt.SigningMethodECDSA:
-		if v.config.PublicKey != nil {
-			return v.config.PublicKey, nil
-		}
-		return nil, fmt.Errorf("jwt: ECDSA public key not configured")
+		return nil, fmt.Errorf("jwt: public key not configured and not found in JWKS")
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrInvalidSigningMethod, token.Method.Alg())
 	}
@@ -334,6 +384,9 @@ type Config struct {
 
 	// LeewayDuration is the time leeway for validating time-based claims.
 	LeewayDuration time.Duration `json:"leeway_duration" yaml:"leeway_duration" mapstructure:"leeway_duration"`
+
+	// JWKSConfig is the JWKS cache configuration (optional).
+	JWKSConfig *JWKSCacheConfig `json:"jwks_config,omitempty" yaml:"jwks_config,omitempty" mapstructure:"jwks_config"`
 }
 
 // SetDefaults sets default values for the configuration.
@@ -349,8 +402,12 @@ func (c *Config) SetDefaults() {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Secret == "" && c.PublicKey == nil {
-		return fmt.Errorf("jwt: either secret or public_key must be configured")
+	// At least one key source must be configured:
+	// 1. Secret (for HMAC algorithms)
+	// 2. PublicKey (for RSA/ECDSA with static key)
+	// 3. JWKSConfig (for RSA/ECDSA with dynamic key discovery)
+	if c.Secret == "" && c.PublicKey == nil && c.JWKSConfig == nil {
+		return fmt.Errorf("jwt: at least one of secret, public_key, or jwks_config must be configured")
 	}
 
 	return nil

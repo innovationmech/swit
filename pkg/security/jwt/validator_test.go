@@ -5,7 +5,11 @@
 package jwt
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -83,7 +87,16 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "invalid - no secret or public key",
+			name: "valid with JWKS config",
+			config: &Config{
+				JWKSConfig: &JWKSCacheConfig{
+					URL: "https://example.com/.well-known/jwks.json",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "invalid - no key source configured",
 			config:  &Config{},
 			wantErr: true,
 		},
@@ -566,4 +579,327 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestValidator_ValidateWithContext(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	t.Run("valid token with context", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+			"iat": time.Now().Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		ctx := context.Background()
+		validatedToken, err := validator.ValidateWithContext(ctx, tokenString)
+		if err != nil {
+			t.Errorf("ValidateWithContext() error = %v, want nil", err)
+		}
+		if validatedToken == nil || !validatedToken.Valid {
+			t.Error("Expected token to be valid")
+		}
+	})
+
+	t.Run("expired token with context", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(-1 * time.Hour).Unix(),
+			"iat": time.Now().Add(-2 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		ctx := context.Background()
+		_, err = validator.ValidateWithContext(ctx, tokenString)
+		if err != ErrTokenExpired {
+			t.Errorf("ValidateWithContext() error = %v, want ErrTokenExpired", err)
+		}
+	})
+}
+
+func TestValidator_ParseToken(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	t.Run("parse valid token", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub": "user123",
+			"exp": time.Now().Add(1 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		parsedToken, err := validator.ParseToken(tokenString)
+		if err != nil {
+			t.Errorf("ParseToken() error = %v, want nil", err)
+		}
+		if parsedToken == nil {
+			t.Error("Expected parsed token to be non-nil")
+		}
+	})
+
+	t.Run("parse invalid token", func(t *testing.T) {
+		_, err := validator.ParseToken("not.a.valid.token")
+		if err == nil {
+			t.Error("Expected error for invalid token")
+		}
+	})
+}
+
+func TestGetClaimTime(t *testing.T) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"exp": now.Unix(),
+		"iat": float64(now.Unix()),
+	}
+
+	tests := []struct {
+		name    string
+		key     string
+		wantOk  bool
+		wantVal time.Time
+	}{
+		{
+			name:    "existing time claim",
+			key:     "exp",
+			wantOk:  true,
+			wantVal: time.Unix(now.Unix(), 0),
+		},
+		{
+			name:   "non-existent claim",
+			key:    "missing",
+			wantOk: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotVal, gotOk := GetClaimTime(claims, tt.key)
+			if gotOk != tt.wantOk {
+				t.Errorf("GetClaimTime() ok = %v, want %v", gotOk, tt.wantOk)
+			}
+			if gotOk && gotVal.Unix() != tt.wantVal.Unix() {
+				t.Errorf("GetClaimTime() value = %v, want %v", gotVal, tt.wantVal)
+			}
+		})
+	}
+}
+
+func TestValidatorOptions(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+
+	t.Run("WithSkipExpiry", func(t *testing.T) {
+		config := &Config{
+			Secret: secret,
+		}
+
+		validator, err := NewValidator(config, WithSkipExpiry())
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		if !validator.config.SkipExpiry {
+			t.Error("Expected SkipExpiry to be true")
+		}
+	})
+
+	t.Run("WithSkipIssuer", func(t *testing.T) {
+		config := &Config{
+			Secret: secret,
+			Issuer: "https://auth.example.com",
+		}
+
+		validator, err := NewValidator(config, WithSkipIssuer())
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		if !validator.config.SkipIssuer {
+			t.Error("Expected SkipIssuer to be true")
+		}
+	})
+}
+
+func TestValidator_isAllowedSigningMethod(t *testing.T) {
+	tests := []struct {
+		name              string
+		allowedAlgorithms []string
+		alg               string
+		want              bool
+	}{
+		{
+			name:              "allowed algorithm",
+			allowedAlgorithms: []string{"HS256", "RS256"},
+			alg:               "HS256",
+			want:              true,
+		},
+		{
+			name:              "disallowed algorithm",
+			allowedAlgorithms: []string{"HS256", "RS256"},
+			alg:               "ES256",
+			want:              false,
+		},
+		{
+			name:              "empty allowed algorithms - allow all",
+			allowedAlgorithms: []string{},
+			alg:               "HS256",
+			want:              true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				Secret:            "test-secret",
+				AllowedAlgorithms: tt.allowedAlgorithms,
+			}
+			validator, err := NewValidator(config)
+			if err != nil {
+				t.Fatalf("Failed to create validator: %v", err)
+			}
+
+			got := validator.isAllowedSigningMethod(tt.alg)
+			if got != tt.want {
+				t.Errorf("isAllowedSigningMethod() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractClaims(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+
+	t.Run("extract from MapClaims", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"sub":  "user123",
+			"name": "John Doe",
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("Failed to sign token: %v", err)
+		}
+
+		config := &Config{
+			Secret: secret,
+		}
+		validator, err := NewValidator(config)
+		if err != nil {
+			t.Fatalf("Failed to create validator: %v", err)
+		}
+
+		validatedToken, err := validator.ValidateToken(tokenString)
+		if err != nil {
+			t.Fatalf("Failed to validate token: %v", err)
+		}
+
+		extractedClaims, err := ExtractClaims(validatedToken)
+		if err != nil {
+			t.Errorf("ExtractClaims() error = %v", err)
+		}
+		if extractedClaims == nil {
+			t.Error("Expected extracted claims to be non-nil")
+		}
+		if sub, ok := extractedClaims["sub"].(string); !ok || sub != "user123" {
+			t.Error("Expected sub claim to be user123")
+		}
+	})
+}
+
+func TestNewValidator_WithOptions(t *testing.T) {
+	secret := "test-secret-key-for-testing"
+	blacklist := NewInMemoryBlacklist()
+	defer blacklist.Stop()
+
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config, WithBlacklist(blacklist))
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	if validator.blacklist == nil {
+		t.Error("Expected validator to have blacklist configured")
+	}
+}
+
+func TestValidator_JWKSOnlyConfig(t *testing.T) {
+	// Create a test server that returns JWKS with RSA key
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwks := JWKSet{
+			Keys: []JWK{
+				{
+					Kid: "test-rsa-key",
+					Kty: "RSA",
+					Alg: "RS256",
+					Use: "sig",
+					N:   "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw",
+					E:   "AQAB",
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(jwks)
+	}))
+	defer server.Close()
+
+	// Create validator with JWKS-only configuration
+	config := &Config{
+		JWKSConfig: &JWKSCacheConfig{
+			URL:         server.URL,
+			RefreshTTL:  1 * time.Hour,
+			AutoRefresh: false,
+		},
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		t.Fatalf("Failed to create validator with JWKS-only config: %v", err)
+	}
+
+	if validator.jwksCache == nil {
+		t.Error("Expected validator to have JWKS cache configured")
+	}
+
+	// Verify JWKS cache is initialized and has the key
+	if validator.jwksCache.KeyCount() != 1 {
+		t.Errorf("Expected JWKS cache to have 1 key, got %d", validator.jwksCache.KeyCount())
+	}
+
+	// Verify we can get the key from cache
+	key, err := validator.jwksCache.GetKey("test-rsa-key")
+	if err != nil {
+		t.Errorf("Failed to get key from JWKS cache: %v", err)
+	}
+	if key == nil {
+		t.Error("Expected key to be non-nil")
+	}
 }
