@@ -832,3 +832,49 @@ func TestIsInWhiteList(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeLogValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no_special_chars",
+			input:    "/api/users",
+			expected: "/api/users",
+		},
+		{
+			name:     "with_newline",
+			input:    "/api/users\n",
+			expected: "/api/users",
+		},
+		{
+			name:     "with_carriage_return",
+			input:    "/api/users\r\n",
+			expected: "/api/users",
+		},
+		{
+			name:     "with_tab",
+			input:    "/api\t/users",
+			expected: "/api /users",
+		},
+		{
+			name:     "multiple_special_chars",
+			input:    "/api/users\nGET /admin\r\n",
+			expected: "/api/usersGET /admin",
+		},
+		{
+			name:     "log_injection_attempt",
+			input:    "user123\nERROR: Unauthorized access",
+			expected: "user123ERROR: Unauthorized access",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeLogValue(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

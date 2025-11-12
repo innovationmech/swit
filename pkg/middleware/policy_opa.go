@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -204,7 +205,7 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 			if config.Logger != nil {
 				config.Logger.Error("Failed to build policy input",
 					zap.Error(err),
-					zap.String("path", c.Request.URL.Path))
+					zap.String("path", sanitizeLogValue(c.Request.URL.Path)))
 			}
 			config.ErrorHandler(c, err)
 			return
@@ -241,8 +242,8 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 			if config.Logger != nil {
 				config.Logger.Error("Policy evaluation failed",
 					zap.Error(err),
-					zap.String("path", c.Request.URL.Path),
-					zap.String("decision_path", decisionPath),
+					zap.String("path", sanitizeLogValue(c.Request.URL.Path)),
+					zap.String("decision_path", sanitizeLogValue(decisionPath)),
 					zap.Duration("duration", duration))
 			}
 			config.ErrorHandler(c, err)
@@ -253,9 +254,9 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 		if !result.Allowed {
 			if config.Logger != nil {
 				config.Logger.Warn("Policy evaluation denied",
-					zap.String("path", c.Request.URL.Path),
-					zap.String("decision_path", decisionPath),
-					zap.String("user_id", input.User.ID),
+					zap.String("path", sanitizeLogValue(c.Request.URL.Path)),
+					zap.String("decision_path", sanitizeLogValue(decisionPath)),
+					zap.String("user_id", sanitizeLogValue(input.User.ID)),
 					zap.Duration("duration", duration))
 			}
 			config.DeniedHandler(c, result)
@@ -265,9 +266,9 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 		// 允许访问，记录日志
 		if config.Logger != nil {
 			config.Logger.Debug("Policy evaluation allowed",
-				zap.String("path", c.Request.URL.Path),
-				zap.String("decision_path", decisionPath),
-				zap.String("user_id", input.User.ID),
+				zap.String("path", sanitizeLogValue(c.Request.URL.Path)),
+				zap.String("decision_path", sanitizeLogValue(decisionPath)),
+				zap.String("user_id", sanitizeLogValue(input.User.ID)),
 				zap.Duration("duration", duration))
 		}
 
@@ -427,6 +428,16 @@ func isInWhiteList(path string, whiteList []string) bool {
 		}
 	}
 	return false
+}
+
+// sanitizeLogValue 清理日志值以防止日志注入
+// 移除换行符和其他可能导致日志注入的字符
+func sanitizeLogValue(value string) string {
+	// 移除换行符、回车符和制表符
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	value = strings.ReplaceAll(value, "\t", " ")
+	return value
 }
 
 // PolicyInputModifier 策略输入修改器
