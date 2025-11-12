@@ -872,7 +872,7 @@ func TestGRPCCustomInputBuilder(t *testing.T) {
 	}
 
 	config := []GRPCPolicyOption{
-		WithGRPCInputBuilder(func(ctx context.Context, fullMethod string) (*opa.PolicyInput, error) {
+		WithGRPCInputBuilder(func(ctx context.Context, fullMethod string, request interface{}) (*opa.PolicyInput, error) {
 			customBuilderCalled = true
 			return &opa.PolicyInput{
 				Request: opa.RequestInfo{
@@ -881,6 +881,9 @@ func TestGRPCCustomInputBuilder(t *testing.T) {
 				},
 				User: opa.UserInfo{
 					ID: "custom-user",
+				},
+				Custom: map[string]interface{}{
+					"request": request,
 				},
 			}, nil
 		}),
@@ -905,7 +908,7 @@ func TestGRPCInputBuilderError(t *testing.T) {
 	client := &mockPolicyOPAClient{}
 
 	config := []GRPCPolicyOption{
-		WithGRPCInputBuilder(func(ctx context.Context, fullMethod string) (*opa.PolicyInput, error) {
+		WithGRPCInputBuilder(func(ctx context.Context, fullMethod string, request interface{}) (*opa.PolicyInput, error) {
 			return nil, errors.New("input builder error")
 		}),
 	}
@@ -948,6 +951,109 @@ func TestGRPCWildcardSkipMethod(t *testing.T) {
 
 	ctx := context.Background()
 	_, err := interceptor(ctx, "test-request", info, handler.handle)
+
+	require.NoError(t, err)
+	assert.True(t, handler.called)
+}
+
+func TestGRPCRequestPayloadInInputBuilder(t *testing.T) {
+	// 测试请求负载是否正确传递给 InputBuilder
+	type TestRequest struct {
+		UserID string
+		Action string
+	}
+
+	testReq := &TestRequest{
+		UserID: "user123",
+		Action: "update",
+	}
+
+	var capturedRequest interface{}
+
+	client := &mockPolicyOPAClient{
+		evaluateFunc: func(ctx context.Context, path string, input *opa.PolicyInput) (*opa.Result, error) {
+			// 验证请求在 custom data 中
+			if req, ok := input.Custom["request"]; ok {
+				if testReq, ok := req.(*TestRequest); ok {
+					assert.Equal(t, "user123", testReq.UserID)
+					assert.Equal(t, "update", testReq.Action)
+				}
+			}
+			return &opa.Result{Allowed: true}, nil
+		},
+	}
+
+	config := []GRPCPolicyOption{
+		WithGRPCInputBuilder(func(ctx context.Context, fullMethod string, request interface{}) (*opa.PolicyInput, error) {
+			capturedRequest = request
+			// 构建包含请求数据的策略输入
+			return &opa.PolicyInput{
+				Request: opa.RequestInfo{
+					Method:   fullMethod,
+					Protocol: "grpc",
+				},
+				Custom: map[string]interface{}{
+					"request": request,
+				},
+			}, nil
+		}),
+	}
+
+	handler := &mockPolicyUnaryHandler{}
+	interceptor := UnaryPolicyInterceptor(client, config...)
+
+	info := &grpc.UnaryServerInfo{
+		FullMethod: "/test.Service/TestMethod",
+	}
+
+	ctx := context.Background()
+	_, err := interceptor(ctx, testReq, info, handler.handle)
+
+	require.NoError(t, err)
+	assert.True(t, handler.called)
+	assert.NotNil(t, capturedRequest)
+
+	// 验证传递的是正确的请求对象
+	if req, ok := capturedRequest.(*TestRequest); ok {
+		assert.Equal(t, "user123", req.UserID)
+		assert.Equal(t, "update", req.Action)
+	} else {
+		t.Error("captured request is not of expected type")
+	}
+}
+
+func TestGRPCDefaultInputBuilderWithRequest(t *testing.T) {
+	// 测试默认 InputBuilder 是否正确处理请求负载
+	type TestRequest struct {
+		ResourceID string
+	}
+
+	testReq := &TestRequest{
+		ResourceID: "resource123",
+	}
+
+	client := &mockPolicyOPAClient{
+		evaluateFunc: func(ctx context.Context, path string, input *opa.PolicyInput) (*opa.Result, error) {
+			// 验证默认 builder 将请求放入 custom data
+			assert.NotNil(t, input.Custom)
+			if req, ok := input.Custom["request"]; ok {
+				assert.NotNil(t, req)
+			} else {
+				t.Error("request should be in custom data")
+			}
+			return &opa.Result{Allowed: true}, nil
+		},
+	}
+
+	handler := &mockPolicyUnaryHandler{}
+	interceptor := UnaryPolicyInterceptor(client) // 使用默认 InputBuilder
+
+	info := &grpc.UnaryServerInfo{
+		FullMethod: "/test.Service/TestMethod",
+	}
+
+	ctx := context.Background()
+	_, err := interceptor(ctx, testReq, info, handler.handle)
 
 	require.NoError(t, err)
 	assert.True(t, handler.called)

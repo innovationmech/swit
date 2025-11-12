@@ -38,7 +38,8 @@ type GRPCPolicyConfig struct {
 	SkipMethods []string
 
 	// InputBuilder 自定义输入构建函数
-	InputBuilder func(context.Context, string) (*opa.PolicyInput, error)
+	// 参数: ctx, fullMethod, request
+	InputBuilder func(context.Context, string, interface{}) (*opa.PolicyInput, error)
 
 	// ErrorHandler 自定义错误处理函数
 	ErrorHandler func(context.Context, error) error
@@ -113,7 +114,8 @@ func WithGRPCSkipMethods(methods []string) GRPCPolicyOption {
 }
 
 // WithGRPCInputBuilder 设置自定义输入构建函数
-func WithGRPCInputBuilder(builder func(context.Context, string) (*opa.PolicyInput, error)) GRPCPolicyOption {
+// 参数: ctx, fullMethod, request
+func WithGRPCInputBuilder(builder func(context.Context, string, interface{}) (*opa.PolicyInput, error)) GRPCPolicyOption {
 	return func(c *GRPCPolicyConfig) {
 		c.InputBuilder = builder
 	}
@@ -205,8 +207,8 @@ func UnaryPolicyInterceptor(client opa.Client, options ...GRPCPolicyOption) grpc
 			return handler(ctx, req)
 		}
 
-		// 构建策略输入
-		input, err := config.InputBuilder(ctx, info.FullMethod)
+		// 构建策略输入，传递请求负载以支持消息级策略评估
+		input, err := config.InputBuilder(ctx, info.FullMethod, req)
 		if err != nil {
 			if config.Logger != nil {
 				config.Logger.Error("Failed to build policy input",
@@ -332,8 +334,9 @@ func StreamPolicyInterceptor(client opa.Client, options ...GRPCPolicyOption) grp
 			return handler(srv, ss)
 		}
 
-		// 构建策略输入
-		input, err := config.InputBuilder(ctx, info.FullMethod)
+		// 构建策略输入，对于流式 RPC 传递 ServerStream 对象
+		// 注意：流式 RPC 的消息级评估需要在应用层处理单个消息
+		input, err := config.InputBuilder(ctx, info.FullMethod, ss)
 		if err != nil {
 			if config.Logger != nil {
 				config.Logger.Error("Failed to build policy input",
@@ -416,7 +419,8 @@ func StreamPolicyInterceptor(client opa.Client, options ...GRPCPolicyOption) grp
 }
 
 // defaultGRPCPolicyInputBuilder 默认的 gRPC 输入构建函数
-func defaultGRPCPolicyInputBuilder(ctx context.Context, fullMethod string) (*opa.PolicyInput, error) {
+// 参数: ctx, fullMethod, request (一元 RPC) 或 ServerStream (流式 RPC)
+func defaultGRPCPolicyInputBuilder(ctx context.Context, fullMethod string, request interface{}) (*opa.PolicyInput, error) {
 	// 使用 PolicyInputBuilder 构建输入
 	builder := opa.NewPolicyInputBuilder().FromGRPCContext(ctx, fullMethod)
 
@@ -435,6 +439,12 @@ func defaultGRPCPolicyInputBuilder(ctx context.Context, fullMethod string) (*opa
 		if rid, ok := resourceID.(string); ok {
 			builder.WithResourceID(rid)
 		}
+	}
+
+	// 将请求对象添加到自定义数据中，供策略评估使用
+	// 这使得策略可以访问和检查消息内容
+	if request != nil {
+		builder.WithCustomData("request", request)
 	}
 
 	return builder.Build(), nil
