@@ -30,8 +30,17 @@ type Client interface {
 	// Query 执行 Rego 查询
 	Query(ctx context.Context, query string, input interface{}) (rego.ResultSet, error)
 
+	// PartialEvaluate 执行部分评估
+	PartialEvaluate(ctx context.Context, query string, input interface{}) (*PartialResult, error)
+
 	// LoadPolicy 加载策略（仅嵌入式模式支持）
 	LoadPolicy(ctx context.Context, name string, policy string) error
+
+	// LoadPolicyFromFile 从文件加载策略（仅嵌入式模式支持）
+	LoadPolicyFromFile(ctx context.Context, path string) error
+
+	// LoadData 加载数据到 OPA store（仅嵌入式模式支持）
+	LoadData(ctx context.Context, path string, data interface{}) error
 
 	// RemovePolicy 移除策略（仅嵌入式模式支持）
 	RemovePolicy(ctx context.Context, name string) error
@@ -65,6 +74,15 @@ type Metrics struct {
 
 	// TimerRegoQueryEvalNs Rego 查询评估时间（纳秒）
 	TimerRegoQueryEvalNs int64 `json:"timer_rego_query_eval_ns,omitempty"`
+}
+
+// PartialResult 部分评估结果
+type PartialResult struct {
+	// Queries 部分评估后的查询集合
+	Queries []interface{} `json:"queries"`
+
+	// Support 支持规则集合
+	Support []interface{} `json:"support,omitempty"`
 }
 
 // NewClient 创建 OPA 客户端
