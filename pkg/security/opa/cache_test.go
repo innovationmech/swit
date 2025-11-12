@@ -270,4 +270,3 @@ func TestCacheStats(t *testing.T) {
 		t.Errorf("Expected hit rate ~%.2f, got %.2f", expectedHitRate, stats.HitRate)
 	}
 }
-

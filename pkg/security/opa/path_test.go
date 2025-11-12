@@ -75,4 +75,3 @@ func TestNormalizePath(t *testing.T) {
 		})
 	}
 }
-

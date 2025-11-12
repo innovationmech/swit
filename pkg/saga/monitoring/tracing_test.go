@@ -643,7 +643,7 @@ func createTestManager(t *testing.T, enabled bool) *SagaTracingManager {
 
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err, "failed to initialize tracing manager")
-	
+
 	// Cleanup: Shutdown the tracing manager after test
 	t.Cleanup(func() {
 		_ = tm.Shutdown(context.Background())

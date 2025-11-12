@@ -307,4 +307,3 @@ func (c *remoteClient) Close(ctx context.Context) error {
 func (c *remoteClient) IsEmbedded() bool {
 	return false
 }
-

@@ -305,4 +305,3 @@ func TestAuthConfigValidate(t *testing.T) {
 		})
 	}
 }
-

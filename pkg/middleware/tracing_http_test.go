@@ -51,7 +51,7 @@ func TestTracingMiddleware(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
-	
+
 	// Shutdown the tracing manager after test
 	t.Cleanup(func() {
 		_ = tm.Shutdown(context.Background())
@@ -105,7 +105,7 @@ func TestTracingMiddlewareWithConfig(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
-	
+
 	// Shutdown the tracing manager after test
 	t.Cleanup(func() {
 		_ = tm.Shutdown(context.Background())
@@ -163,7 +163,7 @@ func TestHTTPClientTracingRoundTripper(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(nil, config)
 	require.NoError(t, err)
-	
+
 	// Shutdown the tracing manager after test
 	t.Cleanup(func() {
 		_ = tm.Shutdown(context.Background())

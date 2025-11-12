@@ -164,4 +164,3 @@ func normalizePath(path string) (dotPath, slashPath string) {
 
 	return dotPath, slashPath
 }
-

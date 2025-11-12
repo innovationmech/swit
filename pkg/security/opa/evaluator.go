@@ -73,7 +73,7 @@ func (e *Evaluator) EvaluateWithDefault(ctx context.Context, path string, input 
 // BatchEvaluate 批量评估策略
 func (e *Evaluator) BatchEvaluate(ctx context.Context, path string, inputs []interface{}) ([]*Result, error) {
 	results := make([]*Result, len(inputs))
-	
+
 	for i, input := range inputs {
 		result, err := e.client.Evaluate(ctx, path, input)
 		if err != nil {
@@ -190,4 +190,3 @@ type Environment struct {
 	// Attributes 环境属性
 	Attributes map[string]interface{} `json:"attributes,omitempty"`
 }
-

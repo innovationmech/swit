@@ -50,7 +50,7 @@ func TestUnaryServerInterceptor(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
-	
+
 	// Shutdown the tracing manager after test
 	t.Cleanup(func() {
 		_ = tm.Shutdown(context.Background())
@@ -105,7 +105,7 @@ func TestUnaryServerInterceptorWithConfig(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
-	
+
 	// Shutdown the tracing manager after test
 	t.Cleanup(func() {
 		_ = tm.Shutdown(context.Background())
@@ -164,7 +164,7 @@ func TestUnaryClientInterceptor(t *testing.T) {
 	tm := tracing.NewTracingManager()
 	err := tm.Initialize(context.Background(), config)
 	require.NoError(t, err)
-	
+
 	// Shutdown the tracing manager after test
 	t.Cleanup(func() {
 		_ = tm.Shutdown(context.Background())

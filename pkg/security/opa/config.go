@@ -366,4 +366,3 @@ func (c *CacheConfig) SetDefaults() {
 		c.TTL = 5 * time.Minute
 	}
 }
-
