@@ -16,6 +16,7 @@ package opa
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/open-policy-agent/opa/ast"
@@ -52,8 +53,14 @@ func ValidatePolicy(policy string) error {
 
 // ValidatePolicyFromFile 从文件验证策略
 func ValidatePolicyFromFile(filePath string) error {
-	// 读取文件
-	module, err := ast.ParseModule(filePath, "")
+	// 读取文件内容
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read policy file: %w", err)
+	}
+
+	// 解析策略
+	module, err := ast.ParseModule(filePath, string(content))
 	if err != nil {
 		return fmt.Errorf("failed to parse policy file: %w", err)
 	}
