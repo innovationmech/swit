@@ -649,3 +649,125 @@ func TestRemoteConfig_URLCompatibility(t *testing.T) {
 		assert.Equal(t, []string{"http://new-server:8181"}, config.URLs)
 	})
 }
+
+// TestRemoteClient_AutoRecoveryWithoutHealthCheck 测试无健康检查时的自动恢复
+func TestRemoteClient_AutoRecoveryWithoutHealthCheck(t *testing.T) {
+	// 创建两个服务器，一个会失败几次后恢复
+	server1Failures := 0
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/data/authz/allow" {
+			// 前 2 次失败，之后成功
+			if server1Failures < 2 {
+				server1Failures++
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"result": true})
+		}
+	}))
+	defer server1.Close()
+
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/data/authz/allow" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"result": true})
+		}
+	}))
+	defer server2.Close()
+
+	// 不启用健康检查
+	config := &Config{
+		Mode: ModeRemote,
+		RemoteConfig: &RemoteConfig{
+			URLs:          []string{server1.URL, server2.URL},
+			Timeout:       5 * time.Second,
+			MaxRetries:    1, // 减少重试次数，加快测试
+			LoadBalancing: "round_robin",
+			// 注意：不配置 HealthCheck
+		},
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	require.NoError(t, err)
+	defer client.Close(ctx)
+
+	// 执行多次请求，server1 应该在失败几次后被标记为不健康
+	// 但仍然有机会被选中并恢复
+	successCount := 0
+	for i := 0; i < 20; i++ {
+		result, err := client.Evaluate(ctx, "authz/allow", map[string]interface{}{
+			"user": fmt.Sprintf("user%d", i),
+		})
+		if err == nil && result.Allowed {
+			successCount++
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// 验证：
+	// 1. server1 应该在前几次请求中失败
+	// 2. 但由于负载均衡器在没有健康服务器时会继续尝试所有服务器
+	// 3. server1 最终应该恢复并成功处理请求
+	// 4. 总体成功率应该很高（大部分请求成功）
+	assert.True(t, successCount >= 15, "expected at least 15 successful requests, got %d", successCount)
+	assert.True(t, server1Failures >= 2, "expected server1 to fail at least 2 times")
+}
+
+// TestRemoteClient_TransientFailureRecovery 测试瞬时故障恢复
+func TestRemoteClient_TransientFailureRecovery(t *testing.T) {
+	// 模拟瞬时故障：服务器偶尔失败但会快速恢复
+	failureCount := 0
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/data/authz/allow" {
+			mu.Lock()
+			// 每 5 次请求中有 1 次失败（模拟 20% 失败率的瞬时故障）
+			shouldFail := (failureCount % 5) == 0
+			failureCount++
+			mu.Unlock()
+
+			if shouldFail {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"result": true})
+		}
+	}))
+	defer server.Close()
+
+	config := &Config{
+		Mode: ModeRemote,
+		RemoteConfig: &RemoteConfig{
+			URLs:       []string{server.URL},
+			Timeout:    5 * time.Second,
+			MaxRetries: 3,
+			// 不配置健康检查，使用默认的失败阈值（3次）
+		},
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	require.NoError(t, err)
+	defer client.Close(ctx)
+
+	// 执行多次请求
+	successCount := 0
+	totalRequests := 50
+	for i := 0; i < totalRequests; i++ {
+		result, err := client.Evaluate(ctx, "authz/allow", map[string]interface{}{
+			"user": fmt.Sprintf("user%d", i),
+		})
+		if err == nil && result.Allowed {
+			successCount++
+		}
+	}
+
+	// 由于有重试机制和默认失败阈值，大部分请求应该成功
+	// 即使服务器有 20% 的失败率，重试后成功率应该很高
+	successRate := float64(successCount) / float64(totalRequests)
+	assert.True(t, successRate >= 0.9, "expected success rate >= 90%%, got %.2f%%", successRate*100)
+}

@@ -73,9 +73,10 @@ func (rb *roundRobinBalancer) Select(servers []*serverEndpoint) *serverEndpoint 
 	}
 
 	if len(healthy) == 0 {
-		// 如果没有健康的服务器，返回第一个
+		// 如果没有健康的服务器，从所有服务器中轮询（给它们恢复的机会）
 		if len(servers) > 0 {
-			return servers[0]
+			idx := rb.counter.Add(1) % uint64(len(servers))
+			return servers[idx]
 		}
 		return nil
 	}
@@ -96,7 +97,7 @@ func (rb *randomBalancer) Select(servers []*serverEndpoint) *serverEndpoint {
 	}
 
 	if len(healthy) == 0 {
-		// 如果没有健康的服务器，返回随机一个
+		// 如果没有健康的服务器，从所有服务器中随机选择（给它们恢复的机会）
 		if len(servers) > 0 {
 			return servers[rand.Intn(len(servers))]
 		}
@@ -118,9 +119,18 @@ func (lb *leastConnectionsBalancer) Select(servers []*serverEndpoint) *serverEnd
 	}
 
 	if len(healthy) == 0 {
-		// 如果没有健康的服务器，返回第一个
+		// 如果没有健康的服务器，从所有服务器中选择连接数最少的（给它们恢复的机会）
 		if len(servers) > 0 {
-			return servers[0]
+			var minServer *serverEndpoint
+			var minConns int64 = -1
+			for _, s := range servers {
+				conns := s.activeConns.Load()
+				if minConns < 0 || conns < minConns {
+					minConns = conns
+					minServer = s
+				}
+			}
+			return minServer
 		}
 		return nil
 	}
@@ -410,8 +420,12 @@ func (c *remoteClient) markServerFailure(server *serverEndpoint) {
 			server.healthy.Store(false)
 		}
 	} else {
-		// 如果没有健康检查配置，失败后立即标记为不健康
-		server.healthy.Store(false)
+		// 如果没有健康检查配置，使用默认阈值（3次）避免单次失败永久移除服务器
+		// 这样可以在瞬时故障时保持服务器在轮询池中，支持自动恢复
+		const defaultFailureThreshold = 3
+		if failCount >= defaultFailureThreshold {
+			server.healthy.Store(false)
+		}
 	}
 }
 
