@@ -1,0 +1,137 @@
+# OPA Configuration Example
+# 此文件展示 OPA 配置的各种模式和选项
+
+# ============================================
+# 示例 1: 嵌入式模式 (Embedded Mode)
+# ============================================
+# 适用场景：OPA 引擎运行在同一进程中，适合单体应用
+embedded:
+  mode: embedded
+  default_decision_path: "authz/allow"
+  
+  embedded:
+    # 策略文件目录
+    policy_dir: "./pkg/security/opa/policies"
+    # 数据目录（可选）
+    data_dir: "/var/opa/data"
+    # 启用 OPA 内部日志
+    enable_logging: true
+    # 启用决策日志
+    enable_decision_logs: false
+  
+  # 决策缓存配置
+  cache:
+    enabled: true
+    max_size: 10000
+    ttl: 5m
+    enable_metrics: true
+
+# ============================================
+# 示例 2: 远程模式 (Remote Mode)
+# ============================================
+# 适用场景：连接到外部 OPA 服务器，适合分布式系统
+remote:
+  mode: remote
+  default_decision_path: "rbac/allow"
+  
+  remote:
+    # OPA 服务器地址
+    url: "http://opa-server:8181"
+    # 请求超时
+    timeout: 30s
+    # 最大重试次数
+    max_retries: 3
+    
+    # TLS 配置（可选）
+    tls:
+      enabled: false
+      cert_file: "/etc/opa/certs/client.crt"
+      key_file: "/etc/opa/certs/client.key"
+      ca_file: "/etc/opa/certs/ca.crt"
+      insecure_skip_verify: false
+    
+    # 认证配置（可选）
+    auth:
+      type: "bearer"
+      token: "your-token-here"
+  
+  cache:
+    enabled: true
+    max_size: 5000
+    ttl: 3m
+    enable_metrics: true
+
+# ============================================
+# 示例 3: Sidecar 模式
+# ============================================
+# 适用场景：Kubernetes/容器环境中，OPA 作为 sidecar 容器运行
+# 注意：sidecar 模式本质上是 remote 模式的一种特例
+sidecar:
+  mode: sidecar  # 等价于 remote 模式
+  default_decision_path: "authz/allow"
+  
+  remote:
+    # 连接到本地 sidecar 容器
+    url: "http://localhost:8181"
+    timeout: 10s
+    max_retries: 2
+  
+  cache:
+    enabled: true
+    max_size: 1000
+    ttl: 1m
+
+# ============================================
+# 示例 4: 使用 Bundle 配置（嵌入式模式）
+# ============================================
+embedded_with_bundle:
+  mode: embedded
+  
+  embedded:
+    # 使用 Bundle 而不是本地策略目录
+    bundle:
+      service_url: "http://bundle-server:8888"
+      resource: "/bundles/my-policies.tar.gz"
+      polling_min_delay_seconds: 60
+      polling_max_delay_seconds: 120
+      enable_signing: true
+      signing_key_id: "my-signing-key"
+    
+    enable_logging: true
+    enable_decision_logs: true
+
+# ============================================
+# 示例 5: 使用基本认证的远程模式
+# ============================================
+remote_with_basic_auth:
+  mode: remote
+  
+  remote:
+    url: "https://opa.example.com:8181"
+    timeout: 30s
+    
+    # TLS 配置
+    tls:
+      enabled: true
+      ca_file: "/etc/opa/certs/ca.crt"
+    
+    # 基本认证
+    auth:
+      type: "basic"
+      username: "admin"
+      password: "secret"
+
+# ============================================
+# 示例 6: 使用 API Key 认证的远程模式
+# ============================================
+remote_with_api_key:
+  mode: remote
+  
+  remote:
+    url: "https://opa.example.com:8181"
+    
+    auth:
+      type: "api_key"
+      api_key: "your-api-key"
+      api_key_header: "X-API-Key"
+

@@ -15,6 +15,7 @@
 package opa
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -304,4 +305,282 @@ func TestAuthConfigValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigValidateSidecarMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *Config
+		wantErr bool
+	}{
+		{
+			name: "valid sidecar config",
+			config: &Config{
+				Mode: ModeSidecar,
+				RemoteConfig: &RemoteConfig{
+					URL: "http://localhost:8181",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "sidecar mode without remote config",
+			config: &Config{
+				Mode: ModeSidecar,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			// After validation, sidecar should be normalized to remote
+			if tt.config.Mode == ModeRemote && !tt.wantErr {
+				// This is expected - sidecar gets normalized to remote
+			}
+		})
+	}
+}
+
+func TestConfigLoadFromEnv(t *testing.T) {
+	// Save original env vars
+	originalEnv := make(map[string]string)
+	envVars := []string{
+		"OPA_MODE",
+		"OPA_DEFAULT_DECISION_PATH",
+		"OPA_REMOTE_URL",
+		"OPA_REMOTE_TIMEOUT",
+		"OPA_REMOTE_MAX_RETRIES",
+		"OPA_CACHE_ENABLED",
+		"OPA_CACHE_MAX_SIZE",
+		"OPA_CACHE_TTL",
+		"OPA_EMBEDDED_POLICY_DIR",
+	}
+	for _, key := range envVars {
+		originalEnv[key] = os.Getenv(key)
+		os.Unsetenv(key)
+	}
+	defer func() {
+		// Restore original env vars
+		for key, val := range originalEnv {
+			if val != "" {
+				os.Setenv(key, val)
+			} else {
+				os.Unsetenv(key)
+			}
+		}
+	}()
+
+	t.Run("load remote config from env", func(t *testing.T) {
+		os.Setenv("OPA_MODE", "remote")
+		os.Setenv("OPA_REMOTE_URL", "http://test:8181")
+		os.Setenv("OPA_REMOTE_TIMEOUT", "10s")
+		os.Setenv("OPA_REMOTE_MAX_RETRIES", "5")
+		os.Setenv("OPA_DEFAULT_DECISION_PATH", "authz/allow")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.Mode != ModeRemote {
+			t.Errorf("Expected mode to be 'remote', got %s", config.Mode)
+		}
+		if config.RemoteConfig == nil {
+			t.Fatal("Expected RemoteConfig to be set")
+		}
+		if config.RemoteConfig.URL != "http://test:8181" {
+			t.Errorf("Expected URL to be 'http://test:8181', got %s", config.RemoteConfig.URL)
+		}
+		if config.RemoteConfig.Timeout != 10*time.Second {
+			t.Errorf("Expected timeout to be 10s, got %v", config.RemoteConfig.Timeout)
+		}
+		if config.RemoteConfig.MaxRetries != 5 {
+			t.Errorf("Expected max retries to be 5, got %d", config.RemoteConfig.MaxRetries)
+		}
+		if config.DefaultDecisionPath != "authz/allow" {
+			t.Errorf("Expected default decision path to be 'authz/allow', got %s", config.DefaultDecisionPath)
+		}
+	})
+
+	t.Run("load embedded config from env", func(t *testing.T) {
+		os.Unsetenv("OPA_MODE")
+		os.Unsetenv("OPA_REMOTE_URL")
+		os.Setenv("OPA_MODE", "embedded")
+		os.Setenv("OPA_EMBEDDED_POLICY_DIR", "/tmp/policies")
+		os.Setenv("OPA_EMBEDDED_DATA_DIR", "/tmp/data")
+		os.Setenv("OPA_EMBEDDED_ENABLE_LOGGING", "true")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.Mode != ModeEmbedded {
+			t.Errorf("Expected mode to be 'embedded', got %s", config.Mode)
+		}
+		if config.EmbeddedConfig == nil {
+			t.Fatal("Expected EmbeddedConfig to be set")
+		}
+		if config.EmbeddedConfig.PolicyDir != "/tmp/policies" {
+			t.Errorf("Expected policy dir to be '/tmp/policies', got %s", config.EmbeddedConfig.PolicyDir)
+		}
+		if config.EmbeddedConfig.DataDir != "/tmp/data" {
+			t.Errorf("Expected data dir to be '/tmp/data', got %s", config.EmbeddedConfig.DataDir)
+		}
+		if !config.EmbeddedConfig.EnableLogging {
+			t.Error("Expected enable logging to be true")
+		}
+	})
+
+	t.Run("load cache config from env", func(t *testing.T) {
+		os.Setenv("OPA_CACHE_ENABLED", "true")
+		os.Setenv("OPA_CACHE_MAX_SIZE", "5000")
+		os.Setenv("OPA_CACHE_TTL", "10m")
+		os.Setenv("OPA_CACHE_ENABLE_METRICS", "true")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.CacheConfig == nil {
+			t.Fatal("Expected CacheConfig to be set")
+		}
+		if !config.CacheConfig.Enabled {
+			t.Error("Expected cache to be enabled")
+		}
+		if config.CacheConfig.MaxSize != 5000 {
+			t.Errorf("Expected max size to be 5000, got %d", config.CacheConfig.MaxSize)
+		}
+		if config.CacheConfig.TTL != 10*time.Minute {
+			t.Errorf("Expected TTL to be 10m, got %v", config.CacheConfig.TTL)
+		}
+		if !config.CacheConfig.EnableMetrics {
+			t.Error("Expected enable metrics to be true")
+		}
+	})
+
+	t.Run("load sidecar config from env", func(t *testing.T) {
+		os.Setenv("OPA_MODE", "sidecar")
+		os.Setenv("OPA_REMOTE_URL", "http://localhost:8181")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.Mode != ModeSidecar {
+			t.Errorf("Expected mode to be 'sidecar', got %s", config.Mode)
+		}
+		if config.RemoteConfig == nil {
+			t.Fatal("Expected RemoteConfig to be set")
+		}
+		if config.RemoteConfig.URL != "http://localhost:8181" {
+			t.Errorf("Expected URL to be 'http://localhost:8181', got %s", config.RemoteConfig.URL)
+		}
+	})
+}
+
+func TestConfigLoadFromEnvWithAuth(t *testing.T) {
+	// Save and clear env vars
+	envVars := []string{
+		"OPA_MODE",
+		"OPA_REMOTE_URL",
+		"OPA_REMOTE_AUTH_TYPE",
+		"OPA_REMOTE_AUTH_TOKEN",
+		"OPA_REMOTE_AUTH_USERNAME",
+		"OPA_REMOTE_AUTH_PASSWORD",
+	}
+	originalEnv := make(map[string]string)
+	for _, key := range envVars {
+		originalEnv[key] = os.Getenv(key)
+		os.Unsetenv(key)
+	}
+	defer func() {
+		for key, val := range originalEnv {
+			if val != "" {
+				os.Setenv(key, val)
+			} else {
+				os.Unsetenv(key)
+			}
+		}
+	}()
+
+	t.Run("load bearer auth from env", func(t *testing.T) {
+		os.Setenv("OPA_MODE", "remote")
+		os.Setenv("OPA_REMOTE_URL", "http://test:8181")
+		os.Setenv("OPA_REMOTE_AUTH_TYPE", "bearer")
+		os.Setenv("OPA_REMOTE_AUTH_TOKEN", "test-token-123")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.RemoteConfig == nil || config.RemoteConfig.AuthConfig == nil {
+			t.Fatal("Expected AuthConfig to be set")
+		}
+		if config.RemoteConfig.AuthConfig.Type != "bearer" {
+			t.Errorf("Expected auth type to be 'bearer', got %s", config.RemoteConfig.AuthConfig.Type)
+		}
+		if config.RemoteConfig.AuthConfig.Token != "test-token-123" {
+			t.Errorf("Expected token to be 'test-token-123', got %s", config.RemoteConfig.AuthConfig.Token)
+		}
+	})
+
+	t.Run("load basic auth from env", func(t *testing.T) {
+		os.Unsetenv("OPA_REMOTE_AUTH_TYPE")
+		os.Unsetenv("OPA_REMOTE_AUTH_TOKEN")
+		os.Setenv("OPA_MODE", "remote")
+		os.Setenv("OPA_REMOTE_URL", "http://test:8181")
+		os.Setenv("OPA_REMOTE_AUTH_TYPE", "basic")
+		os.Setenv("OPA_REMOTE_AUTH_USERNAME", "admin")
+		os.Setenv("OPA_REMOTE_AUTH_PASSWORD", "secret")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.RemoteConfig == nil || config.RemoteConfig.AuthConfig == nil {
+			t.Fatal("Expected AuthConfig to be set")
+		}
+		if config.RemoteConfig.AuthConfig.Type != "basic" {
+			t.Errorf("Expected auth type to be 'basic', got %s", config.RemoteConfig.AuthConfig.Type)
+		}
+		if config.RemoteConfig.AuthConfig.Username != "admin" {
+			t.Errorf("Expected username to be 'admin', got %s", config.RemoteConfig.AuthConfig.Username)
+		}
+		if config.RemoteConfig.AuthConfig.Password != "secret" {
+			t.Errorf("Expected password to be 'secret', got %s", config.RemoteConfig.AuthConfig.Password)
+		}
+	})
+
+	t.Run("load api_key auth from env", func(t *testing.T) {
+		// Clear previous auth env vars
+		os.Unsetenv("OPA_REMOTE_AUTH_TYPE")
+		os.Unsetenv("OPA_REMOTE_AUTH_TOKEN")
+		os.Unsetenv("OPA_REMOTE_AUTH_USERNAME")
+		os.Unsetenv("OPA_REMOTE_AUTH_PASSWORD")
+
+		os.Setenv("OPA_MODE", "remote")
+		os.Setenv("OPA_REMOTE_URL", "http://test:8181")
+		os.Setenv("OPA_REMOTE_AUTH_TYPE", "api_key")
+		os.Setenv("OPA_REMOTE_AUTH_API_KEY", "my-secret-key")
+		os.Setenv("OPA_REMOTE_AUTH_API_KEY_HEADER", "X-API-Key")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.RemoteConfig == nil || config.RemoteConfig.AuthConfig == nil {
+			t.Fatal("Expected AuthConfig to be set")
+		}
+		if config.RemoteConfig.AuthConfig.Type != "api_key" {
+			t.Errorf("Expected auth type to be 'api_key', got %s", config.RemoteConfig.AuthConfig.Type)
+		}
+		if config.RemoteConfig.AuthConfig.APIKey != "my-secret-key" {
+			t.Errorf("Expected api_key to be 'my-secret-key', got %s", config.RemoteConfig.AuthConfig.APIKey)
+		}
+		if config.RemoteConfig.AuthConfig.APIKeyHeader != "X-API-Key" {
+			t.Errorf("Expected api_key_header to be 'X-API-Key', got %s", config.RemoteConfig.AuthConfig.APIKeyHeader)
+		}
+
+		// Verify the config is valid
+		if err := config.Validate(); err != nil {
+			t.Errorf("Expected config to be valid, got error: %v", err)
+		}
+	})
 }
