@@ -501,13 +501,19 @@ func TestIsSafeMetadataKey(t *testing.T) {
 		key      string
 		expected bool
 	}{
-		{"Safe key", "content-type", true},
-		{"Safe key", "user-agent", true},
+		{"Safe key - content-type", "content-type", true},
+		{"Safe key - user-agent", "user-agent", true},
+		{"Safe key - x-request-id", "x-request-id", true},
+		{"Safe key - x-forwarded-for", "x-forwarded-for", true},
+		{"Safe key - grpc-timeout", "grpc-timeout", true},
 		{"Unsafe key - authorization", "authorization", false},
 		{"Unsafe key - cookie", "cookie", false},
-		{"Unsafe key - api key", "x-api-key", false},
-		{"Unsafe key - auth token", "x-auth-token", false},
-		{"Safe custom key", "x-request-id", true},
+		{"Unsafe key - x-api-key", "x-api-key", false},
+		{"Unsafe key - x-auth-token", "x-auth-token", false},
+		{"Unsafe key - grpcgateway-authorization", "grpcgateway-authorization", false},
+		{"Unsafe key - authorization-bin", "authorization-bin", false},
+		{"Unsafe key - custom-secret", "custom-secret", false},
+		{"Unsafe key - any-unknown-key", "any-unknown-key", false},
 	}
 
 	for _, tt := range tests {

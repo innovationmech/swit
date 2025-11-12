@@ -485,23 +485,33 @@ func extractSafeHeaders(headers http.Header) map[string][]string {
 }
 
 // isSafeMetadataKey 检查 gRPC metadata 键是否安全
-// 排除敏感信息如 authorization 等
+// 使用白名单方式，只允许已知的安全 metadata 键
 func isSafeMetadataKey(key string) bool {
-	// 不安全的 metadata 键
-	unsafeKeys := []string{
-		"authorization",
-		"cookie",
-		"x-api-key",
-		"x-auth-token",
+	// 安全的 metadata 键白名单
+	safeKeys := []string{
+		"content-type",
+		"user-agent",
+		"accept",
+		"accept-language",
+		"accept-encoding",
+		"x-request-id",
+		"x-correlation-id",
+		"x-forwarded-for",
+		"x-forwarded-proto",
+		"x-forwarded-host",
+		"x-real-ip",
+		"grpc-timeout",
+		"grpc-encoding",
+		"grpc-accept-encoding",
 	}
 
-	for _, unsafeKey := range unsafeKeys {
-		if key == unsafeKey {
-			return false
+	for _, safeKey := range safeKeys {
+		if key == safeKey {
+			return true
 		}
 	}
 
-	return true
+	return false
 }
 
 // BuildPolicyInputFromHTTP 从 HTTP 请求构建策略输入（便捷函数）
