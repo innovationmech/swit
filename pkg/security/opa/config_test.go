@@ -548,4 +548,39 @@ func TestConfigLoadFromEnvWithAuth(t *testing.T) {
 			t.Errorf("Expected password to be 'secret', got %s", config.RemoteConfig.AuthConfig.Password)
 		}
 	})
+
+	t.Run("load api_key auth from env", func(t *testing.T) {
+		// Clear previous auth env vars
+		os.Unsetenv("OPA_REMOTE_AUTH_TYPE")
+		os.Unsetenv("OPA_REMOTE_AUTH_TOKEN")
+		os.Unsetenv("OPA_REMOTE_AUTH_USERNAME")
+		os.Unsetenv("OPA_REMOTE_AUTH_PASSWORD")
+
+		os.Setenv("OPA_MODE", "remote")
+		os.Setenv("OPA_REMOTE_URL", "http://test:8181")
+		os.Setenv("OPA_REMOTE_AUTH_TYPE", "api_key")
+		os.Setenv("OPA_REMOTE_AUTH_API_KEY", "my-secret-key")
+		os.Setenv("OPA_REMOTE_AUTH_API_KEY_HEADER", "X-API-Key")
+
+		config := &Config{}
+		config.LoadFromEnv()
+
+		if config.RemoteConfig == nil || config.RemoteConfig.AuthConfig == nil {
+			t.Fatal("Expected AuthConfig to be set")
+		}
+		if config.RemoteConfig.AuthConfig.Type != "api_key" {
+			t.Errorf("Expected auth type to be 'api_key', got %s", config.RemoteConfig.AuthConfig.Type)
+		}
+		if config.RemoteConfig.AuthConfig.APIKey != "my-secret-key" {
+			t.Errorf("Expected api_key to be 'my-secret-key', got %s", config.RemoteConfig.AuthConfig.APIKey)
+		}
+		if config.RemoteConfig.AuthConfig.APIKeyHeader != "X-API-Key" {
+			t.Errorf("Expected api_key_header to be 'X-API-Key', got %s", config.RemoteConfig.AuthConfig.APIKeyHeader)
+		}
+
+		// Verify the config is valid
+		if err := config.Validate(); err != nil {
+			t.Errorf("Expected config to be valid, got error: %v", err)
+		}
+	})
 }

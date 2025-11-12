@@ -501,6 +501,18 @@ func (c *Config) LoadFromEnv() {
 			}
 			c.RemoteConfig.AuthConfig.Password = password
 		}
+		if apiKey := os.Getenv("OPA_REMOTE_AUTH_API_KEY"); apiKey != "" {
+			if c.RemoteConfig.AuthConfig == nil {
+				c.RemoteConfig.AuthConfig = &AuthConfig{}
+			}
+			c.RemoteConfig.AuthConfig.APIKey = apiKey
+		}
+		if apiKeyHeader := os.Getenv("OPA_REMOTE_AUTH_API_KEY_HEADER"); apiKeyHeader != "" {
+			if c.RemoteConfig.AuthConfig == nil {
+				c.RemoteConfig.AuthConfig = &AuthConfig{}
+			}
+			c.RemoteConfig.AuthConfig.APIKeyHeader = apiKeyHeader
+		}
 	}
 
 	// CacheConfig
