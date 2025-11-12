@@ -29,19 +29,21 @@ import (
 
 // embeddedClient 嵌入式 OPA 客户端实现
 type embeddedClient struct {
-	config  *Config
-	store   storage.Store
-	modules map[string]*ast.Module
-	mu      sync.RWMutex
-	cache   Cache
+	config          *Config
+	store           storage.Store
+	modules         map[string]*ast.Module
+	compiledQueries map[string]rego.PreparedEvalQuery // 编译缓存
+	mu              sync.RWMutex
+	cache           Cache
 }
 
 // newEmbeddedClient 创建嵌入式客户端
 func newEmbeddedClient(ctx context.Context, config *Config) (Client, error) {
 	client := &embeddedClient{
-		config:  config,
-		modules: make(map[string]*ast.Module),
-		store:   inmem.New(),
+		config:          config,
+		modules:         make(map[string]*ast.Module),
+		compiledQueries: make(map[string]rego.PreparedEvalQuery),
+		store:           inmem.New(),
 	}
 
 	// 初始化缓存
@@ -213,6 +215,50 @@ func (c *embeddedClient) Query(ctx context.Context, query string, input interfac
 	return rs, nil
 }
 
+// PartialEvaluate 执行部分评估
+func (c *embeddedClient) PartialEvaluate(ctx context.Context, query string, input interface{}) (*PartialResult, error) {
+	// 使用 rego.Module 逐个添加模块
+	opts := []func(*rego.Rego){
+		rego.Query(query),
+		rego.Store(c.store),
+	}
+
+	if input != nil {
+		opts = append(opts, rego.Input(input))
+	}
+
+	c.mu.RLock()
+	for name, m := range c.modules {
+		opts = append(opts, rego.Module(name, m.String()))
+	}
+	c.mu.RUnlock()
+
+	r := rego.New(opts...)
+
+	// 执行部分评估
+	pq, err := r.Partial(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to partial evaluate: %w", err)
+	}
+
+	result := &PartialResult{
+		Queries: make([]interface{}, len(pq.Queries)),
+		Support: make([]interface{}, len(pq.Support)),
+	}
+
+	// 转换查询
+	for i, q := range pq.Queries {
+		result.Queries[i] = q.String()
+	}
+
+	// 转换支持规则
+	for i, s := range pq.Support {
+		result.Support[i] = s.String()
+	}
+
+	return result, nil
+}
+
 // LoadPolicy 加载策略
 func (c *embeddedClient) LoadPolicy(ctx context.Context, name string, policy string) error {
 	// 解析策略
@@ -238,9 +284,48 @@ func (c *embeddedClient) LoadPolicy(ctx context.Context, name string, policy str
 	// 存储模块
 	c.mu.Lock()
 	c.modules[name] = module
+	// 清除编译缓存（策略已变更）
+	c.compiledQueries = make(map[string]rego.PreparedEvalQuery)
 	c.mu.Unlock()
 
-	// 清除缓存（策略已变更）
+	// 清除决策缓存（策略已变更）
+	if c.cache != nil {
+		c.cache.Clear(ctx)
+	}
+
+	return nil
+}
+
+// LoadPolicyFromFile 从文件加载策略
+func (c *embeddedClient) LoadPolicyFromFile(ctx context.Context, path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read policy file: %w", err)
+	}
+
+	// 使用文件名作为模块名
+	name := filepath.Base(path)
+	return c.LoadPolicy(ctx, name, string(content))
+}
+
+// LoadData 加载数据到 OPA store
+func (c *embeddedClient) LoadData(ctx context.Context, path string, data interface{}) error {
+	if c.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+
+	// 解析路径为 storage.Path
+	storagePath, ok := storage.ParsePath("/" + path)
+	if !ok {
+		return fmt.Errorf("invalid storage path: %s", path)
+	}
+
+	// 写入数据 - WriteOne 内部会管理事务
+	if err := storage.WriteOne(ctx, c.store, storage.AddOp, storagePath, data); err != nil {
+		return fmt.Errorf("failed to write data: %w", err)
+	}
+
+	// 清除缓存（数据已变更）
 	if c.cache != nil {
 		c.cache.Clear(ctx)
 	}

@@ -285,9 +285,24 @@ func (c *remoteClient) Query(ctx context.Context, query string, input interface{
 	return nil, fmt.Errorf("Query is not supported in remote mode")
 }
 
+// PartialEvaluate 执行部分评估（远程模式不支持）
+func (c *remoteClient) PartialEvaluate(ctx context.Context, query string, input interface{}) (*PartialResult, error) {
+	return nil, fmt.Errorf("PartialEvaluate is not supported in remote mode")
+}
+
 // LoadPolicy 加载策略（远程模式不支持）
 func (c *remoteClient) LoadPolicy(ctx context.Context, name string, policy string) error {
 	return fmt.Errorf("LoadPolicy is not supported in remote mode")
+}
+
+// LoadPolicyFromFile 从文件加载策略（远程模式不支持）
+func (c *remoteClient) LoadPolicyFromFile(ctx context.Context, path string) error {
+	return fmt.Errorf("LoadPolicyFromFile is not supported in remote mode")
+}
+
+// LoadData 加载数据（远程模式不支持）
+func (c *remoteClient) LoadData(ctx context.Context, path string, data interface{}) error {
+	return fmt.Errorf("LoadData is not supported in remote mode")
 }
 
 // RemovePolicy 移除策略（远程模式不支持）
