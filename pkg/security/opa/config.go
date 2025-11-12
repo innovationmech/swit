@@ -93,8 +93,12 @@ type BundleConfig struct {
 
 // RemoteConfig 远程 OPA 配置
 type RemoteConfig struct {
-	// URL OPA 服务器地址
-	URL string `json:"url" yaml:"url" mapstructure:"url"`
+	// URLs OPA 服务器地址列表（支持多服务器负载均衡）
+	// 单服务器时只需配置一个 URL
+	URLs []string `json:"urls" yaml:"urls" mapstructure:"urls"`
+
+	// URL 单服务器地址（兼容旧配置，与 URLs 二选一）
+	URL string `json:"url,omitempty" yaml:"url,omitempty" mapstructure:"url"`
 
 	// Timeout 请求超时时间
 	Timeout time.Duration `json:"timeout,omitempty" yaml:"timeout,omitempty" mapstructure:"timeout"`
@@ -102,11 +106,56 @@ type RemoteConfig struct {
 	// MaxRetries 最大重试次数
 	MaxRetries int `json:"max_retries,omitempty" yaml:"max_retries,omitempty" mapstructure:"max_retries"`
 
+	// RetryBackoffMultiplier 重试退避倍数（默认 2.0）
+	RetryBackoffMultiplier float64 `json:"retry_backoff_multiplier,omitempty" yaml:"retry_backoff_multiplier,omitempty" mapstructure:"retry_backoff_multiplier"`
+
+	// RetryMaxWait 最大重试等待时间
+	RetryMaxWait time.Duration `json:"retry_max_wait,omitempty" yaml:"retry_max_wait,omitempty" mapstructure:"retry_max_wait"`
+
+	// PoolConfig 连接池配置
+	PoolConfig *PoolConfig `json:"pool,omitempty" yaml:"pool,omitempty" mapstructure:"pool"`
+
+	// LoadBalancing 负载均衡策略 (round_robin, random, least_connections)
+	LoadBalancing string `json:"load_balancing,omitempty" yaml:"load_balancing,omitempty" mapstructure:"load_balancing"`
+
+	// HealthCheck 健康检查配置
+	HealthCheck *HealthCheckConfig `json:"health_check,omitempty" yaml:"health_check,omitempty" mapstructure:"health_check"`
+
 	// TLSConfig TLS 配置
 	TLSConfig *TLSConfig `json:"tls,omitempty" yaml:"tls,omitempty" mapstructure:"tls"`
 
 	// AuthConfig 认证配置
 	AuthConfig *AuthConfig `json:"auth,omitempty" yaml:"auth,omitempty" mapstructure:"auth"`
+}
+
+// PoolConfig 连接池配置
+type PoolConfig struct {
+	// MaxIdleConns 最大空闲连接数
+	MaxIdleConns int `json:"max_idle_conns,omitempty" yaml:"max_idle_conns,omitempty" mapstructure:"max_idle_conns"`
+
+	// MaxConnsPerHost 每个主机的最大连接数
+	MaxConnsPerHost int `json:"max_conns_per_host,omitempty" yaml:"max_conns_per_host,omitempty" mapstructure:"max_conns_per_host"`
+
+	// IdleConnTimeout 空闲连接超时时间
+	IdleConnTimeout time.Duration `json:"idle_conn_timeout,omitempty" yaml:"idle_conn_timeout,omitempty" mapstructure:"idle_conn_timeout"`
+}
+
+// HealthCheckConfig 健康检查配置
+type HealthCheckConfig struct {
+	// Enabled 启用健康检查
+	Enabled bool `json:"enabled" yaml:"enabled" mapstructure:"enabled"`
+
+	// Interval 健康检查间隔
+	Interval time.Duration `json:"interval,omitempty" yaml:"interval,omitempty" mapstructure:"interval"`
+
+	// Timeout 健康检查超时时间
+	Timeout time.Duration `json:"timeout,omitempty" yaml:"timeout,omitempty" mapstructure:"timeout"`
+
+	// FailureThreshold 故障阈值（连续失败多少次标记为不健康）
+	FailureThreshold int `json:"failure_threshold,omitempty" yaml:"failure_threshold,omitempty" mapstructure:"failure_threshold"`
+
+	// SuccessThreshold 成功阈值（连续成功多少次标记为健康）
+	SuccessThreshold int `json:"success_threshold,omitempty" yaml:"success_threshold,omitempty" mapstructure:"success_threshold"`
 }
 
 // TLSConfig TLS 配置
@@ -252,8 +301,20 @@ func (c *BundleConfig) Validate() error {
 
 // Validate 验证远程配置
 func (c *RemoteConfig) Validate() error {
-	if c.URL == "" {
-		return fmt.Errorf("url is required")
+	// 兼容性处理：如果只配置了 URL，转换为 URLs
+	if c.URL != "" && len(c.URLs) == 0 {
+		c.URLs = []string{c.URL}
+	}
+
+	if len(c.URLs) == 0 {
+		return fmt.Errorf("at least one url is required (urls or url)")
+	}
+
+	// 验证所有 URL 不为空
+	for i, url := range c.URLs {
+		if url == "" {
+			return fmt.Errorf("url at index %d is empty", i)
+		}
 	}
 
 	if c.Timeout < 0 {
@@ -262,6 +323,37 @@ func (c *RemoteConfig) Validate() error {
 
 	if c.MaxRetries < 0 {
 		return fmt.Errorf("max_retries must be >= 0")
+	}
+
+	if c.RetryBackoffMultiplier < 0 {
+		return fmt.Errorf("retry_backoff_multiplier must be >= 0")
+	}
+
+	if c.RetryMaxWait < 0 {
+		return fmt.Errorf("retry_max_wait must be >= 0")
+	}
+
+	if c.LoadBalancing != "" {
+		validStrategies := map[string]bool{
+			"round_robin":       true,
+			"random":            true,
+			"least_connections": true,
+		}
+		if !validStrategies[c.LoadBalancing] {
+			return fmt.Errorf("invalid load_balancing strategy: %s (must be 'round_robin', 'random', or 'least_connections')", c.LoadBalancing)
+		}
+	}
+
+	if c.PoolConfig != nil {
+		if err := c.PoolConfig.Validate(); err != nil {
+			return fmt.Errorf("invalid pool_config: %w", err)
+		}
+	}
+
+	if c.HealthCheck != nil {
+		if err := c.HealthCheck.Validate(); err != nil {
+			return fmt.Errorf("invalid health_check: %w", err)
+		}
 	}
 
 	if c.TLSConfig != nil {
@@ -273,6 +365,46 @@ func (c *RemoteConfig) Validate() error {
 	if c.AuthConfig != nil {
 		if err := c.AuthConfig.Validate(); err != nil {
 			return fmt.Errorf("invalid auth_config: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Validate 验证连接池配置
+func (c *PoolConfig) Validate() error {
+	if c.MaxIdleConns < 0 {
+		return fmt.Errorf("max_idle_conns must be >= 0")
+	}
+
+	if c.MaxConnsPerHost < 0 {
+		return fmt.Errorf("max_conns_per_host must be >= 0")
+	}
+
+	if c.IdleConnTimeout < 0 {
+		return fmt.Errorf("idle_conn_timeout must be >= 0")
+	}
+
+	return nil
+}
+
+// Validate 验证健康检查配置
+func (c *HealthCheckConfig) Validate() error {
+	if c.Enabled {
+		if c.Interval <= 0 {
+			return fmt.Errorf("interval must be > 0 when health check is enabled")
+		}
+
+		if c.Timeout <= 0 {
+			return fmt.Errorf("timeout must be > 0 when health check is enabled")
+		}
+
+		if c.FailureThreshold <= 0 {
+			return fmt.Errorf("failure_threshold must be > 0")
+		}
+
+		if c.SuccessThreshold <= 0 {
+			return fmt.Errorf("success_threshold must be > 0")
 		}
 	}
 
@@ -357,12 +489,71 @@ func (c *Config) SetDefaults() {
 
 // SetDefaults 设置远程配置默认值
 func (c *RemoteConfig) SetDefaults() {
+	// 兼容性处理：如果只配置了 URL，转换为 URLs
+	if c.URL != "" && len(c.URLs) == 0 {
+		c.URLs = []string{c.URL}
+	}
+
 	if c.Timeout == 0 {
 		c.Timeout = 30 * time.Second
 	}
 
 	if c.MaxRetries == 0 {
 		c.MaxRetries = 3
+	}
+
+	if c.RetryBackoffMultiplier == 0 {
+		c.RetryBackoffMultiplier = 2.0
+	}
+
+	if c.RetryMaxWait == 0 {
+		c.RetryMaxWait = 30 * time.Second
+	}
+
+	if c.LoadBalancing == "" && len(c.URLs) > 1 {
+		c.LoadBalancing = "round_robin"
+	}
+
+	if c.PoolConfig != nil {
+		c.PoolConfig.SetDefaults()
+	}
+
+	if c.HealthCheck != nil {
+		c.HealthCheck.SetDefaults()
+	}
+}
+
+// SetDefaults 设置连接池配置默认值
+func (c *PoolConfig) SetDefaults() {
+	if c.MaxIdleConns == 0 {
+		c.MaxIdleConns = 100
+	}
+
+	if c.MaxConnsPerHost == 0 {
+		c.MaxConnsPerHost = 100
+	}
+
+	if c.IdleConnTimeout == 0 {
+		c.IdleConnTimeout = 90 * time.Second
+	}
+}
+
+// SetDefaults 设置健康检查配置默认值
+func (c *HealthCheckConfig) SetDefaults() {
+	if c.Interval == 0 {
+		c.Interval = 30 * time.Second
+	}
+
+	if c.Timeout == 0 {
+		c.Timeout = 5 * time.Second
+	}
+
+	if c.FailureThreshold == 0 {
+		c.FailureThreshold = 3
+	}
+
+	if c.SuccessThreshold == 0 {
+		c.SuccessThreshold = 1
 	}
 }
 
