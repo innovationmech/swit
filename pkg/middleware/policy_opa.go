@@ -218,13 +218,21 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 			defer cancel()
 		}
 
+		// 获取决策路径（优先使用动态路径）
+		decisionPath := config.DecisionPath
+		if dynamicPath, exists := c.Get("policy_path"); exists {
+			if pathStr, ok := dynamicPath.(string); ok && pathStr != "" {
+				decisionPath = pathStr
+			}
+		}
+
 		// 评估策略
-		result, err := client.Evaluate(ctx, config.DecisionPath, input)
+		result, err := client.Evaluate(ctx, decisionPath, input)
 		duration := time.Since(startTime)
 
 		// 记录审计日志
 		if config.EnableAuditLog {
-			auditLog := buildAuditLog(c, config.DecisionPath, input, result, err, duration)
+			auditLog := buildAuditLog(c, decisionPath, input, result, err, duration)
 			config.AuditLogHandler(auditLog)
 		}
 
@@ -234,7 +242,7 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 				config.Logger.Error("Policy evaluation failed",
 					zap.Error(err),
 					zap.String("path", c.Request.URL.Path),
-					zap.String("decision_path", config.DecisionPath),
+					zap.String("decision_path", decisionPath),
 					zap.Duration("duration", duration))
 			}
 			config.ErrorHandler(c, err)
@@ -246,7 +254,7 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 			if config.Logger != nil {
 				config.Logger.Warn("Policy evaluation denied",
 					zap.String("path", c.Request.URL.Path),
-					zap.String("decision_path", config.DecisionPath),
+					zap.String("decision_path", decisionPath),
 					zap.String("user_id", input.User.ID),
 					zap.Duration("duration", duration))
 			}
@@ -258,7 +266,7 @@ func OPAMiddleware(client opa.Client, options ...Option) gin.HandlerFunc {
 		if config.Logger != nil {
 			config.Logger.Debug("Policy evaluation allowed",
 				zap.String("path", c.Request.URL.Path),
-				zap.String("decision_path", config.DecisionPath),
+				zap.String("decision_path", decisionPath),
 				zap.String("user_id", input.User.ID),
 				zap.Duration("duration", duration))
 		}

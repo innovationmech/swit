@@ -548,6 +548,51 @@ func TestDynamicPolicyPath(t *testing.T) {
 	}
 }
 
+func TestDynamicPolicyPath_Integration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var capturedPath string
+	mockClient := &mockOPAClient{
+		evaluateFunc: func(ctx context.Context, path string, input interface{}) (*opa.Result, error) {
+			capturedPath = path
+			return &opa.Result{Allowed: true}, nil
+		},
+	}
+
+	router := gin.New()
+	// 先应用 DynamicPolicyPath，然后应用 OPAMiddleware
+	router.Use(DynamicPolicyPath(func(c *gin.Context) string {
+		// 根据路径返回不同的策略路径
+		if c.Request.URL.Path == "/admin/users" {
+			return "admin/users/allow"
+		}
+		return "public/allow"
+	}))
+	router.Use(OPAMiddleware(mockClient))
+	router.GET("/admin/users", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "admin access"})
+	})
+	router.GET("/public/posts", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "public access"})
+	})
+
+	// 测试管理员路径
+	req, _ := http.NewRequest("GET", "/admin/users", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "admin/users/allow", capturedPath)
+
+	// 测试公共路径
+	req, _ = http.NewRequest("GET", "/public/posts", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "public/allow", capturedPath)
+}
+
 func TestWithResourceInfo(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
