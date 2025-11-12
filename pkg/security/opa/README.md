@@ -4,9 +4,11 @@
 
 ## 功能特性
 
-- **双模式支持**：支持嵌入式模式和远程模式
+- **多模式支持**：支持嵌入式、远程和 Sidecar 模式
   - 嵌入式模式：OPA 引擎运行在同一进程中
   - 远程模式：连接到外部 OPA 服务器
+  - Sidecar 模式：连接到本地 OPA sidecar 容器（Kubernetes 友好）
+- **环境变量覆盖**：支持通过环境变量覆盖配置（手动或通过 Viper）
 - **统一路径格式**：自动处理路径格式转换
   - 支持斜杠格式：`rbac/allow`、`authz/rules/allow`
   - 支持点分隔格式：`rbac.allow`、`authz.rules.allow`
@@ -56,6 +58,72 @@ result, _ := client.Evaluate(ctx, "authz.rules.allow", input)
 **注意**：两种格式可以互换使用，无论是嵌入式还是远程模式。路径会自动规范化：
 - 嵌入式模式：转换为点分隔格式用于 Rego 查询
 - 远程模式：转换为斜杠格式用于 REST API URL
+
+## 配置方式
+
+### 方式 1: 代码配置
+
+直接在代码中创建配置对象：
+
+```go
+config := &opa.Config{
+    Mode: opa.ModeRemote,
+    RemoteConfig: &opa.RemoteConfig{
+        URL: "http://opa-server:8181",
+    },
+}
+```
+
+### 方式 2: 环境变量配置
+
+使用 `LoadFromEnv()` 方法从环境变量加载配置：
+
+```go
+config := &opa.Config{}
+config.LoadFromEnv()  // 从环境变量加载
+config.SetDefaults()   // 设置默认值
+```
+
+支持的环境变量：
+- `OPA_MODE` - 模式（embedded/remote/sidecar）
+- `OPA_REMOTE_URL` - 远程 OPA 服务器地址
+- `OPA_CACHE_ENABLED` - 启用缓存（true/false）
+- `OPA_CACHE_MAX_SIZE` - 缓存最大条目数
+- 更多环境变量请参考 [环境变量配置示例](../../examples/security/opa-env-config-example.md)
+
+### 方式 3: 配置文件 + Viper（推荐）
+
+使用 YAML 配置文件配合 `pkg/config.Manager`：
+
+```yaml
+# swit.yaml
+opa:
+  mode: remote
+  remote:
+    url: http://opa-server:8181
+    timeout: 30s
+  cache:
+    enabled: true
+    max_size: 10000
+```
+
+```go
+import "github.com/innovationmech/swit/pkg/config"
+
+mgr := config.NewManager(config.Options{
+    ConfigBaseName:     "swit",
+    EnvPrefix:          "SWIT",
+    EnableAutomaticEnv: true,
+})
+mgr.Load()
+
+var appConfig struct {
+    OPA *opa.Config `mapstructure:"opa"`
+}
+mgr.Unmarshal(&appConfig)
+```
+
+环境变量会自动覆盖配置文件中的值（例如 `SWIT_OPA_REMOTE_URL`）。
 
 ## 快速开始
 

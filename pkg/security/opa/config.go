@@ -16,6 +16,8 @@ package opa
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -26,7 +28,10 @@ const (
 	// ModeEmbedded 嵌入式模式 - OPA 引擎运行在同一进程中
 	ModeEmbedded Mode = "embedded"
 	// ModeRemote 远程模式 - 连接到外部 OPA 服务器
+	// 注意：Sidecar 模式也使用 ModeRemote，通过连接到本地 sidecar 容器（如 localhost:8181）
 	ModeRemote Mode = "remote"
+	// ModeSidecar Sidecar 模式 - 连接到本地 OPA sidecar 容器（ModeRemote 的别名）
+	ModeSidecar Mode = "sidecar"
 )
 
 // Config 定义 OPA 客户端的配置
@@ -164,8 +169,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("mode is required")
 	}
 
+	// 规范化 mode：sidecar 视为 remote
+	if c.Mode == ModeSidecar {
+		c.Mode = ModeRemote
+	}
+
 	if c.Mode != ModeEmbedded && c.Mode != ModeRemote {
-		return fmt.Errorf("invalid mode: %s (must be 'embedded' or 'remote')", c.Mode)
+		return fmt.Errorf("invalid mode: %s (must be 'embedded', 'remote', or 'sidecar')", c.Mode)
 	}
 
 	if c.Mode == ModeEmbedded {
@@ -179,7 +189,7 @@ func (c *Config) Validate() error {
 
 	if c.Mode == ModeRemote {
 		if c.RemoteConfig == nil {
-			return fmt.Errorf("remote_config is required when mode is 'remote'")
+			return fmt.Errorf("remote_config is required when mode is 'remote' or 'sidecar'")
 		}
 		if err := c.RemoteConfig.Validate(); err != nil {
 			return fmt.Errorf("invalid remote_config: %w", err)
@@ -365,4 +375,167 @@ func (c *CacheConfig) SetDefaults() {
 	if c.TTL == 0 {
 		c.TTL = 5 * time.Minute
 	}
+}
+
+// LoadFromEnv 从环境变量加载配置并覆盖现有值
+// 环境变量命名格式：OPA_<字段名> 或 OPA_<嵌套字段路径>
+// 例如：
+//   - OPA_MODE=remote
+//   - OPA_REMOTE_URL=http://opa-server:8181
+//   - OPA_CACHE_ENABLED=true
+//   - OPA_CACHE_MAX_SIZE=5000
+//
+// 注意：此函数提供手动环境变量覆盖。如果使用 pkg/config.Manager，
+// 环境变量会通过 Viper 和 mapstructure 标签自动处理。
+func (c *Config) LoadFromEnv() {
+	// Mode
+	if mode := os.Getenv("OPA_MODE"); mode != "" {
+		c.Mode = Mode(mode)
+	}
+
+	// DefaultDecisionPath
+	if path := os.Getenv("OPA_DEFAULT_DECISION_PATH"); path != "" {
+		c.DefaultDecisionPath = path
+	}
+
+	// EmbeddedConfig
+	if c.Mode == ModeEmbedded || c.Mode == "" {
+		if c.EmbeddedConfig == nil {
+			c.EmbeddedConfig = &EmbeddedConfig{}
+		}
+		if policyDir := os.Getenv("OPA_EMBEDDED_POLICY_DIR"); policyDir != "" {
+			c.EmbeddedConfig.PolicyDir = policyDir
+		}
+		if dataDir := os.Getenv("OPA_EMBEDDED_DATA_DIR"); dataDir != "" {
+			c.EmbeddedConfig.DataDir = dataDir
+		}
+		if enableLogging := os.Getenv("OPA_EMBEDDED_ENABLE_LOGGING"); enableLogging != "" {
+			c.EmbeddedConfig.EnableLogging = parseBool(enableLogging)
+		}
+		if enableDecisionLogs := os.Getenv("OPA_EMBEDDED_ENABLE_DECISION_LOGS"); enableDecisionLogs != "" {
+			c.EmbeddedConfig.EnableDecisionLogs = parseBool(enableDecisionLogs)
+		}
+
+		// BundleConfig
+		if serviceURL := os.Getenv("OPA_BUNDLE_SERVICE_URL"); serviceURL != "" {
+			if c.EmbeddedConfig.BundleConfig == nil {
+				c.EmbeddedConfig.BundleConfig = &BundleConfig{}
+			}
+			c.EmbeddedConfig.BundleConfig.ServiceURL = serviceURL
+		}
+		if resource := os.Getenv("OPA_BUNDLE_RESOURCE"); resource != "" {
+			if c.EmbeddedConfig.BundleConfig == nil {
+				c.EmbeddedConfig.BundleConfig = &BundleConfig{}
+			}
+			c.EmbeddedConfig.BundleConfig.Resource = resource
+		}
+	}
+
+	// RemoteConfig
+	if c.Mode == ModeRemote || c.Mode == ModeSidecar {
+		if c.RemoteConfig == nil {
+			c.RemoteConfig = &RemoteConfig{}
+		}
+		if url := os.Getenv("OPA_REMOTE_URL"); url != "" {
+			c.RemoteConfig.URL = url
+		}
+		if timeout := os.Getenv("OPA_REMOTE_TIMEOUT"); timeout != "" {
+			if d, err := time.ParseDuration(timeout); err == nil {
+				c.RemoteConfig.Timeout = d
+			}
+		}
+		if maxRetries := os.Getenv("OPA_REMOTE_MAX_RETRIES"); maxRetries != "" {
+			if n, err := strconv.Atoi(maxRetries); err == nil {
+				c.RemoteConfig.MaxRetries = n
+			}
+		}
+
+		// TLS Config
+		if tlsEnabled := os.Getenv("OPA_REMOTE_TLS_ENABLED"); tlsEnabled != "" {
+			if c.RemoteConfig.TLSConfig == nil {
+				c.RemoteConfig.TLSConfig = &TLSConfig{}
+			}
+			c.RemoteConfig.TLSConfig.Enabled = parseBool(tlsEnabled)
+		}
+		if certFile := os.Getenv("OPA_REMOTE_TLS_CERT_FILE"); certFile != "" {
+			if c.RemoteConfig.TLSConfig == nil {
+				c.RemoteConfig.TLSConfig = &TLSConfig{}
+			}
+			c.RemoteConfig.TLSConfig.CertFile = certFile
+		}
+		if keyFile := os.Getenv("OPA_REMOTE_TLS_KEY_FILE"); keyFile != "" {
+			if c.RemoteConfig.TLSConfig == nil {
+				c.RemoteConfig.TLSConfig = &TLSConfig{}
+			}
+			c.RemoteConfig.TLSConfig.KeyFile = keyFile
+		}
+		if caFile := os.Getenv("OPA_REMOTE_TLS_CA_FILE"); caFile != "" {
+			if c.RemoteConfig.TLSConfig == nil {
+				c.RemoteConfig.TLSConfig = &TLSConfig{}
+			}
+			c.RemoteConfig.TLSConfig.CAFile = caFile
+		}
+
+		// Auth Config
+		if authType := os.Getenv("OPA_REMOTE_AUTH_TYPE"); authType != "" {
+			if c.RemoteConfig.AuthConfig == nil {
+				c.RemoteConfig.AuthConfig = &AuthConfig{}
+			}
+			c.RemoteConfig.AuthConfig.Type = authType
+		}
+		if token := os.Getenv("OPA_REMOTE_AUTH_TOKEN"); token != "" {
+			if c.RemoteConfig.AuthConfig == nil {
+				c.RemoteConfig.AuthConfig = &AuthConfig{}
+			}
+			c.RemoteConfig.AuthConfig.Token = token
+		}
+		if username := os.Getenv("OPA_REMOTE_AUTH_USERNAME"); username != "" {
+			if c.RemoteConfig.AuthConfig == nil {
+				c.RemoteConfig.AuthConfig = &AuthConfig{}
+			}
+			c.RemoteConfig.AuthConfig.Username = username
+		}
+		if password := os.Getenv("OPA_REMOTE_AUTH_PASSWORD"); password != "" {
+			if c.RemoteConfig.AuthConfig == nil {
+				c.RemoteConfig.AuthConfig = &AuthConfig{}
+			}
+			c.RemoteConfig.AuthConfig.Password = password
+		}
+	}
+
+	// CacheConfig
+	if cacheEnabled := os.Getenv("OPA_CACHE_ENABLED"); cacheEnabled != "" {
+		if c.CacheConfig == nil {
+			c.CacheConfig = &CacheConfig{}
+		}
+		c.CacheConfig.Enabled = parseBool(cacheEnabled)
+	}
+	if maxSize := os.Getenv("OPA_CACHE_MAX_SIZE"); maxSize != "" {
+		if c.CacheConfig == nil {
+			c.CacheConfig = &CacheConfig{}
+		}
+		if n, err := strconv.Atoi(maxSize); err == nil {
+			c.CacheConfig.MaxSize = n
+		}
+	}
+	if ttl := os.Getenv("OPA_CACHE_TTL"); ttl != "" {
+		if c.CacheConfig == nil {
+			c.CacheConfig = &CacheConfig{}
+		}
+		if d, err := time.ParseDuration(ttl); err == nil {
+			c.CacheConfig.TTL = d
+		}
+	}
+	if enableMetrics := os.Getenv("OPA_CACHE_ENABLE_METRICS"); enableMetrics != "" {
+		if c.CacheConfig == nil {
+			c.CacheConfig = &CacheConfig{}
+		}
+		c.CacheConfig.EnableMetrics = parseBool(enableMetrics)
+	}
+}
+
+// parseBool 解析布尔值环境变量
+func parseBool(s string) bool {
+	b, _ := strconv.ParseBool(s)
+	return b
 }
