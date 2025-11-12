@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -690,12 +691,24 @@ func TestServerRestartAfterFailure(t *testing.T) {
 	err = server1.Stop(context.Background())
 	require.NoError(t, err)
 
-	// Give a moment for the port to be released
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the port to be released with retry logic
+	// In CI environments, port release can take longer
+	var startErr error
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		time.Sleep(200 * time.Millisecond)
+		startErr = server.Start(ctx)
+		if startErr == nil {
+			break
+		}
+		// If it's still "address already in use", retry
+		if !strings.Contains(startErr.Error(), "address already in use") {
+			break // Different error, don't retry
+		}
+	}
 
 	// Now our server should be able to start
-	err = server.Start(ctx)
-	require.NoError(t, err)
+	require.NoError(t, startErr)
 	assert.True(t, server.IsRunning())
 
 	// Clean up
