@@ -106,7 +106,7 @@ allow = true if {
 		"user":   "alice",
 		"action": "read",
 	})
-	
+
 	// TODO: 修复 OPA 查询变量绑定问题后启用完整断言
 	if err != nil {
 		t.Logf("Policy evaluation returned error (expected during initial implementation): %v", err)
@@ -151,7 +151,7 @@ allow = true if {
 	_, err = client.Evaluate(ctx, "dynamic/allow", map[string]interface{}{
 		"role": "admin",
 	})
-	
+
 	// TODO: 修复 OPA 查询变量绑定问题后启用完整断言
 	if err != nil {
 		t.Logf("Policy evaluation returned error (expected during initial implementation): %v", err)
@@ -210,4 +210,3 @@ func TestNewClientWithOptions(t *testing.T) {
 		t.Error("Expected client to be embedded mode")
 	}
 }
-

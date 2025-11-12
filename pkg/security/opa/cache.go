@@ -233,4 +233,3 @@ func (c *memoryCache) generateKey(path string, input interface{}) (string, error
 	hash := sha256.Sum256([]byte(path + string(inputJSON)))
 	return fmt.Sprintf("%x", hash), nil
 }
-

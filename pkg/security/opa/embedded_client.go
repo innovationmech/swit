@@ -119,20 +119,20 @@ func (c *embeddedClient) Evaluate(ctx context.Context, path string, input interf
 
 	// 构建查询 - 使用完整的赋值查询避免未绑定变量错误
 	query := fmt.Sprintf("result = data.%s", dotPath)
-	
+
 	// 使用 rego.Module 逐个添加模块
 	opts := []func(*rego.Rego){
 		rego.Query(query),
 		rego.Store(c.store),
 		rego.Input(input),
 	}
-	
+
 	c.mu.RLock()
 	for name, m := range c.modules {
 		opts = append(opts, rego.Module(name, m.String()))
 	}
 	c.mu.RUnlock()
-	
+
 	r := rego.New(opts...)
 
 	// 准备查询
@@ -191,13 +191,13 @@ func (c *embeddedClient) Query(ctx context.Context, query string, input interfac
 		rego.Store(c.store),
 		rego.Input(input),
 	}
-	
+
 	c.mu.RLock()
 	for name, m := range c.modules {
 		opts = append(opts, rego.Module(name, m.String()))
 	}
 	c.mu.RUnlock()
-	
+
 	r := rego.New(opts...)
 
 	pq, err := r.PrepareForEval(ctx)
@@ -274,4 +274,3 @@ func (c *embeddedClient) Close(ctx context.Context) error {
 func (c *embeddedClient) IsEmbedded() bool {
 	return true
 }
-
