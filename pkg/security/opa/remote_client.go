@@ -22,9 +22,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/open-policy-agent/opa/rego"
@@ -32,15 +35,122 @@ import (
 
 // remoteClient 远程 OPA 客户端实现
 type remoteClient struct {
-	config     *Config
-	httpClient *http.Client
-	cache      Cache
+	config       *Config
+	httpClient   *http.Client
+	cache        Cache
+	servers      []*serverEndpoint
+	loadBalancer LoadBalancer
+	healthMgr    *healthManager
+	closeCh      chan struct{}
+	closeOnce    sync.Once
+}
+
+// serverEndpoint 服务器端点
+type serverEndpoint struct {
+	url             string
+	healthy         atomic.Bool
+	consecutiveFail atomic.Int32
+	consecutiveSucc atomic.Int32
+	activeConns     atomic.Int64 // 用于 least_connections 策略
+}
+
+// LoadBalancer 负载均衡器接口
+type LoadBalancer interface {
+	Select(servers []*serverEndpoint) *serverEndpoint
+}
+
+// roundRobinBalancer 轮询负载均衡器
+type roundRobinBalancer struct {
+	counter atomic.Uint64
+}
+
+func (rb *roundRobinBalancer) Select(servers []*serverEndpoint) *serverEndpoint {
+	healthy := make([]*serverEndpoint, 0, len(servers))
+	for _, s := range servers {
+		if s.healthy.Load() {
+			healthy = append(healthy, s)
+		}
+	}
+
+	if len(healthy) == 0 {
+		// 如果没有健康的服务器，返回第一个
+		if len(servers) > 0 {
+			return servers[0]
+		}
+		return nil
+	}
+
+	idx := rb.counter.Add(1) % uint64(len(healthy))
+	return healthy[idx]
+}
+
+// randomBalancer 随机负载均衡器
+type randomBalancer struct{}
+
+func (rb *randomBalancer) Select(servers []*serverEndpoint) *serverEndpoint {
+	healthy := make([]*serverEndpoint, 0, len(servers))
+	for _, s := range servers {
+		if s.healthy.Load() {
+			healthy = append(healthy, s)
+		}
+	}
+
+	if len(healthy) == 0 {
+		// 如果没有健康的服务器，返回随机一个
+		if len(servers) > 0 {
+			return servers[rand.Intn(len(servers))]
+		}
+		return nil
+	}
+
+	return healthy[rand.Intn(len(healthy))]
+}
+
+// leastConnectionsBalancer 最少连接负载均衡器
+type leastConnectionsBalancer struct{}
+
+func (lb *leastConnectionsBalancer) Select(servers []*serverEndpoint) *serverEndpoint {
+	healthy := make([]*serverEndpoint, 0, len(servers))
+	for _, s := range servers {
+		if s.healthy.Load() {
+			healthy = append(healthy, s)
+		}
+	}
+
+	if len(healthy) == 0 {
+		// 如果没有健康的服务器，返回第一个
+		if len(servers) > 0 {
+			return servers[0]
+		}
+		return nil
+	}
+
+	var minServer *serverEndpoint
+	var minConns int64 = -1
+	for _, s := range healthy {
+		conns := s.activeConns.Load()
+		if minConns < 0 || conns < minConns {
+			minConns = conns
+			minServer = s
+		}
+	}
+
+	return minServer
+}
+
+// healthManager 健康检查管理器
+type healthManager struct {
+	client  *remoteClient
+	config  *HealthCheckConfig
+	closeCh chan struct{}
+	wg      sync.WaitGroup
 }
 
 // newRemoteClient 创建远程客户端
 func newRemoteClient(ctx context.Context, config *Config) (Client, error) {
 	client := &remoteClient{
-		config: config,
+		config:  config,
+		closeCh: make(chan struct{}),
 	}
 
 	// 创建 HTTP 客户端
@@ -49,6 +159,29 @@ func newRemoteClient(ctx context.Context, config *Config) (Client, error) {
 		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
 	}
 	client.httpClient = httpClient
+
+	// 初始化服务器端点列表
+	client.servers = make([]*serverEndpoint, len(config.RemoteConfig.URLs))
+	for i, url := range config.RemoteConfig.URLs {
+		server := &serverEndpoint{
+			url: strings.TrimRight(url, "/"),
+		}
+		server.healthy.Store(true) // 初始标记为健康
+		client.servers[i] = server
+	}
+
+	// 创建负载均衡器
+	client.loadBalancer = client.createLoadBalancer()
+
+	// 初始化健康检查
+	if config.RemoteConfig.HealthCheck != nil && config.RemoteConfig.HealthCheck.Enabled {
+		client.healthMgr = &healthManager{
+			client:  client,
+			config:  config.RemoteConfig.HealthCheck,
+			closeCh: make(chan struct{}),
+		}
+		client.healthMgr.start()
+	}
 
 	// 初始化缓存
 	if config.CacheConfig != nil && config.CacheConfig.Enabled {
@@ -61,9 +194,39 @@ func newRemoteClient(ctx context.Context, config *Config) (Client, error) {
 	return client, nil
 }
 
+// createLoadBalancer 创建负载均衡器
+func (c *remoteClient) createLoadBalancer() LoadBalancer {
+	strategy := c.config.RemoteConfig.LoadBalancing
+	if strategy == "" {
+		strategy = "round_robin"
+	}
+
+	switch strategy {
+	case "random":
+		return &randomBalancer{}
+	case "least_connections":
+		return &leastConnectionsBalancer{}
+	default: // round_robin
+		return &roundRobinBalancer{}
+	}
+}
+
 // createHTTPClient 创建 HTTP 客户端
 func (c *remoteClient) createHTTPClient() (*http.Client, error) {
 	transport := &http.Transport{}
+
+	// 配置连接池
+	if c.config.RemoteConfig.PoolConfig != nil {
+		pool := c.config.RemoteConfig.PoolConfig
+		transport.MaxIdleConns = pool.MaxIdleConns
+		transport.MaxConnsPerHost = pool.MaxConnsPerHost
+		transport.IdleConnTimeout = pool.IdleConnTimeout
+	} else {
+		// 默认连接池配置
+		transport.MaxIdleConns = 100
+		transport.MaxConnsPerHost = 100
+		transport.IdleConnTimeout = 90 * time.Second
+	}
 
 	// 配置 TLS
 	if c.config.RemoteConfig.TLSConfig != nil && c.config.RemoteConfig.TLSConfig.Enabled {
@@ -136,9 +299,6 @@ func (c *remoteClient) Evaluate(ctx context.Context, path string, input interfac
 	// 规范化路径：支持 "rbac/allow" 和 "rbac.allow" 两种格式
 	_, slashPath := normalizePath(path)
 
-	// 构建请求 - 使用斜杠分隔的路径
-	url := strings.TrimRight(c.config.RemoteConfig.URL, "/") + "/v1/data/" + strings.TrimPrefix(slashPath, "/")
-
 	requestBody := map[string]interface{}{
 		"input": input,
 	}
@@ -148,7 +308,7 @@ func (c *remoteClient) Evaluate(ctx context.Context, path string, input interfac
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// 发送请求（带重试）
+	// 发送请求（带重试和负载均衡）
 	var result *Result
 	var lastErr error
 
@@ -157,19 +317,55 @@ func (c *remoteClient) Evaluate(ctx context.Context, path string, input interfac
 		maxRetries = 1
 	}
 
+	backoffMultiplier := c.config.RemoteConfig.RetryBackoffMultiplier
+	if backoffMultiplier == 0 {
+		backoffMultiplier = 2.0
+	}
+
+	maxWait := c.config.RemoteConfig.RetryMaxWait
+	if maxWait == 0 {
+		maxWait = 30 * time.Second
+	}
+
+	baseWait := time.Second
+
 	for i := 0; i < maxRetries; i++ {
+		// 选择服务器
+		server := c.loadBalancer.Select(c.servers)
+		if server == nil {
+			return nil, fmt.Errorf("no available servers")
+		}
+
+		// 构建完整 URL
+		url := server.url + "/v1/data/" + strings.TrimPrefix(slashPath, "/")
+
+		// 跟踪活动连接数（用于 least_connections 策略）
+		server.activeConns.Add(1)
 		result, lastErr = c.doRequest(ctx, url, jsonData)
+		server.activeConns.Add(-1)
+
 		if lastErr == nil {
+			// 成功：更新健康状态
+			c.markServerSuccess(server)
 			break
 		}
 
+		// 失败：更新健康状态
+		c.markServerFailure(server)
+
 		// 如果不是最后一次重试，等待后重试
 		if i < maxRetries-1 {
+			// 指数退避策略
+			waitTime := time.Duration(float64(baseWait) * float64(i+1) * backoffMultiplier)
+			if waitTime > maxWait {
+				waitTime = maxWait
+			}
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(time.Second * time.Duration(i+1)):
-				// 指数退避
+			case <-time.After(waitTime):
+				// 继续重试
 			}
 		}
 	}
@@ -184,6 +380,39 @@ func (c *remoteClient) Evaluate(ctx context.Context, path string, input interfac
 	}
 
 	return result, nil
+}
+
+// markServerSuccess 标记服务器成功
+func (c *remoteClient) markServerSuccess(server *serverEndpoint) {
+	server.consecutiveFail.Store(0)
+	succCount := server.consecutiveSucc.Add(1)
+
+	// 如果连续成功次数达到阈值，标记为健康
+	if c.config.RemoteConfig.HealthCheck != nil {
+		threshold := int32(c.config.RemoteConfig.HealthCheck.SuccessThreshold)
+		if succCount >= threshold {
+			server.healthy.Store(true)
+		}
+	} else {
+		server.healthy.Store(true)
+	}
+}
+
+// markServerFailure 标记服务器失败
+func (c *remoteClient) markServerFailure(server *serverEndpoint) {
+	server.consecutiveSucc.Store(0)
+	failCount := server.consecutiveFail.Add(1)
+
+	// 如果连续失败次数达到阈值，标记为不健康
+	if c.config.RemoteConfig.HealthCheck != nil {
+		threshold := int32(c.config.RemoteConfig.HealthCheck.FailureThreshold)
+		if failCount >= threshold {
+			server.healthy.Store(false)
+		}
+	} else {
+		// 如果没有健康检查配置，失败后立即标记为不健康
+		server.healthy.Store(false)
+	}
 }
 
 // doRequest 执行 HTTP 请求
@@ -312,10 +541,95 @@ func (c *remoteClient) RemovePolicy(ctx context.Context, name string) error {
 
 // Close 关闭客户端
 func (c *remoteClient) Close(ctx context.Context) error {
+	c.closeOnce.Do(func() {
+		close(c.closeCh)
+
+		// 停止健康检查
+		if c.healthMgr != nil {
+			c.healthMgr.stop()
+		}
+	})
+
 	if c.cache != nil {
 		return c.cache.Close(ctx)
 	}
 	return nil
+}
+
+// start 启动健康检查
+func (hm *healthManager) start() {
+	hm.wg.Add(1)
+	go hm.run()
+}
+
+// stop 停止健康检查
+func (hm *healthManager) stop() {
+	close(hm.closeCh)
+	hm.wg.Wait()
+}
+
+// run 运行健康检查循环
+func (hm *healthManager) run() {
+	defer hm.wg.Done()
+
+	ticker := time.NewTicker(hm.config.Interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-hm.closeCh:
+			return
+		case <-ticker.C:
+			hm.checkAllServers()
+		}
+	}
+}
+
+// checkAllServers 检查所有服务器健康状态
+func (hm *healthManager) checkAllServers() {
+	for _, server := range hm.client.servers {
+		// 并发检查所有服务器
+		go hm.checkServer(server)
+	}
+}
+
+// checkServer 检查单个服务器健康状态
+func (hm *healthManager) checkServer(server *serverEndpoint) {
+	ctx, cancel := context.WithTimeout(context.Background(), hm.config.Timeout)
+	defer cancel()
+
+	// 使用 OPA 的健康检查端点
+	url := server.url + "/health"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		hm.handleCheckFailure(server)
+		return
+	}
+
+	resp, err := hm.client.httpClient.Do(req)
+	if err != nil {
+		hm.handleCheckFailure(server)
+		return
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态
+	if resp.StatusCode == http.StatusOK {
+		hm.handleCheckSuccess(server)
+	} else {
+		hm.handleCheckFailure(server)
+	}
+}
+
+// handleCheckSuccess 处理健康检查成功
+func (hm *healthManager) handleCheckSuccess(server *serverEndpoint) {
+	hm.client.markServerSuccess(server)
+}
+
+// handleCheckFailure 处理健康检查失败
+func (hm *healthManager) handleCheckFailure(server *serverEndpoint) {
+	hm.client.markServerFailure(server)
 }
 
 // IsEmbedded 是否为嵌入式模式
