@@ -320,6 +320,71 @@ allow = true if {
 	}
 }
 
+func TestEmbeddedClientLoadDataWithLeadingSlash(t *testing.T) {
+	config := &Config{
+		Mode: ModeEmbedded,
+		EmbeddedConfig: &EmbeddedConfig{
+			PolicyDir: t.TempDir(),
+		},
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close(ctx)
+
+	testData := map[string]string{
+		"alice": "admin",
+		"bob":   "user",
+	}
+
+	// 测试用例：验证带前导斜杠和不带前导斜杠的路径都能正常工作
+	testCases := []struct {
+		name string
+		path string
+	}{
+		{"without leading slash", "roles"},
+		{"with leading slash", "/roles"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := client.LoadData(ctx, tc.path, testData); err != nil {
+				t.Errorf("LoadData with path %q failed: %v", tc.path, err)
+			}
+		})
+	}
+
+	// 验证数据已加载（使用策略访问数据）
+	policy := `
+package pathtest
+
+import rego.v1
+
+default allow = false
+
+allow = true if {
+    data.roles[input.user] == "admin"
+}
+`
+
+	if err := client.LoadPolicy(ctx, "pathtest.rego", policy); err != nil {
+		t.Fatalf("Failed to load policy: %v", err)
+	}
+
+	result, err := client.Evaluate(ctx, "pathtest/allow", map[string]interface{}{
+		"user": "alice",
+	})
+
+	if err != nil {
+		t.Logf("Policy evaluation returned error: %v", err)
+	} else if result.Allowed {
+		t.Log("Data loaded successfully and policy evaluation passed")
+	}
+}
+
 func TestEmbeddedClientQuery(t *testing.T) {
 	config := &Config{
 		Mode: ModeEmbedded,

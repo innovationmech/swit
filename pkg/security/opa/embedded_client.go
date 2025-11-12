@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/open-policy-agent/opa/ast"
@@ -314,8 +315,14 @@ func (c *embeddedClient) LoadData(ctx context.Context, path string, data interfa
 		return fmt.Errorf("store not initialized")
 	}
 
+	// 规范化路径：确保以 / 开头，但避免重复斜杠
+	normalizedPath := path
+	if !strings.HasPrefix(normalizedPath, "/") {
+		normalizedPath = "/" + normalizedPath
+	}
+
 	// 解析路径为 storage.Path
-	storagePath, ok := storage.ParsePath("/" + path)
+	storagePath, ok := storage.ParsePath(normalizedPath)
 	if !ok {
 		return fmt.Errorf("invalid storage path: %s", path)
 	}
