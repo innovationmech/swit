@@ -188,8 +188,16 @@ allow if {
 }
 
 # 规则：支持时间窗口限制
+# 注意：此规则仅在明确提供时间窗口时生效
 allow if {
+    # 必须明确提供时间窗口
+    input.environment.time_window
+    # 检查是否在时间窗口内
     within_time_window
+    # 必须有有效的主体
+    input.subject.user
+    count(input.subject.roles) > 0
+    # 允许的操作
     input.action in ["read", "update"]
 }
 
@@ -216,15 +224,7 @@ is_business_hours if {
 }
 
 # 检查是否在允许的时间窗口内
-within_time_window if {
-    # 如果没有时间窗口限制，默认通过
-    not input.environment
-}
-
-within_time_window if {
-    not input.environment.time_window
-}
-
+# 注意：只有明确提供时间窗口且在窗口内时才返回 true
 within_time_window if {
     input.environment.time_window
     # 获取当前时间戳（纳秒）
