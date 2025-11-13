@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -66,6 +67,7 @@ type CacheStats struct {
 type cacheEntry struct {
 	result    *Result
 	expiresAt time.Time
+	path      string // 存储路径以支持按路径删除
 }
 
 // memoryCache 内存缓存实现
@@ -165,6 +167,7 @@ func (c *memoryCache) Set(ctx context.Context, path string, input interface{}, r
 
 	entry := &cacheEntry{
 		result: result,
+		path:   path,
 	}
 
 	if c.config.TTL > 0 {
@@ -187,9 +190,9 @@ func (c *memoryCache) Delete(ctx context.Context, path string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// 删除所有以该路径开头的缓存键
-	for key := range c.entries {
-		if len(key) > len(path) && key[:len(path)] == path {
+	// 删除所有匹配路径的缓存条目
+	for key, entry := range c.entries {
+		if strings.HasPrefix(entry.path, path) {
 			delete(c.entries, key)
 		}
 	}
