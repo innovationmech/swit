@@ -76,9 +76,14 @@ type TLSConfig struct {
 	// SessionTicketsDisabled controls whether session tickets (RFC 5077) are disabled.
 	SessionTicketsDisabled bool `json:"session_tickets_disabled,omitempty" yaml:"session_tickets_disabled,omitempty" mapstructure:"session_tickets_disabled"`
 
-	// Renegotiation controls the TLS renegotiation support.
+	// Renegotiation controls the TLS renegotiation support for both client and server.
 	// Valid values: "never", "once", "freely"
+	// - "never": disables renegotiation (secure default)
+	// - "once": allows renegotiation once per connection (works for both client and server)
+	// - "freely": allows repeated renegotiation (works for both client and server)
 	// Defaults to "never" for security.
+	// Note: Despite the Go internal constant names containing "AsClient", these settings
+	// apply to both client and server configurations in crypto/tls.
 	Renegotiation string `json:"renegotiation,omitempty" yaml:"renegotiation,omitempty" mapstructure:"renegotiation"`
 
 	// NextProtos is a list of supported application-level protocols (ALPN).
@@ -350,13 +355,16 @@ func isValidRenegotiation(renego string) bool {
 }
 
 // parseRenegotiation converts a renegotiation string to its tls.RenegotiationSupport constant.
+// Note: Despite the Go constant names containing "AsClient", these apply to both client and server.
 func parseRenegotiation(renego string) tls.RenegotiationSupport {
 	switch renego {
 	case "never":
 		return tls.RenegotiateNever
 	case "once":
+		// Allows renegotiation once per connection (works for both client and server)
 		return tls.RenegotiateOnceAsClient
 	case "freely":
+		// Allows repeated renegotiation (works for both client and server)
 		return tls.RenegotiateFreelyAsClient
 	default:
 		return tls.RenegotiateNever

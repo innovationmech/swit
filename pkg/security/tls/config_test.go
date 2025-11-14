@@ -231,6 +231,22 @@ func TestValidateTLSConfig(t *testing.T) {
 			errMsg:  "invalid renegotiation",
 		},
 		{
+			name: "valid renegotiation once",
+			config: &TLSConfig{
+				Enabled:       true,
+				Renegotiation: "once",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid renegotiation freely",
+			config: &TLSConfig{
+				Enabled:       true,
+				Renegotiation: "freely",
+			},
+			wantErr: false,
+		},
+		{
 			name: "valid config",
 			config: &TLSConfig{
 				Enabled:    true,
@@ -792,6 +808,8 @@ func TestIsValidRenegotiation(t *testing.T) {
 		{"once", "once", true},
 		{"freely", "freely", true},
 		{"invalid", "always", false},
+		{"invalid once_as_client", "once_as_client", false},
+		{"invalid freely_as_client", "freely_as_client", false},
 	}
 
 	for _, tt := range tests {
