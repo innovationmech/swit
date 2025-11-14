@@ -217,13 +217,13 @@ func (r *Reporter) generateHTMLReport(results []*ScanResult, outputPath string) 
 
 	// Prepare template data
 	data := struct {
-		Timestamp      string
-		TotalCritical  int
-		TotalHigh      int
-		TotalMedium    int
-		TotalLow       int
-		TotalInfo      int
-		Results        []*ScanResult
+		Timestamp     string
+		TotalCritical int
+		TotalHigh     int
+		TotalMedium   int
+		TotalLow      int
+		TotalInfo     int
+		Results       []*ScanResult
 	}{
 		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 		Results:   results,
@@ -400,4 +400,3 @@ func (r *Reporter) getToolURI(tool string) string {
 	}
 	return ""
 }
-

@@ -115,7 +115,7 @@ func TestSecurityScanner_getEnabledTools(t *testing.T) {
 
 	// In CI, tools might not be installed, so we just verify the function returns successfully
 	// The slice might be empty if no tools are installed, which is acceptable
-	
+
 	// Verify that if tools are returned, they are valid registered tools
 	for _, tool := range tools {
 		name := tool.Name()
@@ -127,7 +127,7 @@ func TestSecurityScanner_getEnabledTools(t *testing.T) {
 			t.Errorf("Tool %s returned by getEnabledTools but reports as not available", name)
 		}
 	}
-	
+
 	// If we have tools available, verify the function filters correctly
 	// by checking that unknown-tool is not included
 	for _, tool := range tools {
@@ -476,4 +476,3 @@ func TestSecurityScanner_scanParallel(t *testing.T) {
 		t.Errorf("Expected 2 results, got %d", len(results))
 	}
 }
-

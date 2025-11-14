@@ -95,7 +95,7 @@ func main() {
 	fmt.Println("========================================")
 	fmt.Printf("Check Duration:           %v\n", result.Duration)
 	fmt.Printf("Report saved to:          %s\n", *reportPath)
-	fmt.Println("========================================\n")
+	fmt.Println("========================================")
 
 	// Print vulnerabilities if any
 	if result.Summary.TotalVulnerabilities > 0 {
@@ -131,4 +131,3 @@ func main() {
 
 	logger.Info("Vulnerability check passed")
 }
-

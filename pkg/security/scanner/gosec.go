@@ -245,4 +245,3 @@ func (g *GosecScanner) getRemediationAdvice(ruleID string) string {
 
 	return "Review the security finding and follow best practices to remediate the issue."
 }
-

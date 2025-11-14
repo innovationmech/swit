@@ -95,7 +95,7 @@ func (t *TrivyScanner) Scan(ctx context.Context, target string) (*ScanResult, er
 
 // trivyOutput represents the JSON output structure from Trivy.
 type trivyOutput struct {
-	SchemaVersion int `json:"SchemaVersion"`
+	SchemaVersion int    `json:"SchemaVersion"`
 	ArtifactName  string `json:"ArtifactName"`
 	ArtifactType  string `json:"ArtifactType"`
 	Results       []struct {
@@ -118,14 +118,14 @@ type trivyOutput struct {
 			} `json:"CVSS"`
 		} `json:"Vulnerabilities"`
 		Misconfigurations []struct {
-			Type        string `json:"Type"`
-			ID          string `json:"ID"`
-			Title       string `json:"Title"`
-			Description string `json:"Description"`
-			Message     string `json:"Message"`
-			Resolution  string `json:"Resolution"`
-			Severity    string `json:"Severity"`
-			PrimaryURL  string `json:"PrimaryURL"`
+			Type        string   `json:"Type"`
+			ID          string   `json:"ID"`
+			Title       string   `json:"Title"`
+			Description string   `json:"Description"`
+			Message     string   `json:"Message"`
+			Resolution  string   `json:"Resolution"`
+			Severity    string   `json:"Severity"`
+			PrimaryURL  string   `json:"PrimaryURL"`
 			References  []string `json:"References"`
 		} `json:"Misconfigurations"`
 		Secrets []struct {
@@ -256,4 +256,3 @@ func (t *TrivyScanner) updateSummary(summary *ScanSummary, severity Severity) {
 		summary.InfoCount++
 	}
 }
-
