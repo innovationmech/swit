@@ -113,16 +113,26 @@ func TestSecurityScanner_getEnabledTools(t *testing.T) {
 
 	tools := scanner.getEnabledTools()
 
-	// We can't rely on actual tool availability in CI, so just check the function works
-	if tools == nil {
-		t.Error("getEnabledTools returned nil")
-	}
-
-	// Tools should only include valid registered tools
+	// In CI, tools might not be installed, so we just verify the function returns successfully
+	// The slice might be empty if no tools are installed, which is acceptable
+	
+	// Verify that if tools are returned, they are valid registered tools
 	for _, tool := range tools {
 		name := tool.Name()
 		if name != "gosec" && name != "govulncheck" && name != "trivy" {
 			t.Errorf("Unexpected tool: %s", name)
+		}
+		// Verify the tool reports availability correctly
+		if !tool.IsAvailable() {
+			t.Errorf("Tool %s returned by getEnabledTools but reports as not available", name)
+		}
+	}
+	
+	// If we have tools available, verify the function filters correctly
+	// by checking that unknown-tool is not included
+	for _, tool := range tools {
+		if tool.Name() == "unknown-tool" {
+			t.Error("getEnabledTools should not return unknown tools")
 		}
 	}
 }
