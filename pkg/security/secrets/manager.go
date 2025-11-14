@@ -358,6 +358,11 @@ func (m *Manager) getFromCache(key string) *Secret {
 		return nil
 	}
 
+	// Also check if the secret itself has expired
+	if entry.secret.IsExpired() {
+		return nil
+	}
+
 	return entry.secret
 }
 
@@ -377,9 +382,17 @@ func (m *Manager) putInCache(key string, secret *Secret) {
 		}
 	}
 
+	// Calculate cache expiration time respecting secret-level expiration
+	cacheExpiresAt := time.Now().Add(m.config.Cache.TTL)
+	
+	// If the secret has its own expiration, use the minimum of cache TTL and secret expiry
+	if secret.ExpiresAt != nil && secret.ExpiresAt.Before(cacheExpiresAt) {
+		cacheExpiresAt = *secret.ExpiresAt
+	}
+
 	m.cache[key] = &cacheEntry{
 		secret:    secret,
-		expiresAt: time.Now().Add(m.config.Cache.TTL),
+		expiresAt: cacheExpiresAt,
 	}
 }
 
@@ -497,6 +510,11 @@ func (p *MemoryProvider) GetSecret(ctx context.Context, key string) (*Secret, er
 
 	secret, exists := p.secrets[key]
 	if !exists {
+		return nil, ErrSecretNotFound
+	}
+
+	// Check if secret has expired
+	if secret.IsExpired() {
 		return nil, ErrSecretNotFound
 	}
 

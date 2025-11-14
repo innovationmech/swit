@@ -450,6 +450,140 @@ func TestManagerConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestManager_SecretLevelExpiration(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+		Cache: &CacheConfig{
+			Enabled: true,
+			TTL:     5 * time.Minute, // Long cache TTL
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// Create a secret with a short expiration (100ms)
+	shortExpiry := time.Now().Add(100 * time.Millisecond)
+	secretWithExpiry := &Secret{
+		Key:       "short-lived-key",
+		Value:     "short-lived-value",
+		Metadata:  map[string]string{"source": "test"},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		ExpiresAt: &shortExpiry,
+	}
+
+	// Set the secret directly in the memory provider
+	memProvider := manager.providers[0].(*MemoryProvider)
+	err = memProvider.SetSecretWithMetadata(ctx, secretWithExpiry)
+	if err != nil {
+		t.Fatalf("SetSecretWithMetadata() error = %v", err)
+	}
+
+	// First get should succeed and cache the secret
+	secret, err := manager.GetSecret(ctx, "short-lived-key")
+	if err != nil {
+		t.Fatalf("GetSecret() error = %v", err)
+	}
+	if secret.Value != "short-lived-value" {
+		t.Errorf("GetSecret() value = %v, want short-lived-value", secret.Value)
+	}
+
+	// Verify it's in cache
+	cachedSecret := manager.getFromCache("short-lived-key")
+	if cachedSecret == nil {
+		t.Error("Secret not found in cache")
+	}
+
+	// Wait for secret to expire
+	time.Sleep(150 * time.Millisecond)
+
+	// Cache should now respect the secret's expiration and return nil
+	cachedSecret = manager.getFromCache("short-lived-key")
+	if cachedSecret != nil {
+		t.Error("Expired secret still returned from cache")
+	}
+
+	// GetSecret should also fail since the secret is expired
+	_, err = manager.GetSecret(ctx, "short-lived-key")
+	if err != ErrSecretNotFound {
+		t.Errorf("GetSecret() error = %v, want %v (expired secret should not be found)", err, ErrSecretNotFound)
+	}
+}
+
+func TestManager_CacheRespectsSecretExpiry(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+		Cache: &CacheConfig{
+			Enabled: true,
+			TTL:     10 * time.Minute, // Long cache TTL
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// Create a secret with expiration shorter than cache TTL
+	shortExpiry := time.Now().Add(200 * time.Millisecond)
+	secretWithExpiry := &Secret{
+		Key:       "test-key",
+		Value:     "test-value",
+		Metadata:  map[string]string{"source": "test"},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		ExpiresAt: &shortExpiry,
+	}
+
+	// Set the secret
+	memProvider := manager.providers[0].(*MemoryProvider)
+	err = memProvider.SetSecretWithMetadata(ctx, secretWithExpiry)
+	if err != nil {
+		t.Fatalf("SetSecretWithMetadata() error = %v", err)
+	}
+
+	// Get the secret to cache it
+	_, err = manager.GetSecret(ctx, "test-key")
+	if err != nil {
+		t.Fatalf("GetSecret() error = %v", err)
+	}
+
+	// Check cache entry expiration time
+	manager.cacheMu.RLock()
+	entry := manager.cache["test-key"]
+	manager.cacheMu.RUnlock()
+
+	if entry == nil {
+		t.Fatal("Cache entry not found")
+	}
+
+	// Cache entry should expire at secret's expiry time, not cache TTL
+	expectedExpiry := shortExpiry
+	if entry.expiresAt.After(expectedExpiry.Add(10 * time.Millisecond)) {
+		t.Errorf("Cache entry expiresAt = %v, should be around %v (secret expiry, not cache TTL)",
+			entry.expiresAt, expectedExpiry)
+	}
+}
+
 func TestMemoryProvider(t *testing.T) {
 	provider := NewMemoryProvider()
 	ctx := context.Background()
