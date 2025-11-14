@@ -30,6 +30,7 @@ import (
 
 	"google.golang.org/grpc/keepalive"
 
+	tlsconfig "github.com/innovationmech/swit/pkg/security/tls"
 	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/types"
 )
@@ -53,17 +54,18 @@ type ServerConfig struct {
 
 // HTTPConfig holds HTTP transport specific configuration
 type HTTPConfig struct {
-	Port         string            `yaml:"port" json:"port"`
-	Address      string            `yaml:"address" json:"address"`
-	EnableReady  bool              `yaml:"enable_ready" json:"enable_ready"`
-	Enabled      bool              `yaml:"enabled" json:"enabled"`
-	TestMode     bool              `yaml:"test_mode" json:"test_mode"`
-	TestPort     string            `yaml:"test_port" json:"test_port"`
-	Middleware   HTTPMiddleware    `yaml:"middleware" json:"middleware"`
-	ReadTimeout  time.Duration     `yaml:"read_timeout" json:"read_timeout"`
-	WriteTimeout time.Duration     `yaml:"write_timeout" json:"write_timeout"`
-	IdleTimeout  time.Duration     `yaml:"idle_timeout" json:"idle_timeout"`
-	Headers      map[string]string `yaml:"headers" json:"headers"`
+	Port         string                 `yaml:"port" json:"port"`
+	Address      string                 `yaml:"address" json:"address"`
+	EnableReady  bool                   `yaml:"enable_ready" json:"enable_ready"`
+	Enabled      bool                   `yaml:"enabled" json:"enabled"`
+	TestMode     bool                   `yaml:"test_mode" json:"test_mode"`
+	TestPort     string                 `yaml:"test_port" json:"test_port"`
+	Middleware   HTTPMiddleware         `yaml:"middleware" json:"middleware"`
+	ReadTimeout  time.Duration          `yaml:"read_timeout" json:"read_timeout"`
+	WriteTimeout time.Duration          `yaml:"write_timeout" json:"write_timeout"`
+	IdleTimeout  time.Duration          `yaml:"idle_timeout" json:"idle_timeout"`
+	Headers      map[string]string      `yaml:"headers" json:"headers"`
+	TLS          *tlsconfig.TLSConfig   `yaml:"tls" json:"tls"` // TLS/mTLS configuration
 }
 
 // HTTPMiddleware holds HTTP-specific middleware configuration
@@ -105,20 +107,20 @@ type TimeoutConfig struct {
 
 // GRPCConfig holds gRPC transport specific configuration
 type GRPCConfig struct {
-	Port                string                `yaml:"port" json:"port"`
-	Address             string                `yaml:"address" json:"address"`
-	EnableKeepalive     bool                  `yaml:"enable_keepalive" json:"enable_keepalive"`
-	EnableReflection    bool                  `yaml:"enable_reflection" json:"enable_reflection"`
-	EnableHealthService bool                  `yaml:"enable_health_service" json:"enable_health_service"`
-	Enabled             bool                  `yaml:"enabled" json:"enabled"`
-	TestMode            bool                  `yaml:"test_mode" json:"test_mode"`
-	TestPort            string                `yaml:"test_port" json:"test_port"`
-	MaxRecvMsgSize      int                   `yaml:"max_recv_msg_size" json:"max_recv_msg_size"`
-	MaxSendMsgSize      int                   `yaml:"max_send_msg_size" json:"max_send_msg_size"`
-	KeepaliveParams     GRPCKeepaliveParams   `yaml:"keepalive_params" json:"keepalive_params"`
-	KeepalivePolicy     GRPCKeepalivePolicy   `yaml:"keepalive_policy" json:"keepalive_policy"`
-	Interceptors        GRPCInterceptorConfig `yaml:"interceptors" json:"interceptors"`
-	TLS                 GRPCTLSConfig         `yaml:"tls" json:"tls"`
+	Port                string                   `yaml:"port" json:"port"`
+	Address             string                   `yaml:"address" json:"address"`
+	EnableKeepalive     bool                     `yaml:"enable_keepalive" json:"enable_keepalive"`
+	EnableReflection    bool                     `yaml:"enable_reflection" json:"enable_reflection"`
+	EnableHealthService bool                     `yaml:"enable_health_service" json:"enable_health_service"`
+	Enabled             bool                     `yaml:"enabled" json:"enabled"`
+	TestMode            bool                     `yaml:"test_mode" json:"test_mode"`
+	TestPort            string                   `yaml:"test_port" json:"test_port"`
+	MaxRecvMsgSize      int                      `yaml:"max_recv_msg_size" json:"max_recv_msg_size"`
+	MaxSendMsgSize      int                      `yaml:"max_send_msg_size" json:"max_send_msg_size"`
+	KeepaliveParams     GRPCKeepaliveParams      `yaml:"keepalive_params" json:"keepalive_params"`
+	KeepalivePolicy     GRPCKeepalivePolicy      `yaml:"keepalive_policy" json:"keepalive_policy"`
+	Interceptors        GRPCInterceptorConfig    `yaml:"interceptors" json:"interceptors"`
+	TLS                 *tlsconfig.TLSConfig     `yaml:"tls" json:"tls"` // TLS/mTLS configuration (replaces GRPCTLSConfig)
 }
 
 // GRPCKeepaliveParams holds gRPC keepalive parameters
@@ -145,14 +147,15 @@ type GRPCInterceptorConfig struct {
 	EnableRateLimit bool `yaml:"enable_rate_limit" json:"enable_rate_limit"`
 }
 
-// GRPCTLSConfig holds gRPC TLS configuration
-type GRPCTLSConfig struct {
-	Enabled    bool   `yaml:"enabled" json:"enabled"`
-	CertFile   string `yaml:"cert_file" json:"cert_file"`
-	KeyFile    string `yaml:"key_file" json:"key_file"`
-	CAFile     string `yaml:"ca_file" json:"ca_file"`
-	ServerName string `yaml:"server_name" json:"server_name"`
-}
+// Note: GRPCTLSConfig has been replaced by tlsconfig.TLSConfig for unified TLS/mTLS configuration
+// across both HTTP and gRPC transports. The old structure is kept as a comment for reference:
+// type GRPCTLSConfig struct {
+// 	Enabled    bool   `yaml:"enabled" json:"enabled"`
+// 	CertFile   string `yaml:"cert_file" json:"cert_file"`
+// 	KeyFile    string `yaml:"key_file" json:"key_file"`
+// 	CAFile     string `yaml:"ca_file" json:"ca_file"`
+// 	ServerName string `yaml:"server_name" json:"server_name"`
+// }
 
 // DiscoveryFailureMode defines how the server should handle service discovery failures
 type DiscoveryFailureMode string

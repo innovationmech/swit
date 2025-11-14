@@ -199,13 +199,15 @@ func (s *BusinessServerImpl) initializeTransports() error {
 			Port:           s.config.HTTP.Port,
 			EnableReady:    s.config.HTTP.EnableReady,
 			TracingManager: s.observabilityManager.GetTracingManager(),
+			TLS:            s.config.HTTP.TLS, // Pass TLS configuration
 		}
 		s.httpTransport = transport.NewHTTPNetworkServiceWithConfig(httpConfig)
 		transports = append(transports, s.httpTransport)
 
 		logger.Logger.Info("HTTP transport initialized",
 			zap.String("address", httpConfig.Address),
-			zap.String("port", httpConfig.Port))
+			zap.String("port", httpConfig.Port),
+			zap.Bool("tls_enabled", httpConfig.TLS != nil && httpConfig.TLS.Enabled))
 	}
 
 	// Initialize gRPC transport if enabled
@@ -221,6 +223,7 @@ func (s *BusinessServerImpl) initializeTransports() error {
 			KeepaliveParams:     s.config.toGRPCKeepaliveParams(),
 			KeepalivePolicy:     s.config.toGRPCKeepalivePolicy(),
 			TracingManager:      s.observabilityManager.GetTracingManager(),
+			TLS:                 s.config.GRPC.TLS, // Pass TLS configuration
 		}
 
 		// Configure interceptors using middleware manager (reuse if possible)
@@ -235,7 +238,8 @@ func (s *BusinessServerImpl) initializeTransports() error {
 		logger.Logger.Info("gRPC transport initialized",
 			zap.String("address", grpcConfig.Address),
 			zap.Bool("keepalive", grpcConfig.EnableKeepalive),
-			zap.Bool("reflection", grpcConfig.EnableReflection))
+			zap.Bool("reflection", grpcConfig.EnableReflection),
+			zap.Bool("tls_enabled", grpcConfig.TLS != nil && grpcConfig.TLS.Enabled))
 	}
 
 	// Register all transports at once to reduce lock contention
