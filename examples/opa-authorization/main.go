@@ -31,16 +31,10 @@ import (
 	"github.com/innovationmech/swit/pkg/security/opa"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	pb "github.com/innovationmech/swit/api/gen/go/swit/common/v1"
 )
 
 var (
 	port       = flag.Int("port", 8080, "HTTP server port")
-	grpcPort   = flag.Int("grpc-port", 9090, "gRPC server port")
 	opaMode    = flag.String("opa-mode", "embedded", "OPA mode: embedded or remote")
 	opaURL     = flag.String("opa-url", "http://localhost:8181", "OPA server URL (for remote mode)")
 	policyDir  = flag.String("policy-dir", "./policies", "Policy directory (for embedded mode)")
@@ -59,7 +53,6 @@ type Document struct {
 type DocumentService struct {
 	documents map[string]*Document
 	logger    *zap.Logger
-	pb.UnimplementedHealthCheckServiceServer
 }
 
 // NewDocumentService 创建文档服务
@@ -87,18 +80,6 @@ func NewDocumentService(logger *zap.Logger) *DocumentService {
 		},
 		logger: logger,
 	}
-}
-
-// Check 实现 gRPC 健康检查
-func (s *DocumentService) Check(ctx context.Context, req *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
-	return &pb.HealthCheckResponse{
-		Status: pb.HealthCheckResponse_SERVING,
-	}, nil
-}
-
-// Watch 实现 gRPC 健康检查流式方法
-func (s *DocumentService) Watch(req *pb.HealthCheckRequest, stream pb.HealthCheckService_WatchServer) error {
-	return status.Error(codes.Unimplemented, "Watch is not implemented")
 }
 
 func main() {
@@ -140,24 +121,12 @@ func main() {
 		}
 	}()
 
-	// 启动 gRPC 服务器
-	grpcServer := setupGRPCServer(opaClient, docService, logger)
-	go func() {
-		addr := fmt.Sprintf(":%d", *grpcPort)
-		logger.Info("Starting gRPC server", zap.String("addr", addr))
-		lis, err := grpc.NewServer().GetServiceInfo() // placeholder for actual listen
-		_ = lis
-		if err != nil {
-			logger.Fatal("gRPC server failed", zap.Error(err))
-		}
-	}()
-
 	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down servers...")
+	logger.Info("Shutting down server...")
 
 	// 优雅关闭
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -166,9 +135,8 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("HTTP server shutdown error", zap.Error(err))
 	}
-	grpcServer.GracefulStop()
 
-	logger.Info("Servers stopped")
+	logger.Info("Server stopped")
 }
 
 // createOPAClient 创建 OPA 客户端
@@ -270,28 +238,40 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 	// OPA 策略中间件
 	router.Use(middleware.OPAMiddleware(
 		opaClient,
-		middleware.WithOPALogger(logger),
-		middleware.WithOPAInputBuilder(func(c *gin.Context) (*opa.PolicyInput, error) {
+		middleware.WithLogger(logger),
+		middleware.WithInputBuilder(func(c *gin.Context) (*opa.PolicyInput, error) {
 			user, _ := c.Get("user")
 			roles, _ := c.Get("roles")
 
 			return &opa.PolicyInput{
-				Subject: opa.Subject{
-					User:  user.(string),
-					Roles: []string{roles.(string)},
+				Request: opa.RequestInfo{
+					Method:    c.Request.Method,
+					Path:      c.Request.URL.Path,
+					ClientIP:  c.ClientIP(),
+					Protocol:  "http",
+					Time:      time.Now(),
+					UserAgent: c.Request.UserAgent(),
 				},
-				Action: c.Request.Method,
-				Resource: map[string]interface{}{
-					"type": "document",
-					"path": c.Request.URL.Path,
+				User: opa.UserInfo{
+					Username: user.(string),
+					Roles:    []string{roles.(string)},
 				},
-				Context: map[string]interface{}{
-					"time":      time.Now().Unix(),
-					"client_ip": c.ClientIP(),
+				Resource: opa.ResourceInfo{
+					Type: "document",
+					Attributes: map[string]interface{}{
+						"path": c.Request.URL.Path,
+					},
 				},
 			}, nil
 		}),
-		middleware.WithOPAAuditLog(true),
+		middleware.WithAuditLog(func(auditLog *middleware.AuditLog) {
+			logger.Info("Policy decision",
+				zap.Bool("allowed", auditLog.Allowed),
+				zap.String("path", auditLog.Request.Path),
+				zap.String("method", auditLog.Request.Method),
+				zap.Int64("duration_ms", auditLog.Duration),
+			)
+		}),
 	))
 
 	// API 路由
@@ -371,38 +351,5 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 		Addr:    fmt.Sprintf(":%d", *port),
 		Handler: router,
 	}
-}
-
-// setupGRPCServer 设置 gRPC 服务器
-func setupGRPCServer(opaClient opa.Client, docService *DocumentService, logger *zap.Logger) *grpc.Server {
-	// 创建 gRPC 策略拦截器
-	policyInterceptor := middleware.UnaryPolicyInterceptor(
-		opaClient,
-		middleware.WithGRPCPolicyLogger(logger),
-		middleware.WithGRPCPolicyInputBuilder(func(ctx context.Context, fullMethod string, req interface{}) (*opa.PolicyInput, error) {
-			// 从 context 提取用户信息（实际应用中应从 JWT 或其他认证机制获取）
-			return &opa.PolicyInput{
-				Subject: opa.Subject{
-					User:  "grpc-user",
-					Roles: []string{"admin"},
-				},
-				Action: fullMethod,
-				Resource: map[string]interface{}{
-					"type":   "grpc",
-					"method": fullMethod,
-				},
-			}, nil
-		}),
-		middleware.WithGRPCPolicyAuditLog(true),
-	)
-
-	server := grpc.NewServer(
-		grpc.UnaryInterceptor(policyInterceptor),
-	)
-
-	// 注册服务
-	pb.RegisterHealthCheckServiceServer(server, docService)
-
-	return server
 }
 
