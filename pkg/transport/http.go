@@ -369,22 +369,22 @@ func ClientCertificateMiddleware() gin.HandlerFunc {
 		if c.Request.TLS != nil && len(c.Request.TLS.PeerCertificates) > 0 {
 			// Extract the first client certificate (leaf certificate)
 			clientCert := c.Request.TLS.PeerCertificates[0]
-			
+
 			// Extract certificate information
 			certInfo := tlsconfig.ExtractCertificateInfo(clientCert)
-			
+
 			// Store certificate information in context for use by handlers
 			c.Set("client_cert", clientCert)
 			c.Set("client_cert_info", certInfo)
 			c.Set("client_cn", certInfo.CommonName)
-			
+
 			// Log client certificate information
 			logger.Logger.Debug("Client certificate received",
 				zap.String("cn", certInfo.CommonName),
 				zap.Strings("organization", certInfo.Organization),
 				zap.String("serial", certInfo.SerialNumber))
 		}
-		
+
 		c.Next()
 	}
 }

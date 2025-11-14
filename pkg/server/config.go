@@ -54,18 +54,18 @@ type ServerConfig struct {
 
 // HTTPConfig holds HTTP transport specific configuration
 type HTTPConfig struct {
-	Port         string                 `yaml:"port" json:"port"`
-	Address      string                 `yaml:"address" json:"address"`
-	EnableReady  bool                   `yaml:"enable_ready" json:"enable_ready"`
-	Enabled      bool                   `yaml:"enabled" json:"enabled"`
-	TestMode     bool                   `yaml:"test_mode" json:"test_mode"`
-	TestPort     string                 `yaml:"test_port" json:"test_port"`
-	Middleware   HTTPMiddleware         `yaml:"middleware" json:"middleware"`
-	ReadTimeout  time.Duration          `yaml:"read_timeout" json:"read_timeout"`
-	WriteTimeout time.Duration          `yaml:"write_timeout" json:"write_timeout"`
-	IdleTimeout  time.Duration          `yaml:"idle_timeout" json:"idle_timeout"`
-	Headers      map[string]string      `yaml:"headers" json:"headers"`
-	TLS          *tlsconfig.TLSConfig   `yaml:"tls" json:"tls"` // TLS/mTLS configuration
+	Port         string               `yaml:"port" json:"port"`
+	Address      string               `yaml:"address" json:"address"`
+	EnableReady  bool                 `yaml:"enable_ready" json:"enable_ready"`
+	Enabled      bool                 `yaml:"enabled" json:"enabled"`
+	TestMode     bool                 `yaml:"test_mode" json:"test_mode"`
+	TestPort     string               `yaml:"test_port" json:"test_port"`
+	Middleware   HTTPMiddleware       `yaml:"middleware" json:"middleware"`
+	ReadTimeout  time.Duration        `yaml:"read_timeout" json:"read_timeout"`
+	WriteTimeout time.Duration        `yaml:"write_timeout" json:"write_timeout"`
+	IdleTimeout  time.Duration        `yaml:"idle_timeout" json:"idle_timeout"`
+	Headers      map[string]string    `yaml:"headers" json:"headers"`
+	TLS          *tlsconfig.TLSConfig `yaml:"tls" json:"tls"` // TLS/mTLS configuration
 }
 
 // HTTPMiddleware holds HTTP-specific middleware configuration
@@ -107,20 +107,20 @@ type TimeoutConfig struct {
 
 // GRPCConfig holds gRPC transport specific configuration
 type GRPCConfig struct {
-	Port                string                   `yaml:"port" json:"port"`
-	Address             string                   `yaml:"address" json:"address"`
-	EnableKeepalive     bool                     `yaml:"enable_keepalive" json:"enable_keepalive"`
-	EnableReflection    bool                     `yaml:"enable_reflection" json:"enable_reflection"`
-	EnableHealthService bool                     `yaml:"enable_health_service" json:"enable_health_service"`
-	Enabled             bool                     `yaml:"enabled" json:"enabled"`
-	TestMode            bool                     `yaml:"test_mode" json:"test_mode"`
-	TestPort            string                   `yaml:"test_port" json:"test_port"`
-	MaxRecvMsgSize      int                      `yaml:"max_recv_msg_size" json:"max_recv_msg_size"`
-	MaxSendMsgSize      int                      `yaml:"max_send_msg_size" json:"max_send_msg_size"`
-	KeepaliveParams     GRPCKeepaliveParams      `yaml:"keepalive_params" json:"keepalive_params"`
-	KeepalivePolicy     GRPCKeepalivePolicy      `yaml:"keepalive_policy" json:"keepalive_policy"`
-	Interceptors        GRPCInterceptorConfig    `yaml:"interceptors" json:"interceptors"`
-	TLS                 *tlsconfig.TLSConfig     `yaml:"tls" json:"tls"` // TLS/mTLS configuration (replaces GRPCTLSConfig)
+	Port                string                `yaml:"port" json:"port"`
+	Address             string                `yaml:"address" json:"address"`
+	EnableKeepalive     bool                  `yaml:"enable_keepalive" json:"enable_keepalive"`
+	EnableReflection    bool                  `yaml:"enable_reflection" json:"enable_reflection"`
+	EnableHealthService bool                  `yaml:"enable_health_service" json:"enable_health_service"`
+	Enabled             bool                  `yaml:"enabled" json:"enabled"`
+	TestMode            bool                  `yaml:"test_mode" json:"test_mode"`
+	TestPort            string                `yaml:"test_port" json:"test_port"`
+	MaxRecvMsgSize      int                   `yaml:"max_recv_msg_size" json:"max_recv_msg_size"`
+	MaxSendMsgSize      int                   `yaml:"max_send_msg_size" json:"max_send_msg_size"`
+	KeepaliveParams     GRPCKeepaliveParams   `yaml:"keepalive_params" json:"keepalive_params"`
+	KeepalivePolicy     GRPCKeepalivePolicy   `yaml:"keepalive_policy" json:"keepalive_policy"`
+	Interceptors        GRPCInterceptorConfig `yaml:"interceptors" json:"interceptors"`
+	TLS                 *tlsconfig.TLSConfig  `yaml:"tls" json:"tls"` // TLS/mTLS configuration (replaces GRPCTLSConfig)
 }
 
 // GRPCKeepaliveParams holds gRPC keepalive parameters
@@ -613,8 +613,7 @@ func (c *ServerConfig) SetDefaults() {
 	c.GRPC.Interceptors.EnableRecovery = true
 	c.GRPC.Interceptors.EnableRateLimit = false
 
-	// gRPC TLS defaults
-	c.GRPC.TLS.Enabled = false
+	// gRPC TLS defaults - TLS is disabled by default (nil)
 
 	// Discovery defaults
 	if c.Discovery.Address == "" {
@@ -909,7 +908,7 @@ func (c *ServerConfig) Validate() error {
 		}
 
 		// Validate TLS configuration if enabled
-		if c.GRPC.TLS.Enabled {
+		if c.GRPC.TLS != nil && c.GRPC.TLS.Enabled {
 			if c.GRPC.TLS.CertFile == "" {
 				return fmt.Errorf("grpc.tls.cert_file is required when TLS is enabled")
 			}

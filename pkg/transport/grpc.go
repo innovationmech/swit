@@ -60,8 +60,8 @@ type GRPCTransportConfig struct {
 	KeepalivePolicy     *keepalive.EnforcementPolicy
 	UnaryInterceptors   []grpc.UnaryServerInterceptor
 	StreamInterceptors  []grpc.StreamServerInterceptor
-	TracingManager      tracing.TracingManager   // Tracing manager for automatic interceptor setup
-	TLS                 *tlsconfig.TLSConfig     // TLS/mTLS configuration
+	TracingManager      tracing.TracingManager // Tracing manager for automatic interceptor setup
+	TLS                 *tlsconfig.TLSConfig   // TLS/mTLS configuration
 }
 
 // DefaultGRPCConfig returns a default gRPC configuration
@@ -510,16 +510,16 @@ func ClientCertificateUnaryInterceptor() grpc.UnaryServerInterceptor {
 				if len(tlsInfo.State.PeerCertificates) > 0 {
 					clientCert := tlsInfo.State.PeerCertificates[0]
 					certInfo := tlsconfig.ExtractCertificateInfo(clientCert)
-					
+
 					// Create client cert info and add to context
 					certData := &ClientCertInfo{
 						Certificate: clientCert,
 						CertInfo:    certInfo,
 						CommonName:  certInfo.CommonName,
 					}
-					
+
 					ctx = context.WithValue(ctx, clientCertKey{}, certData)
-					
+
 					// Log client certificate information
 					logger.Logger.Debug("gRPC client certificate received",
 						zap.String("method", srvInfo.FullMethod),
@@ -529,7 +529,7 @@ func ClientCertificateUnaryInterceptor() grpc.UnaryServerInterceptor {
 				}
 			}
 		}
-		
+
 		return handler(ctx, req)
 	}
 }
@@ -539,7 +539,7 @@ func ClientCertificateUnaryInterceptor() grpc.UnaryServerInterceptor {
 func ClientCertificateStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := ss.Context()
-		
+
 		// Extract peer information
 		if p, ok := peer.FromContext(ctx); ok {
 			if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok {
@@ -547,29 +547,29 @@ func ClientCertificateStreamInterceptor() grpc.StreamServerInterceptor {
 				if len(tlsInfo.State.PeerCertificates) > 0 {
 					clientCert := tlsInfo.State.PeerCertificates[0]
 					certInfo := tlsconfig.ExtractCertificateInfo(clientCert)
-					
+
 					// Create client cert info and add to context
 					certData := &ClientCertInfo{
 						Certificate: clientCert,
 						CertInfo:    certInfo,
 						CommonName:  certInfo.CommonName,
 					}
-					
+
 					ctx = context.WithValue(ctx, clientCertKey{}, certData)
-					
+
 					// Log client certificate information
 					logger.Logger.Debug("gRPC stream client certificate received",
 						zap.String("method", info.FullMethod),
 						zap.String("cn", certInfo.CommonName),
 						zap.Strings("organization", certInfo.Organization),
 						zap.String("serial", certInfo.SerialNumber))
-					
+
 					// Wrap the stream with the new context
 					ss = &serverStreamWithContext{ServerStream: ss, ctx: ctx}
 				}
 			}
 		}
-		
+
 		return handler(srv, ss)
 	}
 }
