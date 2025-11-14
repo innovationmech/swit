@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # OPA 服务器（用于远程模式测试）
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: opa-server
+    ports:
+      - "8181:8181"
+    command:
+      - "run"
+      - "--server"
+      - "--log-level=debug"
+      - "--set=decision_logs.console=true"
+      - "/policies"
+    volumes:
+      - ./policies:/policies:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - opa-network
+
+  # 示例应用（嵌入式模式）
+  app-embedded:
+    build:
+      context: ../..
+      dockerfile: ./examples/opa-authorization/Dockerfile
+    container_name: opa-example-embedded
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      - OPA_MODE=embedded
+      - POLICY_DIR=/app/policies
+      - POLICY_TYPE=rbac
+    volumes:
+      - ./policies:/app/policies:ro
+    depends_on:
+      opa:
+        condition: service_healthy
+    networks:
+      - opa-network
+
+  # 示例应用（远程模式）
+  app-remote:
+    build:
+      context: ../..
+      dockerfile: ./examples/opa-authorization/Dockerfile
+    container_name: opa-example-remote
+    ports:
+      - "8081:8080"
+      - "9091:9090"
+    environment:
+      - OPA_MODE=remote
+      - OPA_URL=http://opa:8181
+      - POLICY_TYPE=rbac
+    depends_on:
+      opa:
+        condition: service_healthy
+    networks:
+      - opa-network
+
+networks:
+  opa-network:
+    driver: bridge
+
