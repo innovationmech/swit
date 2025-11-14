@@ -52,6 +52,14 @@ define USAGE_OPTIONS
   QUALITY-SETUP    质量环境设置 - 安装必要的质量检查工具
   QUALITY-ADVANCED 高级质量管理 - 精确控制特定操作 (OPERATION=操作类型)
 
+【安全扫描相关】
+  SECURITY-SCAN              运行所有安全扫描器 - 综合安全检查 (推荐)
+  SECURITY-SCAN-GOSEC        运行gosec扫描 - 静态代码安全分析
+  SECURITY-SCAN-VULNCHECK    运行govulncheck扫描 - Go依赖漏洞检查
+  SECURITY-SCAN-TRIVY        运行trivy扫描 - 容器和文件系统扫描（可选）
+  SECURITY-SCAN-SETUP        安全扫描环境设置 - 安装所有安全扫描工具
+  SECURITY-SCAN-ADVANCED     高级安全扫描管理 - 精确控制特定操作 (OPERATION=操作类型)
+
 【API文档/Proto/版权】
   SWAGGER          生成swagger文档 (推荐用于开发和发布)
   SWAGGER-DEV      快速生成 - 跳过格式化，加速开发迭代
