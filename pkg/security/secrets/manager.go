@@ -255,31 +255,57 @@ func (m *Manager) DeleteSecret(ctx context.Context, key string) error {
 	// Try to delete from all writable providers
 	var lastErr error
 	deleted := false
+	hasWritableProvider := false
+	allNotFound := true
 
 	for _, provider := range m.providers {
 		if provider.IsReadOnly() {
 			continue
 		}
 
+		hasWritableProvider = true
+
 		err := provider.DeleteSecret(ctx, key)
 		if err == nil {
 			deleted = true
-		} else if err != ErrOperationNotSupported && err != ErrSecretNotFound {
+			allNotFound = false
+		} else if err == ErrSecretNotFound {
+			// Provider supports deletion but key doesn't exist
+			// Continue to check other providers
+		} else if err == ErrOperationNotSupported {
+			// Provider doesn't support deletion
+			// Continue to check other providers
+		} else {
+			// Real error (e.g., network error, permission denied)
 			lastErr = err
+			allNotFound = false
 		}
 	}
 
 	// Invalidate cache
 	m.invalidateCache(key)
 
+	// If we successfully deleted from at least one provider, succeed
 	if deleted {
 		return nil
 	}
 
+	// If we encountered a real error, return it
 	if lastErr != nil {
 		return lastErr
 	}
 
+	// If no writable providers exist, operation is not supported
+	if !hasWritableProvider {
+		return ErrOperationNotSupported
+	}
+
+	// If all writable providers reported ErrSecretNotFound, the secret doesn't exist
+	if allNotFound {
+		return ErrSecretNotFound
+	}
+
+	// All writable providers returned ErrOperationNotSupported
 	return ErrOperationNotSupported
 }
 
@@ -384,7 +410,7 @@ func (m *Manager) putInCache(key string, secret *Secret) {
 
 	// Calculate cache expiration time respecting secret-level expiration
 	cacheExpiresAt := time.Now().Add(m.config.Cache.TTL)
-	
+
 	// If the secret has its own expiration, use the minimum of cache TTL and secret expiry
 	if secret.ExpiresAt != nil && secret.ExpiresAt.Before(cacheExpiresAt) {
 		cacheExpiresAt = *secret.ExpiresAt
@@ -559,6 +585,10 @@ func (p *MemoryProvider) SetSecretWithMetadata(ctx context.Context, secret *Secr
 func (p *MemoryProvider) DeleteSecret(ctx context.Context, key string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if _, exists := p.secrets[key]; !exists {
+		return ErrSecretNotFound
+	}
 
 	delete(p.secrets, key)
 	return nil

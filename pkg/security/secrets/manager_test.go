@@ -240,6 +240,152 @@ func TestManager_DeleteSecret(t *testing.T) {
 	}
 }
 
+func TestManager_DeleteSecret_NotFound(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// Try to delete a non-existent secret
+	err = manager.DeleteSecret(ctx, "non-existent-key")
+	if err != ErrSecretNotFound {
+		t.Errorf("DeleteSecret() error = %v, want %v (secret doesn't exist)", err, ErrSecretNotFound)
+	}
+}
+
+func TestManager_DeleteSecret_ReadOnlyProvider(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeEnv,
+				Enabled: true,
+				Env:     &EnvProviderConfig{},
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// Try to delete from read-only provider
+	err = manager.DeleteSecret(ctx, "some-key")
+	if err != ErrOperationNotSupported {
+		t.Errorf("DeleteSecret() error = %v, want %v (no writable providers)", err, ErrOperationNotSupported)
+	}
+}
+
+func TestManager_DeleteSecret_MixedProviders(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file provider with an existing secret
+	fileProvider, err := NewFileProvider(&FileProviderConfig{
+		Path:     tmpDir + "/secrets.json",
+		Format:   FileFormatJSON,
+		ReadOnly: false,
+	})
+	if err != nil {
+		t.Fatalf("NewFileProvider() error = %v", err)
+	}
+	
+	ctx := context.Background()
+	err = fileProvider.SetSecret(ctx, "file-key", "file-value")
+	if err != nil {
+		t.Fatalf("SetSecret() error = %v", err)
+	}
+	fileProvider.Close()
+
+	// Create manager with memory provider (empty) and file provider
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+			{
+				Type:    ProviderTypeFile,
+				Enabled: true,
+				File: &FileProviderConfig{
+					Path:     tmpDir + "/secrets.json",
+					Format:   FileFormatJSON,
+					ReadOnly: false,
+				},
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	// Delete a key that exists in file provider but not in memory provider
+	// Memory provider will return ErrSecretNotFound, but file provider will succeed
+	err = manager.DeleteSecret(ctx, "file-key")
+	if err != nil {
+		t.Errorf("DeleteSecret() error = %v, want nil (should succeed when at least one provider deletes)", err)
+	}
+
+	// Verify it's deleted from both providers
+	_, err = manager.GetSecret(ctx, "file-key")
+	if err != ErrSecretNotFound {
+		t.Errorf("GetSecret() error = %v, want %v", err, ErrSecretNotFound)
+	}
+}
+
+func TestManager_DeleteSecret_AllProvidersNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+			{
+				Type:    ProviderTypeFile,
+				Enabled: true,
+				File: &FileProviderConfig{
+					Path:     tmpDir + "/secrets.json",
+					Format:   FileFormatJSON,
+					ReadOnly: false,
+				},
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// Try to delete a key that doesn't exist in any provider
+	err = manager.DeleteSecret(ctx, "non-existent")
+	if err != ErrSecretNotFound {
+		t.Errorf("DeleteSecret() error = %v, want %v (all providers report not found)", err, ErrSecretNotFound)
+	}
+}
+
 func TestManager_ListSecrets(t *testing.T) {
 	config := &ManagerConfig{
 		Providers: []*ProviderConfig{
