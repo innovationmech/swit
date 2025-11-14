@@ -309,4 +309,3 @@ func (g *GovulncheckScanner) parseCVSSScore(scoreStr string) float64 {
 	// Default to medium
 	return 5.0
 }
-

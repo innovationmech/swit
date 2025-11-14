@@ -326,8 +326,8 @@ func TestReporter_GetToolURI(t *testing.T) {
 	reporter := NewReporter("")
 
 	tests := []struct {
-		tool     string
-		hasURI   bool
+		tool   string
+		hasURI bool
 	}{
 		{"gosec", true},
 		{"govulncheck", true},
@@ -479,4 +479,3 @@ func TestReporter_GenerateReport_NoFindings(t *testing.T) {
 		t.Error("HTML report for no findings should contain success message")
 	}
 }
-

@@ -341,4 +341,3 @@ func GetFindingsBySeverity(results []*ScanResult) map[Severity]int {
 
 	return counts
 }
-

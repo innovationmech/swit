@@ -292,6 +292,14 @@ security-scan-setup:
 	
 	@echo "🎉 安全扫描环境设置完成"
 
+# 依赖漏洞检查 - 使用OSV数据库
+.PHONY: vulnerability-check
+vulnerability-check:
+	@echo "🔍 运行依赖漏洞检查（OSV数据库）..."
+	@mkdir -p _output/security
+	@go run ./cmd/vuln-checker || true
+	@echo "✅ 漏洞检查完成，报告保存到: _output/security/vulnerability-report.json"
+
 # 安全扫描高级操作
 .PHONY: security-scan-advanced
 security-scan-advanced:
@@ -304,6 +312,7 @@ security-scan-advanced:
 		echo "  gosec       - 运行gosec扫描"; \
 		echo "  vulncheck   - 运行govulncheck扫描"; \
 		echo "  trivy       - 运行trivy扫描"; \
+		echo "  vuln        - 运行依赖漏洞检查（OSV）"; \
 		echo "  all         - 运行所有扫描器"; \
 		echo "  report      - 生成综合报告"; \
 		echo ""; \
@@ -316,6 +325,7 @@ security-scan-advanced:
 		echo "  make security-scan-advanced OPERATION=gosec"; \
 		echo "  make security-scan-advanced OPERATION=all FORMAT=html"; \
 		echo "  make security-scan-advanced OPERATION=report FORMAT=html,json"; \
+		echo "  make security-scan-advanced OPERATION=vuln"; \
 		exit 1; \
 	fi
 	@case "$(OPERATION)" in \
@@ -325,8 +335,11 @@ security-scan-advanced:
 			$(MAKE) security-scan-vulncheck ;; \
 		trivy) \
 			$(MAKE) security-scan-trivy ;; \
+		vuln) \
+			$(MAKE) vulnerability-check ;; \
 		all) \
-			$(MAKE) security-scan ;; \
+			$(MAKE) security-scan; \
+			$(MAKE) vulnerability-check ;; \
 		report) \
 			echo "🔍 生成综合安全报告..."; \
 			./scripts/security-scan.sh --format $(FORMAT) ;; \
