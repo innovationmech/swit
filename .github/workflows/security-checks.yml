@@ -213,3 +213,48 @@ jobs:
           fi
         fi
       continue-on-error: true
+
+    - name: Run OSV vulnerability check
+      run: |
+        echo "🔍 Running OSV vulnerability check..."
+        mkdir -p _output/security
+        go run ./cmd/vuln-checker --fail-on-high=true --fail-on-critical=true || true
+      continue-on-error: true
+      
+    - name: Display OSV vulnerability results
+      run: |
+        echo "🔍 OSV vulnerability check completed"
+        if [ -f _output/security/vulnerability-report.json ]; then
+          echo "📊 OSV results saved to _output/security/vulnerability-report.json"
+          
+          # 统计漏洞
+          TOTAL=$(jq '.summary.total_vulnerabilities // 0' _output/security/vulnerability-report.json 2>/dev/null || echo "0")
+          CRITICAL=$(jq '.summary.critical_count // 0' _output/security/vulnerability-report.json 2>/dev/null || echo "0")
+          HIGH=$(jq '.summary.high_count // 0' _output/security/vulnerability-report.json 2>/dev/null || echo "0")
+          MEDIUM=$(jq '.summary.medium_count // 0' _output/security/vulnerability-report.json 2>/dev/null || echo "0")
+          
+          echo "🚨 Found $TOTAL vulnerabilities: $CRITICAL critical, $HIGH high, $MEDIUM medium"
+          
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "⚠️  Vulnerabilities detected in dependencies. Please review the report."
+            echo "📋 Summary of vulnerabilities:"
+            jq -r '.vulnerabilities[]? | "- \(.severity | ascii_upcase): \(.vulnerability_id) in \(.package_name)@\(.installed_version) (Fixed: \(.fixed_version // "N/A"))"' _output/security/vulnerability-report.json 2>/dev/null || echo "Details unavailable"
+          else
+            echo "✅ No vulnerabilities found in dependencies"
+          fi
+        else
+          echo "⚠️  Vulnerability report not found"
+        fi
+      continue-on-error: true
+      
+    - name: Upload vulnerability reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: vulnerability-reports
+        path: |
+          _output/security/vulnerability-report.json
+          gosec-results.json
+          trivy-results.json
+        retention-days: 30
+      continue-on-error: true
