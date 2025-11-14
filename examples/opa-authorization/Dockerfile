@@ -10,7 +10,7 @@ RUN go mod download
 COPY . .
 
 # 构建应用
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/opa-example ./examples/opa-authorization
+RUN CGO_ENABLED=0 GOOS=linux go build -o opa-example ./examples/opa-authorization
 
 FROM alpine:latest
 
@@ -19,7 +19,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /app
 
 # 从构建阶段复制二进制文件
-COPY --from=builder /app/opa-example .
+COPY --from=builder /build/opa-example .
 
 # 创建策略目录
 RUN mkdir -p /app/policies
