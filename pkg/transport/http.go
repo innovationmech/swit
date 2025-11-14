@@ -23,6 +23,7 @@ package transport
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
+	tlsconfig "github.com/innovationmech/swit/pkg/security/tls"
 	"github.com/innovationmech/swit/pkg/tracing"
 	"go.uber.org/zap"
 )
@@ -45,6 +47,7 @@ type HTTPTransportConfig struct {
 	TestPort       string                 // Override port for testing
 	EnableReady    bool                   // Enables ready channel for testing
 	TracingManager tracing.TracingManager // Tracing manager for automatic middleware setup
+	TLS            *tlsconfig.TLSConfig   // TLS/mTLS configuration
 }
 
 // HTTPNetworkService implements NetworkTransport interface for HTTP
@@ -88,6 +91,13 @@ func NewHTTPNetworkServiceWithConfig(config *HTTPTransportConfig) *HTTPNetworkSe
 		transport.router.Use(tracingMiddleware)
 	}
 
+	// Setup client certificate middleware if mTLS is enabled
+	if config.TLS != nil && config.TLS.Enabled && config.TLS.ClientAuth != "" && config.TLS.ClientAuth != "none" {
+		transport.router.Use(ClientCertificateMiddleware())
+		logger.Logger.Info("Client certificate middleware enabled",
+			zap.String("client_auth", config.TLS.ClientAuth))
+	}
+
 	if config.EnableReady {
 		transport.ready = make(chan struct{})
 	}
@@ -123,6 +133,18 @@ func (h *HTTPNetworkService) Start(ctx context.Context) error {
 		Handler: h.router,
 	}
 
+	// Configure TLS if enabled
+	if h.config.TLS != nil && h.config.TLS.Enabled {
+		tlsConfig, err := tlsconfig.NewTLSConfig(h.config.TLS)
+		if err != nil {
+			return fmt.Errorf("failed to create TLS config: %w", err)
+		}
+		h.server.TLSConfig = tlsConfig
+		logger.Logger.Info("HTTP transport TLS enabled",
+			zap.String("address", h.address),
+			zap.String("client_auth", h.config.TLS.ClientAuth))
+	}
+
 	// Reset ready channel for each start if enabled
 	if h.config.EnableReady {
 		h.ready = make(chan struct{})
@@ -151,7 +173,16 @@ func (h *HTTPNetworkService) Start(ctx context.Context) error {
 			}
 		}
 
-		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
+		var err error
+		if h.config.TLS != nil && h.config.TLS.Enabled {
+			// Use ServeTLS for TLS-enabled servers
+			// The TLS config is already set on the server
+			err = server.ServeTLS(ln, "", "")
+		} else {
+			// Use regular Serve for non-TLS servers
+			err = server.Serve(ln)
+		}
+		if err != nil && err != http.ErrServerClosed {
 			logger.Logger.Error("HTTP server failed to serve", zap.Error(err))
 		}
 	}()
@@ -327,6 +358,68 @@ func (h *HTTPNetworkService) ShutdownServices(ctx context.Context) error {
 	defer h.mu.RUnlock()
 
 	return h.serviceRegistry.ShutdownAll(ctx)
+}
+
+// ClientCertificateMiddleware is a Gin middleware that extracts client certificate
+// information from mTLS connections and makes it available in the request context.
+// This middleware should be registered when mTLS is enabled.
+func ClientCertificateMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Check if TLS is enabled and client certificates are provided
+		if c.Request.TLS != nil && len(c.Request.TLS.PeerCertificates) > 0 {
+			// Extract the first client certificate (leaf certificate)
+			clientCert := c.Request.TLS.PeerCertificates[0]
+
+			// Extract certificate information
+			certInfo := tlsconfig.ExtractCertificateInfo(clientCert)
+
+			// Store certificate information in context for use by handlers
+			c.Set("client_cert", clientCert)
+			c.Set("client_cert_info", certInfo)
+			c.Set("client_cn", certInfo.CommonName)
+
+			// Log client certificate information
+			logger.Logger.Debug("Client certificate received",
+				zap.String("cn", certInfo.CommonName),
+				zap.Strings("organization", certInfo.Organization),
+				zap.String("serial", certInfo.SerialNumber))
+		}
+
+		c.Next()
+	}
+}
+
+// GetClientCertificate retrieves the client certificate from the Gin context.
+// Returns nil if no client certificate is present.
+func GetClientCertificate(c *gin.Context) *x509.Certificate {
+	if cert, exists := c.Get("client_cert"); exists {
+		if clientCert, ok := cert.(*x509.Certificate); ok {
+			return clientCert
+		}
+	}
+	return nil
+}
+
+// GetClientCertificateInfo retrieves extracted client certificate information from the Gin context.
+// Returns nil if no client certificate information is present.
+func GetClientCertificateInfo(c *gin.Context) *tlsconfig.CertificateInfo {
+	if info, exists := c.Get("client_cert_info"); exists {
+		if certInfo, ok := info.(*tlsconfig.CertificateInfo); ok {
+			return certInfo
+		}
+	}
+	return nil
+}
+
+// GetClientCommonName retrieves the client certificate's Common Name from the Gin context.
+// Returns empty string if no client certificate is present.
+func GetClientCommonName(c *gin.Context) string {
+	if cn, exists := c.Get("client_cn"); exists {
+		if commonName, ok := cn.(string); ok {
+			return commonName
+		}
+	}
+	return ""
 }
 
 // determineAddress determines the address to use for the HTTP server

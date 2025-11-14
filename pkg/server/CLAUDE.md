@@ -309,7 +309,7 @@ type GRPCConfig struct {
     KeepaliveParams     GRPCKeepaliveParams   // Keepalive parameters
     KeepalivePolicy     GRPCKeepalivePolicy   // Keepalive policy
     Interceptors        GRPCInterceptorConfig // Interceptor config
-    TLS                 GRPCTLSConfig         // TLS configuration
+    TLS                 *tlsconfig.TLSConfig  // TLS/mTLS configuration
 }
 ```
 

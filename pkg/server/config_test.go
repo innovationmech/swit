@@ -180,9 +180,7 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 						EnableRecovery:  true,
 						EnableRateLimit: false,
 					},
-					TLS: GRPCTLSConfig{
-						Enabled: false,
-					},
+					TLS: nil, // TLS disabled
 				},
 				Discovery: DiscoveryConfig{
 					Address:             "127.0.0.1:8500",
@@ -398,9 +396,7 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 						EnableRecovery:  true,
 						EnableRateLimit: false,
 					},
-					TLS: GRPCTLSConfig{
-						Enabled: false,
-					},
+					TLS: nil, // TLS disabled
 				},
 				Discovery: DiscoveryConfig{
 					Address:             "127.0.0.1:8500",

@@ -172,3 +172,88 @@ func VerifyKeyPair(certFile, keyFile string) error {
 	_, err := LoadCertificate(certFile, keyFile)
 	return err
 }
+
+// CertificateInfo holds extracted information from a client certificate.
+type CertificateInfo struct {
+	Subject            string   // Certificate subject (full DN)
+	CommonName         string   // Common Name (CN)
+	Organization       []string // Organization (O)
+	OrganizationalUnit []string // Organizational Unit (OU)
+	Country            []string // Country (C)
+	Province           []string // Province/State (ST)
+	Locality           []string // Locality (L)
+	DNSNames           []string // Subject Alternative Names (DNS)
+	EmailAddresses     []string // Subject Alternative Names (Email)
+	IPAddresses        []string // Subject Alternative Names (IP)
+	URIs               []string // Subject Alternative Names (URI)
+	SerialNumber       string   // Certificate serial number
+	NotBefore          string   // Certificate validity start time
+	NotAfter           string   // Certificate validity end time
+	Issuer             string   // Certificate issuer (full DN)
+}
+
+// ExtractCertificateInfo extracts information from an X.509 certificate.
+// This is useful for authentication and authorization based on client certificates.
+func ExtractCertificateInfo(cert *x509.Certificate) *CertificateInfo {
+	if cert == nil {
+		return nil
+	}
+
+	info := &CertificateInfo{
+		Subject:            cert.Subject.String(),
+		CommonName:         cert.Subject.CommonName,
+		Organization:       cert.Subject.Organization,
+		OrganizationalUnit: cert.Subject.OrganizationalUnit,
+		Country:            cert.Subject.Country,
+		Province:           cert.Subject.Province,
+		Locality:           cert.Subject.Locality,
+		DNSNames:           cert.DNSNames,
+		EmailAddresses:     cert.EmailAddresses,
+		SerialNumber:       cert.SerialNumber.String(),
+		NotBefore:          cert.NotBefore.Format("2006-01-02 15:04:05 MST"),
+		NotAfter:           cert.NotAfter.Format("2006-01-02 15:04:05 MST"),
+		Issuer:             cert.Issuer.String(),
+	}
+
+	// Extract IP addresses
+	for _, ip := range cert.IPAddresses {
+		info.IPAddresses = append(info.IPAddresses, ip.String())
+	}
+
+	// Extract URIs
+	for _, uri := range cert.URIs {
+		info.URIs = append(info.URIs, uri.String())
+	}
+
+	return info
+}
+
+// GetCommonName extracts the Common Name (CN) from a certificate.
+// This is a convenience function for quick CN extraction.
+func GetCommonName(cert *x509.Certificate) string {
+	if cert == nil {
+		return ""
+	}
+	return cert.Subject.CommonName
+}
+
+// GetSANs extracts all Subject Alternative Names (SANs) from a certificate.
+// Returns DNS names, email addresses, IP addresses, and URIs.
+func GetSANs(cert *x509.Certificate) (dnsNames, emails, ips, uris []string) {
+	if cert == nil {
+		return
+	}
+
+	dnsNames = cert.DNSNames
+	emails = cert.EmailAddresses
+
+	for _, ip := range cert.IPAddresses {
+		ips = append(ips, ip.String())
+	}
+
+	for _, uri := range cert.URIs {
+		uris = append(uris, uri.String())
+	}
+
+	return
+}

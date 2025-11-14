@@ -23,6 +23,7 @@ package transport
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"strconv"
@@ -30,13 +31,16 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
+	tlsconfig "github.com/innovationmech/swit/pkg/security/tls"
 	"github.com/innovationmech/swit/pkg/tracing"
 	"go.uber.org/zap"
 )
@@ -57,6 +61,7 @@ type GRPCTransportConfig struct {
 	UnaryInterceptors   []grpc.UnaryServerInterceptor
 	StreamInterceptors  []grpc.StreamServerInterceptor
 	TracingManager      tracing.TracingManager // Tracing manager for automatic interceptor setup
+	TLS                 *tlsconfig.TLSConfig   // TLS/mTLS configuration
 }
 
 // DefaultGRPCConfig returns a default gRPC configuration
@@ -296,6 +301,20 @@ func (g *GRPCNetworkService) AddStreamInterceptor(interceptor grpc.StreamServerI
 func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 	opts := []grpc.ServerOption{}
 
+	// Add TLS credentials if enabled
+	if g.config.TLS != nil && g.config.TLS.Enabled {
+		tlsConfig, err := tlsconfig.NewTLSConfig(g.config.TLS)
+		if err != nil {
+			logger.Logger.Error("Failed to create TLS config for gRPC, server will start without TLS",
+				zap.Error(err))
+		} else {
+			creds := credentials.NewTLS(tlsConfig)
+			opts = append(opts, grpc.Creds(creds))
+			logger.Logger.Info("gRPC transport TLS enabled",
+				zap.String("client_auth", g.config.TLS.ClientAuth))
+		}
+	}
+
 	// Add keepalive settings if enabled
 	if g.config.EnableKeepalive {
 		if g.config.KeepaliveParams != nil {
@@ -317,6 +336,14 @@ func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 	// Add interceptors (including tracing interceptors if available)
 	unaryInterceptors := g.config.UnaryInterceptors
 	streamInterceptors := g.config.StreamInterceptors
+
+	// Add client certificate interceptors if mTLS is enabled
+	if g.config.TLS != nil && g.config.TLS.Enabled && g.config.TLS.ClientAuth != "" && g.config.TLS.ClientAuth != "none" {
+		unaryInterceptors = append([]grpc.UnaryServerInterceptor{ClientCertificateUnaryInterceptor()}, unaryInterceptors...)
+		streamInterceptors = append([]grpc.StreamServerInterceptor{ClientCertificateStreamInterceptor()}, streamInterceptors...)
+		logger.Logger.Info("gRPC client certificate interceptors enabled",
+			zap.String("client_auth", g.config.TLS.ClientAuth))
+	}
 
 	// Add tracing interceptors if tracing manager is provided
 	if g.config.TracingManager != nil {
@@ -460,4 +487,118 @@ func (g *GRPCNetworkService) ShutdownServices(ctx context.Context) error {
 	defer g.mu.RUnlock()
 
 	return g.serviceRegistry.ShutdownAll(ctx)
+}
+
+// clientCertKey is a context key type for storing client certificate information
+type clientCertKey struct{}
+
+// ClientCertInfo holds client certificate information in gRPC context
+type ClientCertInfo struct {
+	Certificate *x509.Certificate
+	CertInfo    *tlsconfig.CertificateInfo
+	CommonName  string
+}
+
+// ClientCertificateUnaryInterceptor is a gRPC unary interceptor that extracts
+// client certificate information from mTLS connections and adds it to the context.
+func ClientCertificateUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, srvInfo *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Extract peer information
+		if p, ok := peer.FromContext(ctx); ok {
+			if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok {
+				// Check if client certificates are provided
+				if len(tlsInfo.State.PeerCertificates) > 0 {
+					clientCert := tlsInfo.State.PeerCertificates[0]
+					certInfo := tlsconfig.ExtractCertificateInfo(clientCert)
+
+					// Create client cert info and add to context
+					certData := &ClientCertInfo{
+						Certificate: clientCert,
+						CertInfo:    certInfo,
+						CommonName:  certInfo.CommonName,
+					}
+
+					ctx = context.WithValue(ctx, clientCertKey{}, certData)
+
+					// Log client certificate information
+					logger.Logger.Debug("gRPC client certificate received",
+						zap.String("method", srvInfo.FullMethod),
+						zap.String("cn", certInfo.CommonName),
+						zap.Strings("organization", certInfo.Organization),
+						zap.String("serial", certInfo.SerialNumber))
+				}
+			}
+		}
+
+		return handler(ctx, req)
+	}
+}
+
+// ClientCertificateStreamInterceptor is a gRPC stream interceptor that extracts
+// client certificate information from mTLS connections and adds it to the context.
+func ClientCertificateStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+
+		// Extract peer information
+		if p, ok := peer.FromContext(ctx); ok {
+			if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok {
+				// Check if client certificates are provided
+				if len(tlsInfo.State.PeerCertificates) > 0 {
+					clientCert := tlsInfo.State.PeerCertificates[0]
+					certInfo := tlsconfig.ExtractCertificateInfo(clientCert)
+
+					// Create client cert info and add to context
+					certData := &ClientCertInfo{
+						Certificate: clientCert,
+						CertInfo:    certInfo,
+						CommonName:  certInfo.CommonName,
+					}
+
+					ctx = context.WithValue(ctx, clientCertKey{}, certData)
+
+					// Log client certificate information
+					logger.Logger.Debug("gRPC stream client certificate received",
+						zap.String("method", info.FullMethod),
+						zap.String("cn", certInfo.CommonName),
+						zap.Strings("organization", certInfo.Organization),
+						zap.String("serial", certInfo.SerialNumber))
+
+					// Wrap the stream with the new context
+					ss = &serverStreamWithContext{ServerStream: ss, ctx: ctx}
+				}
+			}
+		}
+
+		return handler(srv, ss)
+	}
+}
+
+// serverStreamWithContext wraps grpc.ServerStream to override the context
+type serverStreamWithContext struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+// Context returns the wrapper's context, overriding the nested ServerStream.Context()
+func (w *serverStreamWithContext) Context() context.Context {
+	return w.ctx
+}
+
+// GetClientCertificateFromContext retrieves client certificate information from gRPC context.
+// Returns nil if no client certificate is present.
+func GetClientCertificateFromContext(ctx context.Context) *ClientCertInfo {
+	if info, ok := ctx.Value(clientCertKey{}).(*ClientCertInfo); ok {
+		return info
+	}
+	return nil
+}
+
+// GetClientCNFromContext retrieves the client certificate's Common Name from gRPC context.
+// Returns empty string if no client certificate is present.
+func GetClientCNFromContext(ctx context.Context) string {
+	if info := GetClientCertificateFromContext(ctx); info != nil {
+		return info.CommonName
+	}
+	return ""
 }
