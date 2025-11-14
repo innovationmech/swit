@@ -352,4 +352,3 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 		Handler: router,
 	}
 }
-

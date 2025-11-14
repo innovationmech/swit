@@ -37,13 +37,13 @@ func TestEmbeddedRBACIntegration(t *testing.T) {
 	// 创建临时目录并复制 RBAC 策略
 	tempDir := t.TempDir()
 	rbacPolicyPath := filepath.Join("policies", "rbac.rego")
-	
+
 	// 读取 RBAC 策略文件
 	rbacContent, err := os.ReadFile(rbacPolicyPath)
 	if err != nil {
 		t.Fatalf("Failed to read RBAC policy: %v", err)
 	}
-	
+
 	// 写入临时目录
 	if err := os.WriteFile(filepath.Join(tempDir, "rbac.rego"), rbacContent, 0644); err != nil {
 		t.Fatalf("Failed to write RBAC policy: %v", err)
@@ -134,7 +134,7 @@ func TestEmbeddedRBACIntegration(t *testing.T) {
 			if result.Metrics != nil && result.Metrics.TimerEvalNs > 0 {
 				evalTimeMs := float64(result.Metrics.TimerEvalNs) / 1000000
 				t.Logf("Evaluation time: %.2f ms", evalTimeMs)
-				
+
 				// 性能要求: < 5ms
 				if evalTimeMs > 5.0 {
 					t.Errorf("Evaluation time %.2f ms exceeds 5ms threshold", evalTimeMs)
@@ -151,13 +151,13 @@ func TestEmbeddedABACIntegration(t *testing.T) {
 	// 创建临时目录并复制 ABAC 策略
 	tempDir := t.TempDir()
 	abacPolicyPath := filepath.Join("policies", "abac.rego")
-	
+
 	// 读取 ABAC 策略文件
 	abacContent, err := os.ReadFile(abacPolicyPath)
 	if err != nil {
 		t.Fatalf("Failed to read ABAC policy: %v", err)
 	}
-	
+
 	// 写入临时目录
 	if err := os.WriteFile(filepath.Join(tempDir, "abac.rego"), abacContent, 0644); err != nil {
 		t.Fatalf("Failed to write ABAC policy: %v", err)
@@ -318,7 +318,7 @@ func TestRemoteOPAWithMockServer(t *testing.T) {
 			}`)
 			return
 		}
-		
+
 		// 健康检查端点
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
@@ -440,7 +440,7 @@ func TestCachingPerformance(t *testing.T) {
 
 	// 缓存命中应该更快（至少快 50%）
 	if secondEvalTime > firstEvalTime/2 {
-		t.Logf("Warning: Cache hit not significantly faster. First: %v, Second: %v", 
+		t.Logf("Warning: Cache hit not significantly faster. First: %v, Second: %v",
 			firstEvalTime, secondEvalTime)
 	}
 }
@@ -731,4 +731,3 @@ func TestMultipleClientsIsolation(t *testing.T) {
 		t.Error("Client2 ABAC evaluation should allow admin")
 	}
 }
-
