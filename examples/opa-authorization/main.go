@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -213,7 +214,7 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 		c.Next()
 		logger.Info("HTTP request",
 			zap.String("method", c.Request.Method),
-			zap.String("path", c.Request.URL.Path),
+			zap.String("path", sanitizeLogValue(c.Request.URL.Path)),
 			zap.Int("status", c.Writer.Status()),
 			zap.Duration("duration", time.Since(start)),
 		)
@@ -267,7 +268,7 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 		middleware.WithAuditLog(func(auditLog *middleware.AuditLog) {
 			logger.Info("Policy decision",
 				zap.Bool("allowed", auditLog.Allowed),
-				zap.String("path", auditLog.Request.Path),
+				zap.String("path", sanitizeLogValue(auditLog.Request.Path)),
 				zap.String("method", auditLog.Request.Method),
 				zap.Int64("duration_ms", auditLog.Duration),
 			)
@@ -351,4 +352,13 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 		Addr:    fmt.Sprintf(":%d", *port),
 		Handler: router,
 	}
+}
+
+// sanitizeLogValue 清理日志值，防止日志注入
+func sanitizeLogValue(value string) string {
+	// 移除换行符、回车符和制表符
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	value = strings.ReplaceAll(value, "\t", " ")
+	return value
 }
