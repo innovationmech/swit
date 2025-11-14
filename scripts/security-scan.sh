@@ -21,7 +21,7 @@ OUTPUT_DIR="${PROJECT_ROOT}/_output/security"
 # Default configuration
 TOOLS="${TOOLS:-gosec,govulncheck}"
 FORMAT="${FORMAT:-json,html}"
-TARGET="${TARGET:-./ ...}"
+TARGET="${TARGET:-./...}"
 FAIL_ON_HIGH="${FAIL_ON_HIGH:-true}"
 FAIL_ON_MEDIUM="${FAIL_ON_MEDIUM:-false}"
 
