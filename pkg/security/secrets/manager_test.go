@@ -303,7 +303,7 @@ func TestManager_DeleteSecret_MixedProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileProvider() error = %v", err)
 	}
-	
+
 	ctx := context.Background()
 	err = fileProvider.SetSecret(ctx, "file-key", "file-value")
 	if err != nil {
