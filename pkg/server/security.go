@@ -24,6 +24,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -104,6 +106,11 @@ func (c *SecurityConfig) Validate() error {
 
 // SetDefaults 设置默认值
 func (c *SecurityConfig) SetDefaults() {
+	// 默认禁用安全功能
+	if !c.Enabled {
+		c.Enabled = false
+	}
+
 	if c.Audit == nil {
 		// Use stdout by default to avoid permission issues
 		c.Audit = &audit.AuditLoggerConfig{
@@ -116,6 +123,132 @@ func (c *SecurityConfig) SetDefaults() {
 		c.Scanner = scanner.DefaultConfig()
 		c.Scanner.Enabled = false // 默认禁用扫描
 	}
+}
+
+// ApplyEnvironmentOverrides 应用环境变量覆盖
+// 环境变量遵循模式: SWIT_SECURITY_*
+func (c *SecurityConfig) ApplyEnvironmentOverrides() {
+	// 启用/禁用安全功能
+	if enabled := os.Getenv("SWIT_SECURITY_ENABLED"); enabled != "" {
+		if val, err := strconv.ParseBool(enabled); err == nil {
+			c.Enabled = val
+		}
+	}
+
+	// OAuth2 环境变量覆盖
+	c.applyOAuth2Overrides()
+
+	// OPA 环境变量覆盖
+	c.applyOPAOverrides()
+
+	// 审计日志环境变量覆盖
+	c.applyAuditOverrides()
+
+	// Scanner 环境变量覆盖
+	c.applyScannerOverrides()
+
+	// Secrets 环境变量覆盖
+	c.applySecretsOverrides()
+}
+
+// applyOAuth2Overrides 应用 OAuth2 相关环境变量覆盖
+func (c *SecurityConfig) applyOAuth2Overrides() {
+	if c.OAuth2 == nil {
+		return
+	}
+
+	if enabled := os.Getenv("SWIT_SECURITY_OAUTH2_ENABLED"); enabled != "" {
+		if val, err := strconv.ParseBool(enabled); err == nil {
+			c.OAuth2.Enabled = val
+		}
+	}
+
+	if provider := os.Getenv("SWIT_SECURITY_OAUTH2_PROVIDER"); provider != "" {
+		c.OAuth2.Provider = provider
+	}
+
+	if issuerURL := os.Getenv("SWIT_SECURITY_OAUTH2_ISSUER_URL"); issuerURL != "" {
+		c.OAuth2.IssuerURL = issuerURL
+	}
+
+	if clientID := os.Getenv("SWIT_SECURITY_OAUTH2_CLIENT_ID"); clientID != "" {
+		c.OAuth2.ClientID = clientID
+	}
+
+	if clientSecret := os.Getenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET"); clientSecret != "" {
+		c.OAuth2.ClientSecret = clientSecret
+	}
+}
+
+// applyOPAOverrides 应用 OPA 相关环境变量覆盖
+func (c *SecurityConfig) applyOPAOverrides() {
+	if c.OPA == nil {
+		return
+	}
+
+	if mode := os.Getenv("SWIT_SECURITY_OPA_MODE"); mode != "" {
+		c.OPA.Mode = opa.Mode(mode)
+	}
+
+	if policyDir := os.Getenv("SWIT_SECURITY_OPA_POLICY_DIR"); policyDir != "" {
+		if c.OPA.EmbeddedConfig == nil {
+			c.OPA.EmbeddedConfig = &opa.EmbeddedConfig{}
+		}
+		c.OPA.EmbeddedConfig.PolicyDir = policyDir
+	}
+
+	if serverURL := os.Getenv("SWIT_SECURITY_OPA_SERVER_URL"); serverURL != "" {
+		if c.OPA.RemoteConfig == nil {
+			c.OPA.RemoteConfig = &opa.RemoteConfig{}
+		}
+		c.OPA.RemoteConfig.URL = serverURL
+	}
+}
+
+// applyAuditOverrides 应用审计日志相关环境变量覆盖
+func (c *SecurityConfig) applyAuditOverrides() {
+	if c.Audit == nil {
+		return
+	}
+
+	if enabled := os.Getenv("SWIT_SECURITY_AUDIT_ENABLED"); enabled != "" {
+		if val, err := strconv.ParseBool(enabled); err == nil {
+			c.Audit.Enabled = val
+		}
+	}
+
+	if logPath := os.Getenv("SWIT_SECURITY_AUDIT_LOG_PATH"); logPath != "" {
+		c.Audit.OutputType = audit.OutputTypeFile
+		c.Audit.FilePath = logPath
+	}
+
+	if outputType := os.Getenv("SWIT_SECURITY_AUDIT_OUTPUT_TYPE"); outputType != "" {
+		c.Audit.OutputType = audit.OutputType(outputType)
+	}
+}
+
+// applyScannerOverrides 应用安全扫描器相关环境变量覆盖
+func (c *SecurityConfig) applyScannerOverrides() {
+	if c.Scanner == nil {
+		return
+	}
+
+	if enabled := os.Getenv("SWIT_SECURITY_SCANNER_ENABLED"); enabled != "" {
+		if val, err := strconv.ParseBool(enabled); err == nil {
+			c.Scanner.Enabled = val
+		}
+	}
+}
+
+// applySecretsOverrides 应用密钥管理相关环境变量覆盖
+func (c *SecurityConfig) applySecretsOverrides() {
+	if c.Secrets == nil {
+		return
+	}
+
+	// Secrets 管理使用 Providers 数组，环境变量覆盖比较复杂
+	// 这里仅作为占位符，实际环境变量覆盖需要根据具体需求实现
+	// 例如：SWIT_SECURITY_SECRETS_PROVIDER_TYPE, SWIT_SECURITY_SECRETS_VAULT_ADDRESS 等
 }
 
 // SecurityManager 统一的安全管理器
