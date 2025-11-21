@@ -33,6 +33,8 @@ import (
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
+	"github.com/innovationmech/swit/pkg/security/oauth2"
+	"github.com/innovationmech/swit/pkg/security/opa"
 	"github.com/innovationmech/swit/pkg/types"
 	"go.uber.org/zap"
 )
@@ -362,7 +364,7 @@ func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc 
 	return func(router *gin.Engine) error {
 		// Validate Prometheus configuration first
 		if err := m.validatePrometheusConfig(); err != nil {
-			return fmt.Errorf("invalid Prometheus configuration: %w", err)
+			return fmt.Errorf("invalid prometheus configuration: %w", err)
 		}
 
 		// Create Prometheus metrics collector with error handling
@@ -398,12 +400,12 @@ func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc 
 
 		// Expose metrics endpoint with validation
 		if m.config.Prometheus.Endpoint == "" {
-			return fmt.Errorf("Prometheus endpoint cannot be empty")
+			return fmt.Errorf("prometheus endpoint cannot be empty")
 		}
 
 		metricsHandler := prometheusCollector.GetHandler()
 		if metricsHandler == nil {
-			return fmt.Errorf("failed to get Prometheus metrics handler")
+			return fmt.Errorf("failed to get prometheus metrics handler")
 		}
 
 		router.GET(m.config.Prometheus.Endpoint, gin.WrapH(metricsHandler))
@@ -419,19 +421,19 @@ func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc 
 // validatePrometheusConfig validates the Prometheus configuration
 func (m *MiddlewareManager) validatePrometheusConfig() error {
 	if !m.config.Prometheus.Enabled {
-		return fmt.Errorf("Prometheus is not enabled")
+		return fmt.Errorf("prometheus is not enabled")
 	}
 
 	if m.config.Prometheus.Endpoint == "" {
-		return fmt.Errorf("Prometheus endpoint cannot be empty")
+		return fmt.Errorf("prometheus endpoint cannot be empty")
 	}
 
 	if m.config.Prometheus.Namespace == "" {
-		return fmt.Errorf("Prometheus namespace cannot be empty")
+		return fmt.Errorf("prometheus namespace cannot be empty")
 	}
 
 	if m.config.Prometheus.CardinalityLimit < 0 {
-		return fmt.Errorf("Prometheus cardinality limit cannot be negative")
+		return fmt.Errorf("prometheus cardinality limit cannot be negative")
 	}
 
 	return nil
@@ -605,7 +607,7 @@ func (m *MiddlewareManager) createPrometheusGRPCInterceptors() (grpc.UnaryServer
 func (m *MiddlewareManager) createPrometheusGRPCInterceptorsWithError() (grpc.UnaryServerInterceptor, grpc.StreamServerInterceptor, error) {
 	// Validate Prometheus configuration first
 	if err := m.validatePrometheusConfig(); err != nil {
-		return nil, nil, fmt.Errorf("invalid Prometheus configuration: %w", err)
+		return nil, nil, fmt.Errorf("invalid prometheus configuration: %w", err)
 	}
 
 	// Create Prometheus metrics collector with error handling
@@ -645,6 +647,166 @@ func (m *MiddlewareManager) createSentryGRPCInterceptors() (grpc.UnaryServerInte
 		IgnoreStatusCodes: []codes.Code{codes.NotFound, codes.InvalidArgument},
 	})
 	return sentryInterceptor.UnaryServerInterceptor(), sentryInterceptor.StreamServerInterceptor()
+}
+
+// ConfigureSecurityMiddleware configures security middleware (OAuth2, OPA, etc.)
+// This method integrates security components from SecurityManager into the middleware stack
+func (m *MiddlewareManager) ConfigureSecurityMiddleware(router *gin.Engine, securityMgr *SecurityManager) error {
+	if securityMgr == nil {
+		logger.Logger.Debug("Security manager is nil, skipping security middleware configuration")
+		return nil
+	}
+
+	if !securityMgr.IsEnabled() {
+		logger.Logger.Debug("Security is disabled, skipping security middleware configuration")
+		return nil
+	}
+
+	if !securityMgr.IsInitialized() {
+		return fmt.Errorf("security manager not initialized")
+	}
+
+	// Configure OAuth2 authentication middleware
+	if securityMgr.GetOAuth2Client() != nil {
+		if err := m.configureOAuth2Middleware(router, securityMgr); err != nil {
+			return fmt.Errorf("failed to configure OAuth2 middleware: %w", err)
+		}
+	}
+
+	// Configure OPA authorization middleware
+	if securityMgr.GetOPAClient() != nil {
+		if err := m.configureOPAMiddleware(router, securityMgr); err != nil {
+			return fmt.Errorf("failed to configure OPA middleware: %w", err)
+		}
+	}
+
+	// Configure audit logging middleware
+	if securityMgr.GetAuditLogger() != nil {
+		if err := m.configureAuditMiddleware(router, securityMgr); err != nil {
+			return fmt.Errorf("failed to configure audit middleware: %w", err)
+		}
+	}
+
+	logger.Logger.Info("Security middleware configured successfully",
+		zap.Bool("oauth2_enabled", securityMgr.GetOAuth2Client() != nil),
+		zap.Bool("opa_enabled", securityMgr.GetOPAClient() != nil),
+		zap.Bool("audit_enabled", securityMgr.GetAuditLogger() != nil))
+
+	return nil
+}
+
+// configureOAuth2Middleware configures OAuth2 authentication middleware
+func (m *MiddlewareManager) configureOAuth2Middleware(router *gin.Engine, securityMgr *SecurityManager) error {
+	oauth2Client := securityMgr.GetOAuth2Client()
+	if oauth2Client == nil {
+		return nil
+	}
+
+	// Create OAuth2 middleware with configuration
+	oauth2Middleware := m.createOAuth2MiddlewareFunc(oauth2Client)
+	if err := oauth2Middleware(router); err != nil {
+		return fmt.Errorf("failed to apply OAuth2 middleware: %w", err)
+	}
+
+	logger.Logger.Debug("OAuth2 authentication middleware configured")
+	return nil
+}
+
+// configureOPAMiddleware configures OPA authorization middleware
+func (m *MiddlewareManager) configureOPAMiddleware(router *gin.Engine, securityMgr *SecurityManager) error {
+	opaClient := securityMgr.GetOPAClient()
+	if opaClient == nil {
+		return nil
+	}
+
+	// Create OPA middleware with configuration
+	opaMiddleware := m.createOPAMiddlewareFunc(opaClient)
+	if err := opaMiddleware(router); err != nil {
+		return fmt.Errorf("failed to apply OPA middleware: %w", err)
+	}
+
+	logger.Logger.Debug("OPA authorization middleware configured")
+	return nil
+}
+
+// configureAuditMiddleware configures audit logging middleware
+func (m *MiddlewareManager) configureAuditMiddleware(router *gin.Engine, securityMgr *SecurityManager) error {
+	auditLogger := securityMgr.GetAuditLogger()
+	if auditLogger == nil {
+		return nil
+	}
+
+	// Create audit middleware with configuration
+	auditMiddleware := m.createAuditMiddlewareFunc(auditLogger)
+	if err := auditMiddleware(router); err != nil {
+		return fmt.Errorf("failed to apply audit middleware: %w", err)
+	}
+
+	logger.Logger.Debug("Audit logging middleware configured")
+	return nil
+}
+
+// createOAuth2MiddlewareFunc creates OAuth2 middleware function
+func (m *MiddlewareManager) createOAuth2MiddlewareFunc(oauth2Client interface{}) HTTPMiddlewareFunc {
+	return func(router *gin.Engine) error {
+		// Import the OAuth2 middleware from pkg/middleware
+		// The actual OAuth2Client type should be imported from pkg/security/oauth2
+		oauth2Middleware := middleware.OAuth2Middleware(
+			oauth2Client.(*oauth2.Client),
+			nil, // JWT validator can be nil if using introspection
+		)
+		router.Use(oauth2Middleware)
+		return nil
+	}
+}
+
+// createOPAMiddlewareFunc creates OPA middleware function
+func (m *MiddlewareManager) createOPAMiddlewareFunc(opaClient interface{}) HTTPMiddlewareFunc {
+	return func(router *gin.Engine) error {
+		// Import the OPA middleware from pkg/middleware
+		opaMiddleware := middleware.OPAMiddleware(
+			opaClient.(opa.Client),
+			middleware.WithDecisionPath("authz/allow"),
+			middleware.WithLogger(logger.Logger),
+			middleware.WithTimeout(5*time.Second),
+		)
+		router.Use(opaMiddleware)
+		return nil
+	}
+}
+
+// createAuditMiddlewareFunc creates audit logging middleware function
+func (m *MiddlewareManager) createAuditMiddlewareFunc(auditLogger interface{}) HTTPMiddlewareFunc {
+	return func(router *gin.Engine) error {
+		// Create a custom audit middleware that logs requests
+		auditMiddleware := func(c *gin.Context) {
+			start := time.Now()
+
+			// Process request
+			c.Next()
+
+			// Log audit event after request completion
+			duration := time.Since(start)
+
+			// Extract user info if available
+			userID := ""
+			if userInfo, exists := middleware.GetUserInfo(c); exists {
+				userID = userInfo.Subject
+			}
+
+			// Log the audit event (simplified version)
+			logger.Logger.Info("Audit log",
+				zap.String("method", c.Request.Method),
+				zap.String("path", c.Request.URL.Path),
+				zap.String("client_ip", c.ClientIP()),
+				zap.String("user_id", userID),
+				zap.Int("status", c.Writer.Status()),
+				zap.Duration("duration", duration))
+		}
+
+		router.Use(auditMiddleware)
+		return nil
+	}
 }
 
 // ServiceSpecificMiddlewareConfig allows services to customize middleware configuration
