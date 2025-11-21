@@ -749,12 +749,18 @@ func (m *MiddlewareManager) configureAuditMiddleware(router *gin.Engine, securit
 // createOAuth2MiddlewareFunc creates OAuth2 middleware function
 func (m *MiddlewareManager) createOAuth2MiddlewareFunc(oauth2Client interface{}) HTTPMiddlewareFunc {
 	return func(router *gin.Engine) error {
-		// Import the OAuth2 middleware from pkg/middleware
-		// The actual OAuth2Client type should be imported from pkg/security/oauth2
-		oauth2Middleware := middleware.OAuth2Middleware(
-			oauth2Client.(*oauth2.Client),
-			nil, // JWT validator can be nil if using introspection
-		)
+		client := oauth2Client.(*oauth2.Client)
+		
+		// Create OAuth2 middleware configuration with introspection enabled
+		// This avoids the need for a separate JWT validator
+		config := &middleware.OAuth2MiddlewareConfig{
+			OAuth2Client:     client,
+			JWTValidator:     nil, // Not needed when using introspection
+			UseIntrospection: true, // Use token introspection instead of local JWT validation
+			SkipPaths:        []string{}, // Can be configured based on requirements
+		}
+		
+		oauth2Middleware := middleware.OAuth2MiddlewareWithConfig(config)
 		router.Use(oauth2Middleware)
 		return nil
 	}
