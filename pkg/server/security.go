@@ -135,7 +135,7 @@ type SecurityManager struct {
 	auditLogger *audit.AuditLogger
 
 	// 生命周期管理
-	mu         sync.RWMutex
+	mu          sync.RWMutex
 	initialized bool
 	closed      bool
 }
@@ -357,4 +357,3 @@ func (sm *SecurityManager) Shutdown(ctx context.Context) error {
 
 	return nil
 }
-

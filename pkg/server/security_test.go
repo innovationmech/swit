@@ -347,8 +347,8 @@ func TestSecurityManager_Getters(t *testing.T) {
 	// Test getters
 	assert.NotNil(t, sm.GetAuditLogger())
 	assert.NotNil(t, sm.GetSecretsManager())
-	assert.Nil(t, sm.GetOAuth2Client())     // Not configured
-	assert.Nil(t, sm.GetOPAClient())        // Not configured
+	assert.Nil(t, sm.GetOAuth2Client())    // Not configured
+	assert.Nil(t, sm.GetOPAClient())       // Not configured
 	assert.Nil(t, sm.GetSecurityScanner()) // Disabled
 
 	assert.True(t, sm.IsEnabled())
@@ -492,4 +492,3 @@ func TestSecurityManager_ConcurrentAccess(t *testing.T) {
 		<-done
 	}
 }
-

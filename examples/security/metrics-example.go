@@ -25,16 +25,16 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			// Successful authentication
 			start := time.Now()
 			metrics.RecordAuthAttempt("jwt", "success")
 			metrics.RecordAuthDuration("jwt", time.Since(start).Seconds())
-			
+
 			// Token validation
 			metrics.RecordTokenValidation("success")
-			
+
 			// Simulate occasional failures
 			if time.Now().Unix()%5 == 0 {
 				metrics.RecordAuthAttempt("jwt", "failure")
@@ -46,12 +46,12 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			start := time.Now()
 			metrics.RecordPolicyEvaluation("rbac", "allow")
 			metrics.RecordPolicyEvaluationDuration("rbac", time.Since(start).Seconds())
-			
+
 			// Simulate occasional denials
 			if time.Now().Unix()%4 == 0 {
 				metrics.RecordPolicyEvaluation("rbac", "deny")
@@ -64,7 +64,7 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			start := time.Now()
 			metrics.RecordTLSConnection("1.3", "TLS_AES_128_GCM_SHA256")
@@ -76,7 +76,7 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			metrics.RecordSecurityEvent("suspicious_activity", "medium")
 		}
@@ -86,7 +86,7 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			metrics.RecordSecurityScan("gosec", "success")
 			metrics.SetVulnerabilitiesFound("high", "gosec", 3)
@@ -98,7 +98,7 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
-		
+
 		sessions := 0
 		for range ticker.C {
 			// Simulate session creation/destruction
@@ -142,4 +142,3 @@ func main() {
 		panic(fmt.Sprintf("Failed to start server: %v", err))
 	}
 }
-
