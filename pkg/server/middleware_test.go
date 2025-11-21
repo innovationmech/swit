@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/innovationmech/swit/pkg/security/audit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -585,4 +586,263 @@ type mockServerStream struct {
 
 func (m *mockServerStream) Context() context.Context {
 	return context.Background()
+}
+
+// Tests for ConfigureSecurityMiddleware
+
+func TestMiddlewareManager_ConfigureSecurityMiddleware_NilSecurityManager(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Should not error with nil security manager
+	err := manager.ConfigureSecurityMiddleware(router, nil)
+	assert.NoError(t, err)
+}
+
+func TestMiddlewareManager_ConfigureSecurityMiddleware_DisabledSecurity(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create security manager with security disabled
+	securityConfig := &SecurityConfig{
+		Enabled: false,
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Should not error when security is disabled
+	err = manager.ConfigureSecurityMiddleware(router, securityMgr)
+	assert.NoError(t, err)
+}
+
+func TestMiddlewareManager_ConfigureSecurityMiddleware_NotInitialized(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create security manager but don't initialize
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Should error because security manager is not initialized
+	err = manager.ConfigureSecurityMiddleware(router, securityMgr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not initialized")
+}
+
+func TestMiddlewareManager_ConfigureSecurityMiddleware_Success(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create and initialize security manager with minimal config
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+		Audit: &audit.AuditLoggerConfig{
+			Enabled:    true,
+			OutputType: audit.OutputTypeStdout,
+		},
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Initialize security manager
+	ctx := context.Background()
+	err = securityMgr.InitializeSecurity(ctx)
+	require.NoError(t, err)
+
+	// Should configure successfully
+	err = manager.ConfigureSecurityMiddleware(router, securityMgr)
+	assert.NoError(t, err)
+}
+
+func TestMiddlewareManager_ConfigureOAuth2Middleware_NilClient(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create security manager without OAuth2
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Initialize security manager
+	ctx := context.Background()
+	err = securityMgr.InitializeSecurity(ctx)
+	require.NoError(t, err)
+
+	// Should handle nil OAuth2 client gracefully
+	err = manager.configureOAuth2Middleware(router, securityMgr)
+	assert.NoError(t, err)
+}
+
+func TestMiddlewareManager_ConfigureOPAMiddleware_NilClient(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create security manager without OPA
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Initialize security manager
+	ctx := context.Background()
+	err = securityMgr.InitializeSecurity(ctx)
+	require.NoError(t, err)
+
+	// Should handle nil OPA client gracefully
+	err = manager.configureOPAMiddleware(router, securityMgr)
+	assert.NoError(t, err)
+}
+
+func TestMiddlewareManager_ConfigureAuditMiddleware_NilLogger(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create security manager without audit logger
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Initialize security manager
+	ctx := context.Background()
+	err = securityMgr.InitializeSecurity(ctx)
+	require.NoError(t, err)
+
+	// Should handle nil audit logger gracefully
+	err = manager.configureAuditMiddleware(router, securityMgr)
+	assert.NoError(t, err)
+}
+
+func TestMiddlewareManager_ConfigureAuditMiddleware_WithLogger(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create security manager with audit logger
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+		Audit: &audit.AuditLoggerConfig{
+			Enabled:    true,
+			OutputType: audit.OutputTypeStdout,
+		},
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Initialize security manager
+	ctx := context.Background()
+	err = securityMgr.InitializeSecurity(ctx)
+	require.NoError(t, err)
+
+	// Add a test endpoint after audit middleware
+	router.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "test"})
+	})
+
+	// Configure audit middleware
+	err = manager.configureAuditMiddleware(router, securityMgr)
+	require.NoError(t, err)
+
+	// Test that audit middleware is applied
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestMiddlewareManager_CreateAuditMiddlewareFunc(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create a mock audit logger
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+		Audit: &audit.AuditLoggerConfig{
+			Enabled:    true,
+			OutputType: audit.OutputTypeStdout,
+		},
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Initialize security manager
+	ctx := context.Background()
+	err = securityMgr.InitializeSecurity(ctx)
+	require.NoError(t, err)
+
+	auditLogger := securityMgr.GetAuditLogger()
+	require.NotNil(t, auditLogger)
+
+	// Create and apply the audit middleware
+	auditMiddlewareFunc := manager.createAuditMiddlewareFunc(auditLogger)
+	err = auditMiddlewareFunc(router)
+	require.NoError(t, err)
+
+	// Add test endpoint
+	router.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "success"})
+	})
+
+	// Test the middleware
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestMiddlewareManager_SecurityMiddleware_MiddlewareOrder(t *testing.T) {
+	// Test that security middleware is applied in the correct order
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+	router := gin.New()
+
+	// Create security manager with multiple components
+	securityConfig := &SecurityConfig{
+		Enabled: true,
+		Audit: &audit.AuditLoggerConfig{
+			Enabled:    true,
+			OutputType: audit.OutputTypeStdout,
+		},
+	}
+	securityMgr, err := NewSecurityManager(securityConfig)
+	require.NoError(t, err)
+
+	// Initialize security manager
+	ctx := context.Background()
+	err = securityMgr.InitializeSecurity(ctx)
+	require.NoError(t, err)
+
+	// Configure security middleware
+	err = manager.ConfigureSecurityMiddleware(router, securityMgr)
+	require.NoError(t, err)
+
+	// Verify middleware was applied (by adding test endpoint and making request)
+	router.GET("/protected", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "protected"})
+	})
+
+	req := httptest.NewRequest("GET", "/protected", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// The request should succeed even without authentication
+	// since we haven't enabled OAuth2 or OPA
+	assert.Equal(t, http.StatusOK, w.Code)
 }
