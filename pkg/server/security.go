@@ -153,6 +153,18 @@ func (c *SecurityConfig) ApplyEnvironmentOverrides() {
 
 // applyOAuth2Overrides 应用 OAuth2 相关环境变量覆盖
 func (c *SecurityConfig) applyOAuth2Overrides() {
+	// 检查是否有 OAuth2 相关的环境变量
+	hasOAuth2Env := os.Getenv("SWIT_SECURITY_OAUTH2_ENABLED") != "" ||
+		os.Getenv("SWIT_SECURITY_OAUTH2_PROVIDER") != "" ||
+		os.Getenv("SWIT_SECURITY_OAUTH2_ISSUER_URL") != "" ||
+		os.Getenv("SWIT_SECURITY_OAUTH2_CLIENT_ID") != "" ||
+		os.Getenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET") != ""
+
+	// 如果配置为 nil 但有环境变量，创建默认配置
+	if c.OAuth2 == nil && hasOAuth2Env {
+		c.OAuth2 = &oauth2.Config{}
+	}
+
 	if c.OAuth2 == nil {
 		return
 	}
@@ -182,6 +194,16 @@ func (c *SecurityConfig) applyOAuth2Overrides() {
 
 // applyOPAOverrides 应用 OPA 相关环境变量覆盖
 func (c *SecurityConfig) applyOPAOverrides() {
+	// 检查是否有 OPA 相关的环境变量
+	hasOPAEnv := os.Getenv("SWIT_SECURITY_OPA_MODE") != "" ||
+		os.Getenv("SWIT_SECURITY_OPA_POLICY_DIR") != "" ||
+		os.Getenv("SWIT_SECURITY_OPA_SERVER_URL") != ""
+
+	// 如果配置为 nil 但有环境变量，创建默认配置
+	if c.OPA == nil && hasOPAEnv {
+		c.OPA = &opa.Config{}
+	}
+
 	if c.OPA == nil {
 		return
 	}

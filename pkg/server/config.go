@@ -720,7 +720,7 @@ func (c *ServerConfig) SetDefaults() {
 
 	// Apply messaging environment overrides
 	c.Messaging.ApplyEnvironmentOverrides()
-	
+
 	// Apply security environment overrides
 	c.Security.ApplyEnvironmentOverrides()
 

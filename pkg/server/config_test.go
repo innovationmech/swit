@@ -31,6 +31,7 @@ import (
 
 	"github.com/innovationmech/swit/pkg/security/audit"
 	"github.com/innovationmech/swit/pkg/security/oauth2"
+	"github.com/innovationmech/swit/pkg/security/opa"
 	"github.com/innovationmech/swit/pkg/security/scanner"
 	"github.com/innovationmech/swit/pkg/tracing"
 )
@@ -1370,6 +1371,74 @@ func TestSecurityConfigEnvironmentOverrides(t *testing.T) {
 	assert.True(t, config.Audit.Enabled)
 	assert.Equal(t, "/var/log/audit.log", config.Audit.FilePath)
 	assert.Equal(t, audit.OutputTypeFile, config.Audit.OutputType)
+}
+
+func TestSecurityConfigEnvironmentOverridesWithNilConfigs(t *testing.T) {
+	// 测试当 OAuth2/OPA 配置为 nil 时，环境变量能够创建并覆盖配置
+	os.Setenv("SWIT_SECURITY_OAUTH2_ENABLED", "true")
+	os.Setenv("SWIT_SECURITY_OAUTH2_PROVIDER", "keycloak")
+	os.Setenv("SWIT_SECURITY_OAUTH2_ISSUER_URL", "https://auth.example.com")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_ID", "test-client")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET", "test-secret")
+	os.Setenv("SWIT_SECURITY_OPA_MODE", "embedded")
+	os.Setenv("SWIT_SECURITY_OPA_POLICY_DIR", "/policies")
+	defer func() {
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ENABLED")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_PROVIDER")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ISSUER_URL")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_ID")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET")
+		os.Unsetenv("SWIT_SECURITY_OPA_MODE")
+		os.Unsetenv("SWIT_SECURITY_OPA_POLICY_DIR")
+	}()
+
+	// 配置初始为 nil
+	config := &SecurityConfig{
+		OAuth2: nil,
+		OPA:    nil,
+	}
+	config.ApplyEnvironmentOverrides()
+
+	// OAuth2 应该被创建并设置
+	assert.NotNil(t, config.OAuth2)
+	assert.True(t, config.OAuth2.Enabled)
+	assert.Equal(t, "keycloak", config.OAuth2.Provider)
+	assert.Equal(t, "https://auth.example.com", config.OAuth2.IssuerURL)
+	assert.Equal(t, "test-client", config.OAuth2.ClientID)
+	assert.Equal(t, "test-secret", config.OAuth2.ClientSecret)
+
+	// OPA 应该被创建并设置
+	assert.NotNil(t, config.OPA)
+	assert.Equal(t, opa.ModeEmbedded, config.OPA.Mode)
+	assert.NotNil(t, config.OPA.EmbeddedConfig)
+	assert.Equal(t, "/policies", config.OPA.EmbeddedConfig.PolicyDir)
+}
+
+func TestServerConfigSecurityEnvironmentOverrides(t *testing.T) {
+	// 测试 ServerConfig 通过环境变量配置安全功能
+	os.Setenv("SWIT_SECURITY_OAUTH2_ENABLED", "true")
+	os.Setenv("SWIT_SECURITY_OAUTH2_PROVIDER", "auth0")
+	os.Setenv("SWIT_SECURITY_OAUTH2_ISSUER_URL", "https://test.auth0.com")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_ID", "env-client")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET", "env-secret")
+	defer func() {
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ENABLED")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_PROVIDER")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ISSUER_URL")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_ID")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET")
+	}()
+
+	// 创建配置并应用默认值（会调用 ApplyEnvironmentOverrides）
+	config := NewServerConfig()
+
+	// OAuth2 应该通过环境变量被创建和配置
+	assert.NotNil(t, config.Security.OAuth2)
+	assert.True(t, config.Security.OAuth2.Enabled)
+	assert.Equal(t, "auth0", config.Security.OAuth2.Provider)
+	assert.Equal(t, "https://test.auth0.com", config.Security.OAuth2.IssuerURL)
+	assert.Equal(t, "env-client", config.Security.OAuth2.ClientID)
+	assert.Equal(t, "env-secret", config.Security.OAuth2.ClientSecret)
 }
 
 func TestServerConfigWithSecurity(t *testing.T) {
