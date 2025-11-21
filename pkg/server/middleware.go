@@ -24,6 +24,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -750,16 +751,16 @@ func (m *MiddlewareManager) configureAuditMiddleware(router *gin.Engine, securit
 func (m *MiddlewareManager) createOAuth2MiddlewareFunc(oauth2Client interface{}) HTTPMiddlewareFunc {
 	return func(router *gin.Engine) error {
 		client := oauth2Client.(*oauth2.Client)
-		
+
 		// Create OAuth2 middleware configuration with introspection enabled
 		// This avoids the need for a separate JWT validator
 		config := &middleware.OAuth2MiddlewareConfig{
 			OAuth2Client:     client,
-			JWTValidator:     nil, // Not needed when using introspection
-			UseIntrospection: true, // Use token introspection instead of local JWT validation
+			JWTValidator:     nil,        // Not needed when using introspection
+			UseIntrospection: true,       // Use token introspection instead of local JWT validation
 			SkipPaths:        []string{}, // Can be configured based on requirements
 		}
-		
+
 		oauth2Middleware := middleware.OAuth2MiddlewareWithConfig(config)
 		router.Use(oauth2Middleware)
 		return nil
@@ -801,11 +802,12 @@ func (m *MiddlewareManager) createAuditMiddlewareFunc(auditLogger interface{}) H
 			}
 
 			// Log the audit event (simplified version)
+			// Use sanitizeLogValue to prevent log injection
 			logger.Logger.Info("Audit log",
 				zap.String("method", c.Request.Method),
-				zap.String("path", c.Request.URL.Path),
-				zap.String("client_ip", c.ClientIP()),
-				zap.String("user_id", userID),
+				zap.String("path", sanitizeLogValue(c.Request.URL.Path)),
+				zap.String("client_ip", sanitizeLogValue(c.ClientIP())),
+				zap.String("user_id", sanitizeLogValue(userID)),
 				zap.Int("status", c.Writer.Status()),
 				zap.Duration("duration", duration))
 		}
@@ -813,6 +815,16 @@ func (m *MiddlewareManager) createAuditMiddlewareFunc(auditLogger interface{}) H
 		router.Use(auditMiddleware)
 		return nil
 	}
+}
+
+// sanitizeLogValue sanitizes log values to prevent log injection
+// Removes newline, carriage return, and tab characters
+func sanitizeLogValue(value string) string {
+	// Remove newline characters, carriage returns, and tabs
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	value = strings.ReplaceAll(value, "\t", " ")
+	return value
 }
 
 // ServiceSpecificMiddlewareConfig allows services to customize middleware configuration
