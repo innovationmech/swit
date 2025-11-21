@@ -29,6 +29,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/innovationmech/swit/pkg/security/audit"
+	"github.com/innovationmech/swit/pkg/security/oauth2"
+	"github.com/innovationmech/swit/pkg/security/opa"
+	"github.com/innovationmech/swit/pkg/security/scanner"
 	"github.com/innovationmech/swit/pkg/tracing"
 )
 
@@ -285,6 +289,21 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					Permissions:       map[string]PermissionDefinition{},
 					Roles:             map[string]RoleDefinition{},
 				},
+				Security: SecurityConfig{
+					Enabled: false,
+					OAuth2:  nil,
+					OPA:     nil,
+					Scanner: func() *scanner.ScannerConfig {
+						cfg := scanner.DefaultConfig()
+						cfg.Enabled = false
+						return cfg
+					}(),
+					Secrets: nil,
+					Audit: &audit.AuditLoggerConfig{
+						Enabled:    false,
+						OutputType: audit.OutputTypeStdout,
+					},
+				},
 				Tracing: tracing.TracingConfig{
 					Enabled:     false,
 					ServiceName: "",
@@ -500,6 +519,21 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					ResourceSeparator: ":",
 					Permissions:       map[string]PermissionDefinition{},
 					Roles:             map[string]RoleDefinition{},
+				},
+				Security: SecurityConfig{
+					Enabled: false,
+					OAuth2:  nil,
+					OPA:     nil,
+					Scanner: func() *scanner.ScannerConfig {
+						cfg := scanner.DefaultConfig()
+						cfg.Enabled = false
+						return cfg
+					}(),
+					Secrets: nil,
+					Audit: &audit.AuditLoggerConfig{
+						Enabled:    false,
+						OutputType: audit.OutputTypeStdout,
+					},
 				},
 				Tracing: tracing.TracingConfig{
 					Enabled:     false,
@@ -1237,4 +1271,212 @@ func TestMessagingConfig_EnvironmentOverrides(t *testing.T) {
 	assert.Equal(t, 45*time.Second, config.Connection.Timeout)
 	assert.Equal(t, 200, config.Performance.BatchSize)
 	assert.Equal(t, 60*time.Second, config.Monitoring.HealthCheckInterval)
+}
+
+func TestSecurityConfigDefaults(t *testing.T) {
+	config := &SecurityConfig{}
+	config.SetDefaults()
+
+	// 验证默认值
+	assert.False(t, config.Enabled)
+	assert.NotNil(t, config.Audit)
+	assert.False(t, config.Audit.Enabled)
+	assert.NotNil(t, config.Scanner)
+	assert.False(t, config.Scanner.Enabled)
+}
+
+func TestSecurityConfigValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *SecurityConfig
+		wantError bool
+	}{
+		{
+			name: "disabled security - always valid",
+			config: &SecurityConfig{
+				Enabled: false,
+			},
+			wantError: false,
+		},
+		{
+			name: "enabled security with no config - valid",
+			config: &SecurityConfig{
+				Enabled: true,
+			},
+			wantError: false,
+		},
+		{
+			name: "enabled security with valid OAuth2",
+			config: &SecurityConfig{
+				Enabled: true,
+				OAuth2: &oauth2.Config{
+					Enabled:      true,
+					Provider:     "keycloak",
+					IssuerURL:    "https://auth.example.com/realms/demo",
+					ClientID:     "test-client",
+					ClientSecret: "test-secret",
+					UseDiscovery: true, // 启用自动发现
+				},
+			},
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.config.SetDefaults()
+			err := tt.config.Validate()
+			if tt.wantError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSecurityConfigEnvironmentOverrides(t *testing.T) {
+	// 设置环境变量
+	os.Setenv("SWIT_SECURITY_ENABLED", "true")
+	os.Setenv("SWIT_SECURITY_OAUTH2_ENABLED", "true")
+	os.Setenv("SWIT_SECURITY_OAUTH2_PROVIDER", "auth0")
+	os.Setenv("SWIT_SECURITY_OAUTH2_ISSUER_URL", "https://test.auth0.com")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_ID", "env-client-id")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET", "env-client-secret")
+	os.Setenv("SWIT_SECURITY_AUDIT_ENABLED", "true")
+	os.Setenv("SWIT_SECURITY_AUDIT_LOG_PATH", "/var/log/audit.log")
+	defer func() {
+		os.Unsetenv("SWIT_SECURITY_ENABLED")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ENABLED")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_PROVIDER")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ISSUER_URL")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_ID")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET")
+		os.Unsetenv("SWIT_SECURITY_AUDIT_ENABLED")
+		os.Unsetenv("SWIT_SECURITY_AUDIT_LOG_PATH")
+	}()
+
+	config := &SecurityConfig{
+		OAuth2: &oauth2.Config{},
+		Audit:  &audit.AuditLoggerConfig{},
+	}
+	config.ApplyEnvironmentOverrides()
+
+	assert.True(t, config.Enabled)
+	assert.True(t, config.OAuth2.Enabled)
+	assert.Equal(t, "auth0", config.OAuth2.Provider)
+	assert.Equal(t, "https://test.auth0.com", config.OAuth2.IssuerURL)
+	assert.Equal(t, "env-client-id", config.OAuth2.ClientID)
+	assert.Equal(t, "env-client-secret", config.OAuth2.ClientSecret)
+	assert.True(t, config.Audit.Enabled)
+	assert.Equal(t, "/var/log/audit.log", config.Audit.FilePath)
+	assert.Equal(t, audit.OutputTypeFile, config.Audit.OutputType)
+}
+
+func TestSecurityConfigEnvironmentOverridesWithNilConfigs(t *testing.T) {
+	// 测试当 OAuth2/OPA 配置为 nil 时，环境变量能够创建并覆盖配置
+	os.Setenv("SWIT_SECURITY_OAUTH2_ENABLED", "true")
+	os.Setenv("SWIT_SECURITY_OAUTH2_PROVIDER", "keycloak")
+	os.Setenv("SWIT_SECURITY_OAUTH2_ISSUER_URL", "https://auth.example.com")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_ID", "test-client")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET", "test-secret")
+	os.Setenv("SWIT_SECURITY_OPA_MODE", "embedded")
+	os.Setenv("SWIT_SECURITY_OPA_POLICY_DIR", "/policies")
+	defer func() {
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ENABLED")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_PROVIDER")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ISSUER_URL")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_ID")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET")
+		os.Unsetenv("SWIT_SECURITY_OPA_MODE")
+		os.Unsetenv("SWIT_SECURITY_OPA_POLICY_DIR")
+	}()
+
+	// 配置初始为 nil
+	config := &SecurityConfig{
+		OAuth2: nil,
+		OPA:    nil,
+	}
+	config.ApplyEnvironmentOverrides()
+
+	// OAuth2 应该被创建并设置
+	assert.NotNil(t, config.OAuth2)
+	assert.True(t, config.OAuth2.Enabled)
+	assert.Equal(t, "keycloak", config.OAuth2.Provider)
+	assert.Equal(t, "https://auth.example.com", config.OAuth2.IssuerURL)
+	assert.Equal(t, "test-client", config.OAuth2.ClientID)
+	assert.Equal(t, "test-secret", config.OAuth2.ClientSecret)
+
+	// OPA 应该被创建并设置
+	assert.NotNil(t, config.OPA)
+	assert.Equal(t, opa.ModeEmbedded, config.OPA.Mode)
+	assert.NotNil(t, config.OPA.EmbeddedConfig)
+	assert.Equal(t, "/policies", config.OPA.EmbeddedConfig.PolicyDir)
+}
+
+func TestServerConfigSecurityEnvironmentOverrides(t *testing.T) {
+	// 测试 ServerConfig 通过环境变量配置安全功能
+	os.Setenv("SWIT_SECURITY_OAUTH2_ENABLED", "true")
+	os.Setenv("SWIT_SECURITY_OAUTH2_PROVIDER", "auth0")
+	os.Setenv("SWIT_SECURITY_OAUTH2_ISSUER_URL", "https://test.auth0.com")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_ID", "env-client")
+	os.Setenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET", "env-secret")
+	defer func() {
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ENABLED")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_PROVIDER")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_ISSUER_URL")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_ID")
+		os.Unsetenv("SWIT_SECURITY_OAUTH2_CLIENT_SECRET")
+	}()
+
+	// 创建配置并应用默认值（会调用 ApplyEnvironmentOverrides）
+	config := NewServerConfig()
+
+	// OAuth2 应该通过环境变量被创建和配置
+	assert.NotNil(t, config.Security.OAuth2)
+	assert.True(t, config.Security.OAuth2.Enabled)
+	assert.Equal(t, "auth0", config.Security.OAuth2.Provider)
+	assert.Equal(t, "https://test.auth0.com", config.Security.OAuth2.IssuerURL)
+	assert.Equal(t, "env-client", config.Security.OAuth2.ClientID)
+	assert.Equal(t, "env-secret", config.Security.OAuth2.ClientSecret)
+}
+
+func TestServerConfigWithSecurity(t *testing.T) {
+	config := NewServerConfig()
+
+	// 验证 Security 字段已初始化
+	assert.NotNil(t, config.Security)
+	assert.False(t, config.Security.Enabled)
+
+	// 启用 Security 并验证配置
+	config.Security.Enabled = true
+	config.Security.OAuth2 = &oauth2.Config{
+		Enabled:      true,
+		Provider:     "keycloak",
+		IssuerURL:    "https://auth.example.com/realms/demo",
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+		UseDiscovery: true, // 启用自动发现
+	}
+
+	// 验证配置有效
+	err := config.Validate()
+	assert.NoError(t, err)
+}
+
+func TestServerConfigSecurityValidation(t *testing.T) {
+	config := NewServerConfig()
+	config.Security.Enabled = true
+	config.Security.OAuth2 = &oauth2.Config{
+		Enabled:      true,
+		Provider:     "keycloak",
+		IssuerURL:    "", // 无效：缺少 IssuerURL
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+	}
+
+	// 应该失败因为 OAuth2 配置无效
+	err := config.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "security configuration invalid")
 }

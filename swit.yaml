@@ -144,5 +144,59 @@ access_control:
     #   inherits: ["reader"]
     #   is_system: true
 
+# Security Configuration
+security:
+  enabled: false  # Enable security features (OAuth2, OPA, Audit, etc.)
+  
+  # OAuth2/OIDC Configuration
+  oauth2:
+    enabled: false
+    provider: "keycloak"  # keycloak, auth0, okta, google, etc.
+    issuer_url: "https://auth.example.com/realms/demo"
+    client_id: "${OAUTH2_CLIENT_ID}"
+    client_secret: "${OAUTH2_CLIENT_SECRET}"
+    # Optional: Redirect URL for OAuth2 flow
+    # redirect_url: "http://localhost:8080/callback"
+    # Optional: Scopes to request
+    # scopes: ["openid", "profile", "email"]
+  
+  # OPA (Open Policy Agent) Configuration
+  opa:
+    mode: "embedded"  # embedded or remote
+    policy_dir: "./policies"  # Directory containing .rego policy files
+    # For remote mode:
+    # server_url: "http://localhost:8181"
+    # Optional: Default decision path
+    # decision_path: "/v1/data/authz/allow"
+  
+  # Security Scanner Configuration
+  scanner:
+    enabled: false
+    tools: []  # e.g., ["gosec", "trivy"]
+    # Optional: Scanner-specific settings
+    # scan_interval: "24h"
+  
+  # Secrets Management Configuration
+  secrets:
+    provider: "env"  # env, vault, aws-secrets-manager, gcp-secret-manager
+    # For Vault:
+    # vault_address: "http://localhost:8200"
+    # vault_token: "${VAULT_TOKEN}"
+    # For AWS Secrets Manager:
+    # aws_region: "us-west-2"
+  
+  # Audit Logging Configuration
+  audit:
+    enabled: false
+    output_type: "stdout"  # stdout, file, or syslog
+    # For file output:
+    # file_path: "/var/log/security-audit.log"
+    # Optional: Log format
+    # format: "json"  # json or text
+    # Optional: Log rotation
+    # max_size_mb: 100
+    # max_backups: 3
+    # max_age_days: 30
+
 serviceDiscovery:
   address: "localhost:8500"

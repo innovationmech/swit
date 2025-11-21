@@ -36,7 +36,7 @@ import (
 )
 
 // ServerConfig holds the complete configuration for a base server instance
-// It includes transport, discovery, middleware, messaging, and monitoring configuration
+// It includes transport, discovery, middleware, messaging, security, and monitoring configuration
 type ServerConfig struct {
 	ServiceName     string                `yaml:"service_name" json:"service_name"`
 	HTTP            HTTPConfig            `yaml:"http" json:"http"`
@@ -45,6 +45,7 @@ type ServerConfig struct {
 	Middleware      MiddlewareConfig      `yaml:"middleware" json:"middleware"`
 	Messaging       MessagingConfig       `yaml:"messaging" json:"messaging"`
 	AccessControl   AccessControlConfig   `yaml:"access_control" json:"access_control"`
+	Security        SecurityConfig        `yaml:"security" json:"security"`
 	Sentry          SentryConfig          `yaml:"sentry" json:"sentry"`
 	Logging         LoggingConfig         `yaml:"logging" json:"logging"`
 	Prometheus      PrometheusConfig      `yaml:"prometheus" json:"prometheus"`
@@ -714,8 +715,14 @@ func (c *ServerConfig) SetDefaults() {
 		c.AccessControl.Roles = make(map[string]RoleDefinition)
 	}
 
+	// Security defaults
+	c.Security.SetDefaults()
+
 	// Apply messaging environment overrides
 	c.Messaging.ApplyEnvironmentOverrides()
+
+	// Apply security environment overrides
+	c.Security.ApplyEnvironmentOverrides()
 
 	// Sentry defaults
 	c.Sentry.Enabled = false
@@ -1139,6 +1146,11 @@ func (c *ServerConfig) Validate() error {
 	// Validate access control configuration
 	if err := c.validateAccessControl(); err != nil {
 		return err
+	}
+
+	// Validate security configuration
+	if err := c.Security.Validate(); err != nil {
+		return fmt.Errorf("security configuration invalid: %w", err)
 	}
 
 	// Validate shutdown timeout
