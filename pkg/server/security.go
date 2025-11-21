@@ -105,7 +105,11 @@ func (c *SecurityConfig) Validate() error {
 // SetDefaults 设置默认值
 func (c *SecurityConfig) SetDefaults() {
 	if c.Audit == nil {
-		c.Audit = audit.DefaultAuditLoggerConfig()
+		// Use stdout by default to avoid permission issues
+		c.Audit = &audit.AuditLoggerConfig{
+			Enabled:    false, // Default to disabled
+			OutputType: audit.OutputTypeStdout,
+		}
 	}
 
 	if c.Scanner == nil {
