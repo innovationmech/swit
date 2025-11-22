@@ -60,7 +60,7 @@ jobs:
       sync-type: ${{ github.event.inputs.sync_type || 'all' }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
@@ -94,7 +94,7 @@ jobs:
       contains(needs.detect-source-changes.outputs.sync-type, 'all')
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -163,7 +163,7 @@ jobs:
       contains(needs.detect-source-changes.outputs.sync-type, 'all')
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -267,7 +267,7 @@ jobs:
       contains(needs.detect-source-changes.outputs.sync-type, 'all')
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -329,7 +329,7 @@ jobs:
     if: always() && (needs.sync-readme.result == 'success' || needs.sync-api-docs.result == 'success' || needs.sync-examples.result == 'success')
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 🏗️ Setup Node.js
         uses: actions/setup-node@v6
@@ -420,7 +420,7 @@ jobs:
     if: always() && (needs.sync-readme.result == 'success' || needs.sync-api-docs.result == 'success' || needs.sync-examples.result == 'success')
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
