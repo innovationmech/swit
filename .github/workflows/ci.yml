@@ -32,7 +32,7 @@ jobs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 2
     - name: Filter paths
@@ -68,7 +68,7 @@ jobs:
       ))
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Set up Go
       if: needs.changes.outputs.code_changed == 'true'
@@ -114,7 +114,7 @@ jobs:
     needs: changes
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Set up Go
       if: needs.changes.outputs.code_changed == 'true'
