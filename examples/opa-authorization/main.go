@@ -227,7 +227,7 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 			user = "anonymous"
 		}
 		roles := c.GetHeader("X-Roles")
-		
+
 		// 设置用户信息到上下文，使用 OPA 期望的键名
 		c.Set("username", user)
 		if roles != "" {
@@ -246,14 +246,14 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 		middleware.WithInputBuilder(func(c *gin.Context) (*opa.PolicyInput, error) {
 			// 使用 OPA 框架的输入构建器
 			builder := opa.NewPolicyInputBuilder().FromHTTPRequest(c)
-			
+
 			// 从上下文提取用户信息
 			user := opa.ExtractUserFromContext(c)
 			builder.WithUser(user)
-			
+
 			// 设置资源类型
 			builder.WithResourceType("document")
-			
+
 			return builder.Build(), nil
 		}),
 		middleware.WithAuditLog(func(auditLog *middleware.AuditLog) {

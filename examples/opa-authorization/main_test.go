@@ -212,9 +212,9 @@ func TestHTTPEndpoints(t *testing.T) {
 			method: "POST",
 			path:   "/api/v1/documents",
 			headers: map[string]string{
-				"X-User":        "charlie",
-				"X-Roles":       "viewer",
-				"Content-Type":  "application/json",
+				"X-User":       "charlie",
+				"X-Roles":      "viewer",
+				"Content-Type": "application/json",
 			},
 			body:           `{"id":"doc-test","title":"Test","content":"Test"}`,
 			expectedStatus: http.StatusForbidden,
@@ -552,4 +552,3 @@ func TestSanitizeLogValue(t *testing.T) {
 		})
 	}
 }
-
