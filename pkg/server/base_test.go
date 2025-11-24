@@ -603,3 +603,147 @@ func TestBaseServer_HTTPMiddlewareConfiguration_ErrorPath(t *testing.T) {
 	err = server.Stop(ctx)
 	require.NoError(t, err)
 }
+
+// TestBaseServer_SecurityIntegration tests security manager integration
+func TestBaseServer_SecurityIntegration(t *testing.T) {
+	tests := []struct {
+		name              string
+		securityEnabled   bool
+		expectInitialized bool
+		expectSecurityMgr bool
+	}{
+		{
+			name:              "security disabled",
+			securityEnabled:   false,
+			expectInitialized: false,
+			expectSecurityMgr: false,
+		},
+		{
+			name:              "security enabled",
+			securityEnabled:   true,
+			expectInitialized: true,
+			expectSecurityMgr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := NewServerConfig()
+			config.ServiceName = "test-security-service"
+			config.HTTP.Enabled = true
+			config.HTTP.Port = "0"
+			config.GRPC.Enabled = false
+			config.Discovery.Enabled = false
+			config.Security.Enabled = tt.securityEnabled
+
+			if tt.securityEnabled {
+				// Configure basic security settings
+				config.Security.SetDefaults()
+			}
+
+			mockReg := &mockBusinessServiceRegistrar{}
+			mockReg.On("RegisterServices", mock.Anything).Return(nil)
+
+			server, err := NewBusinessServerCore(config, mockReg, nil)
+			require.NoError(t, err)
+			require.NotNil(t, server)
+
+			// Check security manager is created when enabled
+			securityMgr := server.GetSecurityManager()
+			if tt.expectSecurityMgr {
+				assert.NotNil(t, securityMgr, "Security manager should be created when security is enabled")
+			} else {
+				assert.Nil(t, securityMgr, "Security manager should be nil when security is disabled")
+			}
+
+			// Start server
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			err = server.Start(ctx)
+			require.NoError(t, err)
+
+			// Check security manager initialization
+			if tt.expectInitialized && securityMgr != nil {
+				assert.True(t, securityMgr.IsInitialized(), "Security manager should be initialized after server start")
+			}
+
+			// Verify GetSecurityManager returns the same instance
+			assert.Equal(t, securityMgr, server.GetSecurityManager())
+
+			// Stop server
+			err = server.Stop(ctx)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestBaseServer_SecurityManagerLifecycle tests security manager lifecycle management
+func TestBaseServer_SecurityManagerLifecycle(t *testing.T) {
+	config := NewServerConfig()
+	config.ServiceName = "test-lifecycle-service"
+	config.HTTP.Enabled = true
+	config.HTTP.Port = "0"
+	config.GRPC.Enabled = false
+	config.Discovery.Enabled = false
+	config.Security.Enabled = true
+	config.Security.SetDefaults()
+
+	mockReg := &mockBusinessServiceRegistrar{}
+	mockReg.On("RegisterServices", mock.Anything).Return(nil)
+
+	server, err := NewBusinessServerCore(config, mockReg, nil)
+	require.NoError(t, err)
+	require.NotNil(t, server)
+
+	securityMgr := server.GetSecurityManager()
+	require.NotNil(t, securityMgr, "Security manager should be created")
+
+	// Security manager should not be initialized before Start
+	assert.False(t, securityMgr.IsInitialized(), "Security manager should not be initialized before Start")
+
+	// Start server
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = server.Start(ctx)
+	require.NoError(t, err)
+
+	// Security manager should be initialized after Start
+	assert.True(t, securityMgr.IsInitialized(), "Security manager should be initialized after Start")
+
+	// Stop server
+	err = server.Stop(ctx)
+	require.NoError(t, err)
+
+	// Verify Shutdown also works
+	err = server.Shutdown()
+	require.NoError(t, err)
+}
+
+// TestBaseServer_SecurityManagerInterface tests BusinessServerWithSecurity interface
+func TestBaseServer_SecurityManagerInterface(t *testing.T) {
+	config := NewServerConfig()
+	config.ServiceName = "test-interface-service"
+	config.HTTP.Enabled = true
+	config.HTTP.Port = "0"
+	config.GRPC.Enabled = false
+	config.Discovery.Enabled = false
+	config.Security.Enabled = true
+	config.Security.SetDefaults()
+
+	mockReg := &mockBusinessServiceRegistrar{}
+	mockReg.On("RegisterServices", mock.Anything).Return(nil)
+
+	server, err := NewBusinessServerCore(config, mockReg, nil)
+	require.NoError(t, err)
+	require.NotNil(t, server)
+
+	// Verify server implements BusinessServerWithSecurity interface
+	var _ BusinessServerWithSecurity = server
+
+	// Verify GetSecurityManager works
+	securityMgr := server.GetSecurityManager()
+	assert.NotNil(t, securityMgr)
+	assert.False(t, securityMgr.IsInitialized())
+}

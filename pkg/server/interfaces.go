@@ -75,6 +75,13 @@ type BusinessServerWithSentry interface {
 	GetSentryManager() *SentryManager
 }
 
+// BusinessServerWithSecurity extends BusinessServerCore with security management capabilities
+type BusinessServerWithSecurity interface {
+	BusinessServerCore
+	// GetSecurityManager returns the security manager instance
+	GetSecurityManager() *SecurityManager
+}
+
 // BusinessServiceRegistrar defines the interface for services to register themselves
 // with the server's transport layer
 type BusinessServiceRegistrar interface {
