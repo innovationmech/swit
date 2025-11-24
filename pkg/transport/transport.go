@@ -161,6 +161,12 @@ type SecurityManager interface {
 	GetAuditLogger() interface{}
 	IsEnabled() bool
 	IsInitialized() bool
+	// GetHTTPSecurityMiddleware returns configured HTTP security middleware handlers
+	GetHTTPSecurityMiddleware() []interface{}
+	// GetGRPCUnaryInterceptors returns configured gRPC unary interceptors
+	GetGRPCUnaryInterceptors() []interface{}
+	// GetGRPCStreamInterceptors returns configured gRPC stream interceptors
+	GetGRPCStreamInterceptors() []interface{}
 }
 
 // TransportCoordinator manages multiple transport instances and their service registries

@@ -444,25 +444,30 @@ func (h *HTTPNetworkService) registerSecurityMiddleware() {
 		return
 	}
 
-	// Register OAuth2 middleware if available
+	// Get and register HTTP security middleware from security manager
+	middlewares := secMgr.GetHTTPSecurityMiddleware()
+	if len(middlewares) > 0 {
+		for _, mw := range middlewares {
+			// Type assert to gin.HandlerFunc
+			if ginHandler, ok := mw.(gin.HandlerFunc); ok {
+				h.router.Use(ginHandler)
+				logger.Logger.Info("Security middleware registered for HTTP transport")
+			} else {
+				logger.Logger.Warn("Invalid middleware type, expected gin.HandlerFunc",
+					zap.String("type", fmt.Sprintf("%T", mw)))
+			}
+		}
+	}
+
+	// Log available security components
 	if oauth2Client := secMgr.GetOAuth2Client(); oauth2Client != nil {
-		// The middleware package requires specific types, so we need to use type assertion
-		// This is handled by the middleware package's OAuth2Middleware function
-		logger.Logger.Info("OAuth2 middleware registered for HTTP transport")
-		// Note: Actual middleware registration would be done when routes are registered
-		// to allow per-route configuration
+		logger.Logger.Debug("OAuth2 client available for HTTP transport")
 	}
-
-	// Register OPA middleware if available
 	if opaClient := secMgr.GetOPAClient(); opaClient != nil {
-		logger.Logger.Info("OPA middleware registered for HTTP transport")
-		// Note: Actual middleware registration would be done when routes are registered
-		// to allow per-route configuration
+		logger.Logger.Debug("OPA client available for HTTP transport")
 	}
-
-	// Note: Audit logging is handled by the OPA middleware's audit feature
 	if auditLogger := secMgr.GetAuditLogger(); auditLogger != nil {
-		logger.Logger.Info("Audit logger available for HTTP transport")
+		logger.Logger.Debug("Audit logger available for HTTP transport")
 	}
 }
 

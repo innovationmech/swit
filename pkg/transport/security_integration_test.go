@@ -30,20 +30,26 @@ import (
 
 // MockSecurityManager implements SecurityManager interface for testing
 type MockSecurityManager struct {
-	enabled      bool
-	initialized  bool
-	oauth2Client interface{}
-	opaClient    interface{}
-	auditLogger  interface{}
+	enabled             bool
+	initialized         bool
+	oauth2Client        interface{}
+	opaClient           interface{}
+	auditLogger         interface{}
+	httpMiddleware      []interface{}
+	grpcUnaryIntercept  []interface{}
+	grpcStreamIntercept []interface{}
 }
 
 func NewMockSecurityManager(enabled, initialized bool) *MockSecurityManager {
 	return &MockSecurityManager{
-		enabled:      enabled,
-		initialized:  initialized,
-		oauth2Client: &mockOAuth2Client{},
-		opaClient:    &mockOPAClient{},
-		auditLogger:  &mockAuditLogger{},
+		enabled:             enabled,
+		initialized:         initialized,
+		oauth2Client:        &mockOAuth2Client{},
+		opaClient:           &mockOPAClient{},
+		auditLogger:         &mockAuditLogger{},
+		httpMiddleware:      []interface{}{},
+		grpcUnaryIntercept:  []interface{}{},
+		grpcStreamIntercept: []interface{}{},
 	}
 }
 
@@ -65,6 +71,18 @@ func (m *MockSecurityManager) IsEnabled() bool {
 
 func (m *MockSecurityManager) IsInitialized() bool {
 	return m.initialized
+}
+
+func (m *MockSecurityManager) GetHTTPSecurityMiddleware() []interface{} {
+	return m.httpMiddleware
+}
+
+func (m *MockSecurityManager) GetGRPCUnaryInterceptors() []interface{} {
+	return m.grpcUnaryIntercept
+}
+
+func (m *MockSecurityManager) GetGRPCStreamInterceptors() []interface{} {
+	return m.grpcStreamIntercept
 }
 
 // Mock clients for testing

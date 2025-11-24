@@ -348,21 +348,45 @@ func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 
 	// Add security interceptors if security manager is provided
 	if g.config.SecurityManager != nil && g.config.SecurityManager.IsEnabled() && g.config.SecurityManager.IsInitialized() {
-		// Register OAuth2 interceptor if available
+		// Get and add unary interceptors from security manager
+		secUnaryInterceptors := g.config.SecurityManager.GetGRPCUnaryInterceptors()
+		if len(secUnaryInterceptors) > 0 {
+			for _, interceptor := range secUnaryInterceptors {
+				// Type assert to grpc.UnaryServerInterceptor
+				if unaryInterceptor, ok := interceptor.(grpc.UnaryServerInterceptor); ok {
+					unaryInterceptors = append(unaryInterceptors, unaryInterceptor)
+					logger.Logger.Info("Security unary interceptor registered for gRPC transport")
+				} else {
+					logger.Logger.Warn("Invalid unary interceptor type",
+						zap.String("type", fmt.Sprintf("%T", interceptor)))
+				}
+			}
+		}
+
+		// Get and add stream interceptors from security manager
+		secStreamInterceptors := g.config.SecurityManager.GetGRPCStreamInterceptors()
+		if len(secStreamInterceptors) > 0 {
+			for _, interceptor := range secStreamInterceptors {
+				// Type assert to grpc.StreamServerInterceptor
+				if streamInterceptor, ok := interceptor.(grpc.StreamServerInterceptor); ok {
+					streamInterceptors = append(streamInterceptors, streamInterceptor)
+					logger.Logger.Info("Security stream interceptor registered for gRPC transport")
+				} else {
+					logger.Logger.Warn("Invalid stream interceptor type",
+						zap.String("type", fmt.Sprintf("%T", interceptor)))
+				}
+			}
+		}
+
+		// Log available security components
 		if oauth2Client := g.config.SecurityManager.GetOAuth2Client(); oauth2Client != nil {
-			logger.Logger.Info("OAuth2 interceptors available for gRPC transport")
-			// Note: Actual interceptor registration would be done with specific configuration
+			logger.Logger.Debug("OAuth2 client available for gRPC transport")
 		}
-
-		// Register OPA interceptor if available
 		if opaClient := g.config.SecurityManager.GetOPAClient(); opaClient != nil {
-			logger.Logger.Info("OPA interceptors available for gRPC transport")
-			// Note: Actual interceptor registration would be done with specific configuration
+			logger.Logger.Debug("OPA client available for gRPC transport")
 		}
-
-		// Note: Audit logging is handled by the OPA interceptor's audit feature
 		if auditLogger := g.config.SecurityManager.GetAuditLogger(); auditLogger != nil {
-			logger.Logger.Info("Audit logger available for gRPC transport")
+			logger.Logger.Debug("Audit logger available for gRPC transport")
 		}
 	}
 
