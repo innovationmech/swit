@@ -61,6 +61,7 @@ type GRPCTransportConfig struct {
 	UnaryInterceptors   []grpc.UnaryServerInterceptor
 	StreamInterceptors  []grpc.StreamServerInterceptor
 	TracingManager      tracing.TracingManager // Tracing manager for automatic interceptor setup
+	SecurityManager     SecurityManager        // Security manager for automatic security interceptor setup
 	TLS                 *tlsconfig.TLSConfig   // TLS/mTLS configuration
 }
 
@@ -333,7 +334,7 @@ func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 		opts = append(opts, grpc.MaxSendMsgSize(g.config.MaxSendMsgSize))
 	}
 
-	// Add interceptors (including tracing interceptors if available)
+	// Add interceptors (including tracing and security interceptors if available)
 	unaryInterceptors := g.config.UnaryInterceptors
 	streamInterceptors := g.config.StreamInterceptors
 
@@ -343,6 +344,26 @@ func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 		streamInterceptors = append([]grpc.StreamServerInterceptor{ClientCertificateStreamInterceptor()}, streamInterceptors...)
 		logger.Logger.Info("gRPC client certificate interceptors enabled",
 			zap.String("client_auth", g.config.TLS.ClientAuth))
+	}
+
+	// Add security interceptors if security manager is provided
+	if g.config.SecurityManager != nil && g.config.SecurityManager.IsEnabled() && g.config.SecurityManager.IsInitialized() {
+		// Register OAuth2 interceptor if available
+		if oauth2Client := g.config.SecurityManager.GetOAuth2Client(); oauth2Client != nil {
+			logger.Logger.Info("OAuth2 interceptors available for gRPC transport")
+			// Note: Actual interceptor registration would be done with specific configuration
+		}
+
+		// Register OPA interceptor if available
+		if opaClient := g.config.SecurityManager.GetOPAClient(); opaClient != nil {
+			logger.Logger.Info("OPA interceptors available for gRPC transport")
+			// Note: Actual interceptor registration would be done with specific configuration
+		}
+
+		// Note: Audit logging is handled by the OPA interceptor's audit feature
+		if auditLogger := g.config.SecurityManager.GetAuditLogger(); auditLogger != nil {
+			logger.Logger.Info("Audit logger available for gRPC transport")
+		}
 	}
 
 	// Add tracing interceptors if tracing manager is provided

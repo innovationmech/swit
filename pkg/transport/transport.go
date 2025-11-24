@@ -154,12 +154,22 @@ type NetworkTransport interface {
 	GetAddress() string
 }
 
+// SecurityManager minimal interface to avoid import cycle with server package
+type SecurityManager interface {
+	GetOAuth2Client() interface{}
+	GetOPAClient() interface{}
+	GetAuditLogger() interface{}
+	IsEnabled() bool
+	IsInitialized() bool
+}
+
 // TransportCoordinator manages multiple transport instances and their service registries
 type TransportCoordinator struct {
 	transports       []NetworkTransport
 	registryManager  *MultiTransportRegistry
 	messagingCoord   MessagingCoordinator   // Messaging coordinator for unified messaging support
 	tracingManager   tracing.TracingManager // Unified tracing manager for all transports
+	securityManager  SecurityManager        // Security manager for unified security support
 	messagingEnabled bool                   // Whether messaging is enabled for this coordinator
 	mu               sync.RWMutex
 }
@@ -170,6 +180,7 @@ func NewTransportCoordinator() *TransportCoordinator {
 		transports:       make([]NetworkTransport, 0),
 		registryManager:  NewMultiTransportRegistry(),
 		messagingCoord:   nil, // Will be set later to avoid import cycle
+		securityManager:  nil, // Will be set later to avoid import cycle
 		messagingEnabled: false,
 	}
 }
@@ -200,6 +211,11 @@ func (m *TransportCoordinator) Register(transport NetworkTransport) {
 		m.injectTracingManagerToTransport(transport)
 	}
 
+	// Inject security manager if available
+	if m.securityManager != nil {
+		m.injectSecurityManagerToTransport(transport)
+	}
+
 	logger.Logger.Info("Transport registered",
 		zap.String("transport", transport.GetName()))
 }
@@ -226,6 +242,28 @@ func (m *TransportCoordinator) GetTracingManager() tracing.TracingManager {
 	return m.tracingManager
 }
 
+// SetSecurityManager sets the security manager and distributes it to all transports
+func (m *TransportCoordinator) SetSecurityManager(securityManager SecurityManager) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.securityManager = securityManager
+
+	// Inject security manager into all existing transports
+	for _, transport := range m.transports {
+		m.injectSecurityManagerToTransport(transport)
+	}
+
+	logger.Logger.Info("Security manager set for transport coordinator")
+}
+
+// GetSecurityManager returns the current security manager
+func (m *TransportCoordinator) GetSecurityManager() SecurityManager {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.securityManager
+}
+
 // injectTracingManagerToTransport injects the tracing manager into a transport
 func (m *TransportCoordinator) injectTracingManagerToTransport(transport NetworkTransport) {
 	// Check if transport is HTTP type and inject tracing manager
@@ -242,6 +280,25 @@ func (m *TransportCoordinator) injectTracingManagerToTransport(transport Network
 			grpcTransport.config.TracingManager = m.tracingManager
 		}
 		logger.Logger.Debug("Tracing manager injected into gRPC transport")
+	}
+}
+
+// injectSecurityManagerToTransport injects the security manager into a transport
+func (m *TransportCoordinator) injectSecurityManagerToTransport(transport NetworkTransport) {
+	// Check if transport is HTTP type and inject security manager
+	if httpTransport, ok := transport.(*HTTPNetworkService); ok {
+		if httpTransport.config != nil {
+			httpTransport.config.SecurityManager = m.securityManager
+		}
+		logger.Logger.Debug("Security manager injected into HTTP transport")
+	}
+
+	// Check if transport is gRPC type and inject security manager
+	if grpcTransport, ok := transport.(*GRPCNetworkService); ok {
+		if grpcTransport.config != nil {
+			grpcTransport.config.SecurityManager = m.securityManager
+		}
+		logger.Logger.Debug("Security manager injected into gRPC transport")
 	}
 }
 
