@@ -41,13 +41,14 @@ import (
 
 // HTTPTransportConfig contains configuration for HTTP transport
 type HTTPTransportConfig struct {
-	Address        string
-	Port           string
-	TestMode       bool                   // Enables test-specific features
-	TestPort       string                 // Override port for testing
-	EnableReady    bool                   // Enables ready channel for testing
-	TracingManager tracing.TracingManager // Tracing manager for automatic middleware setup
-	TLS            *tlsconfig.TLSConfig   // TLS/mTLS configuration
+	Address         string
+	Port            string
+	TestMode        bool                   // Enables test-specific features
+	TestPort        string                 // Override port for testing
+	EnableReady     bool                   // Enables ready channel for testing
+	TracingManager  tracing.TracingManager // Tracing manager for automatic middleware setup
+	SecurityManager SecurityManager        // Security manager for automatic security middleware setup
+	TLS             *tlsconfig.TLSConfig   // TLS/mTLS configuration
 }
 
 // HTTPNetworkService implements NetworkTransport interface for HTTP
@@ -90,6 +91,9 @@ func NewHTTPNetworkServiceWithConfig(config *HTTPTransportConfig) *HTTPNetworkSe
 		tracingMiddleware := middleware.TracingMiddleware(config.TracingManager)
 		transport.router.Use(tracingMiddleware)
 	}
+
+	// Setup security middleware if security manager is provided
+	transport.registerSecurityMiddleware()
 
 	// Setup client certificate middleware if mTLS is enabled
 	if config.TLS != nil && config.TLS.Enabled && config.TLS.ClientAuth != "" && config.TLS.ClientAuth != "none" {
@@ -420,6 +424,51 @@ func GetClientCommonName(c *gin.Context) string {
 		}
 	}
 	return ""
+}
+
+// registerSecurityMiddleware registers security middleware if security manager is provided
+func (h *HTTPNetworkService) registerSecurityMiddleware() {
+	// Check if config exists
+	if h.config == nil {
+		return
+	}
+
+	// Check if security manager exists
+	secMgr := h.config.SecurityManager
+	if secMgr == nil {
+		return
+	}
+
+	// Check if security manager is enabled and initialized
+	if !secMgr.IsEnabled() || !secMgr.IsInitialized() {
+		return
+	}
+
+	// Get and register HTTP security middleware from security manager
+	middlewares := secMgr.GetHTTPSecurityMiddleware()
+	if len(middlewares) > 0 {
+		for _, mw := range middlewares {
+			// Type assert to gin.HandlerFunc
+			if ginHandler, ok := mw.(gin.HandlerFunc); ok {
+				h.router.Use(ginHandler)
+				logger.Logger.Info("Security middleware registered for HTTP transport")
+			} else {
+				logger.Logger.Warn("Invalid middleware type, expected gin.HandlerFunc",
+					zap.String("type", fmt.Sprintf("%T", mw)))
+			}
+		}
+	}
+
+	// Log available security components
+	if oauth2Client := secMgr.GetOAuth2Client(); oauth2Client != nil {
+		logger.Logger.Debug("OAuth2 client available for HTTP transport")
+	}
+	if opaClient := secMgr.GetOPAClient(); opaClient != nil {
+		logger.Logger.Debug("OPA client available for HTTP transport")
+	}
+	if auditLogger := secMgr.GetAuditLogger(); auditLogger != nil {
+		logger.Logger.Debug("Audit logger available for HTTP transport")
+	}
 }
 
 // determineAddress determines the address to use for the HTTP server

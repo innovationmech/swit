@@ -476,6 +476,67 @@ func (sm *SecurityManager) IsInitialized() bool {
 	return sm.initialized
 }
 
+// GetHTTPSecurityMiddleware 返回配置好的 HTTP 安全中间件
+func (sm *SecurityManager) GetHTTPSecurityMiddleware() []interface{} {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	if !sm.initialized || sm.closed || !sm.config.Enabled {
+		return nil
+	}
+
+	var middlewares []interface{}
+
+	// 添加 OAuth2 中间件（如果配置了）
+	// Note: 实际项目中，这里应该根据配置创建中间件
+	// 现在只是返回空列表，由具体使用方配置
+
+	// 添加 OPA 中间件（如果配置了）
+	// Note: 实际项目中，这里应该根据配置创建中间件
+
+	return middlewares
+}
+
+// GetGRPCUnaryInterceptors 返回配置好的 gRPC unary 拦截器
+func (sm *SecurityManager) GetGRPCUnaryInterceptors() []interface{} {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	if !sm.initialized || sm.closed || !sm.config.Enabled {
+		return nil
+	}
+
+	var interceptors []interface{}
+
+	// 添加 OAuth2 拦截器（如果配置了）
+	// Note: 实际项目中，这里应该根据配置创建拦截器
+
+	// 添加 OPA 拦截器（如果配置了）
+	// Note: 实际项目中，这里应该根据配置创建拦截器
+
+	return interceptors
+}
+
+// GetGRPCStreamInterceptors 返回配置好的 gRPC stream 拦截器
+func (sm *SecurityManager) GetGRPCStreamInterceptors() []interface{} {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	if !sm.initialized || sm.closed || !sm.config.Enabled {
+		return nil
+	}
+
+	var interceptors []interface{}
+
+	// 添加 OAuth2 拦截器（如果配置了）
+	// Note: 实际项目中，这里应该根据配置创建拦截器
+
+	// 添加 OPA 拦截器（如果配置了）
+	// Note: 实际项目中，这里应该根据配置创建拦截器
+
+	return interceptors
+}
+
 // Shutdown 关闭所有安全组件
 func (sm *SecurityManager) Shutdown(ctx context.Context) error {
 	sm.mu.Lock()

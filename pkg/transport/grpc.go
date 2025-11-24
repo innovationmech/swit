@@ -61,6 +61,7 @@ type GRPCTransportConfig struct {
 	UnaryInterceptors   []grpc.UnaryServerInterceptor
 	StreamInterceptors  []grpc.StreamServerInterceptor
 	TracingManager      tracing.TracingManager // Tracing manager for automatic interceptor setup
+	SecurityManager     SecurityManager        // Security manager for automatic security interceptor setup
 	TLS                 *tlsconfig.TLSConfig   // TLS/mTLS configuration
 }
 
@@ -333,7 +334,7 @@ func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 		opts = append(opts, grpc.MaxSendMsgSize(g.config.MaxSendMsgSize))
 	}
 
-	// Add interceptors (including tracing interceptors if available)
+	// Add interceptors (including tracing and security interceptors if available)
 	unaryInterceptors := g.config.UnaryInterceptors
 	streamInterceptors := g.config.StreamInterceptors
 
@@ -343,6 +344,50 @@ func (g *GRPCNetworkService) createConfiguredGRPCServer() *grpc.Server {
 		streamInterceptors = append([]grpc.StreamServerInterceptor{ClientCertificateStreamInterceptor()}, streamInterceptors...)
 		logger.Logger.Info("gRPC client certificate interceptors enabled",
 			zap.String("client_auth", g.config.TLS.ClientAuth))
+	}
+
+	// Add security interceptors if security manager is provided
+	if g.config.SecurityManager != nil && g.config.SecurityManager.IsEnabled() && g.config.SecurityManager.IsInitialized() {
+		// Get and add unary interceptors from security manager
+		secUnaryInterceptors := g.config.SecurityManager.GetGRPCUnaryInterceptors()
+		if len(secUnaryInterceptors) > 0 {
+			for _, interceptor := range secUnaryInterceptors {
+				// Type assert to grpc.UnaryServerInterceptor
+				if unaryInterceptor, ok := interceptor.(grpc.UnaryServerInterceptor); ok {
+					unaryInterceptors = append(unaryInterceptors, unaryInterceptor)
+					logger.Logger.Info("Security unary interceptor registered for gRPC transport")
+				} else {
+					logger.Logger.Warn("Invalid unary interceptor type",
+						zap.String("type", fmt.Sprintf("%T", interceptor)))
+				}
+			}
+		}
+
+		// Get and add stream interceptors from security manager
+		secStreamInterceptors := g.config.SecurityManager.GetGRPCStreamInterceptors()
+		if len(secStreamInterceptors) > 0 {
+			for _, interceptor := range secStreamInterceptors {
+				// Type assert to grpc.StreamServerInterceptor
+				if streamInterceptor, ok := interceptor.(grpc.StreamServerInterceptor); ok {
+					streamInterceptors = append(streamInterceptors, streamInterceptor)
+					logger.Logger.Info("Security stream interceptor registered for gRPC transport")
+				} else {
+					logger.Logger.Warn("Invalid stream interceptor type",
+						zap.String("type", fmt.Sprintf("%T", interceptor)))
+				}
+			}
+		}
+
+		// Log available security components
+		if oauth2Client := g.config.SecurityManager.GetOAuth2Client(); oauth2Client != nil {
+			logger.Logger.Debug("OAuth2 client available for gRPC transport")
+		}
+		if opaClient := g.config.SecurityManager.GetOPAClient(); opaClient != nil {
+			logger.Logger.Debug("OPA client available for gRPC transport")
+		}
+		if auditLogger := g.config.SecurityManager.GetAuditLogger(); auditLogger != nil {
+			logger.Logger.Debug("Audit logger available for gRPC transport")
+		}
 	}
 
 	// Add tracing interceptors if tracing manager is provided
