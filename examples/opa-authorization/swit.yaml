@@ -1,0 +1,233 @@
+# OPA Authorization Example Configuration
+# 
+# This configuration file demonstrates how to configure OPA authorization
+# for the example application.
+
+# Server configuration
+server:
+  # HTTP server port
+  http_port: 8080
+  
+  # gRPC server port (optional)
+  grpc_port: 9090
+  
+  # Server name
+  name: "opa-authorization-example"
+  
+  # Environment (development, staging, production)
+  environment: "development"
+
+# OPA (Open Policy Agent) configuration
+opa:
+  # OPA mode: "embedded" or "remote"
+  # - embedded: OPA runs in the same process
+  # - remote: Connect to external OPA server
+  mode: "embedded"
+  
+  # Embedded OPA configuration (used when mode is "embedded")
+  embedded:
+    # Directory containing policy files (.rego)
+    policy_dir: "./policies"
+    
+    # Watch for policy changes and reload automatically
+    watch_enabled: true
+    
+    # Policy watch interval
+    watch_interval: "30s"
+  
+  # Remote OPA configuration (used when mode is "remote")
+  remote:
+    # OPA server URL
+    url: "http://localhost:8181"
+    
+    # Request timeout
+    timeout: "5s"
+    
+    # Health check configuration
+    health_check:
+      enabled: true
+      interval: "30s"
+      timeout: "5s"
+      failure_threshold: 3
+      success_threshold: 1
+  
+  # Default decision path (e.g., "rbac/allow" or "abac/allow")
+  default_decision_path: "rbac/allow"
+  
+  # Cache configuration
+  cache:
+    enabled: true
+    max_size: 1000
+    ttl: "5m"
+  
+  # Policy validation on startup
+  validate_on_startup: true
+
+# Logging configuration
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+  
+  # Log format: json, console
+  format: "console"
+  
+  # Enable colored output (console format only)
+  colored: true
+  
+  # Log policy decisions
+  log_decisions: true
+  
+  # Log policy evaluation details
+  log_evaluation: false
+
+# Security configuration
+security:
+  # Enable security features
+  enabled: true
+  
+  # Audit logging
+  audit:
+    enabled: true
+    # Log file path (empty for stdout)
+    log_file: ""
+    # Include request/response bodies
+    include_body: false
+    # Include request headers
+    include_headers: true
+
+# Middleware configuration
+middleware:
+  # OPA middleware configuration
+  opa:
+    enabled: true
+    
+    # Paths to skip OPA evaluation (public endpoints)
+    skip_paths:
+      - "/api/v1/health"
+      - "/metrics"
+      - "/readiness"
+      - "/liveness"
+    
+    # Custom error responses
+    error_response:
+      # Response when policy evaluation fails
+      evaluation_error:
+        status: 500
+        message: "Internal server error"
+      
+      # Response when access is denied
+      access_denied:
+        status: 403
+        message: "Access denied"
+    
+    # Rate limiting for policy evaluations (optional)
+    rate_limit:
+      enabled: false
+      requests_per_second: 100
+      burst: 200
+
+# Example-specific configuration
+example:
+  # Policy type to use: "rbac" or "abac"
+  policy_type: "rbac"
+  
+  # Predefined documents for demonstration
+  documents:
+    - id: "doc-1"
+      title: "Public Document"
+      content: "This is a public document"
+      owner: "system"
+    
+    - id: "doc-2"
+      title: "Alice's Document"
+      content: "This is Alice's private document"
+      owner: "alice"
+    
+    - id: "doc-3"
+      title: "Bob's Document"
+      content: "This is Bob's private document"
+      owner: "bob"
+  
+  # Predefined users for demonstration
+  users:
+    - username: "alice"
+      roles:
+        - "admin"
+    
+    - username: "bob"
+      roles:
+        - "editor"
+    
+    - username: "charlie"
+      roles:
+        - "viewer"
+    
+    - username: "dave"
+      roles:
+        - "guest"
+
+# Metrics configuration (optional)
+metrics:
+  enabled: true
+  # Prometheus metrics endpoint
+  path: "/metrics"
+  # Include Go runtime metrics
+  include_runtime: true
+  # Include policy evaluation metrics
+  include_policy_metrics: true
+
+# Health check configuration
+health:
+  enabled: true
+  
+  # Health check endpoints
+  endpoints:
+    # Liveness probe (always returns healthy if server is running)
+    liveness: "/liveness"
+    # Readiness probe (checks dependencies)
+    readiness: "/readiness"
+  
+  # Checks to perform for readiness
+  checks:
+    # Check OPA client health
+    opa: true
+
+# Development configuration
+development:
+  # Enable development mode
+  enabled: true
+  
+  # Enable debug endpoints
+  debug_endpoints: true
+  
+  # Enable request/response logging
+  request_logging: true
+  
+  # Enable policy reload endpoint (POST /debug/reload-policies)
+  policy_reload_endpoint: true
+
+# Production configuration (override in production)
+# production:
+#   opa:
+#     mode: "remote"
+#     remote:
+#       url: "http://opa-server:8181"
+#       timeout: "3s"
+#     cache:
+#       enabled: true
+#       max_size: 10000
+#       ttl: "10m"
+#   
+#   logging:
+#     level: "warn"
+#     format: "json"
+#     colored: false
+#   
+#   security:
+#     audit:
+#       enabled: true
+#       log_file: "/var/log/opa-example/audit.log"
+#   
+#   development:
+#     enabled: false
+

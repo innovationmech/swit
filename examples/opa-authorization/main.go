@@ -227,43 +227,34 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 			user = "anonymous"
 		}
 		roles := c.GetHeader("X-Roles")
-		if roles == "" {
-			roles = "viewer"
+		
+		// 设置用户信息到上下文，使用 OPA 期望的键名
+		c.Set("username", user)
+		if roles != "" {
+			c.Set("roles", []string{roles})
+		} else {
+			c.Set("roles", []string{}) // 空角色列表表示匿名用户
 		}
-
-		c.Set("user", user)
-		c.Set("roles", roles)
 		c.Next()
 	})
 
 	// OPA 策略中间件
 	router.Use(middleware.OPAMiddleware(
 		opaClient,
+		middleware.WithDecisionPath(fmt.Sprintf("%s/allow", *policyType)),
 		middleware.WithLogger(logger),
 		middleware.WithInputBuilder(func(c *gin.Context) (*opa.PolicyInput, error) {
-			user, _ := c.Get("user")
-			roles, _ := c.Get("roles")
-
-			return &opa.PolicyInput{
-				Request: opa.RequestInfo{
-					Method:    c.Request.Method,
-					Path:      c.Request.URL.Path,
-					ClientIP:  c.ClientIP(),
-					Protocol:  "http",
-					Time:      time.Now(),
-					UserAgent: c.Request.UserAgent(),
-				},
-				User: opa.UserInfo{
-					Username: user.(string),
-					Roles:    []string{roles.(string)},
-				},
-				Resource: opa.ResourceInfo{
-					Type: "document",
-					Attributes: map[string]interface{}{
-						"path": c.Request.URL.Path,
-					},
-				},
-			}, nil
+			// 使用 OPA 框架的输入构建器
+			builder := opa.NewPolicyInputBuilder().FromHTTPRequest(c)
+			
+			// 从上下文提取用户信息
+			user := opa.ExtractUserFromContext(c)
+			builder.WithUser(user)
+			
+			// 设置资源类型
+			builder.WithResourceType("document")
+			
+			return builder.Build(), nil
 		}),
 		middleware.WithAuditLog(func(auditLog *middleware.AuditLog) {
 			logger.Info("Policy decision",
@@ -309,8 +300,10 @@ func setupHTTPServer(opaClient opa.Client, docService *DocumentService, logger *
 				return
 			}
 
-			user, _ := c.Get("user")
-			doc.Owner = user.(string)
+			username, _ := c.Get("username")
+			if user, ok := username.(string); ok {
+				doc.Owner = user
+			}
 			docService.documents[doc.ID] = &doc
 
 			c.JSON(http.StatusCreated, doc)
