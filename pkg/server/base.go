@@ -66,6 +66,9 @@ type BusinessServerImpl struct {
 
 	// Error monitoring
 	sentryManager *SentryManager
+
+	// Security management
+	securityManager *SecurityManager
 }
 
 // NewBusinessServerCore creates a new base server instance with the provided configuration
@@ -118,6 +121,23 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		messagingLifecycle = NewMessagingLifecycleManager(messagingStartupConfig)
 	}
 
+	// Initialize security manager if security is configured
+	var securityManager *SecurityManager
+	if config.Security.Enabled {
+		var err error
+		securityManager, err = NewSecurityManager(&config.Security)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create security manager: %w", err)
+		}
+		logger.Logger.Info("Security manager created",
+			zap.Bool("oauth2_enabled", config.Security.OAuth2 != nil && config.Security.OAuth2.Enabled),
+			zap.Bool("opa_enabled", config.Security.OPA != nil),
+			zap.Bool("scanner_enabled", config.Security.Scanner != nil && config.Security.Scanner.Enabled),
+			zap.Bool("audit_enabled", config.Security.Audit != nil && config.Security.Audit.Enabled))
+	} else {
+		logger.Logger.Debug("Security features disabled")
+	}
+
 	server := &BusinessServerImpl{
 		config:               config,
 		dependencies:         deps,
@@ -128,6 +148,7 @@ func NewBusinessServerCore(config *ServerConfig, registrar BusinessServiceRegist
 		monitor:              NewPerformanceMonitor(),
 		sentryManager:        NewSentryManager(&config.Sentry),
 		observabilityManager: NewObservabilityManager(config.ServiceName, &config.Prometheus, nil),
+		securityManager:      securityManager,
 	}
 
 	// Add default performance monitoring hooks
@@ -321,6 +342,19 @@ func (s *BusinessServerImpl) Start(ctx context.Context) error {
 		}
 	}
 
+	// Initialize security manager if enabled
+	if s.securityManager != nil && s.config.Security.Enabled {
+		if err := s.securityManager.InitializeSecurity(ctx); err != nil {
+			return fmt.Errorf("failed to initialize security manager: %w", err)
+		}
+		logger.Logger.Info("Security manager initialized successfully",
+			zap.Bool("oauth2", s.securityManager.GetOAuth2Client() != nil),
+			zap.Bool("opa", s.securityManager.GetOPAClient() != nil),
+			zap.Bool("scanner", s.securityManager.GetSecurityScanner() != nil),
+			zap.Bool("secrets", s.securityManager.GetSecretsManager() != nil),
+			zap.Bool("audit", s.securityManager.GetAuditLogger() != nil))
+	}
+
 	// Configure middleware for HTTP transport
 	if s.httpTransport != nil {
 		if err := s.configureHTTPMiddleware(); err != nil {
@@ -451,6 +485,15 @@ func (s *BusinessServerImpl) Stop(ctx context.Context) error {
 			if fallbackErr := s.messagingLifecycle.ShutdownSequence(ctx); fallbackErr != nil {
 				logger.Logger.Error("Failed to shutdown messaging system via fallback", zap.Error(fallbackErr))
 			}
+		}
+	}
+
+	// Shutdown security manager if enabled
+	if s.securityManager != nil && s.config.Security.Enabled {
+		if err := s.securityManager.Shutdown(ctx); err != nil {
+			logger.Logger.Warn("Failed to shutdown security manager", zap.Error(err))
+		} else {
+			logger.Logger.Debug("Security manager shutdown completed")
 		}
 	}
 
@@ -645,6 +688,11 @@ func (s *BusinessServerImpl) GetBusinessMetricsManager() *BusinessMetricsManager
 	return nil
 }
 
+// GetSecurityManager returns the security manager instance
+func (s *BusinessServerImpl) GetSecurityManager() *SecurityManager {
+	return s.securityManager
+}
+
 // isTransportRunning checks if a transport is currently running
 func (s *BusinessServerImpl) isTransportRunning(t transport.NetworkTransport) bool {
 	s.mu.RLock()
@@ -760,6 +808,14 @@ func (s *BusinessServerImpl) configureHTTPMiddleware() error {
 	middlewareManager := NewMiddlewareManager(s.config)
 	if err := middlewareManager.ConfigureHTTPMiddleware(router); err != nil {
 		return fmt.Errorf("failed to configure HTTP middleware: %w", err)
+	}
+
+	// Configure security middleware if security manager is enabled
+	if s.securityManager != nil && s.config.Security.Enabled {
+		if err := middlewareManager.ConfigureSecurityMiddleware(router, s.securityManager); err != nil {
+			return fmt.Errorf("failed to configure security middleware: %w", err)
+		}
+		logger.Logger.Debug("Security middleware configured for HTTP transport")
 	}
 
 	// Register observability endpoints including Prometheus metrics
