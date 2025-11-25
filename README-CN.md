@@ -23,6 +23,7 @@
 - 🛡️ **中间件堆栈**: 可配置的 CORS、速率限制、身份验证和超时
 - ⚡ **Protocol Buffers**: 完整的 Buf 工具链支持 API 开发
 - 🔄 **Saga 分布式事务**: 企业级分布式事务管理，支持编排和协同模式
+- 🔐 **企业级安全**: OAuth2/OIDC 认证、OPA 策略引擎（RBAC/ABAC）、TLS/mTLS 加密
 - 📱 **示例服务**: 完整的参考实现和使用模式
 
 ## 架构概览
@@ -33,6 +34,7 @@
 - **`pkg/middleware/`** - 可配置的中间件堆栈
 - **`pkg/discovery/`** - 服务发现集成
 - **`pkg/saga/`** - 分布式事务编排和状态管理
+- **`pkg/security/`** - 企业级安全（OAuth2、OPA、TLS、审计日志）
 
 ### 示例服务
 - **`examples/`** - 简单的入门示例
@@ -156,6 +158,57 @@ func main() {
 - **安全性**: 认证、RBAC、ACL 和数据加密
 - **可观测性**: Prometheus 指标、OpenTelemetry 追踪、健康检查
 
+## 安全
+
+Swit 提供企业级安全功能，用于构建安全的微服务。
+
+### 安全快速开始
+
+```go
+package main
+
+import (
+    "github.com/innovationmech/swit/pkg/security/oauth2"
+    "github.com/innovationmech/swit/pkg/security/opa"
+    "github.com/innovationmech/swit/pkg/middleware"
+)
+
+func main() {
+    // OAuth2/OIDC 认证
+    oauth2Client, _ := oauth2.NewClient(&oauth2.Config{
+        Provider:     "keycloak",
+        ClientID:     "my-service",
+        ClientSecret: os.Getenv("OAUTH2_CLIENT_SECRET"),
+        IssuerURL:    "https://auth.example.com/realms/production",
+        UseDiscovery: true,
+    })
+    
+    // OPA 策略引擎用于授权
+    opaClient, _ := opa.NewClient(&opa.Config{
+        Mode:      "embedded",
+        PolicyDir: "./policies",
+    })
+    
+    // 应用中间件
+    router.Use(middleware.NewOAuth2Middleware(oauth2Client).Authenticate())
+    router.Use(middleware.NewOPAMiddleware(opaClient).Authorize())
+}
+```
+
+### 安全功能特性
+
+- **身份认证**: OAuth2/OIDC（Keycloak、Auth0、Google、Microsoft、Okta）、JWT 验证、mTLS
+- **访问授权**: OPA 策略引擎，支持 RBAC 和 ABAC
+- **传输安全**: TLS 1.2/1.3、服务间通信的 mTLS
+- **数据保护**: 静态加密、审计日志、敏感数据脱敏
+- **安全扫描**: 集成 gosec、Trivy 和 govulncheck
+
+### 安全文档
+
+- 📖 [安全最佳实践](https://innovationmech.github.io/swit/zh/guide/security-best-practices.html) - 全面的安全指南
+- 🔐 [OAuth2 集成指南](https://innovationmech.github.io/swit/zh/guide/oauth2-integration.html) - 认证配置
+- 🛡️ [OPA 策略指南](https://innovationmech.github.io/swit/zh/guide/opa-policy.html) - 授权策略
+
 ### Saga 文档
 
 - 📖 [用户指南](https://innovationmech.github.io/swit/zh/saga/user-guide.html) - 快速开始和核心概念
@@ -176,6 +229,9 @@ cd examples/grpc-service && go run main.go
 
 # 全功能服务
 cd examples/full-featured-service && go run main.go
+
+# 完整安全栈（OAuth2 + OPA + TLS）
+cd examples/full-security-stack && go run main.go
 ```
 
 ### 参考服务

@@ -159,6 +159,8 @@ Swit 框架使用以下主要依赖项：
 - **coreos/go-oidc/v3**: OpenID Connect (OIDC) 支持和发现
 - **golang-jwt/jwt/v5**: JWT 令牌验证和管理
 - **golang.org/x/crypto**: 加密工具
+- **open-policy-agent/opa**: 策略引擎，支持 RBAC/ABAC 授权
+- **hashicorp/vault/api**: 密钥管理（可选）
 
 ### 消息传递与流式处理
 - **nats-io/nats.go**: NATS 消息传递
@@ -188,6 +190,18 @@ Swit 框架使用以下主要依赖项：
 │   ├── switserve/        # 主服务器应用程序
 │   └── switauth/         # 认证服务
 ├── pkg/                   # 公共库代码
+│   ├── server/           # 基础服务器框架
+│   ├── transport/        # HTTP/gRPC 传输层
+│   ├── middleware/       # HTTP/gRPC 中间件
+│   ├── security/         # 安全组件
+│   │   ├── oauth2/       # OAuth2/OIDC 客户端
+│   │   ├── opa/          # OPA 策略引擎
+│   │   ├── jwt/          # JWT 验证
+│   │   ├── tls/          # TLS 配置
+│   │   ├── audit/        # 审计日志
+│   │   └── secrets/      # 密钥管理
+│   ├── saga/             # 分布式事务
+│   └── ...
 ├── api/                   # API定义（protobuf、OpenAPI）
 ├── scripts/              # 构建和实用脚本
 ├── build/                # 构建配置（Docker等）
@@ -228,8 +242,65 @@ make install-hooks
    ```
 3. 修复问题并重新推送
 
+## 安全开发
+
+### 安全测试
+
+```bash
+# 运行安全扫描
+make security              # 完整安全扫描（gosec + trivy + govulncheck）
+
+# 单独扫描
+gosec ./...                # 静态代码分析
+govulncheck ./...          # Go 漏洞检查
+trivy fs .                 # 文件系统漏洞扫描
+```
+
+### 安全最佳实践
+
+开发安全相关功能时：
+
+1. **不要提交密钥** - 使用环境变量或密钥管理
+2. **验证所有输入** - 使用结构体标签和验证器
+3. **使用参数化查询** - 防止 SQL 注入
+4. **生产环境启用 TLS** - 最低 TLS 1.2
+5. **实现正确的日志记录** - 审计安全事件，不记录敏感数据
+6. **遵循 OWASP 指南** - 参考 OWASP Top 10
+
+### 安全配置
+
+`swit.yaml` 中的安全配置示例：
+
+```yaml
+security:
+  oauth2:
+    enabled: true
+    provider: keycloak
+    client_id: my-service
+    client_secret: ${OAUTH2_CLIENT_SECRET}
+    issuer_url: https://auth.example.com/realms/production
+    
+  opa:
+    enabled: true
+    mode: embedded
+    policy_dir: ./policies
+    
+  tls:
+    enabled: true
+    cert_file: /etc/ssl/certs/server.crt
+    key_file: /etc/ssl/private/server.key
+    min_version: "1.2"
+```
+
+### 安全文档
+
+- [安全最佳实践](docs/security-best-practices.md)
+- [OAuth2 集成指南](docs/oauth2-integration-guide.md)
+- [OPA 策略指南](docs/opa-policy-guide.md)
+- [安全检查清单](docs/security-checklist.md)
+
 ## 获取帮助
 
 - 运行`make help`查看所有可用目标
 - 查看现有代码的示例和模式
-- 查看CI日志获取详细错误消息 
+- 查看CI日志获取详细错误消息

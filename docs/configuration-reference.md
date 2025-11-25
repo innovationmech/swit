@@ -875,6 +875,263 @@ if err := config.Validate(); err != nil {
 4. **ShutdownTimeout**: Must be positive
 5. **Ports**: Must be valid port numbers or "0" for auto-assignment
 
+## Security Configuration
+
+### OAuth2Config
+
+OAuth2/OIDC authentication configuration.
+
+```go
+type OAuth2Config struct {
+    Enabled      bool              `yaml:"enabled"`
+    Provider     string            `yaml:"provider"`
+    ClientID     string            `yaml:"client_id"`
+    ClientSecret string            `yaml:"client_secret"`
+    IssuerURL    string            `yaml:"issuer_url"`
+    UseDiscovery bool              `yaml:"use_discovery"`
+    Scopes       []string          `yaml:"scopes"`
+    JWT          JWTConfig         `yaml:"jwt"`
+    Cache        OAuth2CacheConfig `yaml:"cache"`
+    TLS          TLSConfig         `yaml:"tls"`
+}
+```
+
+#### OAuth2 Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `Enabled` | `bool` | No | `false` | Enable OAuth2 authentication |
+| `Provider` | `string` | Yes | `""` | Provider type: keycloak, auth0, google, microsoft, okta, custom |
+| `ClientID` | `string` | Yes | `""` | OAuth2 client ID |
+| `ClientSecret` | `string` | Yes | `""` | OAuth2 client secret (use env var) |
+| `IssuerURL` | `string` | Yes | `""` | OIDC issuer URL |
+| `UseDiscovery` | `bool` | No | `true` | Use OIDC discovery |
+| `Scopes` | `[]string` | No | `["openid", "profile", "email"]` | OAuth2 scopes |
+| `JWT` | `JWTConfig` | No | See JWTConfig | JWT validation configuration |
+| `Cache` | `OAuth2CacheConfig` | No | See OAuth2CacheConfig | Token cache configuration |
+| `TLS` | `TLSConfig` | No | See TLSConfig | TLS configuration for provider |
+
+#### OAuth2 Configuration Example
+
+```yaml
+oauth2:
+  enabled: true
+  provider: keycloak
+  client_id: my-service
+  client_secret: ${OAUTH2_CLIENT_SECRET}
+  issuer_url: https://auth.example.com/realms/production
+  use_discovery: true
+  scopes:
+    - openid
+    - profile
+    - email
+  jwt:
+    signing_method: RS256
+    clock_skew: 5m
+    required_claims:
+      - sub
+      - email
+  cache:
+    enabled: true
+    max_size: 5000
+    ttl: 15m
+  tls:
+    enabled: true
+    ca_file: /etc/ssl/certs/ca-bundle.crt
+```
+
+### OPAConfig
+
+Open Policy Agent (OPA) authorization configuration.
+
+```go
+type OPAConfig struct {
+    Enabled             bool                `yaml:"enabled"`
+    Mode                string              `yaml:"mode"`
+    DefaultDecisionPath string              `yaml:"default_decision_path"`
+    EmbeddedConfig      *OPAEmbeddedConfig  `yaml:"embedded"`
+    RemoteConfig        *OPARemoteConfig    `yaml:"remote"`
+    Cache               *OPACacheConfig     `yaml:"cache"`
+}
+```
+
+#### OPA Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `Enabled` | `bool` | No | `false` | Enable OPA authorization |
+| `Mode` | `string` | Yes | `"embedded"` | OPA mode: embedded, remote |
+| `DefaultDecisionPath` | `string` | No | `"authz/allow"` | Default policy decision path |
+| `EmbeddedConfig` | `*OPAEmbeddedConfig` | Conditional | `nil` | Embedded OPA configuration |
+| `RemoteConfig` | `*OPARemoteConfig` | Conditional | `nil` | Remote OPA configuration |
+| `Cache` | `*OPACacheConfig` | No | See OPACacheConfig | Policy cache configuration |
+
+#### OPA Configuration Example
+
+```yaml
+opa:
+  enabled: true
+  mode: embedded
+  default_decision_path: authz/allow
+  embedded:
+    policy_dir: ./policies
+    watch_policies: true
+    watch_interval: 30s
+  cache:
+    enabled: true
+    max_size: 10000
+    ttl: 5m
+```
+
+### TLSConfig
+
+TLS/mTLS configuration for secure transport.
+
+```go
+type TLSConfig struct {
+    Enabled      bool     `yaml:"enabled"`
+    CertFile     string   `yaml:"cert_file"`
+    KeyFile      string   `yaml:"key_file"`
+    CAFile       string   `yaml:"ca_file"`
+    ClientAuth   string   `yaml:"client_auth"`
+    MinVersion   string   `yaml:"min_version"`
+    MaxVersion   string   `yaml:"max_version"`
+    CipherSuites []string `yaml:"cipher_suites"`
+    ServerName   string   `yaml:"server_name"`
+}
+```
+
+#### TLS Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `Enabled` | `bool` | No | `false` | Enable TLS |
+| `CertFile` | `string` | Conditional | `""` | Server certificate file path |
+| `KeyFile` | `string` | Conditional | `""` | Server private key file path |
+| `CAFile` | `string` | No | `""` | CA certificate file path (for mTLS) |
+| `ClientAuth` | `string` | No | `"no_client_cert"` | Client auth: no_client_cert, request_client_cert, require_any_client_cert, verify_client_cert_if_given, require_and_verify |
+| `MinVersion` | `string` | No | `"1.2"` | Minimum TLS version: 1.0, 1.1, 1.2, 1.3 |
+| `MaxVersion` | `string` | No | `"1.3"` | Maximum TLS version |
+| `CipherSuites` | `[]string` | No | `[]` | Allowed cipher suites |
+| `ServerName` | `string` | No | `""` | Server name for SNI |
+
+#### TLS Configuration Example
+
+```yaml
+tls:
+  enabled: true
+  cert_file: /etc/ssl/certs/server-cert.pem
+  key_file: /etc/ssl/private/server-key.pem
+  ca_file: /etc/ssl/certs/ca-cert.pem
+  client_auth: require_and_verify
+  min_version: "1.2"
+  max_version: "1.3"
+  cipher_suites:
+    - TLS_AES_128_GCM_SHA256
+    - TLS_AES_256_GCM_SHA384
+    - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+```
+
+### AuditConfig
+
+Security audit logging configuration.
+
+```go
+type AuditConfig struct {
+    Enabled         bool     `yaml:"enabled"`
+    LogLevel        string   `yaml:"log_level"`
+    Events          []string `yaml:"events"`
+    SensitiveFields []string `yaml:"sensitive_fields"`
+    RedactPolicy    string   `yaml:"redact_policy"`
+}
+```
+
+#### Audit Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `Enabled` | `bool` | No | `false` | Enable audit logging |
+| `LogLevel` | `string` | No | `"info"` | Audit log level |
+| `Events` | `[]string` | No | `[]` | Events to audit |
+| `SensitiveFields` | `[]string` | No | `[]` | Fields to redact |
+| `RedactPolicy` | `string` | No | `"mask"` | Redaction policy: mask, hash, remove |
+
+#### Audit Configuration Example
+
+```yaml
+audit:
+  enabled: true
+  log_level: info
+  events:
+    - authentication_success
+    - authentication_failure
+    - authorization_denied
+    - sensitive_data_accessed
+  sensitive_fields:
+    - password
+    - client_secret
+    - api_key
+    - token
+  redact_policy: mask
+```
+
+### Complete Security Configuration Example
+
+```yaml
+# Security configuration
+security:
+  # OAuth2/OIDC Authentication
+  oauth2:
+    enabled: true
+    provider: keycloak
+    client_id: my-service
+    client_secret: ${OAUTH2_CLIENT_SECRET}
+    issuer_url: https://auth.example.com/realms/production
+    use_discovery: true
+    scopes:
+      - openid
+      - profile
+      - email
+    jwt:
+      signing_method: RS256
+      clock_skew: 5m
+    cache:
+      enabled: true
+      max_size: 5000
+      ttl: 15m
+  
+  # OPA Authorization
+  opa:
+    enabled: true
+    mode: embedded
+    default_decision_path: authz/allow
+    embedded:
+      policy_dir: ./policies
+      watch_policies: true
+    cache:
+      enabled: true
+      max_size: 10000
+      ttl: 5m
+  
+  # TLS Configuration
+  tls:
+    enabled: true
+    cert_file: /etc/ssl/certs/server-cert.pem
+    key_file: /etc/ssl/private/server-key.pem
+    min_version: "1.2"
+  
+  # Audit Logging
+  audit:
+    enabled: true
+    events:
+      - authentication_failure
+      - authorization_denied
+    sensitive_fields:
+      - password
+      - token
+```
+
 ## Best Practices
 
 1. **Use Environment Variables**: For deployment-specific values
@@ -884,3 +1141,6 @@ if err := config.Validate(); err != nil {
 5. **Configure Keepalive**: For long-lived gRPC connections
 6. **Validate Early**: Check configuration at startup
 7. **Document Defaults**: Make default values clear to operators
+8. **Enable TLS in Production**: Use TLS 1.2 or higher
+9. **Never Commit Secrets**: Use environment variables or secret management
+10. **Enable Audit Logging**: For security compliance and incident response
