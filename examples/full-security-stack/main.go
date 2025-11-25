@@ -114,6 +114,7 @@ func (s *FullSecurityService) RegisterServices(registry server.BusinessServiceRe
 		serviceName:  s.name,
 		oauth2Client: s.oauth2Client,
 		opaClient:    s.opaClient,
+		policyType:   s.config.PolicyType,
 	}
 	if err := registry.RegisterBusinessHealthCheck(healthCheck); err != nil {
 		return fmt.Errorf("failed to register health check: %w", err)
@@ -946,13 +947,15 @@ type FullSecurityHealthCheck struct {
 	serviceName  string
 	oauth2Client *switoauth2.Client
 	opaClient    opa.Client
+	policyType   string
 }
 
 // Check performs a health check.
 func (h *FullSecurityHealthCheck) Check(ctx context.Context) error {
-	// Check OPA health by performing a simple evaluation
+	// Check OPA health by performing a simple evaluation using the configured policy type
 	if h.opaClient != nil {
-		_, err := h.opaClient.Evaluate(ctx, "rbac/allow", map[string]interface{}{
+		decisionPath := fmt.Sprintf("%s/allow", h.policyType)
+		_, err := h.opaClient.Evaluate(ctx, decisionPath, map[string]interface{}{
 			"user":    map[string]interface{}{"roles": []string{}},
 			"request": map[string]interface{}{"method": "GET", "path": "/health"},
 		})
