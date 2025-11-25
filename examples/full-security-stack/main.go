@@ -34,8 +34,8 @@ import (
 	"github.com/innovationmech/swit/pkg/middleware"
 	"github.com/innovationmech/swit/pkg/security"
 	"github.com/innovationmech/swit/pkg/security/jwt"
-	"github.com/innovationmech/swit/pkg/security/opa"
 	switoauth2 "github.com/innovationmech/swit/pkg/security/oauth2"
+	"github.com/innovationmech/swit/pkg/security/opa"
 	tlsconfig "github.com/innovationmech/swit/pkg/security/tls"
 	"github.com/innovationmech/swit/pkg/server"
 	"github.com/innovationmech/swit/pkg/transport"
@@ -54,12 +54,12 @@ type FullSecurityService struct {
 
 // SecurityConfig holds the security configuration for the example.
 type SecurityConfig struct {
-	OAuth2Enabled bool
-	OPAEnabled    bool
-	MTLSEnabled   bool
-	AuditEnabled  bool
+	OAuth2Enabled  bool
+	OPAEnabled     bool
+	MTLSEnabled    bool
+	AuditEnabled   bool
 	MetricsEnabled bool
-	PolicyType    string // "rbac" or "abac"
+	PolicyType     string // "rbac" or "abac"
 }
 
 // NewFullSecurityService creates a new full security stack service.
@@ -831,10 +831,10 @@ func (h *FullSecurityHTTPHandler) handleSecurityMetrics(c *gin.Context) {
 		"message": "Security metrics",
 		"metrics": gin.H{
 			"authentication": gin.H{
-				"total_attempts":     1000,
-				"successful":         950,
-				"failed":             50,
-				"avg_duration_ms":    125,
+				"total_attempts":  1000,
+				"successful":      950,
+				"failed":          50,
+				"avg_duration_ms": 125,
 			},
 			"authorization": gin.H{
 				"policy_evaluations": 5000,
@@ -894,7 +894,7 @@ func (h *FullSecurityHTTPHandler) handleMTLSVerify(c *gin.Context) {
 	certInfo := transport.GetClientCertificateInfo(c)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "mTLS verification successful",
+		"message": "mTLS verification successful",
 		"certificate": gin.H{
 			"common_name":  certInfo.CommonName,
 			"organization": certInfo.Organization,
@@ -1345,4 +1345,3 @@ var (
 
 // Ensure json package is used
 var _ = json.Marshal
-
