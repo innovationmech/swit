@@ -23,6 +23,7 @@ A comprehensive microservice framework for Go that provides a unified, productio
 - 🛡️ **Middleware Stack**: Configurable CORS, rate limiting, authentication, and timeouts
 - ⚡ **Protocol Buffers**: Full Buf toolchain support for API development
 - 🔄 **Saga Distributed Transactions**: Enterprise-grade distributed transaction management with orchestration and choreography patterns
+- 🔐 **Enterprise Security**: OAuth2/OIDC authentication, OPA policy engine (RBAC/ABAC), TLS/mTLS encryption
 - 📱 **Example Services**: Complete reference implementations and usage patterns
 
 ## Architecture Overview
@@ -33,6 +34,7 @@ A comprehensive microservice framework for Go that provides a unified, productio
 - **`pkg/middleware/`** - Configurable middleware stack
 - **`pkg/discovery/`** - Service discovery integration
 - **`pkg/saga/`** - Distributed transaction orchestration and state management
+- **`pkg/security/`** - Enterprise security (OAuth2, OPA, TLS, audit logging)
 
 ### Example Services
 - **`examples/`** - Simple examples for getting started
@@ -156,6 +158,57 @@ func main() {
 - **Security**: Authentication, RBAC, ACL, and data encryption
 - **Observability**: Prometheus metrics, OpenTelemetry tracing, health checks
 
+## Security
+
+Swit provides enterprise-grade security features for building secure microservices.
+
+### Quick Start with Security
+
+```go
+package main
+
+import (
+    "github.com/innovationmech/swit/pkg/security/oauth2"
+    "github.com/innovationmech/swit/pkg/security/opa"
+    "github.com/innovationmech/swit/pkg/middleware"
+)
+
+func main() {
+    // OAuth2/OIDC Authentication
+    oauth2Client, _ := oauth2.NewClient(&oauth2.Config{
+        Provider:     "keycloak",
+        ClientID:     "my-service",
+        ClientSecret: os.Getenv("OAUTH2_CLIENT_SECRET"),
+        IssuerURL:    "https://auth.example.com/realms/production",
+        UseDiscovery: true,
+    })
+    
+    // OPA Policy Engine for Authorization
+    opaClient, _ := opa.NewClient(&opa.Config{
+        Mode:      "embedded",
+        PolicyDir: "./policies",
+    })
+    
+    // Apply middleware
+    router.Use(middleware.NewOAuth2Middleware(oauth2Client).Authenticate())
+    router.Use(middleware.NewOPAMiddleware(opaClient).Authorize())
+}
+```
+
+### Security Features
+
+- **Authentication**: OAuth2/OIDC (Keycloak, Auth0, Google, Microsoft, Okta), JWT validation, mTLS
+- **Authorization**: OPA policy engine with RBAC and ABAC support
+- **Transport Security**: TLS 1.2/1.3, mTLS for service-to-service communication
+- **Data Protection**: Encryption at rest, audit logging, sensitive data masking
+- **Security Scanning**: Integrated gosec, Trivy, and govulncheck
+
+### Security Documentation
+
+- 📖 [Security Best Practices](https://innovationmech.github.io/swit/guide/security-best-practices.html) - Comprehensive security guidelines
+- 🔐 [OAuth2 Integration Guide](https://innovationmech.github.io/swit/guide/oauth2-integration.html) - Authentication setup
+- 🛡️ [OPA Policy Guide](https://innovationmech.github.io/swit/guide/opa-policy.html) - Authorization policies
+
 ### Saga Documentation
 
 - 📖 [User Guide](https://innovationmech.github.io/swit/saga/user-guide.html) - Getting started and core concepts
@@ -176,6 +229,9 @@ cd examples/grpc-service && go run main.go
 
 # Full-featured service
 cd examples/full-featured-service && go run main.go
+
+# Full security stack (OAuth2 + OPA + TLS)
+cd examples/full-security-stack && go run main.go
 ```
 
 ### Reference Services

@@ -159,6 +159,8 @@ The Swit framework uses the following key dependencies:
 - **coreos/go-oidc/v3**: OpenID Connect (OIDC) support and discovery
 - **golang-jwt/jwt/v5**: JWT token validation and management
 - **golang.org/x/crypto**: Cryptographic utilities
+- **open-policy-agent/opa**: Policy engine for RBAC/ABAC authorization
+- **hashicorp/vault/api**: Secret management (optional)
 
 ### Messaging & Streaming
 - **nats-io/nats.go**: NATS messaging
@@ -188,6 +190,18 @@ For a complete list of dependencies, see `go.mod`.
 │   ├── switserve/        # Main server application
 │   └── switauth/         # Authentication service
 ├── pkg/                   # Public library code
+│   ├── server/           # Base server framework
+│   ├── transport/        # HTTP/gRPC transport layer
+│   ├── middleware/       # HTTP/gRPC middleware
+│   ├── security/         # Security components
+│   │   ├── oauth2/       # OAuth2/OIDC client
+│   │   ├── opa/          # OPA policy engine
+│   │   ├── jwt/          # JWT validation
+│   │   ├── tls/          # TLS configuration
+│   │   ├── audit/        # Audit logging
+│   │   └── secrets/      # Secret management
+│   ├── saga/             # Distributed transactions
+│   └── ...
 ├── api/                   # API definitions (protobuf, OpenAPI)
 ├── scripts/              # Build and utility scripts
 ├── build/                # Build configurations (Docker, etc.)
@@ -227,6 +241,63 @@ make install-hooks
    make ci  # Run full CI pipeline locally
    ```
 3. Fix issues and push again
+
+## Security Development
+
+### Security Testing
+
+```bash
+# Run security scans
+make security              # Full security scan (gosec + trivy + govulncheck)
+
+# Individual scans
+gosec ./...                # Static code analysis
+govulncheck ./...          # Go vulnerability check
+trivy fs .                 # File system vulnerability scan
+```
+
+### Security Best Practices
+
+When developing security-related features:
+
+1. **Never commit secrets** - Use environment variables or secret management
+2. **Validate all inputs** - Use struct tags and validators
+3. **Use parameterized queries** - Prevent SQL injection
+4. **Enable TLS in production** - Minimum TLS 1.2
+5. **Implement proper logging** - Audit security events without sensitive data
+6. **Follow OWASP guidelines** - Reference OWASP Top 10
+
+### Security Configuration
+
+Example security configuration in `swit.yaml`:
+
+```yaml
+security:
+  oauth2:
+    enabled: true
+    provider: keycloak
+    client_id: my-service
+    client_secret: ${OAUTH2_CLIENT_SECRET}
+    issuer_url: https://auth.example.com/realms/production
+    
+  opa:
+    enabled: true
+    mode: embedded
+    policy_dir: ./policies
+    
+  tls:
+    enabled: true
+    cert_file: /etc/ssl/certs/server.crt
+    key_file: /etc/ssl/private/server.key
+    min_version: "1.2"
+```
+
+### Security Documentation
+
+- [Security Best Practices](docs/security-best-practices.md)
+- [OAuth2 Integration Guide](docs/oauth2-integration-guide.md)
+- [OPA Policy Guide](docs/opa-policy-guide.md)
+- [Security Checklist](docs/security-checklist.md)
 
 ## Getting Help
 
