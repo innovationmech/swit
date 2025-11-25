@@ -27,21 +27,21 @@ default allow := false
 
 # 管理员拥有所有权限
 allow if {
-    "admin" in input.subject.roles
+    "admin" in input.user.roles
 }
 
 # 编辑者可以创建、读取、更新文档
 allow if {
-    "editor" in input.subject.roles
-    input.action in ["GET", "POST", "PUT"]
-    startswith(input.resource.path, "/api/v1/documents")
+    "editor" in input.user.roles
+    input.request.method in ["GET", "POST", "PUT"]
+    startswith(input.request.path, "/api/v1/documents")
 }
 
 # 查看者只能读取文档
 allow if {
-    "viewer" in input.subject.roles
-    input.action == "GET"
-    startswith(input.resource.path, "/api/v1/documents")
+    "viewer" in input.user.roles
+    input.request.method == "GET"
+    startswith(input.request.path, "/api/v1/documents")
 }
 
 # ===================================
@@ -51,7 +51,7 @@ allow if {
 # 文档所有者可以对自己的文档执行任何操作
 allow if {
     input.resource.type == "document"
-    input.resource.owner == input.subject.user
+    input.resource.owner == input.user.username
 }
 
 # ===================================
@@ -60,7 +60,7 @@ allow if {
 
 # 所有人都可以访问健康检查端点
 allow if {
-    input.resource.path == "/api/v1/health"
+    input.request.path == "/api/v1/health"
 }
 
 # ===================================
@@ -69,19 +69,19 @@ allow if {
 
 # 决策原因（用于审计日志）
 reason contains msg if {
-    "admin" in input.subject.roles
+    "admin" in input.user.roles
     msg := "Access granted: User has admin role"
 }
 
 reason contains msg if {
-    "editor" in input.subject.roles
-    input.action in ["GET", "POST", "PUT"]
+    "editor" in input.user.roles
+    input.request.method in ["GET", "POST", "PUT"]
     msg := "Access granted: Editor can read, create, and update documents"
 }
 
 reason contains msg if {
-    "viewer" in input.subject.roles
-    input.action == "GET"
+    "viewer" in input.user.roles
+    input.request.method == "GET"
     msg := "Access granted: Viewer can read documents"
 }
 
@@ -89,4 +89,3 @@ reason contains msg if {
     not allow
     msg := "Access denied: User lacks required permissions"
 }
-

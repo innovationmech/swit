@@ -1,14 +1,10 @@
-# OPA Authorization Example / OPA 授权示例
+# OPA Authorization Example
 
-[English](#english) | [中文](#中文)
-
----
-
-## English
+English | [中文](README-CN.md)
 
 This example demonstrates how to integrate Open Policy Agent (OPA) for fine-grained authorization in a microservice, supporting both embedded and remote OPA modes with RBAC and ABAC policies.
 
-### Features
+## Features
 
 - ✅ **Embedded OPA Mode** - OPA engine runs in the same process
 - ✅ **Remote OPA Mode** - Connect to external OPA server
@@ -20,7 +16,7 @@ This example demonstrates how to integrate Open Policy Agent (OPA) for fine-grai
 - ✅ **Audit Logging** - Policy decision tracking
 - ✅ **Docker Support** - Complete containerized setup
 
-### Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -55,15 +51,15 @@ This example demonstrates how to integrate Open Policy Agent (OPA) for fine-grai
 └───────────────────┘                           └──────────────────┘
 ```
 
-### Quick Start
+## Quick Start
 
-#### Prerequisites
+### Prerequisites
 
 - Go 1.23+
 - Docker and Docker Compose (optional)
 - OPA CLI (optional, for policy testing)
 
-#### 1. Run with Embedded Mode
+### 1. Run with Embedded Mode
 
 ```bash
 # Navigate to the example directory
@@ -76,7 +72,7 @@ go run main.go -opa-mode embedded -policy-type rbac -policy-dir ./policies
 go run main.go -opa-mode embedded -policy-type abac -policy-dir ./policies
 ```
 
-#### 2. Run with Remote Mode (Docker)
+### 2. Run with Remote Mode (Docker)
 
 ```bash
 # Start OPA server and example applications
@@ -88,39 +84,84 @@ docker-compose up
 # - App (Remote): http://localhost:8081
 ```
 
-#### 3. Test the API
-
-**Admin user (full access):**
+### 3. Run with Configuration File
 
 ```bash
+# Using swit.yaml configuration file
+go run main.go -config swit.yaml
+```
+
+## API Testing
+
+### Admin User (Full Access)
+
+```bash
+# List all documents
 curl -H "X-User: alice" -H "X-Roles: admin" \
   http://localhost:8080/api/v1/documents
+
+# Create a document
+curl -X POST -H "X-User: alice" -H "X-Roles: admin" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"doc-4","title":"New Document","content":"Content"}' \
+  http://localhost:8080/api/v1/documents
+
+# Delete a document
+curl -X DELETE -H "X-User: alice" -H "X-Roles: admin" \
+  http://localhost:8080/api/v1/documents/doc-4
 ```
 
-**Editor user (read, create, update):**
+### Editor User (Read, Create, Update)
 
 ```bash
+# Read documents
 curl -H "X-User: bob" -H "X-Roles: editor" \
   http://localhost:8080/api/v1/documents
+
+# Create a document
+curl -X POST -H "X-User: bob" -H "X-Roles: editor" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"doc-5","title":"Bob Document","content":"Content"}' \
+  http://localhost:8080/api/v1/documents
+
+# Update a document
+curl -X PUT -H "X-User: bob" -H "X-Roles: editor" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Updated Title","content":"Updated Content"}' \
+  http://localhost:8080/api/v1/documents/doc-5
+
+# Delete a document (should be denied)
+curl -X DELETE -H "X-User: bob" -H "X-Roles: editor" \
+  http://localhost:8080/api/v1/documents/doc-5
 ```
 
-**Viewer user (read only):**
+### Viewer User (Read Only)
 
 ```bash
+# Read documents
 curl -H "X-User: charlie" -H "X-Roles: viewer" \
+  http://localhost:8080/api/v1/documents
+
+# Create a document (should be denied)
+curl -X POST -H "X-User: charlie" -H "X-Roles: viewer" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"doc-6","title":"Test","content":"Content"}' \
   http://localhost:8080/api/v1/documents
 ```
 
-**Try forbidden action (should fail):**
+### Anonymous User (No Access)
 
 ```bash
-curl -X DELETE -H "X-User: charlie" -H "X-Roles: viewer" \
-  http://localhost:8080/api/v1/documents/doc-1
+# Access documents (should be denied, except health check)
+curl http://localhost:8080/api/v1/documents
+
+# Health check (allows anonymous access)
+curl http://localhost:8080/api/v1/health
 ```
 
-### Configuration Options
+## Configuration Options
 
-#### Command-Line Flags
+### Command-Line Flags
 
 - `-port` - HTTP server port (default: 8080)
 - `-grpc-port` - gRPC server port (default: 9090)
@@ -128,44 +169,111 @@ curl -X DELETE -H "X-User: charlie" -H "X-Roles: viewer" \
 - `-opa-url` - OPA server URL for remote mode (default: http://localhost:8181)
 - `-policy-dir` - Policy directory for embedded mode (default: ./policies)
 - `-policy-type` - Policy type: `rbac` or `abac` (default: rbac)
+- `-config` - Configuration file path (default: swit.yaml)
 
-#### Environment Variables
+### Environment Variables
 
 - `OPA_MODE` - OPA mode
 - `OPA_URL` - OPA server URL
 - `POLICY_DIR` - Policy directory
 - `POLICY_TYPE` - Policy type
 
-### Policy Examples
+### Configuration File Example (swit.yaml)
 
-#### RBAC Policy
+See the [swit.yaml](swit.yaml) file for a complete OPA configuration example.
+
+## Policy Explanation
+
+### RBAC Policy (Role-Based Access Control)
 
 The RBAC policy defines role-based permissions:
 
-- **admin** - Full access to all resources
-- **editor** - Can create, read, and update documents
-- **viewer** - Can only read documents
-- **Resource owner** - Can perform any action on their own documents
+#### Role Definitions
 
-#### ABAC Policy
+| Role | Permissions | Description |
+|------|-------------|-------------|
+| **admin** | Full access | Complete access to all resources |
+| **editor** | Read, Create, Update | Can create, read, and update documents (no delete) |
+| **viewer** | Read only | Can only read documents, no modifications |
+| **owner** | Resource owner | Can perform any action on owned documents |
 
-The ABAC policy adds attribute-based constraints:
+#### RBAC Rule Examples
 
-- **Time-based** - Access restricted to business hours (9:00-18:00)
-- **IP-based** - Access restricted to allowed IP ranges
-- **Resource attributes** - Fine-grained control based on resource properties
-- **Context-aware** - Decisions based on request context
+```rego
+# Admin has all permissions
+allow if {
+    "admin" in input.subject.roles
+}
 
-### Testing
+# Editor can create, read, and update documents
+allow if {
+    "editor" in input.subject.roles
+    input.action in ["GET", "POST", "PUT"]
+    startswith(input.resource.path, "/api/v1/documents")
+}
 
-#### Unit Tests
+# Viewer can only read documents
+allow if {
+    "viewer" in input.subject.roles
+    input.action == "GET"
+    startswith(input.resource.path, "/api/v1/documents")
+}
+```
+
+### ABAC Policy (Attribute-Based Access Control)
+
+The ABAC policy adds attribute-based constraints for more fine-grained access control:
+
+#### Attribute Types
+
+| Attribute Type | Description | Example |
+|----------------|-------------|---------|
+| **Time-based** | Access restricted to business hours (9:00-18:00) | Editors can only modify documents during work hours |
+| **IP-based** | Access restricted to allowed IP ranges | Only internal IPs (192.168.x.x, 172.x.x.x) |
+| **Resource attributes** | Fine-grained control based on resource properties | Document owner, document type, etc. |
+| **Context attributes** | Decisions based on request context | Request protocol, user agent, etc. |
+
+#### ABAC Rule Examples
+
+```rego
+# Editors can only modify documents during business hours and from allowed IPs
+allow if {
+    "editor" in input.subject.roles
+    input.action in ["POST", "PUT"]
+    input.resource.type == "document"
+    is_business_hours
+    is_allowed_ip
+}
+
+# Check if it's business hours (9:00 - 18:00)
+is_business_hours if {
+    hour := time.clock([input.context.time, "UTC"])[0]
+    hour >= 9
+    hour < 18
+}
+
+# Check if IP address is in allowed range
+is_allowed_ip if {
+    startswith(input.context.client_ip, "192.168.")
+}
+```
+
+## Testing
+
+### Unit Tests
 
 ```bash
 # Run unit tests
 go test ./pkg/security/opa/...
+
+# Run specific tests
+go test -run TestEmbeddedClient ./pkg/security/opa/...
+
+# View test coverage
+go test -cover ./pkg/security/opa/...
 ```
 
-#### Integration Tests
+### Integration Tests
 
 ```bash
 # Run integration tests (requires integration tag)
@@ -175,27 +283,60 @@ go test -tags=integration ./pkg/security/opa/...
 OPA_URL=http://localhost:8181 go test -tags=integration ./pkg/security/opa/...
 ```
 
-#### Benchmark Tests
+### Policy Tests
+
+```bash
+# Test policies using OPA CLI
+cd policies
+
+# Test RBAC policy
+opa eval -d rbac.rego 'data.rbac.allow' \
+  -i test_input_rbac.json
+
+# Test ABAC policy
+opa eval -d abac.rego 'data.abac.allow' \
+  -i test_input_abac.json
+
+# Check policy syntax
+opa check rbac.rego abac.rego
+```
+
+### Benchmark Tests
 
 ```bash
 # Run performance benchmarks
 go test -bench=. -benchmem ./pkg/security/opa/...
+
+# Run specific benchmark
+go test -bench=BenchmarkEmbeddedClientEvaluate ./pkg/security/opa/...
 ```
 
-### Performance
+## Performance
 
 The example demonstrates OPA's high-performance policy evaluation:
 
-- **P99 latency** - < 5ms for embedded mode
-- **Throughput** - 10,000+ decisions/sec (embedded, cached)
-- **Cache hit ratio** - > 90% with proper cache configuration
+| Metric | Embedded Mode | Remote Mode |
+|--------|---------------|-------------|
+| **P50 latency** | < 1ms | < 10ms |
+| **P99 latency** | < 5ms | < 50ms |
+| **Throughput** | 10,000+ decisions/sec | 5,000+ decisions/sec |
+| **Cache hit ratio** | > 90% | > 85% |
 
-### Directory Structure
+### Performance Optimization Tips
+
+1. **Enable decision caching** - Reduce repeated policy evaluations
+2. **Use embedded mode** - Avoid network overhead
+3. **Optimize policy rules** - Reduce computational complexity
+4. **Batch evaluation** - Evaluate multiple decisions at once
+
+## Directory Structure
 
 ```
 examples/opa-authorization/
 ├── main.go                 # Main application
-├── README.md              # This file
+├── README.md              # English documentation
+├── README-CN.md           # Chinese documentation
+├── swit.yaml              # Configuration file example
 ├── Dockerfile             # Container image definition
 ├── docker-compose.yml     # Multi-container setup
 └── policies/              # OPA policies
@@ -203,274 +344,142 @@ examples/opa-authorization/
     └── abac.rego          # ABAC policy
 ```
 
-### Troubleshooting
+## Troubleshooting
 
-#### OPA Server Connection Failed
+### OPA Server Connection Failed
 
 ```bash
 # Check if OPA server is running
 curl http://localhost:8181/health
 
+# View OPA server logs
+docker logs opa-server
+
 # Start OPA server manually
-docker run -p 8181:8181 openpolicyagent/opa:latest run --server
+docker run -p 8181:8181 openpolicyagent/opa:latest run --server --log-level=debug
 ```
 
-#### Policy Evaluation Failed
+### Policy Evaluation Failed
 
 ```bash
 # Test policy with OPA CLI
-opa eval -d policies/rbac.rego 'data.rbac.allow' -i input.json
+cd policies
+opa eval -d rbac.rego 'data.rbac.allow' -i <(echo '
+{
+  "subject": {"user": "alice", "roles": ["admin"]},
+  "action": "GET",
+  "resource": {"path": "/api/v1/documents", "type": "document"}
+}')
 
 # Check policy syntax
 opa check policies/
+
+# View detailed policy evaluation
+opa eval -d rbac.rego 'data.rbac' --explain full -i input.json
 ```
 
-#### Permission Denied Unexpectedly
+### Unexpected Permission Denied
 
-- Check the request headers (`X-User`, `X-Roles`)
-- Review audit logs for decision reasons
-- Verify policy rules match your use case
+Common causes and solutions:
 
-### References
+1. **Missing or incorrect request headers**
+   - Check `X-User` and `X-Roles` headers
+   - Ensure role names are spelled correctly
 
-- [OPA Documentation](https://www.openpolicyagent.org/docs/)
-- [Rego Language](https://www.openpolicyagent.org/docs/latest/policy-language/)
+2. **Policy path mismatch**
+   - Check policy decision path configuration
+   - Confirm correct policy package name (rbac/abac)
+
+3. **Incorrect input data format**
+   - Review audit logs for decision reasons
+   - Verify policy input data structure
+
+4. **Cache issues**
+   - Clear decision cache and retry
+   - Check cache TTL configuration
+
+### Performance Issues
+
+```bash
+# View policy evaluation performance
+go test -bench=BenchmarkEmbeddedClientEvaluate -benchmem ./pkg/security/opa/
+
+# Enable verbose logging to identify bottlenecks
+go run main.go -opa-mode embedded --log-level=debug
+
+# Monitor OPA server performance (remote mode)
+curl http://localhost:8181/metrics
+```
+
+## Best Practices
+
+### 1. Policy Design
+
+- **Principle of least privilege** - Default deny, explicit allow
+- **Role hierarchy** - Design reasonable role hierarchies
+- **Policy modularization** - Split policies into reusable modules
+- **Audit logging** - Record all decisions for auditing
+
+### 2. Performance Optimization
+
+- **Enable caching** - For decisions that don't change frequently
+- **Use embedded mode** - When policies don't need hot updates
+- **Batch evaluation** - Evaluate multiple related decisions at once
+- **Optimize policy rules** - Avoid complex loops and recursion
+
+### 3. Security Considerations
+
+- **Sensitive data protection** - Don't include sensitive info in policy input
+- **Policy version control** - Use Git to manage policy versions
+- **Policy testing** - Write comprehensive policy test cases
+- **Regular audits** - Regularly review policy decision logs
+
+### 4. Operations Recommendations
+
+- **Monitoring and alerting** - Monitor policy evaluation performance and error rates
+- **Policy hot updates** - Use remote mode for policy hot updates
+- **Disaster recovery** - Prepare policy rollback plans
+- **Documentation maintenance** - Keep policy documentation in sync with code
+
+## Extended Examples
+
+### Multi-Tenant Scenario
+
+See `pkg/security/opa/policies/examples/multi_tenant_abac.rego` for multi-tenant isolation example.
+
+### Financial System Scenario
+
+See `pkg/security/opa/policies/examples/financial_abac.rego` for financial-grade access control.
+
+### Healthcare System Scenario
+
+See `pkg/security/opa/policies/examples/healthcare_abac.rego` for healthcare data access control.
+
+## References
+
+### Official Documentation
+
+- [OPA Official Documentation](https://www.openpolicyagent.org/docs/)
+- [Rego Language Reference](https://www.openpolicyagent.org/docs/latest/policy-language/)
+- [OPA REST API](https://www.openpolicyagent.org/docs/latest/rest-api/)
+
+### Project Documentation
+
 - [OPA RBAC Guide](../../docs/opa-rbac-guide.md)
 - [OPA ABAC Guide](../../docs/opa-abac-guide.md)
+- [OPA Policy Guide](../../docs/opa-policy-guide.md)
+- [Security Configuration Reference](../../docs/security-configuration-reference.md)
 
----
+### Related Examples
 
-## 中文
+- [OAuth2 Authentication Example](../oauth2-authentication/)
+- [mTLS Example](../security/)
+- [Comprehensive Security Example](../security/)
 
-本示例演示如何在微服务中集成 Open Policy Agent (OPA) 实现细粒度授权，支持嵌入式和远程 OPA 模式以及 RBAC 和 ABAC 策略。
+## Contributing
 
-### 功能特性
+Contributions of more policy examples and use cases are welcome! Please refer to the [Contributing Guide](../../CONTRIBUTING.md).
 
-- ✅ **嵌入式 OPA 模式** - OPA 引擎运行在同一进程中
-- ✅ **远程 OPA 模式** - 连接到外部 OPA 服务器
-- ✅ **RBAC 策略** - 基于角色的访问控制
-- ✅ **ABAC 策略** - 基于属性的访问控制
-- ✅ **HTTP 中间件** - 基于 Gin 的策略执行
-- ✅ **gRPC 拦截器** - gRPC 策略执行
-- ✅ **决策缓存** - 性能优化
-- ✅ **审计日志** - 策略决策追踪
-- ✅ **Docker 支持** - 完整的容器化部署
+## License
 
-### 架构
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    客户端请求                             │
-└───────────────┬─────────────────────────────────────────┘
-                │
-                ├─── HTTP (端口 8080)
-                │    │
-                │    v
-                │    ┌──────────────────────────┐
-                │    │  Gin 路由器              │
-                │    │  + OPA 中间件            │
-                │    └───────────┬──────────────┘
-                │                │
-                └─── gRPC (端口 9090)
-                     │
-                     v
-                     ┌──────────────────────────┐
-                     │  gRPC 服务器             │
-                     │  + 策略拦截器            │
-                     └───────────┬──────────────┘
-                                 │
-        ┌────────────────────────┴────────────────────────┐
-        │                                                  │
-        v                                                  v
-┌───────────────────┐                           ┌──────────────────┐
-│  嵌入式 OPA       │                           │  远程 OPA        │
-│  (进程内)         │                           │  (外部服务)      │
-│  - RBAC 策略      │                           │  - 端口 8181     │
-│  - ABAC 策略      │                           │  - 负载均衡      │
-│  - 本地缓存       │                           │  - 健康检查      │
-└───────────────────┘                           └──────────────────┘
-```
-
-### 快速开始
-
-#### 前置要求
-
-- Go 1.23+
-- Docker 和 Docker Compose（可选）
-- OPA CLI（可选，用于策略测试）
-
-#### 1. 使用嵌入式模式运行
-
-```bash
-# 进入示例目录
-cd examples/opa-authorization
-
-# 使用 RBAC 策略运行
-go run main.go -opa-mode embedded -policy-type rbac -policy-dir ./policies
-
-# 使用 ABAC 策略运行
-go run main.go -opa-mode embedded -policy-type abac -policy-dir ./policies
-```
-
-#### 2. 使用远程模式运行（Docker）
-
-```bash
-# 启动 OPA 服务器和示例应用
-docker-compose up
-
-# 以下服务将可用：
-# - OPA 服务器: http://localhost:8181
-# - 应用（嵌入式）: http://localhost:8080
-# - 应用（远程）: http://localhost:8081
-```
-
-#### 3. 测试 API
-
-**管理员用户（完全访问权限）：**
-
-```bash
-curl -H "X-User: alice" -H "X-Roles: admin" \
-  http://localhost:8080/api/v1/documents
-```
-
-**编辑者用户（读取、创建、更新）：**
-
-```bash
-curl -H "X-User: bob" -H "X-Roles: editor" \
-  http://localhost:8080/api/v1/documents
-```
-
-**查看者用户（仅读取）：**
-
-```bash
-curl -H "X-User: charlie" -H "X-Roles: viewer" \
-  http://localhost:8080/api/v1/documents
-```
-
-**尝试禁止的操作（应该失败）：**
-
-```bash
-curl -X DELETE -H "X-User: charlie" -H "X-Roles: viewer" \
-  http://localhost:8080/api/v1/documents/doc-1
-```
-
-### 配置选项
-
-#### 命令行标志
-
-- `-port` - HTTP 服务器端口（默认：8080）
-- `-grpc-port` - gRPC 服务器端口（默认：9090）
-- `-opa-mode` - OPA 模式：`embedded` 或 `remote`（默认：embedded）
-- `-opa-url` - 远程模式的 OPA 服务器 URL（默认：http://localhost:8181）
-- `-policy-dir` - 嵌入式模式的策略目录（默认：./policies）
-- `-policy-type` - 策略类型：`rbac` 或 `abac`（默认：rbac）
-
-#### 环境变量
-
-- `OPA_MODE` - OPA 模式
-- `OPA_URL` - OPA 服务器 URL
-- `POLICY_DIR` - 策略目录
-- `POLICY_TYPE` - 策略类型
-
-### 策略示例
-
-#### RBAC 策略
-
-RBAC 策略定义了基于角色的权限：
-
-- **admin** - 对所有资源的完全访问权限
-- **editor** - 可以创建、读取和更新文档
-- **viewer** - 只能读取文档
-- **资源所有者** - 可以对自己的文档执行任何操作
-
-#### ABAC 策略
-
-ABAC 策略添加了基于属性的约束：
-
-- **基于时间** - 访问限制在工作时间（9:00-18:00）
-- **基于 IP** - 访问限制在允许的 IP 范围内
-- **资源属性** - 基于资源属性的细粒度控制
-- **上下文感知** - 基于请求上下文的决策
-
-### 测试
-
-#### 单元测试
-
-```bash
-# 运行单元测试
-go test ./pkg/security/opa/...
-```
-
-#### 集成测试
-
-```bash
-# 运行集成测试（需要 integration 标签）
-go test -tags=integration ./pkg/security/opa/...
-
-# 使用远程 OPA（需要 OPA 服务器运行）
-OPA_URL=http://localhost:8181 go test -tags=integration ./pkg/security/opa/...
-```
-
-#### 基准测试
-
-```bash
-# 运行性能基准测试
-go test -bench=. -benchmem ./pkg/security/opa/...
-```
-
-### 性能
-
-示例展示了 OPA 的高性能策略评估：
-
-- **P99 延迟** - 嵌入式模式 < 5ms
-- **吞吐量** - 10,000+ 决策/秒（嵌入式，有缓存）
-- **缓存命中率** - 正确配置下 > 90%
-
-### 目录结构
-
-```
-examples/opa-authorization/
-├── main.go                 # 主应用程序
-├── README.md              # 本文件
-├── Dockerfile             # 容器镜像定义
-├── docker-compose.yml     # 多容器配置
-└── policies/              # OPA 策略
-    ├── rbac.rego          # RBAC 策略
-    └── abac.rego          # ABAC 策略
-```
-
-### 故障排查
-
-#### OPA 服务器连接失败
-
-```bash
-# 检查 OPA 服务器是否运行
-curl http://localhost:8181/health
-
-# 手动启动 OPA 服务器
-docker run -p 8181:8181 openpolicyagent/opa:latest run --server
-```
-
-#### 策略评估失败
-
-```bash
-# 使用 OPA CLI 测试策略
-opa eval -d policies/rbac.rego 'data.rbac.allow' -i input.json
-
-# 检查策略语法
-opa check policies/
-```
-
-#### 意外的权限拒绝
-
-- 检查请求头（`X-User`、`X-Roles`）
-- 查看审计日志了解决策原因
-- 验证策略规则是否匹配您的用例
-
-### 参考资料
-
-- [OPA 文档](https://www.openpolicyagent.org/docs/)
-- [Rego 语言](https://www.openpolicyagent.org/docs/latest/policy-language/)
-- [OPA RBAC 指南](../../docs/opa-rbac-guide.md)
-- [OPA ABAC 指南](../../docs/opa-abac-guide.md)
-
+Apache License 2.0 - See [LICENSE](../../LICENSE) file for details.

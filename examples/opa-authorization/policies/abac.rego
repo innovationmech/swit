@@ -27,13 +27,13 @@ default allow := false
 
 # 规则 1: 管理员绕过所有检查
 allow if {
-    "admin" in input.subject.roles
+    "admin" in input.user.roles
 }
 
 # 规则 2: 基于时间和 IP 的访问控制
 allow if {
     # 用户必须有有效角色
-    count(input.subject.roles) > 0
+    count(input.user.roles) > 0
     # 必须是工作时间 (假设 Unix 时间戳)
     is_business_hours
     # IP 地址必须在允许的范围内
@@ -44,7 +44,7 @@ allow if {
 
 # 规则 3: 资源所有者访问
 allow if {
-    input.resource.owner == input.subject.user
+    input.resource.owner == input.user.username
     is_allowed_action
 }
 
@@ -54,44 +54,44 @@ allow if {
 
 # 检查是否是工作时间 (9:00 - 18:00)
 is_business_hours if {
-    not input.context.time
+    not input.request.time
 }
 
 is_business_hours if {
-    input.context.time
+    input.request.time
     # 简化版本：实际应用中应该检查时区和具体小时
     # 这里仅做示范
-    hour := time.clock([input.context.time, "UTC"])[0]
+    hour := time.clock([input.request.time, "UTC"])[0]
     hour >= 9
     hour < 18
 }
 
 # 检查 IP 地址是否在允许的范围内
 is_allowed_ip if {
-    not input.context.client_ip
+    not input.request.client_ip
 }
 
 is_allowed_ip if {
-    input.context.client_ip
+    input.request.client_ip
     # 允许内网 IP
-    startswith(input.context.client_ip, "192.168.")
+    startswith(input.request.client_ip, "192.168.")
 }
 
 is_allowed_ip if {
-    input.context.client_ip
+    input.request.client_ip
     # 允许本地 IP
-    startswith(input.context.client_ip, "127.0.")
+    startswith(input.request.client_ip, "127.0.")
 }
 
 is_allowed_ip if {
-    input.context.client_ip
+    input.request.client_ip
     # 允许 Docker 网络
-    startswith(input.context.client_ip, "172.")
+    startswith(input.request.client_ip, "172.")
 }
 
 # 检查操作是否被允许
 is_allowed_action if {
-    input.action in ["GET", "POST", "PUT", "DELETE"]
+    input.request.method in ["GET", "POST", "PUT", "DELETE"]
 }
 
 # ===================================
@@ -100,8 +100,8 @@ is_allowed_action if {
 
 # 编辑者只能在工作时间修改文档
 allow if {
-    "editor" in input.subject.roles
-    input.action in ["POST", "PUT"]
+    "editor" in input.user.roles
+    input.request.method in ["POST", "PUT"]
     input.resource.type == "document"
     is_business_hours
     is_allowed_ip
@@ -109,8 +109,8 @@ allow if {
 
 # 查看者可以随时查看文档（不受时间限制）
 allow if {
-    "viewer" in input.subject.roles
-    input.action == "GET"
+    "viewer" in input.user.roles
+    input.request.method == "GET"
     input.resource.type == "document"
     is_allowed_ip
 }
@@ -120,12 +120,12 @@ allow if {
 # ===================================
 
 reason contains msg if {
-    "admin" in input.subject.roles
+    "admin" in input.user.roles
     msg := "Access granted: User has admin role"
 }
 
 reason contains msg if {
-    input.resource.owner == input.subject.user
+    input.resource.owner == input.user.username
     msg := "Access granted: User is resource owner"
 }
 
@@ -136,11 +136,10 @@ reason contains msg if {
 
 reason contains msg if {
     not is_allowed_ip
-    msg := sprintf("Access denied: IP address %s not in allowed range", [input.context.client_ip])
+    msg := sprintf("Access denied: IP address %s not in allowed range", [input.request.client_ip])
 }
 
 reason contains msg if {
     not allow
     msg := "Access denied: Policy conditions not met"
 }
-
