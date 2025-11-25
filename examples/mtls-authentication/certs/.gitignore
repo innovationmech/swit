@@ -1,0 +1,10 @@
+# Ignore all generated certificates
+*.pem
+*.crt
+*.key
+*.csr
+*.srl
+
+# Keep this .gitignore file
+!.gitignore
+
