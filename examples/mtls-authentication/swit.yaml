@@ -1,0 +1,135 @@
+# mTLS Authentication Example Service Configuration
+# This configuration demonstrates mutual TLS (mTLS) authentication
+# where both server and client verify each other's certificates.
+
+service_name: "mtls-authentication-example"
+shutdown_timeout: "30s"
+
+# HTTP Configuration with mTLS
+http:
+  enabled: true
+  port: "8443"
+  enable_ready: true
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+  
+  # TLS/mTLS Configuration
+  tls:
+    enabled: true
+    
+    # Server certificate and key
+    cert_file: "certs/server.crt"
+    key_file: "certs/server.key"
+    
+    # CA certificates for client verification
+    ca_files:
+      - "certs/ca.crt"
+    
+    # Client authentication mode:
+    # - none: No client certificate required
+    # - request: Request client certificate but don't require it
+    # - require: Require any client certificate
+    # - verify_if_given: Verify client certificate if provided
+    # - require_and_verify: Require and verify client certificate (full mTLS)
+    client_auth: "require_and_verify"
+    
+    # TLS version constraints
+    min_version: "TLS1.2"
+    max_version: "TLS1.3"
+    
+    # Cipher suites (optional, uses secure defaults if not specified)
+    cipher_suites:
+      - "TLS_AES_256_GCM_SHA384"
+      - "TLS_CHACHA20_POLY1305_SHA256"
+      - "TLS_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
+      - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305"
+      - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+    
+    # Curve preferences for ECDHE
+    curve_preferences:
+      - "X25519"
+      - "P256"
+      - "P384"
+    
+    # Security settings
+    prefer_server_cipher_suites: true
+    session_tickets_disabled: false
+    renegotiation: "never"
+    
+    # ALPN protocols
+    next_protos:
+      - "h2"
+      - "http/1.1"
+
+# gRPC Configuration with mTLS (optional)
+grpc:
+  enabled: true
+  port: "50443"
+  enable_reflection: true
+  enable_health_service: true
+  max_recv_msg_size: 4194304  # 4MB
+  max_send_msg_size: 4194304  # 4MB
+  
+  # gRPC TLS/mTLS Configuration
+  tls:
+    enabled: true
+    cert_file: "certs/server.crt"
+    key_file: "certs/server.key"
+    ca_files:
+      - "certs/ca.crt"
+    client_auth: "require_and_verify"
+    min_version: "TLS1.2"
+    max_version: "TLS1.3"
+
+# Middleware Configuration
+middleware:
+  enable_cors: false
+  enable_logging: true
+  enable_recovery: true
+
+# Service Discovery (disabled for this example)
+discovery:
+  enabled: false
+
+# Prometheus Metrics
+prometheus:
+  enabled: true
+  endpoint: "/metrics"
+  namespace: "swit"
+  subsystem: "mtls_example"
+  labels:
+    service: "mtls-authentication-example"
+    version: "v1"
+  buckets:
+    duration:
+      - 0.001
+      - 0.005
+      - 0.01
+      - 0.025
+      - 0.05
+      - 0.1
+      - 0.25
+      - 0.5
+      - 1.0
+      - 2.5
+      - 5.0
+      - 10.0
+    size:
+      - 100
+      - 1000
+      - 10000
+      - 100000
+      - 1000000
+  cardinality_limit: 1000
+
+# Logging Configuration
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
