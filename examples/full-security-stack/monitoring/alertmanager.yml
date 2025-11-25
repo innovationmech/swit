@@ -1,0 +1,130 @@
+# Alertmanager Configuration for Full Security Stack Example
+# This configuration defines how alerts are routed and handled
+
+global:
+  # The smarthost and SMTP sender used for mail notifications.
+  # smtp_smarthost: 'smtp.example.com:587'
+  # smtp_from: 'alertmanager@example.com'
+  # smtp_auth_username: 'alertmanager'
+  # smtp_auth_password: 'password'
+  
+  # The auth token for Slack.
+  # slack_api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+  
+  resolve_timeout: 5m
+
+# The directory from which notification templates are read.
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# The root route on which each incoming alert enters.
+route:
+  # The labels by which incoming alerts are grouped together.
+  group_by: ['alertname', 'category', 'severity']
+  
+  # When a new group of alerts is created by an incoming alert, wait at
+  # least 'group_wait' to send the initial notification.
+  group_wait: 30s
+  
+  # When the first notification was sent, wait 'group_interval' to send a batch
+  # of new alerts that started firing for that group.
+  group_interval: 5m
+  
+  # If an alert has successfully been sent, wait 'repeat_interval' to
+  # resend them.
+  repeat_interval: 4h
+  
+  # Default receiver
+  receiver: 'default-receiver'
+  
+  # Child routes
+  routes:
+    # Critical security alerts go to security team
+    - match:
+        severity: critical
+        category: security
+      receiver: 'security-critical'
+      group_wait: 10s
+      repeat_interval: 1h
+    
+    # Warning security alerts
+    - match:
+        severity: warning
+        category: security
+      receiver: 'security-warning'
+      group_wait: 30s
+      repeat_interval: 2h
+    
+    # Availability alerts
+    - match:
+        category: availability
+      receiver: 'ops-team'
+      group_wait: 10s
+      repeat_interval: 1h
+    
+    # Performance alerts
+    - match:
+        category: performance
+      receiver: 'ops-team'
+      group_wait: 1m
+      repeat_interval: 2h
+
+# Inhibition rules allow to mute a set of alerts given that another alert is firing.
+inhibit_rules:
+  # If a critical alert is firing, inhibit warning alerts for the same alertname
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+  
+  # If service is down, inhibit all other alerts for that service
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '.+'
+    equal: ['job']
+
+# Receivers define notification integrations
+receivers:
+  # Default receiver - logs to console
+  - name: 'default-receiver'
+    webhook_configs:
+      - url: 'http://app:8080/api/v1/admin/alerts'
+        send_resolved: true
+
+  # Security critical alerts
+  - name: 'security-critical'
+    webhook_configs:
+      - url: 'http://app:8080/api/v1/admin/alerts'
+        send_resolved: true
+    # Uncomment to enable email notifications
+    # email_configs:
+    #   - to: 'security-team@example.com'
+    #     send_resolved: true
+    #     headers:
+    #       Subject: '[CRITICAL] Security Alert: {{ .GroupLabels.alertname }}'
+    
+    # Uncomment to enable Slack notifications
+    # slack_configs:
+    #   - channel: '#security-alerts'
+    #     send_resolved: true
+    #     title: '{{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+
+  # Security warning alerts
+  - name: 'security-warning'
+    webhook_configs:
+      - url: 'http://app:8080/api/v1/admin/alerts'
+        send_resolved: true
+
+  # Operations team alerts
+  - name: 'ops-team'
+    webhook_configs:
+      - url: 'http://app:8080/api/v1/admin/alerts'
+        send_resolved: true
+    # Uncomment to enable PagerDuty
+    # pagerduty_configs:
+    #   - service_key: '<your-service-key>'
+    #     send_resolved: true
+

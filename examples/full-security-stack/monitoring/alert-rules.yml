@@ -1,0 +1,191 @@
+# Alert Rules for Full Security Stack Example
+# These rules define alerts for security and operational events
+
+groups:
+  # ==========================================
+  # Security Alerts
+  # ==========================================
+  - name: security_alerts
+    interval: 30s
+    rules:
+      # High rate of authentication failures
+      - alert: HighAuthFailureRate
+        expr: |
+          sum(rate(security_auth_attempts_total{result="failed"}[5m])) /
+          sum(rate(security_auth_attempts_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High authentication failure rate detected"
+          description: "Authentication failure rate is above 10% for the last 5 minutes"
+          runbook_url: "https://docs.example.com/runbooks/high-auth-failure"
+
+      # Potential brute force attack
+      - alert: PotentialBruteForceAttack
+        expr: |
+          sum(rate(security_auth_attempts_total{result="failed"}[1m])) > 10
+        for: 2m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Potential brute force attack detected"
+          description: "More than 10 failed authentication attempts per minute"
+          runbook_url: "https://docs.example.com/runbooks/brute-force"
+
+      # High rate of policy denials
+      - alert: HighPolicyDenialRate
+        expr: |
+          sum(rate(security_policy_evaluations_total{decision="deny"}[5m])) /
+          sum(rate(security_policy_evaluations_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High policy denial rate detected"
+          description: "Policy denial rate is above 20% for the last 5 minutes"
+
+      # Critical security events
+      - alert: CriticalSecurityEvent
+        expr: |
+          sum(rate(security_security_events_total{severity="critical"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Critical security event detected"
+          description: "A critical security event has been recorded"
+
+      # Certificate expiring soon
+      - alert: CertificateExpiringSoon
+        expr: |
+          security_certificate_expiry_seconds < 604800
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "TLS certificate expiring soon"
+          description: "TLS certificate will expire in less than 7 days"
+
+  # ==========================================
+  # Application Health Alerts
+  # ==========================================
+  - name: application_health
+    interval: 30s
+    rules:
+      # Service down
+      - alert: ServiceDown
+        expr: up{job="full-security-stack"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Full Security Stack service is down"
+          description: "The service has been unreachable for more than 1 minute"
+
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "High HTTP error rate detected"
+          description: "HTTP 5xx error rate is above 5% for the last 5 minutes"
+
+      # High latency
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High request latency detected"
+          description: "95th percentile latency is above 1 second"
+
+  # ==========================================
+  # OPA Alerts
+  # ==========================================
+  - name: opa_alerts
+    interval: 30s
+    rules:
+      # OPA server down
+      - alert: OPAServerDown
+        expr: up{job="opa"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "OPA server is down"
+          description: "OPA server has been unreachable for more than 1 minute"
+
+      # High OPA evaluation latency
+      - alert: HighOPAEvaluationLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(security_policy_evaluation_duration_seconds_bucket[5m])) by (le)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High OPA policy evaluation latency"
+          description: "95th percentile OPA evaluation latency is above 100ms"
+
+  # ==========================================
+  # Keycloak Alerts
+  # ==========================================
+  - name: keycloak_alerts
+    interval: 30s
+    rules:
+      # Keycloak down
+      - alert: KeycloakDown
+        expr: up{job="keycloak"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Keycloak server is down"
+          description: "Keycloak has been unreachable for more than 1 minute"
+
+  # ==========================================
+  # Resource Alerts
+  # ==========================================
+  - name: resource_alerts
+    interval: 30s
+    rules:
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          process_resident_memory_bytes / 1024 / 1024 > 500
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High memory usage detected"
+          description: "Process memory usage is above 500MB"
+
+      # High goroutine count
+      - alert: HighGoroutineCount
+        expr: go_goroutines > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High goroutine count detected"
+          description: "Number of goroutines is above 1000"
+
