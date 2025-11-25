@@ -1,0 +1,16 @@
+# Grafana Dashboard Provisioning
+# This file configures dashboard auto-loading
+
+apiVersion: 1
+
+providers:
+  - name: 'Full Security Stack'
+    orgId: 1
+    folder: 'Security'
+    folderUid: 'security'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+
