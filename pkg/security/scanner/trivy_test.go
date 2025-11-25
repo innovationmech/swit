@@ -454,4 +454,3 @@ func TestTrivyScanner_parseTrivyOutputVulnerabilityRemediation(t *testing.T) {
 		t.Error("Remediation should not be empty even when no fix is available")
 	}
 }
-

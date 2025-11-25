@@ -412,4 +412,3 @@ func TestGovulncheckScanner_convertVulnerabilityToFindings(t *testing.T) {
 		t.Errorf("Expected at least 2 references, got %d", len(finding.References))
 	}
 }
-

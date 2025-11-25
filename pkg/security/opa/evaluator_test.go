@@ -683,4 +683,3 @@ func createTestEvaluator(t *testing.T) *Evaluator {
 
 	return NewEvaluator(client)
 }
-
