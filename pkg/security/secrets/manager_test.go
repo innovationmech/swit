@@ -800,3 +800,450 @@ func TestMemoryProvider(t *testing.T) {
 		t.Error("IsReadOnly() = true, want false")
 	}
 }
+
+func TestMemoryProvider_GetSecretValue(t *testing.T) {
+	provider := NewMemoryProvider()
+	ctx := context.Background()
+
+	// Set a secret
+	err := provider.SetSecret(ctx, "test-key", "test-value")
+	if err != nil {
+		t.Fatalf("SetSecret() error = %v", err)
+	}
+
+	// Get secret value
+	value, err := provider.GetSecretValue(ctx, "test-key")
+	if err != nil {
+		t.Fatalf("GetSecretValue() error = %v", err)
+	}
+
+	if value != "test-value" {
+		t.Errorf("GetSecretValue() = %v, want test-value", value)
+	}
+
+	// Get non-existent secret value
+	_, err = provider.GetSecretValue(ctx, "non-existent")
+	if err != ErrSecretNotFound {
+		t.Errorf("GetSecretValue() error = %v, want %v", err, ErrSecretNotFound)
+	}
+}
+
+func TestMemoryProvider_SetSecretWithMetadata(t *testing.T) {
+	provider := NewMemoryProvider()
+	ctx := context.Background()
+
+	secret := &Secret{
+		Key:      "metadata-key",
+		Value:    "metadata-value",
+		Metadata: map[string]string{"env": "test", "app": "myapp"},
+	}
+
+	err := provider.SetSecretWithMetadata(ctx, secret)
+	if err != nil {
+		t.Fatalf("SetSecretWithMetadata() error = %v", err)
+	}
+
+	// Get the secret and verify metadata
+	retrieved, err := provider.GetSecret(ctx, "metadata-key")
+	if err != nil {
+		t.Fatalf("GetSecret() error = %v", err)
+	}
+
+	if retrieved.Metadata["env"] != "test" {
+		t.Errorf("Metadata[env] = %v, want test", retrieved.Metadata["env"])
+	}
+	if retrieved.Metadata["app"] != "myapp" {
+		t.Errorf("Metadata[app] = %v, want myapp", retrieved.Metadata["app"])
+	}
+}
+
+func TestMemoryProvider_DeleteSecretNotFound(t *testing.T) {
+	provider := NewMemoryProvider()
+	ctx := context.Background()
+
+	err := provider.DeleteSecret(ctx, "non-existent")
+	if err != ErrSecretNotFound {
+		t.Errorf("DeleteSecret() error = %v, want %v", err, ErrSecretNotFound)
+	}
+}
+
+func TestMemoryProvider_ListSecretsNoPrefix(t *testing.T) {
+	provider := NewMemoryProvider()
+	ctx := context.Background()
+
+	_ = provider.SetSecret(ctx, "key1", "value1")
+	_ = provider.SetSecret(ctx, "key2", "value2")
+	_ = provider.SetSecret(ctx, "key3", "value3")
+
+	keys, err := provider.ListSecrets(ctx, "")
+	if err != nil {
+		t.Fatalf("ListSecrets() error = %v", err)
+	}
+
+	if len(keys) != 3 {
+		t.Errorf("ListSecrets() returned %d keys, want 3", len(keys))
+	}
+}
+
+func TestMemoryProvider_Close(t *testing.T) {
+	provider := NewMemoryProvider()
+	err := provider.Close()
+	if err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+}
+
+func TestMemoryProvider_ExpiredSecret(t *testing.T) {
+	provider := NewMemoryProvider()
+	ctx := context.Background()
+
+	// Create an expired secret
+	expiredTime := time.Now().Add(-1 * time.Hour)
+	secret := &Secret{
+		Key:       "expired-key",
+		Value:     "expired-value",
+		ExpiresAt: &expiredTime,
+	}
+
+	err := provider.SetSecretWithMetadata(ctx, secret)
+	if err != nil {
+		t.Fatalf("SetSecretWithMetadata() error = %v", err)
+	}
+
+	// Get the expired secret - should return not found
+	_, err = provider.GetSecret(ctx, "expired-key")
+	if err != ErrSecretNotFound {
+		t.Errorf("GetSecret() error = %v, want %v (expired secret)", err, ErrSecretNotFound)
+	}
+}
+
+func TestManager_GetSecretEmptyKey(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	_, err = manager.GetSecret(ctx, "")
+	if err != ErrInvalidSecretKey {
+		t.Errorf("GetSecret() error = %v, want %v", err, ErrInvalidSecretKey)
+	}
+}
+
+func TestManager_GetSecretValue(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// Set a secret
+	err = manager.SetSecret(ctx, "value-key", "test-value")
+	if err != nil {
+		t.Fatalf("SetSecret() error = %v", err)
+	}
+
+	// Get secret value
+	value, err := manager.GetSecretValue(ctx, "value-key")
+	if err != nil {
+		t.Fatalf("GetSecretValue() error = %v", err)
+	}
+
+	if value != "test-value" {
+		t.Errorf("GetSecretValue() = %v, want test-value", value)
+	}
+
+	// Get non-existent secret value
+	_, err = manager.GetSecretValue(ctx, "non-existent")
+	if err != ErrSecretNotFound {
+		t.Errorf("GetSecretValue() error = %v, want %v", err, ErrSecretNotFound)
+	}
+}
+
+func TestManager_SetSecretEmptyKey(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	err = manager.SetSecret(ctx, "", "value")
+	if err != ErrInvalidSecretKey {
+		t.Errorf("SetSecret() error = %v, want %v", err, ErrInvalidSecretKey)
+	}
+}
+
+func TestManager_SetSecretWithMetadata(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	secret := &Secret{
+		Key:      "metadata-key",
+		Value:    "metadata-value",
+		Metadata: map[string]string{"env": "production"},
+	}
+
+	err = manager.SetSecretWithMetadata(ctx, secret)
+	if err != nil {
+		t.Fatalf("SetSecretWithMetadata() error = %v", err)
+	}
+
+	// Verify the secret was set
+	retrieved, err := manager.GetSecret(ctx, "metadata-key")
+	if err != nil {
+		t.Fatalf("GetSecret() error = %v", err)
+	}
+
+	if retrieved.Value != "metadata-value" {
+		t.Errorf("Value = %v, want metadata-value", retrieved.Value)
+	}
+}
+
+func TestManager_SetSecretWithMetadataNilSecret(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	err = manager.SetSecretWithMetadata(ctx, nil)
+	if err != ErrInvalidSecretKey {
+		t.Errorf("SetSecretWithMetadata() error = %v, want %v", err, ErrInvalidSecretKey)
+	}
+}
+
+func TestManager_SetSecretWithMetadataEmptyKey(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	secret := &Secret{
+		Key:   "",
+		Value: "value",
+	}
+
+	err = manager.SetSecretWithMetadata(ctx, secret)
+	if err != ErrInvalidSecretKey {
+		t.Errorf("SetSecretWithMetadata() error = %v, want %v", err, ErrInvalidSecretKey)
+	}
+}
+
+func TestManager_DeleteSecretEmptyKey(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	err = manager.DeleteSecret(ctx, "")
+	if err != ErrInvalidSecretKey {
+		t.Errorf("DeleteSecret() error = %v, want %v", err, ErrInvalidSecretKey)
+	}
+}
+
+func TestManager_RefreshDisabledCache(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+		Cache: &CacheConfig{
+			Enabled: false,
+		},
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	ctx := context.Background()
+
+	// Refresh should succeed even with cache disabled
+	err = manager.Refresh(ctx, "some-key")
+	if err != nil {
+		t.Errorf("Refresh() error = %v", err)
+	}
+}
+
+func TestNewManager_NilConfig(t *testing.T) {
+	_, err := NewManager(nil)
+	if err == nil {
+		t.Error("NewManager(nil) should return error")
+	}
+}
+
+func TestNewManager_NoEnabledProviders(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: false,
+			},
+		},
+	}
+
+	_, err := NewManager(config)
+	if err == nil {
+		t.Error("NewManager() should return error when no providers are enabled")
+	}
+}
+
+func TestNewManager_UnsupportedProviderType(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    "unsupported",
+				Enabled: true,
+			},
+		},
+	}
+
+	_, err := NewManager(config)
+	if err == nil {
+		t.Error("NewManager() should return error for unsupported provider type")
+	}
+}
+
+func TestManager_CacheDefaults(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+		// Cache is nil - should use defaults
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	// Verify default cache settings were applied
+	if manager.config.Cache == nil {
+		t.Error("Cache config should not be nil")
+	}
+	if !manager.config.Cache.Enabled {
+		t.Error("Cache should be enabled by default")
+	}
+	if manager.config.Cache.TTL != 5*time.Minute {
+		t.Errorf("Cache TTL = %v, want 5m", manager.config.Cache.TTL)
+	}
+}
+
+func TestManager_RefreshDefaults(t *testing.T) {
+	config := &ManagerConfig{
+		Providers: []*ProviderConfig{
+			{
+				Type:    ProviderTypeMemory,
+				Enabled: true,
+			},
+		},
+		// Refresh is nil - should use defaults
+	}
+
+	manager, err := NewManager(config)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	// Verify default refresh settings were applied
+	if manager.config.Refresh == nil {
+		t.Error("Refresh config should not be nil")
+	}
+	if manager.config.Refresh.Enabled {
+		t.Error("Refresh should be disabled by default")
+	}
+	if manager.config.Refresh.Interval != 10*time.Minute {
+		t.Errorf("Refresh Interval = %v, want 10m", manager.config.Refresh.Interval)
+	}
+}
