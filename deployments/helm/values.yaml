@@ -50,10 +50,17 @@ security:
     enabled: false
     # 客户端证书验证模式：require, optional, none
     clientAuthMode: "require"
-    # CA 证书 Secret 名称
+    # CA 证书 Secret 名称（如果使用已有的 Secret）
     caSecret: ""
-    # 客户端证书 Secret 名称
+    # CA 证书内容（Base64 编码，如果不使用 caSecret）
+    # 可以通过以下命令生成：cat ca.crt | base64 -w 0
+    caCert: ""
+    # 客户端证书 Secret 名称（如果使用已有的 Secret）
     clientCertSecret: ""
+    # 客户端证书内容（Base64 编码，如果不使用 clientCertSecret）
+    clientCert: ""
+    # 客户端私钥内容（Base64 编码，如果不使用 clientCertSecret）
+    clientKey: ""
   
   # OAuth2/OIDC 配置
   oauth2:
