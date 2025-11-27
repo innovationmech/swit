@@ -327,6 +327,62 @@ jobs:
             echo "✅ Coverage ${COVERAGE}% meets minimum threshold ${MIN_COVERAGE}%"
           fi
 
+      - name: Generate package-level coverage report
+        id: package-coverage
+        run: |
+          mkdir -p _output/coverage
+          
+          # Generate detailed package coverage report
+          go tool cover -func=coverage.out > _output/coverage/coverage-by-func.txt
+          
+          # Generate package summary
+          echo "## Package Coverage Summary" > _output/coverage/package-summary.md
+          echo "" >> _output/coverage/package-summary.md
+          echo "| Package | Coverage |" >> _output/coverage/package-summary.md
+          echo "|---------|----------|" >> _output/coverage/package-summary.md
+          
+          # Extract package-level coverage
+          go tool cover -func=coverage.out | grep -E "^[a-z]" | \
+            awk '{
+              split($1, path, ":")
+              pkg = path[1]
+              gsub(/.*\/swit\//, "", pkg)
+              coverage[pkg] += 1
+              if ($NF ~ /%/) {
+                pct = substr($NF, 1, length($NF)-1)
+                if (pct > max[pkg] || max[pkg] == "") max[pkg] = pct
+              }
+            }
+            END {
+              for (pkg in coverage) {
+                if (max[pkg] != "") printf "| %s | %s%% |\n", pkg, max[pkg]
+              }
+            }' | sort >> _output/coverage/package-summary.md
+          
+          # Calculate coverage for key packages
+          PKG_COVERAGE=$(go tool cover -func=coverage.out | grep "pkg/server" | tail -1 | awk '{print $3}' || echo "N/A")
+          echo "pkg_server_coverage=${PKG_COVERAGE}" >> $GITHUB_OUTPUT
+          
+          TRANSPORT_COVERAGE=$(go tool cover -func=coverage.out | grep "pkg/transport" | tail -1 | awk '{print $3}' || echo "N/A")
+          echo "pkg_transport_coverage=${TRANSPORT_COVERAGE}" >> $GITHUB_OUTPUT
+          
+          SECURITY_COVERAGE=$(go tool cover -func=coverage.out | grep "pkg/security" | tail -1 | awk '{print $3}' || echo "N/A")
+          echo "pkg_security_coverage=${SECURITY_COVERAGE}" >> $GITHUB_OUTPUT
+
+      - name: Generate coverage summary
+        run: |
+          echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Coverage**: ${{ steps.coverage-check.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+          echo "**Minimum Required**: ${{ env.MIN_COVERAGE }}%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Key Package Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| pkg/server | ${{ steps.package-coverage.outputs.pkg_server_coverage }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| pkg/transport | ${{ steps.package-coverage.outputs.pkg_transport_coverage }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| pkg/security | ${{ steps.package-coverage.outputs.pkg_security_coverage }} |" >> $GITHUB_STEP_SUMMARY
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@af09b5e394c93991b95a5e7646aeb90c1917f78f # v5.5.1
         with:
@@ -343,6 +399,7 @@ jobs:
           path: |
             coverage.out
             coverage.html
+            _output/coverage/
           retention-days: 30
 
       - name: Comment coverage on PR
