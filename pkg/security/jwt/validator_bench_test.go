@@ -17,12 +17,16 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
 
+// Package jwt provides JWT validation benchmarks.
+// Performance Target: < 1ms P99 for local JWT validation.
 package jwt
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"fmt"
 	"testing"
 	"time"
 
@@ -379,6 +383,351 @@ func BenchmarkInMemoryBlacklist_Blacklist(b *testing.B) {
 		err := bl.Blacklist(ctx, "token-"+string(rune(i)), expiry)
 		if err != nil {
 			b.Fatalf("Blacklist() error = %v", err)
+		}
+	}
+}
+
+// ============================================================================
+// RSA Key Validation Benchmarks
+// ============================================================================
+
+// BenchmarkValidator_ValidateTokenRSA benchmarks RSA token validation.
+func BenchmarkValidator_ValidateTokenRSA(b *testing.B) {
+	// Generate RSA key pair
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		b.Fatalf("Failed to generate RSA key: %v", err)
+	}
+
+	config := &Config{
+		PublicKey: &privateKey.PublicKey,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		b.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test token with RSA
+	claims := jwt.MapClaims{
+		"sub": "user123",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tokenString, err := token.SignedString(privateKey)
+	if err != nil {
+		b.Fatalf("Failed to sign token: %v", err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, err := validator.ValidateToken(tokenString)
+		if err != nil {
+			b.Fatalf("ValidateToken() error = %v", err)
+		}
+	}
+}
+
+// ============================================================================
+// Concurrent Validation Benchmarks
+// ============================================================================
+
+// BenchmarkValidator_ConcurrentValidation benchmarks concurrent token validation.
+func BenchmarkValidator_ConcurrentValidation(b *testing.B) {
+	secret := "test-secret-key-for-benchmarking"
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		b.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test token
+	claims := jwt.MapClaims{
+		"sub": "user123",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(secret))
+	if err != nil {
+		b.Fatalf("Failed to sign token: %v", err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := validator.ValidateToken(tokenString)
+			if err != nil {
+				b.Fatalf("ValidateToken() error = %v", err)
+			}
+		}
+	})
+}
+
+// BenchmarkValidator_ConcurrentWithBlacklist benchmarks concurrent validation with blacklist.
+func BenchmarkValidator_ConcurrentWithBlacklist(b *testing.B) {
+	secret := "test-secret-key-for-benchmarking"
+	config := &Config{
+		Secret: secret,
+	}
+
+	blacklist := NewInMemoryBlacklist()
+	defer blacklist.Stop()
+
+	validator, err := NewValidator(config, WithBlacklist(blacklist))
+	if err != nil {
+		b.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test token
+	claims := jwt.MapClaims{
+		"sub": "user123",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(secret))
+	if err != nil {
+		b.Fatalf("Failed to sign token: %v", err)
+	}
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := validator.ValidateWithContext(ctx, tokenString)
+			if err != nil {
+				b.Fatalf("ValidateWithContext() error = %v", err)
+			}
+		}
+	})
+}
+
+// ============================================================================
+// Large Payload Benchmarks
+// ============================================================================
+
+// BenchmarkValidator_LargePayload benchmarks validation with large payload.
+func BenchmarkValidator_LargePayload(b *testing.B) {
+	secret := "test-secret-key-for-benchmarking"
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		b.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a token with large payload
+	largeData := make(map[string]interface{})
+	for i := 0; i < 100; i++ {
+		largeData[fmt.Sprintf("key_%d", i)] = fmt.Sprintf("value_%d_with_some_longer_content", i)
+	}
+
+	claims := jwt.MapClaims{
+		"sub":  "user123",
+		"exp":  time.Now().Add(1 * time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
+		"data": largeData,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(secret))
+	if err != nil {
+		b.Fatalf("Failed to sign token: %v", err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, err := validator.ValidateToken(tokenString)
+		if err != nil {
+			b.Fatalf("ValidateToken() error = %v", err)
+		}
+	}
+}
+
+// ============================================================================
+// Claim Extraction Benchmarks
+// ============================================================================
+
+// BenchmarkGetClaimStringSlice benchmarks extracting a string slice claim.
+func BenchmarkGetClaimStringSlice(b *testing.B) {
+	claims := jwt.MapClaims{
+		"sub":   "user123",
+		"roles": []interface{}{"admin", "user", "moderator", "editor", "viewer"},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = GetClaimStringSlice(claims, "roles")
+	}
+}
+
+// BenchmarkGetClaimTime benchmarks extracting a time claim.
+func BenchmarkGetClaimTime(b *testing.B) {
+	claims := jwt.MapClaims{
+		"sub": "user123",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = GetClaimTime(claims, "exp")
+	}
+}
+
+// ============================================================================
+// Token Parsing Benchmarks
+// ============================================================================
+
+// BenchmarkValidator_ParseToken benchmarks unverified token parsing.
+func BenchmarkValidator_ParseToken(b *testing.B) {
+	secret := "test-secret-key-for-benchmarking"
+	config := &Config{
+		Secret: secret,
+	}
+
+	validator, err := NewValidator(config)
+	if err != nil {
+		b.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test token
+	claims := jwt.MapClaims{
+		"sub": "user123",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(secret))
+	if err != nil {
+		b.Fatalf("Failed to sign token: %v", err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, err := validator.ParseToken(tokenString)
+		if err != nil {
+			b.Fatalf("ParseToken() error = %v", err)
+		}
+	}
+}
+
+// ============================================================================
+// Blacklist Concurrent Benchmarks
+// ============================================================================
+
+// BenchmarkInMemoryBlacklist_ConcurrentAccess benchmarks concurrent blacklist access.
+func BenchmarkInMemoryBlacklist_ConcurrentAccess(b *testing.B) {
+	bl := NewInMemoryBlacklist()
+	defer bl.Stop()
+
+	ctx := context.Background()
+	expiry := time.Now().Add(1 * time.Hour)
+
+	// Pre-populate blacklist
+	for i := 0; i < 1000; i++ {
+		err := bl.Blacklist(ctx, fmt.Sprintf("token-%d", i), expiry)
+		if err != nil {
+			b.Fatalf("Blacklist() error = %v", err)
+		}
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			token := fmt.Sprintf("token-%d", i%1000)
+			_, err := bl.IsBlacklisted(ctx, token)
+			if err != nil {
+				b.Fatalf("IsBlacklisted() error = %v", err)
+			}
+			i++
+		}
+	})
+}
+
+// BenchmarkInMemoryBlacklist_MixedOperations benchmarks mixed read/write operations.
+func BenchmarkInMemoryBlacklist_MixedOperations(b *testing.B) {
+	bl := NewInMemoryBlacklist()
+	defer bl.Stop()
+
+	ctx := context.Background()
+	expiry := time.Now().Add(1 * time.Hour)
+
+	// Pre-populate blacklist
+	for i := 0; i < 500; i++ {
+		err := bl.Blacklist(ctx, fmt.Sprintf("token-%d", i), expiry)
+		if err != nil {
+			b.Fatalf("Blacklist() error = %v", err)
+		}
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			token := fmt.Sprintf("token-%d", i%1000)
+			if i%5 == 0 {
+				// 20% writes
+				_ = bl.Blacklist(ctx, token, expiry)
+			} else {
+				// 80% reads
+				_, _ = bl.IsBlacklisted(ctx, token)
+			}
+			i++
+		}
+	})
+}
+
+// ============================================================================
+// MapClaimsToCustomClaims Benchmark
+// ============================================================================
+
+// BenchmarkMapClaimsToCustomClaims benchmarks converting map claims to custom claims.
+func BenchmarkMapClaimsToCustomClaims(b *testing.B) {
+	claims := jwt.MapClaims{
+		"sub":         "user123",
+		"exp":         time.Now().Add(1 * time.Hour).Unix(),
+		"iat":         time.Now().Unix(),
+		"user_id":     "user123",
+		"username":    "testuser",
+		"email":       "test@example.com",
+		"roles":       []interface{}{"admin", "user"},
+		"permissions": []interface{}{"read", "write"},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		_, err := MapClaimsToCustomClaims(claims)
+		if err != nil {
+			b.Fatalf("MapClaimsToCustomClaims() error = %v", err)
 		}
 	}
 }
