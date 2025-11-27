@@ -8,6 +8,56 @@
 
 ### 重大特性 🎉
 
+#### 企业级安全系统 🔒
+
+Swit 框架新增完整的企业级安全功能，提供多层次的安全保护能力。
+
+- **OAuth2/OIDC 认证**
+  - ✅ 完整的 OAuth2 客户端实现 - 支持多种认证流程
+  - ✅ OIDC Discovery 支持 - 自动发现端点配置
+  - ✅ 多 Provider 支持 - Keycloak、Auth0、自定义 Provider
+  - ✅ JWT 令牌验证 - RS256/HS256 等多种签名算法
+  - ✅ JWKS 缓存 - 自动刷新公钥
+  - ✅ 令牌缓存 - 减少验证开销
+
+- **OPA 策略引擎**
+  - ✅ 嵌入式模式 - OPA 引擎运行在同一进程
+  - ✅ 远程模式 - 连接外部 OPA 服务器
+  - ✅ Sidecar 模式 - Kubernetes 友好的部署模式
+  - ✅ RBAC 策略模板 - 基于角色的访问控制
+  - ✅ ABAC 策略模板 - 基于属性的访问控制
+  - ✅ 决策缓存 - 提升策略评估性能
+  - ✅ 策略热更新 - 动态加载和更新策略
+
+- **密钥管理**
+  - ✅ 多 Provider 支持 - 环境变量、文件、HashiCorp Vault
+  - ✅ 密钥缓存 - 减少密钥获取延迟
+  - ✅ 自动刷新 - 定期刷新密钥
+  - ✅ 密钥轮换支持 - 平滑的密钥更新
+
+- **安全扫描**
+  - ✅ gosec 集成 - Go 代码安全扫描
+  - ✅ Trivy 集成 - 容器镜像漏洞扫描
+  - ✅ govulncheck 集成 - Go 依赖漏洞检查
+  - ✅ 统一报告 - 聚合扫描结果
+
+- **TLS/mTLS**
+  - ✅ TLS 配置管理 - 证书加载和验证
+  - ✅ 最低版本控制 - 强制 TLS 1.2+
+  - ✅ 客户端证书验证 - mTLS 支持
+  - ✅ 证书轮换 - 支持证书热更新
+
+- **审计日志**
+  - ✅ 安全事件记录 - 认证、授权、访问事件
+  - ✅ 敏感数据脱敏 - 自动过滤敏感字段
+  - ✅ 多输出目标 - 文件、Syslog 等
+
+- **安全指标**
+  - ✅ Prometheus 集成 - 认证/授权指标
+  - ✅ 令牌验证延迟 - 性能监控
+  - ✅ 策略评估指标 - OPA 性能追踪
+  - ✅ 安全事件计数 - 异常检测
+
 #### Saga 分布式事务系统
 
 Swit 框架现已完整支持 Saga 分布式事务模式，提供企业级的分布式事务管理能力。
@@ -265,6 +315,13 @@ Swit 框架现已完整支持 Saga 分布式事务模式，提供企业级的分
 - `go.opentelemetry.io/otel/sdk` - v1.32.0+
 - `github.com/prometheus/client_golang` - v1.23.0+
 
+#### 安全相关依赖
+- `github.com/open-policy-agent/opa` - v1.4.2+ (OPA 策略引擎)
+- `github.com/coreos/go-oidc/v3` - v3.11.0+ (OIDC 支持)
+- `golang.org/x/oauth2` - v0.26.0+ (OAuth2 客户端)
+- `github.com/hashicorp/vault/api` - v1.16.0+ (Vault 集成)
+- `github.com/golang-jwt/jwt/v5` - v5.2.1+ (JWT 处理)
+
 #### 可选依赖
 - `github.com/redis/go-redis/v9` - v9.14.0+ (缓存)
 - `github.com/hashicorp/consul/api` - v1.29.4+ (服务发现)
@@ -316,6 +373,83 @@ Swit 框架现已完整支持 Saga 分布式事务模式，提供企业级的分
    // 执行 Saga
    instance, err := coordinator.Execute(ctx, def, data)
    ```
+
+#### 使用安全功能
+
+如果您想使用新的安全功能：
+
+1. **配置 OAuth2 认证**
+   ```yaml
+   # swit.yaml
+   oauth2:
+     enabled: true
+     provider: keycloak
+     client_id: my-service
+     client_secret: ${OAUTH2_CLIENT_SECRET}
+     issuer_url: https://auth.example.com/realms/production
+     use_discovery: true
+     scopes:
+       - openid
+       - profile
+       - email
+     jwt:
+       signing_method: RS256
+       clock_skew: 5m
+     cache:
+       enabled: true
+       ttl: 15m
+   ```
+
+2. **配置 OPA 策略引擎**
+   ```yaml
+   # swit.yaml
+   opa:
+     mode: embedded
+     embedded:
+       policy_dir: ./policies
+     default_decision_path: authz/allow
+     cache:
+       enabled: true
+       max_size: 10000
+       ttl: 5m
+   ```
+
+3. **配置密钥管理**
+   ```yaml
+   # swit.yaml
+   secrets:
+     providers:
+       - type: env
+         enabled: true
+         env:
+           prefix: APP_SECRET_
+       - type: vault
+         enabled: true
+         vault:
+           address: https://vault.example.com:8200
+           auth_method: approle
+   ```
+
+4. **使用安全中间件**
+   ```go
+   import (
+       "github.com/innovationmech/swit/pkg/security/oauth2"
+       "github.com/innovationmech/swit/pkg/security/opa"
+       "github.com/innovationmech/swit/pkg/middleware"
+   )
+   
+   // 创建 OAuth2 客户端
+   oauth2Client, err := oauth2.NewClient(oauth2Config)
+   
+   // 创建 OPA 客户端
+   opaClient, err := opa.NewClient(ctx, opaConfig)
+   
+   // 应用中间件
+   router.Use(middleware.NewOAuth2Middleware(oauth2Client))
+   router.Use(middleware.NewOPAMiddleware(opaClient))
+   ```
+
+详细的安全迁移指南请参考：[docs/migration-guide-security.md](docs/migration-guide-security.md)
 
 #### 破坏性变更
 
