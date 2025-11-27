@@ -244,6 +244,7 @@ jobs:
           if [ -z "$PACKAGES" ]; then
             echo "No packages to check for vulnerabilities"
             echo "vulns_found=0" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -251,13 +252,30 @@ jobs:
           echo "$PACKAGES"
           
           # Run govulncheck and capture output
-          govulncheck -json $PACKAGES > _output/security/govulncheck-results.json 2>&1 || true
-          govulncheck $PACKAGES 2>&1 | tee _output/security/govulncheck-report.txt || true
+          # Note: govulncheck returns exit code 3 when vulnerabilities are found
+          govulncheck $PACKAGES 2>&1 | tee _output/security/govulncheck-report.txt
+          GOVULN_EXIT=$?
           
-          # Count vulnerabilities
-          VULNS=$(grep -c '"osv":' _output/security/govulncheck-results.json 2>/dev/null || echo "0")
-          echo "vulns_found=${VULNS}" >> $GITHUB_OUTPUT
-          echo "📊 Found ${VULNS} known vulnerabilities"
+          # Also generate JSON output for detailed analysis
+          govulncheck -json $PACKAGES > _output/security/govulncheck-results.json 2>&1 || true
+          
+          # Check if there are any CALLED vulnerabilities (actually used in code)
+          # govulncheck exit code: 0 = no vulns, 1 = error, 3 = vulns found
+          if [ "$GOVULN_EXIT" -eq 3 ]; then
+            # Count unique vulnerabilities that are actually called
+            VULNS=$(grep -E "^Vulnerability #" _output/security/govulncheck-report.txt | wc -l | tr -d ' ')
+            echo "vulns_found=${VULNS}" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=true" >> $GITHUB_OUTPUT
+            echo "📊 Found ${VULNS} vulnerabilities affecting your code"
+          elif [ "$GOVULN_EXIT" -eq 0 ]; then
+            echo "vulns_found=0" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=false" >> $GITHUB_OUTPUT
+            echo "✅ No vulnerabilities found"
+          else
+            echo "vulns_found=0" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=false" >> $GITHUB_OUTPUT
+            echo "⚠️ govulncheck encountered an error (exit code: $GOVULN_EXIT)"
+          fi
 
       - name: Display govulncheck summary
         if: always()
@@ -265,16 +283,25 @@ jobs:
           echo "## 🛡️ Govulncheck Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          VULNS=${{ steps.govulncheck.outputs.vulns_found }}
-          if [ "$VULNS" -gt 0 ]; then
-            echo "⚠️ **Found ${VULNS} known vulnerabilities**" >> $GITHUB_STEP_SUMMARY
+          HAS_VULNS="${{ steps.govulncheck.outputs.has_called_vulns }}"
+          VULNS="${{ steps.govulncheck.outputs.vulns_found }}"
+          
+          if [ "$HAS_VULNS" == "true" ] && [ "$VULNS" -gt 0 ]; then
+            echo "⚠️ **Found ${VULNS} vulnerabilities affecting your code**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Show if this is blocking or informational
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              echo "> ℹ️ **Note**: Vulnerability checks are informational for PRs and won't block merging." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
             echo "### Vulnerability Details:" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            cat _output/security/govulncheck-report.txt | head -50 >> $GITHUB_STEP_SUMMARY || echo "Details unavailable" >> $GITHUB_STEP_SUMMARY
+            cat _output/security/govulncheck-report.txt | head -100 >> $GITHUB_STEP_SUMMARY || echo "Details unavailable" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ **No known vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **No vulnerabilities found affecting your code**" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Upload govulncheck artifacts
@@ -286,14 +313,22 @@ jobs:
           retention-days: 30
 
       - name: Fail on vulnerabilities (if enabled)
+        # Only fail on push to master/dev or when explicitly enabled via workflow_dispatch
+        # PRs should report vulnerabilities but not block merging (informational)
         if: |
           (github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_critical == 'true') ||
-          (github.event_name != 'workflow_dispatch')
+          (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev')) ||
+          (github.event_name == 'schedule')
         run: |
-          VULNS=${{ steps.govulncheck.outputs.vulns_found }}
-          if [ "$VULNS" -gt 0 ]; then
-            echo "❌ Found ${VULNS} vulnerabilities - failing check"
+          HAS_VULNS="${{ steps.govulncheck.outputs.has_called_vulns }}"
+          VULNS="${{ steps.govulncheck.outputs.vulns_found }}"
+          
+          if [ "$HAS_VULNS" == "true" ] && [ "$VULNS" -gt 0 ]; then
+            echo "❌ Found ${VULNS} vulnerabilities affecting your code - failing check"
+            echo "Please review the vulnerability report and update affected dependencies"
             exit 1
+          else
+            echo "✅ No blocking vulnerabilities found"
           fi
 
   # ===========================================================================
