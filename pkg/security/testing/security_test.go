@@ -17,9 +17,8 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
+//
 
-// Package testing provides security testing utilities including OWASP Top 10 tests,
-// penetration testing, fuzz testing, and timing attack detection.
 package testing
 
 import (
