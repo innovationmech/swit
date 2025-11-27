@@ -50,11 +50,11 @@ type SecurityAuditReport struct {
 	Summary ReportSummary `json:"summary"`
 
 	// Test Results by Category
-	OWASPResults      []SecurityFindingResult `json:"owasp_results"`
+	OWASPResults       []SecurityFindingResult `json:"owasp_results"`
 	PenetrationResults []SecurityFindingResult `json:"penetration_results"`
-	FuzzingResults    []SecurityFindingResult `json:"fuzzing_results"`
-	TimingResults     []SecurityFindingResult `json:"timing_results"`
-	DoSResults        []SecurityFindingResult `json:"dos_results"`
+	FuzzingResults     []SecurityFindingResult `json:"fuzzing_results"`
+	TimingResults      []SecurityFindingResult `json:"timing_results"`
+	DoSResults         []SecurityFindingResult `json:"dos_results"`
 
 	// Recommendations
 	Recommendations []Recommendation `json:"recommendations"`
@@ -65,28 +65,28 @@ type SecurityAuditReport struct {
 
 // ReportSummary provides an overview of the security audit.
 type ReportSummary struct {
-	TotalTests      int            `json:"total_tests"`
-	PassedTests     int            `json:"passed_tests"`
-	FailedTests     int            `json:"failed_tests"`
-	SkippedTests    int            `json:"skipped_tests"`
+	TotalTests       int           `json:"total_tests"`
+	PassedTests      int           `json:"passed_tests"`
+	FailedTests      int           `json:"failed_tests"`
+	SkippedTests     int           `json:"skipped_tests"`
 	CriticalFindings int           `json:"critical_findings"`
-	HighFindings    int            `json:"high_findings"`
-	MediumFindings  int            `json:"medium_findings"`
-	LowFindings     int            `json:"low_findings"`
-	InfoFindings    int            `json:"info_findings"`
-	OverallScore    float64        `json:"overall_score"`
-	RiskLevel       string         `json:"risk_level"`
-	TestDuration    time.Duration  `json:"test_duration"`
-	Coverage        TestCoverage   `json:"coverage"`
+	HighFindings     int           `json:"high_findings"`
+	MediumFindings   int           `json:"medium_findings"`
+	LowFindings      int           `json:"low_findings"`
+	InfoFindings     int           `json:"info_findings"`
+	OverallScore     float64       `json:"overall_score"`
+	RiskLevel        string        `json:"risk_level"`
+	TestDuration     time.Duration `json:"test_duration"`
+	Coverage         TestCoverage  `json:"coverage"`
 }
 
 // TestCoverage represents the coverage of security tests.
 type TestCoverage struct {
-	OWASPTop10      float64 `json:"owasp_top_10"`
-	Authentication  float64 `json:"authentication"`
-	Authorization   float64 `json:"authorization"`
-	InputValidation float64 `json:"input_validation"`
-	Cryptography    float64 `json:"cryptography"`
+	OWASPTop10        float64 `json:"owasp_top_10"`
+	Authentication    float64 `json:"authentication"`
+	Authorization     float64 `json:"authorization"`
+	InputValidation   float64 `json:"input_validation"`
+	Cryptography      float64 `json:"cryptography"`
 	SessionManagement float64 `json:"session_management"`
 }
 
@@ -118,9 +118,9 @@ type Recommendation struct {
 
 // ComplianceStatus represents compliance with security standards.
 type ComplianceStatus struct {
-	OWASPTop10    ComplianceDetail `json:"owasp_top_10"`
-	CWETop25      ComplianceDetail `json:"cwe_top_25"`
-	SANSTop25     ComplianceDetail `json:"sans_top_25"`
+	OWASPTop10 ComplianceDetail `json:"owasp_top_10"`
+	CWETop25   ComplianceDetail `json:"cwe_top_25"`
+	SANSTop25  ComplianceDetail `json:"sans_top_25"`
 }
 
 // ComplianceDetail provides details about compliance with a standard.
@@ -284,10 +284,10 @@ func (b *SecurityAuditReportBuilder) calculateOverallScore() {
 	passRate := float64(b.report.Summary.PassedTests) / float64(b.report.Summary.TotalTests) * 100
 
 	// Deductions for findings
-	deductions := float64(b.report.Summary.CriticalFindings) * 20 +
-		float64(b.report.Summary.HighFindings) * 10 +
-		float64(b.report.Summary.MediumFindings) * 5 +
-		float64(b.report.Summary.LowFindings) * 2
+	deductions := float64(b.report.Summary.CriticalFindings)*20 +
+		float64(b.report.Summary.HighFindings)*10 +
+		float64(b.report.Summary.MediumFindings)*5 +
+		float64(b.report.Summary.LowFindings)*2
 
 	score := passRate - deductions
 	if score < 0 {
@@ -781,4 +781,3 @@ func getComplianceStatus(compliant bool) string {
 	}
 	return "❌ Non-Compliant"
 }
-

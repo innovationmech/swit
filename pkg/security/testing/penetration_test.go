@@ -1004,4 +1004,3 @@ func (r *PenTestReport) ToHTML() string {
 
 	return sb.String()
 }
-

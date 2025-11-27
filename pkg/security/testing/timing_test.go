@@ -492,21 +492,21 @@ func SecureHMACVerify(key, message, mac []byte) bool {
 
 // TimingTestResult represents the result of a timing test.
 type TimingTestResult struct {
-	TestName       string
-	Stats1         TimingStats
-	Stats2         TimingStats
+	TestName          string
+	Stats1            TimingStats
+	Stats2            TimingStats
 	DifferencePercent float64
-	Vulnerable     bool
-	Details        string
+	Vulnerable        bool
+	Details           string
 }
 
 // TimingTestReport represents a timing test report.
 type TimingTestReport struct {
-	Timestamp      time.Time
-	Config         *TimingTestConfig
-	TotalTests     int
+	Timestamp       time.Time
+	Config          *TimingTestConfig
+	TotalTests      int
 	VulnerableTests int
-	Results        []TimingTestResult
+	Results         []TimingTestResult
 }
 
 // GenerateTimingReport generates a timing test report.
@@ -599,4 +599,3 @@ func (ts *TimingTestSuite) RunAllTimingTests() {
 	ts.TestHMACVerificationTiming()
 	ts.TestUserEnumerationTiming()
 }
-

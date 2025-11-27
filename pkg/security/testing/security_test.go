@@ -979,4 +979,3 @@ func (stc *SecurityTestContext) Context() context.Context {
 func (stc *SecurityTestContext) Cancel() {
 	stc.cancel()
 }
-

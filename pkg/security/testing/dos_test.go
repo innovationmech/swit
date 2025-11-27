@@ -518,11 +518,11 @@ func (ds *DoSTestSuite) createNestedJSON(depth int) []byte {
 
 // DoSTestResult represents the result of a DoS test.
 type DoSTestResult struct {
-	TestName    string
-	Category    string
-	Passed      bool
-	Details     string
-	Metrics     map[string]interface{}
+	TestName string
+	Category string
+	Passed   bool
+	Details  string
+	Metrics  map[string]interface{}
 }
 
 // DoSTestReport represents a DoS test report.
@@ -635,4 +635,3 @@ func (ds *DoSTestSuite) RunAllDoSTests() {
 	ds.TestXMLBombProtection()
 	ds.TestHTTPRequestSmuggling()
 }
-

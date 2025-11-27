@@ -716,4 +716,3 @@ func RunFuzzHTTPEndpoint(f *testing.F, router *gin.Engine, method, path string, 
 		validateFuzzResponse(t, w, input)
 	})
 }
-
