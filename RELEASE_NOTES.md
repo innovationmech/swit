@@ -13,7 +13,80 @@
 
 ## ✨ 核心亮点
 
-### 1. 完整的 Saga 分布式事务系统
+### 1. 企业级安全系统
+
+Swit v0.9.0 引入了完整的企业级安全功能，为微服务提供多层次的安全保护。
+
+#### 🔐 OAuth2/OIDC 认证
+
+支持主流身份提供商的完整认证解决方案：
+
+```yaml
+oauth2:
+  enabled: true
+  provider: keycloak
+  client_id: my-service
+  client_secret: ${OAUTH2_CLIENT_SECRET}
+  issuer_url: https://auth.example.com/realms/production
+  use_discovery: true
+  jwt:
+    signing_method: RS256
+  cache:
+    enabled: true
+    ttl: 15m
+```
+
+**核心能力：**
+- OIDC Discovery 自动配置
+- 多种 JWT 签名算法（RS256、HS256 等）
+- JWKS 自动缓存和刷新
+- 令牌验证缓存
+
+#### 🛡️ OPA 策略引擎
+
+基于 Open Policy Agent 的细粒度访问控制：
+
+```yaml
+opa:
+  mode: embedded
+  embedded:
+    policy_dir: ./policies
+  default_decision_path: authz/allow
+  cache:
+    enabled: true
+    max_size: 10000
+```
+
+**支持的访问控制模型：**
+- **RBAC** - 基于角色的访问控制
+- **ABAC** - 基于属性的访问控制
+- **自定义策略** - 使用 Rego 语言定义
+
+#### 🔑 密钥管理
+
+统一的密钥管理接口，支持多种后端：
+
+- **环境变量** - 开发和简单部署
+- **文件** - 配置文件方式
+- **HashiCorp Vault** - 生产级密钥管理
+
+#### 🔒 TLS/mTLS
+
+完整的传输层安全支持：
+
+- TLS 1.2/1.3 配置
+- 客户端证书验证（mTLS）
+- 证书热更新
+
+#### 📊 安全监控
+
+- **Prometheus 指标** - 认证/授权性能指标
+- **审计日志** - 完整的安全事件追踪
+- **告警集成** - 异常检测和通知
+
+详细文档：[安全迁移指南](docs/migration-guide-security.md)
+
+### 2. 完整的 Saga 分布式事务系统
 
 Saga 模式是处理微服务分布式事务的最佳实践。Swit v0.9.0 提供了功能完整、生产就绪的 Saga 实现。
 
@@ -313,14 +386,43 @@ go run order_saga.go
 
 **好消息**: v0.9.0 完全向后兼容 v0.8.x，无需修改现有代码！
 
-如果您想使用新的 Saga 功能：
+#### 使用新的安全功能
 
 1. **更新依赖**
    ```bash
    go get -u github.com/innovationmech/swit@v0.9.0
    ```
 
-2. **安装数据库**（如需使用 Saga）
+2. **配置 OAuth2 认证**（可选）
+   ```yaml
+   oauth2:
+     enabled: true
+     provider: keycloak
+     client_id: my-service
+     client_secret: ${OAUTH2_CLIENT_SECRET}
+     issuer_url: https://auth.example.com/realms/production
+     use_discovery: true
+   ```
+
+3. **配置 OPA 策略引擎**（可选）
+   ```yaml
+   opa:
+     mode: embedded
+     embedded:
+       policy_dir: ./policies
+     default_decision_path: authz/allow
+   ```
+
+4. **运行安全扫描**
+   ```bash
+   make security
+   ```
+
+详细的安全迁移指南：[docs/migration-guide-security.md](docs/migration-guide-security.md)
+
+#### 使用新的 Saga 功能
+
+1. **安装数据库**（如需使用 Saga）
    ```bash
    # PostgreSQL (推荐)
    docker run -d -p 5432:5432 \
@@ -329,12 +431,12 @@ go run order_saga.go
      postgres:16
    ```
 
-3. **运行迁移**
+2. **运行迁移**
    ```bash
    saga-migrate -dsn "postgres://postgres:password@localhost/saga" -action migrate
    ```
 
-4. **配置 Saga**
+3. **配置 Saga**
    在您的配置文件中添加：
    ```yaml
    saga:
@@ -352,6 +454,7 @@ go run order_saga.go
 - ✅ 所有现有 API 保持不变
 - ✅ 配置格式兼容
 - ✅ 依赖版本兼容
+- ✅ 安全功能可选启用
 
 ## 🐛 Bug 修复
 
