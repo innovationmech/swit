@@ -8,20 +8,18 @@
 name: Performance Benchmarks
 
 on:
+  # Only run full benchmarks on push to master (not on every PR)
   push:
     branches: [master]
     paths:
-      - 'go.mod'
-      - 'go.sum'
-      - '**/*.go'
+      - 'pkg/server/**'
+      - 'pkg/transport/**'
+      - 'pkg/middleware/**'
       - '.github/workflows/benchmark.yml'
+  # For PRs, only run on explicit request via label or workflow_dispatch
   pull_request:
     branches: [master]
-    paths:
-      - 'go.mod'
-      - 'go.sum'
-      - '**/*.go'
-      - '.github/workflows/benchmark.yml'
+    types: [labeled]
   schedule:
     # Run benchmarks weekly on Sunday at 3:00 AM UTC
     - cron: '0 3 * * 0'
@@ -32,11 +30,16 @@ on:
         required: false
         default: ''
         type: string
-      compare_base:
-        description: 'Base branch/commit to compare against'
+      benchmark_packages:
+        description: 'Packages to benchmark (e.g., ./pkg/server/...)'
         required: false
-        default: 'master'
+        default: './pkg/server/... ./pkg/transport/...'
         type: string
+      full_run:
+        description: 'Run full benchmarks (all packages, more iterations)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -44,8 +47,6 @@ permissions:
 
 env:
   GO_VERSION: '1.24'
-  BENCHMARK_COUNT: 5
-  REGRESSION_THRESHOLD: 20  # Percentage threshold for regression detection
 
 concurrency:
   group: benchmark-${{ github.workflow }}-${{ github.ref }}
@@ -53,18 +54,84 @@ concurrency:
 
 jobs:
   # ===========================================================================
+  # Check if benchmarks should run
+  # ===========================================================================
+  check-trigger:
+    name: Check Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      is_full_run: ${{ steps.check.outputs.is_full_run }}
+      benchmark_count: ${{ steps.check.outputs.benchmark_count }}
+      packages: ${{ steps.check.outputs.packages }}
+    steps:
+      - name: Check trigger conditions
+        id: check
+        run: |
+          SHOULD_RUN="false"
+          IS_FULL_RUN="false"
+          BENCHMARK_COUNT="1"
+          PACKAGES="./pkg/server/... ./pkg/transport/..."
+          
+          # workflow_dispatch - always run
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            SHOULD_RUN="true"
+            if [ "${{ github.event.inputs.full_run }}" == "true" ]; then
+              IS_FULL_RUN="true"
+              BENCHMARK_COUNT="3"
+              PACKAGES=$(go list ./... 2>/dev/null | grep -v -E '/(api/gen|docs/generated)/' | tr '\n' ' ' || echo "./pkg/...")
+            else
+              PACKAGES="${{ github.event.inputs.benchmark_packages }}"
+            fi
+          fi
+          
+          # push to master - run with moderate settings
+          if [ "${{ github.event_name }}" == "push" ]; then
+            SHOULD_RUN="true"
+            BENCHMARK_COUNT="2"
+          fi
+          
+          # schedule - full run
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            SHOULD_RUN="true"
+            IS_FULL_RUN="true"
+            BENCHMARK_COUNT="3"
+            PACKAGES="./pkg/..."
+          fi
+          
+          # PR with 'run-benchmarks' label
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            if [ "${{ contains(github.event.pull_request.labels.*.name, 'run-benchmarks') }}" == "true" ]; then
+              SHOULD_RUN="true"
+              BENCHMARK_COUNT="1"
+            fi
+          fi
+          
+          echo "should_run=${SHOULD_RUN}" >> $GITHUB_OUTPUT
+          echo "is_full_run=${IS_FULL_RUN}" >> $GITHUB_OUTPUT
+          echo "benchmark_count=${BENCHMARK_COUNT}" >> $GITHUB_OUTPUT
+          echo "packages=${PACKAGES}" >> $GITHUB_OUTPUT
+          
+          echo "📊 Benchmark configuration:"
+          echo "  - Should run: ${SHOULD_RUN}"
+          echo "  - Full run: ${IS_FULL_RUN}"
+          echo "  - Iterations: ${BENCHMARK_COUNT}"
+          echo "  - Packages: ${PACKAGES}"
+
+  # ===========================================================================
   # Run Benchmarks
   # ===========================================================================
   benchmark:
     name: Run Benchmarks
     runs-on: ubuntu-latest
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run == 'true'
+    timeout-minutes: 15
     outputs:
       benchmark_results: ${{ steps.benchmark.outputs.results }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -113,181 +180,46 @@ jobs:
             FILTER="."
           fi
           
-          echo "🏃 Running benchmarks with filter: ${FILTER}"
-          echo "📊 Running ${BENCHMARK_COUNT} iterations for statistical significance"
+          PACKAGES="${{ needs.check-trigger.outputs.packages }}"
+          COUNT="${{ needs.check-trigger.outputs.benchmark_count }}"
           
-          # Get all packages excluding generated code
-          PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+          echo "🏃 Running benchmarks"
+          echo "  - Filter: ${FILTER}"
+          echo "  - Packages: ${PACKAGES}"
+          echo "  - Iterations: ${COUNT}"
           
-          # Run benchmarks
-          go test -bench="${FILTER}" -benchmem -count=${BENCHMARK_COUNT} -timeout=30m \
-            $PACKAGES 2>&1 | tee _output/benchmark/current.txt
+          # Run benchmarks with short timeout per test
+          go test -bench="${FILTER}" -benchmem -count=${COUNT} -timeout=10m \
+            -run=^$ ${PACKAGES} 2>&1 | tee _output/benchmark/current.txt
           
-          echo "✅ Benchmarks completed"
+          # Count benchmarks run
+          BENCH_COUNT=$(grep -c "^Benchmark" _output/benchmark/current.txt 2>/dev/null || echo "0")
+          echo "✅ Completed ${BENCH_COUNT} benchmarks"
           echo "results=_output/benchmark/current.txt" >> $GITHUB_OUTPUT
+          echo "bench_count=${BENCH_COUNT}" >> $GITHUB_OUTPUT
+
+      - name: Generate benchmark summary
+        run: |
+          echo "## 🏃 Performance Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Iterations**: ${{ needs.check-trigger.outputs.benchmark_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Packages**: ${{ needs.check-trigger.outputs.packages }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "_output/benchmark/current.txt" ]; then
+            BENCH_COUNT=$(grep -c "^Benchmark" _output/benchmark/current.txt 2>/dev/null || echo "0")
+            echo "**Benchmarks run**: ${BENCH_COUNT}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Results (top 20)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E "^Benchmark" _output/benchmark/current.txt | head -20 >> $GITHUB_STEP_SUMMARY || echo "No results" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results-${{ github.sha }}
-          path: _output/benchmark/
-          retention-days: 90
-
-  # ===========================================================================
-  # Compare with Base (for PRs)
-  # ===========================================================================
-  compare:
-    name: Compare Benchmarks
-    runs-on: ubuntu-latest
-    needs: benchmark
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-          cache: true
-          cache-dependency-path: '**/go.sum'
-
-      - name: Install benchstat
-        run: go install golang.org/x/perf/cmd/benchstat@latest
-
-      - name: Download current benchmark results
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-results-${{ github.sha }}
-          path: _output/benchmark/
-
-      - name: Checkout base branch
-        run: |
-          BASE_BRANCH="${{ github.event.inputs.compare_base || 'master' }}"
-          git fetch origin ${BASE_BRANCH}
-          git checkout origin/${BASE_BRANCH} -- . || true
-
-      - name: Install dev tools for base
-        run: make setup-dev || true
-
-      - name: Generate proto code for base
-        run: make proto || true
-
-      - name: Run base benchmarks
-        run: |
-          mkdir -p _output/benchmark
-          
-          FILTER="${{ github.event.inputs.benchmark_filter }}"
-          if [ -z "$FILTER" ]; then
-            FILTER="."
-          fi
-          
-          PACKAGES=$(go list ./... 2>/dev/null | grep -v -E '/(api/gen|docs/generated)/' || echo "")
-          
-          if [ -n "$PACKAGES" ]; then
-            go test -bench="${FILTER}" -benchmem -count=${BENCHMARK_COUNT} -timeout=30m \
-              $PACKAGES 2>&1 | tee _output/benchmark/base.txt || true
-          else
-            echo "No packages to benchmark" > _output/benchmark/base.txt
-          fi
-
-      - name: Compare benchmarks
-        id: compare
-        run: |
-          mkdir -p _output/benchmark
-          
-          if [ -f "_output/benchmark/base.txt" ] && [ -f "_output/benchmark/current.txt" ]; then
-            echo "📊 Comparing benchmark results..."
-            benchstat _output/benchmark/base.txt _output/benchmark/current.txt > _output/benchmark/comparison.txt 2>&1 || true
-            
-            echo "### Benchmark Comparison" > _output/benchmark/summary.md
-            echo "" >> _output/benchmark/summary.md
-            echo '```' >> _output/benchmark/summary.md
-            cat _output/benchmark/comparison.txt >> _output/benchmark/summary.md
-            echo '```' >> _output/benchmark/summary.md
-            
-            # Check for significant regressions
-            REGRESSIONS=$(grep -E '\+[0-9]+\.[0-9]+%' _output/benchmark/comparison.txt | wc -l || echo "0")
-            echo "regressions_found=${REGRESSIONS}" >> $GITHUB_OUTPUT
-            
-            if [ "$REGRESSIONS" -gt 0 ]; then
-              echo "⚠️ Found ${REGRESSIONS} potential performance regressions"
-              echo "has_regressions=true" >> $GITHUB_OUTPUT
-            else
-              echo "✅ No significant performance regressions detected"
-              echo "has_regressions=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "⚠️ Could not compare benchmarks - missing baseline or current results"
-            echo "has_regressions=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Comment PR with benchmark results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            
-            let body = '## 📊 Performance Benchmark Results\n\n';
-            
-            const hasRegressions = '${{ steps.compare.outputs.has_regressions }}' === 'true';
-            const regressionsFound = '${{ steps.compare.outputs.regressions_found }}';
-            
-            if (hasRegressions) {
-              body += `⚠️ **Warning**: Found ${regressionsFound} potential performance regressions.\n\n`;
-              body += 'Please review the benchmark comparison below and ensure any regressions are intentional.\n\n';
-            } else {
-              body += '✅ **No significant performance regressions detected.**\n\n';
-            }
-            
-            // Try to read the summary file
-            try {
-              const summary = fs.readFileSync('_output/benchmark/summary.md', 'utf8');
-              body += summary;
-            } catch (e) {
-              body += 'Benchmark comparison not available.\n';
-            }
-            
-            body += '\n---\n';
-            body += `*Benchmark comparison generated by GitHub Actions*\n`;
-            body += `*Threshold for regression detection: ${process.env.REGRESSION_THRESHOLD}%*`;
-            
-            // Find existing comment
-            const { data: comments } = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            
-            const existingComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
-              comment.body.includes('Performance Benchmark Results')
-            );
-            
-            if (existingComment) {
-              await github.rest.issues.updateComment({
-                comment_id: existingComment.id,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
-            }
-
-      - name: Upload comparison results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-comparison-${{ github.sha }}
           path: _output/benchmark/
           retention-days: 30
 
@@ -297,8 +229,11 @@ jobs:
   store-baseline:
     name: Store Baseline
     runs-on: ubuntu-latest
-    needs: benchmark
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [check-trigger, benchmark]
+    if: |
+      needs.check-trigger.outputs.should_run == 'true' &&
+      github.event_name == 'push' && 
+      github.ref == 'refs/heads/master'
     steps:
       - name: Download benchmark results
         uses: actions/download-artifact@v4
@@ -318,49 +253,26 @@ jobs:
           echo "## 📊 Benchmark Baseline Updated" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "New baseline stored for master branch." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
-  # Benchmark Summary
+  # Skip notification (when benchmarks don't run)
   # ===========================================================================
-  summary:
-    name: Benchmark Summary
+  skip-notification:
+    name: Benchmarks Skipped
     runs-on: ubuntu-latest
-    needs: [benchmark]
-    if: always()
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run != 'true'
     steps:
-      - name: Download benchmark results
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-results-${{ github.sha }}
-          path: _output/benchmark/
-        continue-on-error: true
-
-      - name: Generate summary
+      - name: Skip summary
         run: |
-          echo "## 🏃 Performance Benchmark Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## ⏭️ Benchmarks Skipped" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -f "_output/benchmark/current.txt" ]; then
-            echo "### Benchmark Results" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            
-            # Extract key metrics
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            grep -E "^Benchmark" _output/benchmark/current.txt | head -20 >> $GITHUB_STEP_SUMMARY || echo "No benchmark results found" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            
-            # Count benchmarks
-            BENCH_COUNT=$(grep -c "^Benchmark" _output/benchmark/current.txt 2>/dev/null || echo "0")
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Total benchmarks run**: ${BENCH_COUNT}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ Benchmark results not available" >> $GITHUB_STEP_SUMMARY
-          fi
-          
+          echo "Benchmarks were not triggered for this event." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*Benchmark run completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')*" >> $GITHUB_STEP_SUMMARY
-
+          echo "To run benchmarks on a PR, add the \`run-benchmarks\` label." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Benchmarks automatically run on:" >> $GITHUB_STEP_SUMMARY
+          echo "- Push to master (core packages only)" >> $GITHUB_STEP_SUMMARY
+          echo "- Weekly schedule (full run)" >> $GITHUB_STEP_SUMMARY
+          echo "- Manual trigger via workflow_dispatch" >> $GITHUB_STEP_SUMMARY
