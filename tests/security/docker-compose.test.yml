@@ -1,0 +1,127 @@
+# Docker Compose configuration for security integration testing
+# This file sets up the complete security testing environment including:
+# - OPA (Open Policy Agent) server
+# - Keycloak (OAuth2/OIDC provider)
+# - Test certificates for mTLS
+#
+# Usage:
+#   docker compose -f tests/security/docker-compose.test.yml up -d
+#   go test ./pkg/security/... -v -tags=integration
+#   docker compose -f tests/security/docker-compose.test.yml down
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # OPA (Open Policy Agent) Server
+  # =============================================================================
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: swit-test-opa
+    ports:
+      - "8181:8181"
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "--log-format=json"
+      - "/policies"
+    volumes:
+      - ./policies:/policies:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - security-test-net
+
+  # =============================================================================
+  # Keycloak (OAuth2/OIDC Provider)
+  # =============================================================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: swit-test-keycloak
+    ports:
+      - "8080:8080"
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_HEALTH_ENABLED=true
+      - KC_METRICS_ENABLED=true
+    command:
+      - start-dev
+      - --import-realm
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - security-test-net
+
+  # =============================================================================
+  # Certificate Authority Service (for mTLS testing)
+  # =============================================================================
+  cfssl:
+    image: cfssl/cfssl:latest
+    container_name: swit-test-cfssl
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./certs:/certs
+      - ./cfssl-config:/cfssl-config:ro
+    command: serve -address=0.0.0.0 -port=8888 -config=/cfssl-config/config.json
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8888/api/v1/cfssl/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - security-test-net
+
+  # =============================================================================
+  # Test Runner Container
+  # =============================================================================
+  test-runner:
+    image: golang:1.23-alpine
+    container_name: swit-test-runner
+    working_dir: /app
+    volumes:
+      - ../../:/app
+      - go-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      - OPA_URL=http://opa:8181
+      - KEYCLOAK_URL=http://keycloak:8080
+      - CGO_ENABLED=0
+    depends_on:
+      opa:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Waiting for services to be ready...' &&
+        sleep 5 &&
+        echo 'Running security integration tests...' &&
+        go test ./pkg/security/... -v -tags=integration -timeout=300s
+      "
+    networks:
+      - security-test-net
+    profiles:
+      - test
+
+networks:
+  security-test-net:
+    driver: bridge
+
+volumes:
+  go-cache:
+  go-build-cache:
+
