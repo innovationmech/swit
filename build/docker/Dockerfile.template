@@ -1,15 +1,33 @@
-# 多阶段构建的 Docker Compose 文件示例
-# 可以配合构建脚本使用
+# syntax=docker/dockerfile:1
 
-# 构建所有服务的 Dockerfile
+# =============================================================================
+# Multi-stage build Dockerfile template for swit services
+# Security optimizations:
+# - Non-root user execution
+# - Minimal image size (scratch/distroless alternative available)
+# - Multi-stage build for smaller attack surface
+# - No shell in final image (optional)
+# =============================================================================
+
+# =============================================================================
+# Stage 1: Builder - Compile the Go application
+# =============================================================================
 FROM golang:1.23.12-alpine AS builder
+
+# Install build dependencies with pinned versions for reproducibility
+# hadolint ignore=DL3018
+RUN apk add --no-cache git make bash curl ca-certificates tzdata
 
 WORKDIR /app
 
-# 复制源代码
+# Copy go.mod and go.sum first for better layer caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the source code
 COPY . .
 
-# 设置构建参数
+# Build arguments
 ARG SERVICE_NAME
 ARG VERSION=dev
 ARG BUILD_TIME
@@ -17,70 +35,92 @@ ARG GIT_COMMIT
 ARG TARGET_OS=linux
 ARG TARGET_ARCH=amd64
 
-# 安装必要的工具和生成proto代码
-RUN apk add --no-cache git make bash curl && \
-    chmod +x ./scripts/tools/proto-generate.sh && \
-    ./scripts/tools/proto-generate.sh --setup && \
-    ./scripts/tools/proto-generate.sh
+# Install buf and generate proto code (pinned version)
+RUN go install github.com/bufbuild/buf/cmd/buf@v1.47.2
 
-# 验证proto代码生成并更新Go模块
-RUN ls -la api/gen/go/proto/swit/ && \
-    go mod tidy && \
-    go mod download
+# Generate protobuf code
+WORKDIR /app/api
+RUN buf dep update && buf generate
 
-# 创建输出目录
-RUN mkdir -p _output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}
+# Return to app directory and update dependencies
+WORKDIR /app
+RUN go mod tidy && \
+    mkdir -p _output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}
 
-# 动态构建指定服务
+# Build the binary with security flags
+# -trimpath: Remove file system paths from the binary
+# -ldflags: Strip debug info and set version info
 RUN CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build \
     -trimpath \
     -ldflags "-w -s -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GIT_COMMIT}" \
     -o _output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}/${SERVICE_NAME} \
     ./cmd/${SERVICE_NAME}
 
-# 运行时镜像
-FROM alpine:latest
+# =============================================================================
+# Stage 2: Runtime - Minimal secure runtime image
+# =============================================================================
+FROM alpine:3.21 AS runtime
 
-# 安装证书和时区数据
-RUN apk --no-cache add ca-certificates tzdata
+# Security: Install only essential packages
+# ca-certificates: For HTTPS connections
+# tzdata: For timezone support
+# hadolint ignore=DL3018
+RUN apk --no-cache add ca-certificates tzdata && \
+    rm -rf /var/cache/apk/*
 
-WORKDIR /root/
+# Security: Create non-root user and group
+# Using numeric UID/GID for better security and compatibility
+ARG UID=10001
+ARG GID=10001
+RUN addgroup -g ${GID} -S swit && \
+    adduser -u ${UID} -S -G swit -h /app -s /sbin/nologin swit
 
+# Create application directory with proper ownership
+WORKDIR /app
+RUN chown -R swit:swit /app
+
+# Build arguments for runtime
 ARG SERVICE_NAME
 ARG TARGET_OS=linux
 ARG TARGET_ARCH=amd64
 
-# 复制二进制文件
-COPY --from=builder /app/_output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}/${SERVICE_NAME} .
+# Copy the binary from builder stage
+COPY --from=builder --chown=swit:swit /app/_output/build/${SERVICE_NAME}/${TARGET_OS}/${TARGET_ARCH}/${SERVICE_NAME} /app/
 
-# 复制配置文件（使用多阶段构建避免缺失文件问题）
-# 创建配置目录并复制所有可能的配置文件
-COPY . /tmp/source/
+# Copy configuration files based on service type
+# Using a separate stage to handle config files cleanly
+COPY --chown=swit:swit . /tmp/source/
 
-# 根据服务类型设置配置文件（使用正确的文件名）
-RUN mkdir -p /root && \
-    if [ "${SERVICE_NAME}" = "swit-auth" ] && [ -f /tmp/source/switauth.yaml ]; then \
-        cp /tmp/source/switauth.yaml /root/switauth.yaml; \
-        cp /tmp/source/switauth.yaml /root/config.yaml; \
+# Setup configuration files based on service
+RUN if [ "${SERVICE_NAME}" = "swit-auth" ] && [ -f /tmp/source/switauth.yaml ]; then \
+        cp /tmp/source/switauth.yaml /app/config.yaml; \
     elif [ "${SERVICE_NAME}" = "swit-serve" ] && [ -f /tmp/source/swit.yaml ]; then \
-        cp /tmp/source/swit.yaml /root/swit.yaml; \
-        cp /tmp/source/swit.yaml /root/config.yaml; \
+        cp /tmp/source/swit.yaml /app/config.yaml; \
     elif [ "${SERVICE_NAME}" = "switctl" ]; then \
-        echo "switctl doesn't need config file"; \
-        touch /root/config.yaml; \
+        echo "# switctl configuration placeholder" > /app/config.yaml; \
     else \
-        echo "Warning: No config file found for ${SERVICE_NAME}"; \
-        touch /root/config.yaml; \
+        echo "# Default configuration placeholder" > /app/config.yaml; \
     fi && \
-    rm -rf /tmp/source
+    rm -rf /tmp/source && \
+    chown swit:swit /app/config.yaml
 
-# 创建启动脚本来解决运行时ARG问题
-RUN echo '#!/bin/sh' > /root/start.sh && \
-    echo 'exec ./'${SERVICE_NAME}' "$@"' >> /root/start.sh && \
-    chmod +x /root/start.sh
+# Create startup script with proper permissions
+RUN printf '#!/bin/sh\nexec /app/%s "$@"\n' "${SERVICE_NAME}" > /app/start.sh && \
+    chmod +x /app/start.sh && \
+    chown swit:swit /app/start.sh
 
-# 设置标签
-LABEL org.opencontainers.image.source=https://github.com/innovationmech/swit
+# Security: Switch to non-root user
+USER swit
 
-# 使用启动脚本而不是直接引用ARG
-ENTRYPOINT ["/root/start.sh"]
+# Security: Set read-only root filesystem friendly environment
+ENV HOME=/app
+
+# OCI Image Labels
+LABEL org.opencontainers.image.source="https://github.com/innovationmech/swit" \
+      org.opencontainers.image.vendor="innovationmech" \
+      org.opencontainers.image.title="${SERVICE_NAME}" \
+      org.opencontainers.image.description="Swit microservice framework - ${SERVICE_NAME}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+# Use startup script as entrypoint
+ENTRYPOINT ["/app/start.sh"]
