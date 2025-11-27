@@ -172,7 +172,7 @@ jobs:
 
       - name: Upload gosec artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: gosec-results
           path: _output/security/gosec-*
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload govulncheck artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: govulncheck-results
           path: _output/security/govulncheck-*
@@ -444,7 +444,7 @@ jobs:
 
       - name: Upload OSV artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: osv-results
           path: _output/security/osv-*
