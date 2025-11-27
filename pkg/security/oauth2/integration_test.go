@@ -979,3 +979,456 @@ func (m *MockOIDCServer) generateAuthCode(clientID, redirectURI string, scopes [
 	m.mu.Unlock()
 	return code
 }
+
+// =============================================================================
+// Additional Integration Tests for OAuth2 Complete Flow
+// =============================================================================
+
+// TestIntegrationOAuth2DiscoveryFlow tests OIDC discovery and configuration.
+func TestIntegrationOAuth2DiscoveryFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	// Test discovery endpoint directly
+	resp, err := http.Get(mockServer.GetIssuerURL() + "/.well-known/openid-configuration")
+	if err != nil {
+		t.Fatalf("Failed to fetch discovery document: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Discovery endpoint returned status %d, want 200", resp.StatusCode)
+	}
+
+	var discovery map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+		t.Fatalf("Failed to decode discovery document: %v", err)
+	}
+
+	// Verify required fields
+	requiredFields := []string{
+		"issuer",
+		"authorization_endpoint",
+		"token_endpoint",
+		"jwks_uri",
+	}
+
+	for _, field := range requiredFields {
+		if _, ok := discovery[field]; !ok {
+			t.Errorf("Discovery document missing required field: %s", field)
+		}
+	}
+
+	// Verify issuer matches
+	if discovery["issuer"] != mockServer.GetIssuerURL() {
+		t.Errorf("Issuer mismatch: got %v, want %s", discovery["issuer"], mockServer.GetIssuerURL())
+	}
+}
+
+// TestIntegrationOAuth2JWKSEndpoint tests JWKS endpoint functionality.
+func TestIntegrationOAuth2JWKSEndpoint(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	resp, err := http.Get(mockServer.GetIssuerURL() + "/jwks")
+	if err != nil {
+		t.Fatalf("Failed to fetch JWKS: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("JWKS endpoint returned status %d, want 200", resp.StatusCode)
+	}
+
+	var jwks map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
+		t.Fatalf("Failed to decode JWKS: %v", err)
+	}
+
+	keys, ok := jwks["keys"].([]interface{})
+	if !ok || len(keys) == 0 {
+		t.Error("JWKS should contain at least one key")
+	}
+
+	// Verify key structure
+	key := keys[0].(map[string]interface{})
+	if key["kty"] != "RSA" {
+		t.Errorf("Key type should be RSA, got %v", key["kty"])
+	}
+	if key["alg"] != "RS256" {
+		t.Errorf("Algorithm should be RS256, got %v", key["alg"])
+	}
+}
+
+// TestIntegrationOAuth2InvalidCredentials tests error handling for invalid credentials.
+func TestIntegrationOAuth2InvalidCredentials(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	tests := []struct {
+		name         string
+		clientID     string
+		clientSecret string
+		wantErr      bool
+	}{
+		{
+			name:         "valid credentials",
+			clientID:     mockServer.GetClientID(),
+			clientSecret: mockServer.GetClientSecret(),
+			wantErr:      false,
+		},
+		{
+			name:         "invalid client ID",
+			clientID:     "invalid-client",
+			clientSecret: mockServer.GetClientSecret(),
+			wantErr:      true,
+		},
+		{
+			name:         "invalid client secret",
+			clientID:     mockServer.GetClientID(),
+			clientSecret: "invalid-secret",
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				Enabled:      true,
+				Provider:     "keycloak",
+				ClientID:     tt.clientID,
+				ClientSecret: tt.clientSecret,
+				RedirectURL:  "http://localhost:8080/callback",
+				Scopes:       []string{"openid", "profile"},
+				IssuerURL:    mockServer.GetIssuerURL(),
+				UseDiscovery: true,
+				HTTPTimeout:  10 * time.Second,
+			}
+
+			ctx := context.Background()
+			client, err := NewClient(ctx, config)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("Unexpected error creating client: %v", err)
+				}
+				return
+			}
+			defer client.Close()
+
+			// Try to exchange a code - this should fail with invalid credentials
+			code := simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
+			_, err = client.Exchange(ctx, code)
+
+			if tt.wantErr && err == nil {
+				t.Error("Expected error with invalid credentials, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestIntegrationOAuth2ExpiredCode tests handling of expired authorization codes.
+func TestIntegrationOAuth2ExpiredCode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	config := &Config{
+		Enabled:      true,
+		Provider:     "keycloak",
+		ClientID:     mockServer.GetClientID(),
+		ClientSecret: mockServer.GetClientSecret(),
+		RedirectURL:  "http://localhost:8080/callback",
+		Scopes:       []string{"openid"},
+		IssuerURL:    mockServer.GetIssuerURL(),
+		UseDiscovery: true,
+		HTTPTimeout:  10 * time.Second,
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Generate an expired code
+	code, _ := generateRandomString(32)
+	mockServer.mu.Lock()
+	mockServer.authCodes[code] = &mockAuthCode{
+		Code:        code,
+		ClientID:    mockServer.GetClientID(),
+		RedirectURI: config.RedirectURL,
+		Scopes:      config.Scopes,
+		ExpiresAt:   time.Now().Add(-1 * time.Hour), // Already expired
+		Used:        false,
+	}
+	mockServer.mu.Unlock()
+
+	// Try to exchange the expired code
+	_, err = client.Exchange(ctx, code)
+	if err == nil {
+		t.Error("Expected error when exchanging expired code, got nil")
+	}
+}
+
+// TestIntegrationOAuth2CodeReuse tests that authorization codes cannot be reused.
+func TestIntegrationOAuth2CodeReuse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	config := &Config{
+		Enabled:      true,
+		Provider:     "keycloak",
+		ClientID:     mockServer.GetClientID(),
+		ClientSecret: mockServer.GetClientSecret(),
+		RedirectURL:  "http://localhost:8080/callback",
+		Scopes:       []string{"openid"},
+		IssuerURL:    mockServer.GetIssuerURL(),
+		UseDiscovery: true,
+		HTTPTimeout:  10 * time.Second,
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Get a code and exchange it
+	code := simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
+	_, err = client.Exchange(ctx, code)
+	if err != nil {
+		t.Fatalf("First exchange failed: %v", err)
+	}
+
+	// Try to reuse the same code
+	_, err = client.Exchange(ctx, code)
+	if err == nil {
+		t.Error("Expected error when reusing authorization code, got nil")
+	}
+}
+
+// TestIntegrationOAuth2ConcurrentRequests tests concurrent token operations.
+func TestIntegrationOAuth2ConcurrentRequests(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	config := &Config{
+		Enabled:      true,
+		Provider:     "keycloak",
+		ClientID:     mockServer.GetClientID(),
+		ClientSecret: mockServer.GetClientSecret(),
+		RedirectURL:  "http://localhost:8080/callback",
+		Scopes:       []string{"openid", "profile"},
+		IssuerURL:    mockServer.GetIssuerURL(),
+		UseDiscovery: true,
+		HTTPTimeout:  10 * time.Second,
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Pre-generate codes
+	numConcurrent := 10
+	codes := make([]string, numConcurrent)
+	for i := 0; i < numConcurrent; i++ {
+		codes[i] = simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
+	}
+
+	// Exchange codes concurrently
+	var wg sync.WaitGroup
+	errors := make(chan error, numConcurrent)
+
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(code string) {
+			defer wg.Done()
+			_, err := client.Exchange(ctx, code)
+			if err != nil {
+				errors <- err
+			}
+		}(codes[i])
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for errors
+	for err := range errors {
+		t.Errorf("Concurrent exchange failed: %v", err)
+	}
+}
+
+// TestIntegrationOAuth2UserInfoEndpoint tests the userinfo endpoint.
+func TestIntegrationOAuth2UserInfoEndpoint(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	config := &Config{
+		Enabled:      true,
+		Provider:     "keycloak",
+		ClientID:     mockServer.GetClientID(),
+		ClientSecret: mockServer.GetClientSecret(),
+		RedirectURL:  "http://localhost:8080/callback",
+		Scopes:       []string{"openid", "profile", "email"},
+		IssuerURL:    mockServer.GetIssuerURL(),
+		UseDiscovery: true,
+		HTTPTimeout:  10 * time.Second,
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Get token
+	code := simulateAuthorizationFlow(t, mockServer, config.RedirectURL, config.Scopes)
+	token, err := client.Exchange(ctx, code)
+	if err != nil {
+		t.Fatalf("Failed to exchange code: %v", err)
+	}
+
+	// Call userinfo endpoint
+	req, err := http.NewRequestWithContext(ctx, "GET", mockServer.GetIssuerURL()+"/userinfo", nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Userinfo request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Userinfo endpoint returned status %d, want 200", resp.StatusCode)
+	}
+
+	var userInfo map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		t.Fatalf("Failed to decode userinfo response: %v", err)
+	}
+
+	// Verify user info fields
+	if userInfo["sub"] != "test-user" {
+		t.Errorf("Expected sub 'test-user', got %v", userInfo["sub"])
+	}
+	if userInfo["email"] != "test@example.com" {
+		t.Errorf("Expected email 'test@example.com', got %v", userInfo["email"])
+	}
+}
+
+// TestIntegrationOAuth2InvalidToken tests handling of invalid tokens.
+func TestIntegrationOAuth2InvalidToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	mockServer, err := NewMockOIDCServer()
+	if err != nil {
+		t.Fatalf("Failed to create mock OIDC server: %v", err)
+	}
+	defer mockServer.Close()
+
+	// Test userinfo with invalid token
+	req, _ := http.NewRequest("GET", mockServer.GetIssuerURL()+"/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer invalid-token")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("Expected status 401 for invalid token, got %d", resp.StatusCode)
+	}
+
+	// Test introspection with invalid token
+	config := &Config{
+		Enabled:      true,
+		Provider:     "keycloak",
+		ClientID:     mockServer.GetClientID(),
+		ClientSecret: mockServer.GetClientSecret(),
+		RedirectURL:  "http://localhost:8080/callback",
+		IssuerURL:    mockServer.GetIssuerURL(),
+		UseDiscovery: true,
+		TokenURL:     mockServer.GetIssuerURL() + "/token",
+		HTTPTimeout:  10 * time.Second,
+	}
+
+	ctx := context.Background()
+	client, err := NewClient(ctx, config)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	introspection, err := client.IntrospectToken(ctx, "invalid-token")
+	if err != nil {
+		t.Fatalf("Introspection failed: %v", err)
+	}
+
+	if introspection.Active {
+		t.Error("Expected inactive token for invalid token")
+	}
+}

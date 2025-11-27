@@ -28,6 +28,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -734,4 +735,582 @@ func TestMultipleClientsIsolation(t *testing.T) {
 	if !result2.Allowed {
 		t.Error("Client2 ABAC evaluation should allow admin")
 	}
+}
+
+// =============================================================================
+// Additional OPA Integration Tests
+// =============================================================================
+
+// TestOPAComplexRBACScenarios 测试复杂 RBAC 场景
+func TestOPAComplexRBACScenarios(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// 创建复杂 RBAC 策略
+	complexPolicy := `
+package complex_rbac
+
+import rego.v1
+
+default allow := false
+
+# 角色层级定义
+role_hierarchy := {
+    "super_admin": ["admin", "editor", "viewer"],
+    "admin": ["editor", "viewer"],
+    "editor": ["viewer"],
+    "viewer": [],
+}
+
+# 获取用户的有效角色（包括继承的角色）
+effective_roles contains role if {
+    some r in input.subject.roles
+    role := role_hierarchy[r][_]
+}
+
+effective_roles contains role if {
+    some role in input.subject.roles
+}
+
+# 资源权限定义
+resource_permissions := {
+    "documents": {
+        "admin": ["create", "read", "update", "delete"],
+        "editor": ["create", "read", "update"],
+        "viewer": ["read"],
+    },
+    "users": {
+        "admin": ["create", "read", "update", "delete"],
+        "viewer": ["read"],
+    },
+    "settings": {
+        "super_admin": ["create", "read", "update", "delete"],
+        "admin": ["read", "update"],
+    },
+}
+
+# 权限检查
+allow if {
+    some role in effective_roles
+    input.action in resource_permissions[input.resource][role]
+}
+`
+	if err := os.WriteFile(filepath.Join(tempDir, "complex_rbac.rego"), []byte(complexPolicy), 0644); err != nil {
+		t.Fatalf("Failed to write policy: %v", err)
+	}
+
+	client, err := opa.NewClient(ctx, &opa.Config{
+		Mode: opa.ModeEmbedded,
+		EmbeddedConfig: &opa.EmbeddedConfig{
+			PolicyDir: tempDir,
+		},
+		DefaultDecisionPath: "complex_rbac/allow",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close(ctx)
+
+	tests := []struct {
+		name     string
+		input    map[string]interface{}
+		expected bool
+	}{
+		{
+			name: "super_admin inherits admin permissions",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "root",
+					"roles": []string{"super_admin"},
+				},
+				"action":   "delete",
+				"resource": "documents",
+			},
+			expected: true,
+		},
+		{
+			name: "admin can update settings",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "admin_user",
+					"roles": []string{"admin"},
+				},
+				"action":   "update",
+				"resource": "settings",
+			},
+			expected: true,
+		},
+		{
+			name: "admin cannot delete settings",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "admin_user",
+					"roles": []string{"admin"},
+				},
+				"action":   "delete",
+				"resource": "settings",
+			},
+			expected: false,
+		},
+		{
+			name: "editor inherits viewer permissions",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "editor_user",
+					"roles": []string{"editor"},
+				},
+				"action":   "read",
+				"resource": "documents",
+			},
+			expected: true,
+		},
+		{
+			name: "viewer cannot create documents",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "viewer_user",
+					"roles": []string{"viewer"},
+				},
+				"action":   "create",
+				"resource": "documents",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := client.Evaluate(ctx, "", tt.input)
+			if err != nil {
+				t.Fatalf("Policy evaluation failed: %v", err)
+			}
+			if result.Allowed != tt.expected {
+				t.Errorf("Expected allowed=%v, got %v", tt.expected, result.Allowed)
+			}
+		})
+	}
+}
+
+// TestOPATimeBasedPolicy 测试基于时间的策略
+func TestOPATimeBasedPolicy(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// 创建时间敏感策略
+	timePolicy := `
+package time_policy
+
+import rego.v1
+
+default allow := false
+
+# 允许工作时间访问（简化版本，使用输入时间）
+allow if {
+    input.current_hour >= 9
+    input.current_hour < 18
+    input.subject.roles[_] == "employee"
+}
+
+# 管理员任何时间都可以访问
+allow if {
+    input.subject.roles[_] == "admin"
+}
+`
+	if err := os.WriteFile(filepath.Join(tempDir, "time_policy.rego"), []byte(timePolicy), 0644); err != nil {
+		t.Fatalf("Failed to write policy: %v", err)
+	}
+
+	client, err := opa.NewClient(ctx, &opa.Config{
+		Mode: opa.ModeEmbedded,
+		EmbeddedConfig: &opa.EmbeddedConfig{
+			PolicyDir: tempDir,
+		},
+		DefaultDecisionPath: "time_policy/allow",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close(ctx)
+
+	tests := []struct {
+		name     string
+		input    map[string]interface{}
+		expected bool
+	}{
+		{
+			name: "employee during work hours",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "employee1",
+					"roles": []string{"employee"},
+				},
+				"current_hour": 10,
+			},
+			expected: true,
+		},
+		{
+			name: "employee outside work hours",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "employee1",
+					"roles": []string{"employee"},
+				},
+				"current_hour": 22,
+			},
+			expected: false,
+		},
+		{
+			name: "admin outside work hours",
+			input: map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  "admin1",
+					"roles": []string{"admin"},
+				},
+				"current_hour": 22,
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := client.Evaluate(ctx, "", tt.input)
+			if err != nil {
+				t.Fatalf("Policy evaluation failed: %v", err)
+			}
+			if result.Allowed != tt.expected {
+				t.Errorf("Expected allowed=%v, got %v", tt.expected, result.Allowed)
+			}
+		})
+	}
+}
+
+// TestOPAConcurrentEvaluation 测试并发策略评估
+func TestOPAConcurrentEvaluation(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// 读取 RBAC 策略
+	rbacContent, err := os.ReadFile(filepath.Join("policies", "rbac.rego"))
+	if err != nil {
+		t.Fatalf("Failed to read RBAC policy: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "rbac.rego"), rbacContent, 0644); err != nil {
+		t.Fatalf("Failed to write RBAC policy: %v", err)
+	}
+
+	client, err := opa.NewClient(ctx, &opa.Config{
+		Mode: opa.ModeEmbedded,
+		EmbeddedConfig: &opa.EmbeddedConfig{
+			PolicyDir: tempDir,
+		},
+		DefaultDecisionPath: "rbac/allow",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close(ctx)
+
+	// 并发评估
+	numGoroutines := 50
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			input := map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user":  fmt.Sprintf("user-%d", id),
+					"roles": []string{"admin"},
+				},
+				"action":   "read",
+				"resource": "documents",
+			}
+
+			result, err := client.Evaluate(ctx, "", input)
+			if err != nil {
+				errors <- fmt.Errorf("goroutine %d: %v", id, err)
+				return
+			}
+
+			if !result.Allowed {
+				errors <- fmt.Errorf("goroutine %d: expected allowed=true", id)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Error(err)
+	}
+}
+
+// TestOPAPolicyValidation 测试策略验证
+func TestOPAPolicyValidation(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		policy    string
+		wantError bool
+	}{
+		{
+			name: "valid policy",
+			policy: `
+package test
+import rego.v1
+default allow := false
+allow if { input.user == "admin" }
+`,
+			wantError: false,
+		},
+		{
+			name: "invalid syntax",
+			policy: `
+package test
+import rego.v1
+default allow := false
+allow if { input.user ==
+`,
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(tempDir, "test.rego"), []byte(tt.policy), 0644); err != nil {
+				t.Fatalf("Failed to write policy: %v", err)
+			}
+
+			client, err := opa.NewClient(ctx, &opa.Config{
+				Mode: opa.ModeEmbedded,
+				EmbeddedConfig: &opa.EmbeddedConfig{
+					PolicyDir: tempDir,
+				},
+				DefaultDecisionPath: "test/allow",
+			})
+
+			if tt.wantError {
+				if err == nil {
+					t.Error("Expected error for invalid policy, got nil")
+					if client != nil {
+						client.Close(ctx)
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				} else {
+					client.Close(ctx)
+				}
+			}
+		})
+	}
+}
+
+// TestOPADataIntegration 测试数据集成
+func TestOPADataIntegration(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// 创建使用外部数据的策略
+	dataPolicy := `
+package data_policy
+
+import rego.v1
+
+default allow := false
+
+# 使用输入中的数据进行决策
+allow if {
+    user_data := input.user_database[input.subject.user_id]
+    user_data.active == true
+    user_data.level >= input.required_level
+}
+`
+	if err := os.WriteFile(filepath.Join(tempDir, "data_policy.rego"), []byte(dataPolicy), 0644); err != nil {
+		t.Fatalf("Failed to write policy: %v", err)
+	}
+
+	client, err := opa.NewClient(ctx, &opa.Config{
+		Mode: opa.ModeEmbedded,
+		EmbeddedConfig: &opa.EmbeddedConfig{
+			PolicyDir: tempDir,
+		},
+		DefaultDecisionPath: "data_policy/allow",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close(ctx)
+
+	// 模拟用户数据库
+	userDatabase := map[string]interface{}{
+		"user1": map[string]interface{}{
+			"active": true,
+			"level":  5,
+		},
+		"user2": map[string]interface{}{
+			"active": false,
+			"level":  10,
+		},
+		"user3": map[string]interface{}{
+			"active": true,
+			"level":  2,
+		},
+	}
+
+	tests := []struct {
+		name          string
+		userID        string
+		requiredLevel int
+		expected      bool
+	}{
+		{
+			name:          "active user with sufficient level",
+			userID:        "user1",
+			requiredLevel: 3,
+			expected:      true,
+		},
+		{
+			name:          "inactive user with high level",
+			userID:        "user2",
+			requiredLevel: 5,
+			expected:      false,
+		},
+		{
+			name:          "active user with insufficient level",
+			userID:        "user3",
+			requiredLevel: 5,
+			expected:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := map[string]interface{}{
+				"subject": map[string]interface{}{
+					"user_id": tt.userID,
+				},
+				"user_database":  userDatabase,
+				"required_level": tt.requiredLevel,
+			}
+
+			result, err := client.Evaluate(ctx, "", input)
+			if err != nil {
+				t.Fatalf("Policy evaluation failed: %v", err)
+			}
+			if result.Allowed != tt.expected {
+				t.Errorf("Expected allowed=%v, got %v", tt.expected, result.Allowed)
+			}
+		})
+	}
+}
+
+// TestOPAErrorHandling 测试错误处理
+func TestOPAErrorHandling(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		setupClient func() (opa.Client, error)
+		wantError   bool
+	}{
+		{
+			name: "empty policy directory",
+			setupClient: func() (opa.Client, error) {
+				return opa.NewClient(ctx, &opa.Config{
+					Mode: opa.ModeEmbedded,
+					EmbeddedConfig: &opa.EmbeddedConfig{
+						PolicyDir: t.TempDir(),
+					},
+					DefaultDecisionPath: "nonexistent/allow",
+				})
+			},
+			wantError: false, // Client creation succeeds, but evaluation might fail
+		},
+		{
+			name: "invalid remote URL",
+			setupClient: func() (opa.Client, error) {
+				return opa.NewClient(ctx, &opa.Config{
+					Mode: opa.ModeRemote,
+					RemoteConfig: &opa.RemoteConfig{
+						URL:     "http://invalid-host-that-does-not-exist:9999",
+						Timeout: 1 * time.Second,
+					},
+					DefaultDecisionPath: "test/allow",
+				})
+			},
+			wantError: false, // Client creation might succeed, connection fails later
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := tt.setupClient()
+			if tt.wantError {
+				if err == nil {
+					t.Error("Expected error, got nil")
+					if client != nil {
+						client.Close(ctx)
+					}
+				}
+			} else {
+				if client != nil {
+					client.Close(ctx)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkOPAConcurrentEvaluation 基准测试并发评估性能
+func BenchmarkOPAConcurrentEvaluation(b *testing.B) {
+	ctx := context.Background()
+	tempDir := b.TempDir()
+
+	rbacContent, err := os.ReadFile(filepath.Join("policies", "rbac.rego"))
+	if err != nil {
+		b.Fatalf("Failed to read RBAC policy: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "rbac.rego"), rbacContent, 0644); err != nil {
+		b.Fatalf("Failed to write RBAC policy: %v", err)
+	}
+
+	client, err := opa.NewClient(ctx, &opa.Config{
+		Mode: opa.ModeEmbedded,
+		EmbeddedConfig: &opa.EmbeddedConfig{
+			PolicyDir: tempDir,
+		},
+		DefaultDecisionPath: "rbac/allow",
+	})
+	if err != nil {
+		b.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close(ctx)
+
+	input := map[string]interface{}{
+		"subject": map[string]interface{}{
+			"user":  "alice",
+			"roles": []string{"admin"},
+		},
+		"action":   "read",
+		"resource": "documents",
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := client.Evaluate(ctx, "", input)
+			if err != nil {
+				b.Fatalf("Evaluation failed: %v", err)
+			}
+		}
+	})
 }
