@@ -535,6 +535,8 @@ vim values.yaml
 
 ## 🔒 安全配置
 
+本 Helm Chart 提供了全面的安全配置选项，支持 TLS/mTLS、Secret 管理、ServiceAccount RBAC 和 NetworkPolicy。
+
 ### 1. 密钥管理
 
 ```yaml
@@ -544,36 +546,206 @@ secret:
     rootPassword: "your-root-password"
   jwt:
     secret: "base64-encoded-jwt-secret"
+  
+  # TLS 证书配置
+  tls:
+    createSelfSigned: false  # 仅用于开发/测试
+    validityDays: 365
+    subject:
+      organization: "Swit"
+      organizationalUnit: "Engineering"
+    san:
+      dnsNames:
+        - "localhost"
+        - "*.swit.svc.cluster.local"
+      ipAddresses:
+        - "127.0.0.1"
+  
+  # 数据加密配置
+  encryption:
+    enabled: false
+    key: ""  # 32 字节 base64 编码
+    rotationDays: 90
+  
+  # 外部 Secret 管理（HashiCorp Vault、AWS Secrets Manager 等）
+  externalSecrets:
+    enabled: false
+    backend: "vault"
+    vault:
+      address: "https://vault.example.com"
+      path: "secret/data/swit"
+      role: "swit-role"
 ```
 
-### 2. 网络安全
+### 2. TLS/mTLS 配置
 
 ```yaml
-# 启用 NetworkPolicy
-networkPolicy:
+security:
   enabled: true
-  ingress:
-    - from:
-      - namespaceSelector:
-          matchLabels:
-            name: swit
+  
+  # TLS 配置
+  tls:
+    enabled: true
+    source: "cert-manager"  # cert-manager, external, self-signed
+    duration: "8760h"       # 1 年
+    renewBefore: "720h"     # 30 天
+    issuer:
+      name: "letsencrypt-prod"
+      kind: "ClusterIssuer"
+    existingSecret: ""      # 使用已有的 Secret
+    minVersion: "TLS12"
+    cipherSuites:
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+  
+  # mTLS 配置（服务间通信）
+  mtls:
+    enabled: true
+    clientAuthMode: "require"  # require, optional, none
+    caSecret: ""
+    clientCertSecret: ""
 ```
 
-### 3. Pod 安全
+### 3. OAuth2/OIDC 配置
+
+```yaml
+security:
+  oauth2:
+    enabled: true
+    issuerUrl: "https://auth.example.com"
+    clientId: "swit-client"
+    clientSecretRef: "oauth2-client-secret"
+    audience:
+      - "swit-api"
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+```
+
+### 4. 速率限制
+
+```yaml
+security:
+  rateLimit:
+    enabled: true
+    requestsPerSecond: 100
+    burst: 200
+    scope: "ip"  # ip, user, global
+```
+
+### 5. 网络安全 (NetworkPolicy)
+
+```yaml
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  ingress:
+    allowSameNamespace: true
+    allowIngressController: true
+    ingressControllerNamespace:
+      matchLabels:
+        name: ingress-nginx
+    customRules: []
+  
+  egress:
+    allowDNS: true
+    allowDatabase: true
+    allowServiceDiscovery: true
+    allowExternalHTTPS: false
+    customRules: []
+```
+
+### 6. Pod 安全
 
 ```yaml
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 2000
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
   capabilities:
     drop:
-    - ALL
+      - ALL
+    add:
+      - NET_BIND_SERVICE
 ```
+
+### 7. ServiceAccount RBAC 配置
+
+```yaml
+serviceAccount:
+  create: true
+  automount: false  # 生产环境建议禁用自动挂载
+  annotations:
+    # AWS EKS
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/SwitServiceRole"
+    # GCP GKE
+    # iam.gke.io/gcp-service-account: "swit@project.iam.gserviceaccount.com"
+  name: "swit-service-account"
+  rbac:
+    create: true
+    rules:
+      - apiGroups: [""]
+        resources: ["configmaps"]
+        verbs: ["get", "list", "watch"]
+```
+
+### 8. 安全加固（生产环境）
+
+```yaml
+securityHardening:
+  enabled: true
+  
+  # 容器镜像安全
+  image:
+    verifySignature: false
+    allowedRegistries:
+      - "docker.io"
+      - "gcr.io"
+    disallowLatestTag: true
+  
+  # 运行时安全
+  runtime:
+    appArmor:
+      enabled: false
+      profile: "runtime/default"
+    seccomp:
+      enabled: false
+      profile: "RuntimeDefault"
+  
+  # 敏感数据保护
+  sensitiveData:
+    maskInLogs: true
+    sensitiveFields:
+      - "password"
+      - "secret"
+      - "token"
+```
+
+### 安全配置快速参考
+
+| 配置项 | 默认值 | 生产环境建议 |
+|--------|--------|--------------|
+| `security.enabled` | `false` | `true` |
+| `security.tls.enabled` | `false` | `true` |
+| `security.mtls.enabled` | `false` | `true` |
+| `networkPolicy.enabled` | `false` | `true` |
+| `serviceAccount.automount` | `true` | `false` |
+| `podSecurityContext.runAsNonRoot` | `false` | `true` |
+| `securityContext.allowPrivilegeEscalation` | 未设置 | `false` |
+| `securityContext.readOnlyRootFilesystem` | 未设置 | `true` |
 
 ## 📊 监控和指标
 

@@ -14,6 +14,12 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+    - port: {{ add .Values.switAuth.service.port 443 }}
+      targetPort: https
+      protocol: TCP
+      name: https
+    {{- end }}
   selector:
     {{- include "swit.auth.selectorLabels" . | nindent 4 }}
 
@@ -38,6 +44,15 @@ spec:
       {{- if and (eq .Values.switAuth.external.service.type "NodePort") .Values.switAuth.external.service.nodePort }}
       nodePort: {{ .Values.switAuth.external.service.nodePort }}
       {{- end }}
+    {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+    - port: {{ add .Values.switAuth.service.port 443 }}
+      targetPort: https
+      protocol: TCP
+      name: https
+      {{- if and (eq .Values.switAuth.external.service.type "NodePort") .Values.switAuth.external.service.httpsNodePort }}
+      nodePort: {{ .Values.switAuth.external.service.httpsNodePort }}
+      {{- end }}
+    {{- end }}
   selector:
     {{- include "swit.auth.selectorLabels" . | nindent 4 }}
 {{- end }}
