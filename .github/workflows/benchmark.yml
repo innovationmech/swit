@@ -1,0 +1,278 @@
+# Copyright 2024 Swit Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Benchmark Workflow
+# This workflow runs performance benchmarks and detects regressions
+# Ref: Issue #831 - CI/CD 管道集成
+
+name: Performance Benchmarks
+
+on:
+  # Only run full benchmarks on push to master (not on every PR)
+  push:
+    branches: [master]
+    paths:
+      - 'pkg/server/**'
+      - 'pkg/transport/**'
+      - 'pkg/middleware/**'
+      - '.github/workflows/benchmark.yml'
+  # For PRs, only run on explicit request via label or workflow_dispatch
+  pull_request:
+    branches: [master]
+    types: [labeled]
+  schedule:
+    # Run benchmarks weekly on Sunday at 3:00 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      benchmark_filter:
+        description: 'Benchmark filter pattern (e.g., BenchmarkServer)'
+        required: false
+        default: ''
+        type: string
+      benchmark_packages:
+        description: 'Packages to benchmark (e.g., ./pkg/server/...)'
+        required: false
+        default: './pkg/server/... ./pkg/transport/...'
+        type: string
+      full_run:
+        description: 'Run full benchmarks (all packages, more iterations)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  GO_VERSION: '1.24'
+
+concurrency:
+  group: benchmark-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================================================
+  # Check if benchmarks should run
+  # ===========================================================================
+  check-trigger:
+    name: Check Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      is_full_run: ${{ steps.check.outputs.is_full_run }}
+      benchmark_count: ${{ steps.check.outputs.benchmark_count }}
+      packages: ${{ steps.check.outputs.packages }}
+    steps:
+      - name: Check trigger conditions
+        id: check
+        run: |
+          SHOULD_RUN="false"
+          IS_FULL_RUN="false"
+          BENCHMARK_COUNT="1"
+          PACKAGES="./pkg/server/... ./pkg/transport/..."
+          
+          # workflow_dispatch - always run
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            SHOULD_RUN="true"
+            if [ "${{ github.event.inputs.full_run }}" == "true" ]; then
+              IS_FULL_RUN="true"
+              BENCHMARK_COUNT="3"
+              PACKAGES=$(go list ./... 2>/dev/null | grep -v -E '/(api/gen|docs/generated)/' | tr '\n' ' ' || echo "./pkg/...")
+            else
+              PACKAGES="${{ github.event.inputs.benchmark_packages }}"
+            fi
+          fi
+          
+          # push to master - run with moderate settings
+          if [ "${{ github.event_name }}" == "push" ]; then
+            SHOULD_RUN="true"
+            BENCHMARK_COUNT="2"
+          fi
+          
+          # schedule - full run
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            SHOULD_RUN="true"
+            IS_FULL_RUN="true"
+            BENCHMARK_COUNT="3"
+            PACKAGES="./pkg/..."
+          fi
+          
+          # PR with 'run-benchmarks' label
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            if [ "${{ contains(github.event.pull_request.labels.*.name, 'run-benchmarks') }}" == "true" ]; then
+              SHOULD_RUN="true"
+              BENCHMARK_COUNT="1"
+            fi
+          fi
+          
+          echo "should_run=${SHOULD_RUN}" >> $GITHUB_OUTPUT
+          echo "is_full_run=${IS_FULL_RUN}" >> $GITHUB_OUTPUT
+          echo "benchmark_count=${BENCHMARK_COUNT}" >> $GITHUB_OUTPUT
+          echo "packages=${PACKAGES}" >> $GITHUB_OUTPUT
+          
+          echo "📊 Benchmark configuration:"
+          echo "  - Should run: ${SHOULD_RUN}"
+          echo "  - Full run: ${IS_FULL_RUN}"
+          echo "  - Iterations: ${BENCHMARK_COUNT}"
+          echo "  - Packages: ${PACKAGES}"
+
+  # ===========================================================================
+  # Run Benchmarks
+  # ===========================================================================
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run == 'true'
+    timeout-minutes: 15
+    outputs:
+      benchmark_results: ${{ steps.benchmark.outputs.results }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Restore generated code cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/gen/
+            docs/
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'api/buf.gen.yaml', 'api/buf.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-generated-
+
+      - name: Install dev tools
+        run: make setup-dev
+
+      - name: Generate proto code
+        run: make proto
+
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Run benchmarks
+        id: benchmark
+        run: |
+          mkdir -p _output/benchmark
+          
+          FILTER="${{ github.event.inputs.benchmark_filter }}"
+          if [ -z "$FILTER" ]; then
+            FILTER="."
+          fi
+          
+          PACKAGES="${{ needs.check-trigger.outputs.packages }}"
+          COUNT="${{ needs.check-trigger.outputs.benchmark_count }}"
+          
+          echo "🏃 Running benchmarks"
+          echo "  - Filter: ${FILTER}"
+          echo "  - Packages: ${PACKAGES}"
+          echo "  - Iterations: ${COUNT}"
+          
+          # Run benchmarks with short timeout per test
+          go test -bench="${FILTER}" -benchmem -count=${COUNT} -timeout=10m \
+            -run=^$ ${PACKAGES} 2>&1 | tee _output/benchmark/current.txt
+          
+          # Count benchmarks run
+          BENCH_COUNT=$(grep -c "^Benchmark" _output/benchmark/current.txt 2>/dev/null || echo "0")
+          echo "✅ Completed ${BENCH_COUNT} benchmarks"
+          echo "results=_output/benchmark/current.txt" >> $GITHUB_OUTPUT
+          echo "bench_count=${BENCH_COUNT}" >> $GITHUB_OUTPUT
+
+      - name: Generate benchmark summary
+        run: |
+          echo "## 🏃 Performance Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Iterations**: ${{ needs.check-trigger.outputs.benchmark_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Packages**: ${{ needs.check-trigger.outputs.packages }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "_output/benchmark/current.txt" ]; then
+            BENCH_COUNT=$(grep -c "^Benchmark" _output/benchmark/current.txt 2>/dev/null || echo "0")
+            echo "**Benchmarks run**: ${BENCH_COUNT}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Results (top 20)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E "^Benchmark" _output/benchmark/current.txt | head -20 >> $GITHUB_STEP_SUMMARY || echo "No results" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: _output/benchmark/
+          retention-days: 30
+
+  # ===========================================================================
+  # Store Baseline (for master branch)
+  # ===========================================================================
+  store-baseline:
+    name: Store Baseline
+    runs-on: ubuntu-latest
+    needs: [check-trigger, benchmark]
+    if: |
+      needs.check-trigger.outputs.should_run == 'true' &&
+      github.event_name == 'push' && 
+      github.ref == 'refs/heads/master'
+    steps:
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: _output/benchmark/
+
+      - name: Upload as baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline-master
+          path: _output/benchmark/
+          retention-days: 90
+
+      - name: Baseline summary
+        run: |
+          echo "## 📊 Benchmark Baseline Updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "New baseline stored for master branch." >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Skip notification (when benchmarks don't run)
+  # ===========================================================================
+  skip-notification:
+    name: Benchmarks Skipped
+    runs-on: ubuntu-latest
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run != 'true'
+    steps:
+      - name: Skip summary
+        run: |
+          echo "## ⏭️ Benchmarks Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Benchmarks were not triggered for this event." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To run benchmarks on a PR, add the \`run-benchmarks\` label." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Benchmarks automatically run on:" >> $GITHUB_STEP_SUMMARY
+          echo "- Push to master (core packages only)" >> $GITHUB_STEP_SUMMARY
+          echo "- Weekly schedule (full run)" >> $GITHUB_STEP_SUMMARY
+          echo "- Manual trigger via workflow_dispatch" >> $GITHUB_STEP_SUMMARY

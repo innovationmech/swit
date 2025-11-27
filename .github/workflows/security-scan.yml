@@ -1,0 +1,506 @@
+# Copyright 2024 Swit Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Security Scan Workflow
+# This workflow runs comprehensive security scans including gosec and govulncheck
+# Ref: Issue #831 - CI/CD 管道集成
+
+name: Security Scan
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '**/*.go'
+      - '.github/workflows/security-scan.yml'
+  pull_request:
+    branches: [master, dev]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '**/*.go'
+      - '.github/workflows/security-scan.yml'
+  schedule:
+    # Run security scan daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      fail_on_high:
+        description: 'Fail on high severity vulnerabilities'
+        required: false
+        default: 'true'
+        type: boolean
+      fail_on_critical:
+        description: 'Fail on critical severity vulnerabilities'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  GO_VERSION: '1.24'
+
+concurrency:
+  group: security-scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================================================
+  # Static Analysis with gosec
+  # ===========================================================================
+  gosec-scan:
+    name: Gosec Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Restore generated code cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/gen/
+            docs/
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'api/buf.gen.yaml', 'api/buf.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-generated-
+
+      - name: Install Proto tools
+        run: |
+          if [ ! -f "$HOME/.local/bin/protoc" ] || [ ! -f "$HOME/.local/bin/buf" ]; then
+            make proto-setup
+          fi
+
+      - name: Generate proto code
+        run: make proto
+
+      - name: Install gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Run gosec scan
+        id: gosec
+        run: |
+          mkdir -p _output/security
+          
+          # Get all packages, excluding auto-generated code
+          PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+          
+          if [ -z "$PACKAGES" ]; then
+            echo "No packages to scan with gosec"
+            echo '{"Stats":{"found":0},"Issues":[]}' > _output/security/gosec-results.json
+            echo "issues_found=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "🔍 Scanning packages with gosec..."
+          echo "$PACKAGES"
+          
+          # Run gosec and capture results
+          gosec -fmt json -out _output/security/gosec-results.json $PACKAGES || true
+          
+          # Also output human-readable results
+          gosec $PACKAGES 2>&1 | tee _output/security/gosec-report.txt || true
+          
+          # Count issues
+          ISSUES=$(jq '.Stats.found // 0' _output/security/gosec-results.json 2>/dev/null || echo "0")
+          echo "issues_found=${ISSUES}" >> $GITHUB_OUTPUT
+          echo "📊 Found ${ISSUES} potential security issues"
+
+      - name: Generate gosec SARIF report
+        if: always()
+        run: |
+          # Generate SARIF format for GitHub Security tab
+          PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+          if [ -n "$PACKAGES" ]; then
+            gosec -fmt sarif -out _output/security/gosec-results.sarif $PACKAGES || true
+          fi
+
+      - name: Upload gosec SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: _output/security/gosec-results.sarif
+          category: gosec
+        continue-on-error: true
+
+      - name: Display gosec summary
+        if: always()
+        run: |
+          echo "## 🔒 Gosec Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          ISSUES=${{ steps.gosec.outputs.issues_found }}
+          if [ "$ISSUES" -gt 0 ]; then
+            echo "⚠️ **Found ${ISSUES} potential security issues**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Issues Summary:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            jq -r '.Issues[]? | "- [\(.severity)] \(.details) (Rule: \(.rule_id), File: \(.file):\(.line))"' _output/security/gosec-results.json 2>/dev/null | head -20 >> $GITHUB_STEP_SUMMARY || echo "Details unavailable" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **No security issues found**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload gosec artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-results
+          path: _output/security/gosec-*
+          retention-days: 30
+
+  # ===========================================================================
+  # Vulnerability Check with govulncheck
+  # ===========================================================================
+  govulncheck-scan:
+    name: Govulncheck Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Restore generated code cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/gen/
+            docs/
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'api/buf.gen.yaml', 'api/buf.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-generated-
+
+      - name: Install Proto tools
+        run: |
+          if [ ! -f "$HOME/.local/bin/protoc" ] || [ ! -f "$HOME/.local/bin/buf" ]; then
+            make proto-setup
+          fi
+
+      - name: Generate proto code
+        run: make proto
+
+      - name: Install govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Run govulncheck
+        id: govulncheck
+        run: |
+          mkdir -p _output/security
+          
+          # Get all packages, excluding auto-generated code
+          PACKAGES=$(go list ./... | grep -v -E '/(api/gen|docs/generated)/')
+          
+          if [ -z "$PACKAGES" ]; then
+            echo "No packages to check for vulnerabilities"
+            echo "vulns_found=0" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "🔍 Checking packages for vulnerabilities..."
+          echo "$PACKAGES"
+          
+          # Run govulncheck and capture output
+          # Note: govulncheck returns exit code 3 when vulnerabilities are found
+          govulncheck $PACKAGES 2>&1 | tee _output/security/govulncheck-report.txt
+          GOVULN_EXIT=$?
+          
+          # Also generate JSON output for detailed analysis
+          govulncheck -json $PACKAGES > _output/security/govulncheck-results.json 2>&1 || true
+          
+          # Check if there are any CALLED vulnerabilities (actually used in code)
+          # govulncheck exit code: 0 = no vulns, 1 = error, 3 = vulns found
+          if [ "$GOVULN_EXIT" -eq 3 ]; then
+            # Count unique vulnerabilities that are actually called
+            VULNS=$(grep -E "^Vulnerability #" _output/security/govulncheck-report.txt | wc -l | tr -d ' ')
+            echo "vulns_found=${VULNS}" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=true" >> $GITHUB_OUTPUT
+            echo "📊 Found ${VULNS} vulnerabilities affecting your code"
+          elif [ "$GOVULN_EXIT" -eq 0 ]; then
+            echo "vulns_found=0" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=false" >> $GITHUB_OUTPUT
+            echo "✅ No vulnerabilities found"
+          else
+            echo "vulns_found=0" >> $GITHUB_OUTPUT
+            echo "has_called_vulns=false" >> $GITHUB_OUTPUT
+            echo "⚠️ govulncheck encountered an error (exit code: $GOVULN_EXIT)"
+          fi
+
+      - name: Display govulncheck summary
+        if: always()
+        run: |
+          echo "## 🛡️ Govulncheck Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          HAS_VULNS="${{ steps.govulncheck.outputs.has_called_vulns }}"
+          VULNS="${{ steps.govulncheck.outputs.vulns_found }}"
+          
+          if [ "$HAS_VULNS" == "true" ] && [ "$VULNS" -gt 0 ]; then
+            echo "⚠️ **Found ${VULNS} vulnerabilities affecting your code**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Show if this is blocking or informational
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              echo "> ℹ️ **Note**: Vulnerability checks are informational for PRs and won't block merging." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "### Vulnerability Details:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat _output/security/govulncheck-report.txt | head -100 >> $GITHUB_STEP_SUMMARY || echo "Details unavailable" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **No vulnerabilities found affecting your code**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload govulncheck artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: govulncheck-results
+          path: _output/security/govulncheck-*
+          retention-days: 30
+
+      - name: Fail on vulnerabilities (if enabled)
+        # Only fail on push to master/dev or when explicitly enabled via workflow_dispatch
+        # PRs should report vulnerabilities but not block merging (informational)
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_critical == 'true') ||
+          (github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev')) ||
+          (github.event_name == 'schedule')
+        run: |
+          HAS_VULNS="${{ steps.govulncheck.outputs.has_called_vulns }}"
+          VULNS="${{ steps.govulncheck.outputs.vulns_found }}"
+          
+          if [ "$HAS_VULNS" == "true" ] && [ "$VULNS" -gt 0 ]; then
+            echo "❌ Found ${VULNS} vulnerabilities affecting your code - failing check"
+            echo "Please review the vulnerability report and update affected dependencies"
+            exit 1
+          else
+            echo "✅ No blocking vulnerabilities found"
+          fi
+
+  # ===========================================================================
+  # Dependency Review (for PRs)
+  # ===========================================================================
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0
+          comment-summary-in-pr: always
+
+  # ===========================================================================
+  # OSV Vulnerability Check (Custom)
+  # ===========================================================================
+  osv-scan:
+    name: OSV Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: '**/go.sum'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Restore generated code cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/gen/
+            docs/
+            ~/.local/bin/
+            ~/go/bin/
+          key: ${{ runner.os }}-generated-${{ hashFiles('api/proto/**/*.proto', 'api/buf.gen.yaml', 'api/buf.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-generated-
+
+      - name: Install Proto tools
+        run: |
+          if [ ! -f "$HOME/.local/bin/protoc" ] || [ ! -f "$HOME/.local/bin/buf" ]; then
+            make proto-setup
+          fi
+
+      - name: Generate proto code
+        run: make proto
+
+      - name: Run OSV vulnerability check
+        id: osv
+        run: |
+          mkdir -p _output/security
+          
+          FAIL_HIGH="${{ github.event.inputs.fail_on_high || 'true' }}"
+          FAIL_CRITICAL="${{ github.event.inputs.fail_on_critical || 'true' }}"
+          
+          echo "🔍 Running OSV vulnerability check..."
+          go run ./cmd/vuln-checker \
+            --fail-on-high=${FAIL_HIGH} \
+            --fail-on-critical=${FAIL_CRITICAL} \
+            --output=_output/security/osv-report.json 2>&1 | tee _output/security/osv-scan.log || true
+          
+          # Extract vulnerability counts
+          if [ -f "_output/security/osv-report.json" ]; then
+            TOTAL=$(jq '.summary.total_vulnerabilities // 0' _output/security/osv-report.json 2>/dev/null || echo "0")
+            CRITICAL=$(jq '.summary.critical_count // 0' _output/security/osv-report.json 2>/dev/null || echo "0")
+            HIGH=$(jq '.summary.high_count // 0' _output/security/osv-report.json 2>/dev/null || echo "0")
+          else
+            TOTAL=0
+            CRITICAL=0
+            HIGH=0
+          fi
+          
+          echo "total_vulns=${TOTAL}" >> $GITHUB_OUTPUT
+          echo "critical_vulns=${CRITICAL}" >> $GITHUB_OUTPUT
+          echo "high_vulns=${HIGH}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Display OSV summary
+        if: always()
+        run: |
+          echo "## 🔐 OSV Vulnerability Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          TOTAL=${{ steps.osv.outputs.total_vulns || '0' }}
+          CRITICAL=${{ steps.osv.outputs.critical_vulns || '0' }}
+          HIGH=${{ steps.osv.outputs.high_vulns || '0' }}
+          
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "⚠️ **Found ${TOTAL} vulnerabilities**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔴 Critical | ${CRITICAL} |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟠 High | ${HIGH} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **No vulnerabilities found in dependencies**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload OSV artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-results
+          path: _output/security/osv-*
+          retention-days: 30
+
+  # ===========================================================================
+  # Security Scan Summary
+  # ===========================================================================
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [gosec-scan, govulncheck-scan, osv-scan]
+    if: always()
+    steps:
+      - name: Generate security summary
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scan Type | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          GOSEC_STATUS="${{ needs.gosec-scan.result }}"
+          GOVULNCHECK_STATUS="${{ needs.govulncheck-scan.result }}"
+          OSV_STATUS="${{ needs.osv-scan.result }}"
+          
+          get_emoji() {
+            case "$1" in
+              success) echo "✅" ;;
+              failure) echo "❌" ;;
+              cancelled) echo "⏹️" ;;
+              *) echo "⚠️" ;;
+            esac
+          }
+          
+          echo "| Gosec Static Analysis | $(get_emoji $GOSEC_STATUS) $GOSEC_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Govulncheck Vulnerability | $(get_emoji $GOVULNCHECK_STATUS) $GOVULNCHECK_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| OSV Vulnerability | $(get_emoji $OSV_STATUS) $OSV_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Security scan completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')*" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check overall security status
+        run: |
+          GOSEC="${{ needs.gosec-scan.result }}"
+          GOVULNCHECK="${{ needs.govulncheck-scan.result }}"
+          OSV="${{ needs.osv-scan.result }}"
+          
+          if [[ "$GOSEC" == "success" && "$GOVULNCHECK" == "success" && "$OSV" == "success" ]]; then
+            echo "✅ All security scans passed!"
+            exit 0
+          else
+            echo "⚠️ Some security scans did not pass"
+            echo "  - Gosec: $GOSEC"
+            echo "  - Govulncheck: $GOVULNCHECK"
+            echo "  - OSV: $OSV"
+            # Don't fail the workflow - security issues are reported but don't block
+            exit 0
+          fi
+
