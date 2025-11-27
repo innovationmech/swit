@@ -1,0 +1,295 @@
+{{- if .Values.networkPolicy.enabled }}
+# NetworkPolicy for Swit Serve Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "swit.serve.fullname" . }}-netpol
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.serve.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "swit.serve.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    {{- toYaml .Values.networkPolicy.policyTypes | nindent 4 }}
+  
+  {{- if has "Ingress" .Values.networkPolicy.policyTypes }}
+  ingress:
+    {{- if .Values.networkPolicy.ingress.allowSameNamespace }}
+    # 允许来自同命名空间的流量
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "swit.namespace" . }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.switServe.service.port }}
+        {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+        - protocol: TCP
+          port: {{ add .Values.switServe.service.port 443 }}
+        {{- end }}
+    {{- end }}
+    
+    {{- if .Values.networkPolicy.ingress.allowIngressController }}
+    # 允许来自 Ingress Controller 的流量
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.ingress.ingressControllerNamespace | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.switServe.service.port }}
+        {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+        - protocol: TCP
+          port: {{ add .Values.switServe.service.port 443 }}
+        {{- end }}
+    {{- end }}
+    
+    # 允许 Prometheus 抓取指标
+    {{- if .Values.monitoring.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: {{ .Values.switServe.service.port }}
+    {{- end }}
+    
+    {{- with .Values.networkPolicy.ingress.customRules }}
+    # 自定义入站规则
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+  
+  {{- if has "Egress" .Values.networkPolicy.policyTypes }}
+  egress:
+    {{- if .Values.networkPolicy.egress.allowDNS }}
+    # 允许 DNS 查询
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    
+    {{- if .Values.networkPolicy.egress.allowDatabase }}
+    # 允许访问 MySQL 数据库
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "swit.mysql.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mysql.service.port }}
+    {{- end }}
+    
+    {{- if .Values.networkPolicy.egress.allowServiceDiscovery }}
+    # 允许访问 Consul 服务发现
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "swit.consul.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.consul.service.httpPort }}
+    {{- end }}
+    
+    # 允许访问认证服务
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "swit.auth.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.switAuth.service.port }}
+    
+    {{- if .Values.networkPolicy.egress.allowExternalHTTPS }}
+    # 允许访问外部 HTTPS（如 OAuth2 提供者）
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    
+    {{- with .Values.networkPolicy.egress.customRules }}
+    # 自定义出站规则
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+---
+# NetworkPolicy for Swit Auth Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "swit.auth.fullname" . }}-netpol
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.auth.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "swit.auth.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    {{- toYaml .Values.networkPolicy.policyTypes | nindent 4 }}
+  
+  {{- if has "Ingress" .Values.networkPolicy.policyTypes }}
+  ingress:
+    {{- if .Values.networkPolicy.ingress.allowSameNamespace }}
+    # 允许来自同命名空间的流量（包括 swit-serve）
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "swit.namespace" . }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.switAuth.service.port }}
+        {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+        - protocol: TCP
+          port: {{ add .Values.switAuth.service.port 443 }}
+        {{- end }}
+    {{- end }}
+    
+    {{- if .Values.networkPolicy.ingress.allowIngressController }}
+    # 允许来自 Ingress Controller 的流量
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.ingress.ingressControllerNamespace | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.switAuth.service.port }}
+        {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+        - protocol: TCP
+          port: {{ add .Values.switAuth.service.port 443 }}
+        {{- end }}
+    {{- end }}
+    
+    # 允许 Prometheus 抓取指标
+    {{- if .Values.monitoring.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: {{ .Values.switAuth.service.port }}
+    {{- end }}
+    
+    {{- with .Values.networkPolicy.ingress.customRules }}
+    # 自定义入站规则
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+  
+  {{- if has "Egress" .Values.networkPolicy.policyTypes }}
+  egress:
+    {{- if .Values.networkPolicy.egress.allowDNS }}
+    # 允许 DNS 查询
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    
+    {{- if .Values.networkPolicy.egress.allowDatabase }}
+    # 允许访问 MySQL 数据库
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "swit.mysql.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mysql.service.port }}
+    {{- end }}
+    
+    {{- if .Values.networkPolicy.egress.allowServiceDiscovery }}
+    # 允许访问 Consul 服务发现
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "swit.consul.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.consul.service.httpPort }}
+    {{- end }}
+    
+    {{- if .Values.networkPolicy.egress.allowExternalHTTPS }}
+    # 允许访问外部 HTTPS（如 OAuth2 提供者）
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    
+    {{- with .Values.networkPolicy.egress.customRules }}
+    # 自定义出站规则
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+---
+# NetworkPolicy for MySQL Database
+{{- if .Values.mysql.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "swit.mysql.fullname" . }}-netpol
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.mysql.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "swit.mysql.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # 仅允许 Swit 服务访问数据库
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "swit.serve.selectorLabels" . | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "swit.auth.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.mysql.service.port }}
+{{- end }}
+---
+# NetworkPolicy for Consul
+{{- if .Values.consul.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "swit.consul.fullname" . }}-netpol
+  namespace: {{ include "swit.namespace" . }}
+  labels:
+    {{- include "swit.consul.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "swit.consul.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # 允许 Swit 服务访问服务发现
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "swit.serve.selectorLabels" . | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "swit.auth.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.consul.service.httpPort }}
+        - protocol: TCP
+          port: {{ .Values.consul.service.dnsPortTcp }}
+        - protocol: UDP
+          port: {{ .Values.consul.service.dnsPortUdp }}
+{{- end }}
+{{- end }}
+

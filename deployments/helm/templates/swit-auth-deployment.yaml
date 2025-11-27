@@ -15,24 +15,32 @@ spec:
     metadata:
       labels:
         {{- include "swit.auth.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-      {{- with .Values.podAnnotations }}
-      annotations:
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       {{- include "swit.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "swit.serviceAccountName" . }}
+      {{- if .Values.podSecurityContext }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
       
       # 初始化容器
       initContainers:
         {{- if .Values.switAuth.initContainers.waitForMysql.enabled }}
         - name: wait-for-mysql
           image: busybox:1.35
+          {{- if .Values.securityContext }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- end }}
           command:
             - sh
             - -c
@@ -48,6 +56,10 @@ spec:
         {{- if .Values.switAuth.initContainers.waitForConsul.enabled }}
         - name: wait-for-consul
           image: busybox:1.35
+          {{- if .Values.securityContext }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- end }}
           command:
             - sh
             - -c
@@ -62,8 +74,10 @@ spec:
       
       containers:
         - name: {{ .Chart.Name }}-auth
+          {{- if .Values.securityContext }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- end }}
           image: "{{ .Values.switAuth.image.repository }}:{{ .Values.switAuth.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.switAuth.image.pullPolicy }}
           workingDir: /app
@@ -72,6 +86,11 @@ spec:
             - name: http
               containerPort: {{ .Values.switAuth.service.port }}
               protocol: TCP
+            {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+            - name: https
+              containerPort: {{ add .Values.switAuth.service.port 443 | default 9444 }}
+              protocol: TCP
+            {{- end }}
           
           env:
             - name: SERVER_PORT
@@ -111,6 +130,44 @@ spec:
                 configMapKeyRef:
                   name: {{ include "swit.fullname" . }}-config
                   key: LOG_LEVEL
+            {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+            # TLS 配置
+            - name: TLS_ENABLED
+              value: "true"
+            - name: TLS_CERT_FILE
+              value: "/run/secrets/tls/tls.crt"
+            - name: TLS_KEY_FILE
+              value: "/run/secrets/tls/tls.key"
+            - name: TLS_MIN_VERSION
+              value: {{ .Values.security.tls.minVersion | quote }}
+            {{- end }}
+            {{- if and .Values.security.enabled .Values.security.mtls.enabled }}
+            # mTLS 配置
+            - name: MTLS_ENABLED
+              value: "true"
+            - name: MTLS_CA_FILE
+              value: "/run/secrets/mtls/ca.crt"
+            - name: MTLS_CLIENT_AUTH_MODE
+              value: {{ .Values.security.mtls.clientAuthMode | quote }}
+            {{- end }}
+            {{- if and .Values.security.enabled .Values.security.oauth2.enabled }}
+            # OAuth2 配置
+            - name: OAUTH2_ENABLED
+              value: "true"
+            - name: OAUTH2_ISSUER_URL
+              value: {{ .Values.security.oauth2.issuerUrl | quote }}
+            - name: OAUTH2_CLIENT_ID
+              value: {{ .Values.security.oauth2.clientId | quote }}
+            {{- end }}
+            {{- if and .Values.security.enabled .Values.security.rateLimit.enabled }}
+            # 速率限制配置
+            - name: RATE_LIMIT_ENABLED
+              value: "true"
+            - name: RATE_LIMIT_RPS
+              value: {{ .Values.security.rateLimit.requestsPerSecond | quote }}
+            - name: RATE_LIMIT_BURST
+              value: {{ .Values.security.rateLimit.burst | quote }}
+            {{- end }}
           
           {{- if .Values.switAuth.livenessProbe }}
           livenessProbe:
@@ -132,6 +189,20 @@ spec:
             - name: jwt-secret
               mountPath: /run/secrets/jwt
               readOnly: true
+            {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+            - name: tls-certs
+              mountPath: /run/secrets/tls
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.security.enabled .Values.security.mtls.enabled }}
+            - name: mtls-certs
+              mountPath: /run/secrets/mtls
+              readOnly: true
+            {{- end }}
+            {{- if and .Values.securityHardening.enabled .Values.securityHardening.runtime.seccomp.enabled }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
       
       volumes:
         - name: config
@@ -146,6 +217,24 @@ spec:
             items:
               - key: jwt-secret
                 path: secret
+        {{- if and .Values.security.enabled .Values.security.tls.enabled }}
+        - name: tls-certs
+          secret:
+            {{- if .Values.security.tls.existingSecret }}
+            secretName: {{ .Values.security.tls.existingSecret }}
+            {{- else }}
+            secretName: {{ include "swit.fullname" . }}-tls
+            {{- end }}
+        {{- end }}
+        {{- if and .Values.security.enabled .Values.security.mtls.enabled }}
+        - name: mtls-certs
+          secret:
+            secretName: {{ .Values.security.mtls.caSecret | default (printf "%s-mtls-ca" (include "swit.fullname" .)) }}
+        {{- end }}
+        {{- if and .Values.securityHardening.enabled .Values.securityHardening.runtime.seccomp.enabled }}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
       
       {{- with .Values.nodeSelector }}
       nodeSelector:

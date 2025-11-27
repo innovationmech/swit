@@ -12,6 +12,98 @@ global:
 # 命名空间
 namespaceOverride: "swit"
 
+# ==========================================
+# 安全配置
+# ==========================================
+security:
+  # 是否启用安全功能（全局开关）
+  enabled: false
+  
+  # TLS 配置
+  tls:
+    # 是否启用 TLS
+    enabled: false
+    # TLS 证书来源：cert-manager, external, self-signed
+    source: "external"
+    # 证书有效期（用于 cert-manager）
+    duration: "8760h"  # 1 年
+    # 证书续期前时间
+    renewBefore: "720h"  # 30 天
+    # 证书颁发者（用于 cert-manager）
+    issuer:
+      name: ""
+      kind: "ClusterIssuer"
+    # 外部证书 Secret 名称（source: external 时使用）
+    existingSecret: ""
+    # TLS 版本最低要求
+    minVersion: "TLS12"
+    # 允许的密码套件
+    cipherSuites:
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+  
+  # mTLS 配置（服务间通信）
+  mtls:
+    # 是否启用 mTLS
+    enabled: false
+    # 客户端证书验证模式：require, optional, none
+    clientAuthMode: "require"
+    # CA 证书 Secret 名称
+    caSecret: ""
+    # 客户端证书 Secret 名称
+    clientCertSecret: ""
+  
+  # OAuth2/OIDC 配置
+  oauth2:
+    # 是否启用 OAuth2
+    enabled: false
+    # OIDC 提供者 URL
+    issuerUrl: ""
+    # 客户端 ID
+    clientId: ""
+    # 客户端密钥 Secret 名称
+    clientSecretRef: ""
+    # 允许的受众
+    audience: []
+    # 范围
+    scopes:
+      - "openid"
+      - "profile"
+      - "email"
+  
+  # API 密钥配置
+  apiKey:
+    # 是否启用 API 密钥认证
+    enabled: false
+    # API 密钥 Header 名称
+    headerName: "X-API-Key"
+    # API 密钥 Secret 名称
+    secretRef: ""
+  
+  # 速率限制配置
+  rateLimit:
+    # 是否启用速率限制
+    enabled: false
+    # 每秒请求数
+    requestsPerSecond: 100
+    # 突发请求数
+    burst: 200
+    # 限制范围：ip, user, global
+    scope: "ip"
+  
+  # 审计日志配置
+  audit:
+    # 是否启用审计日志
+    enabled: false
+    # 日志级别：none, metadata, request, requestResponse
+    level: "metadata"
+    # 日志后端：log, webhook
+    backend: "log"
+    # Webhook URL（backend: webhook 时使用）
+    webhookUrl: ""
+
 # 监控组件配置（本地子 Chart）
 monitoring:
   enabled: false  # 默认关闭，如需要请设置为 true
@@ -293,6 +385,54 @@ secret:
   # JWT 密钥
   jwt:
     secret: "c3dpdC1qd3Qtc2VjcmV0LWtleQ=="  # base64 编码的 "swit-jwt-secret-key"
+  
+  # TLS 证书（security.tls.source: self-signed 时使用）
+  tls:
+    # 是否创建自签名证书（仅用于开发/测试）
+    createSelfSigned: false
+    # 自签名证书有效期（天）
+    validityDays: 365
+    # 证书主题
+    subject:
+      organization: "Swit"
+      organizationalUnit: "Engineering"
+      country: "CN"
+    # 证书 SAN（Subject Alternative Names）
+    san:
+      dnsNames:
+        - "localhost"
+        - "*.swit.svc.cluster.local"
+      ipAddresses:
+        - "127.0.0.1"
+  
+  # 加密密钥（用于敏感数据加密）
+  encryption:
+    # 是否启用数据加密
+    enabled: false
+    # 加密密钥（32 字节 base64 编码）
+    key: ""
+    # 密钥轮换周期（天）
+    rotationDays: 90
+  
+  # 外部 Secret 管理（如 HashiCorp Vault、AWS Secrets Manager）
+  externalSecrets:
+    # 是否使用外部 Secret 管理
+    enabled: false
+    # 后端类型：vault, aws, gcp, azure
+    backend: "vault"
+    # Vault 配置
+    vault:
+      address: ""
+      path: "secret/data/swit"
+      role: ""
+    # AWS Secrets Manager 配置
+    aws:
+      region: ""
+      secretName: ""
+    # GCP Secret Manager 配置
+    gcp:
+      project: ""
+      secretName: ""
 
 # Ingress 配置
 ingress:
@@ -345,25 +485,74 @@ autoscaling:
 serviceAccount:
   # 是否创建服务账户
   create: true
-  # 自动挂载 API 凭证
+  # 自动挂载 API 凭证（生产环境建议设为 false）
   automount: true
-  # 注解
+  # 注解（用于云平台 IAM 角色绑定）
   annotations: {}
+    # AWS EKS: eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/SwitServiceRole
+    # GCP GKE: iam.gke.io/gcp-service-account: swit@project.iam.gserviceaccount.com
+    # Azure AKS: azure.workload.identity/client-id: <client-id>
   # 服务账户名称
   name: ""
+  # RBAC 配置
+  rbac:
+    # 是否创建 Role/RoleBinding
+    create: true
+    # 自定义规则
+    rules: []
+    # - apiGroups: [""]
+    #   resources: ["secrets"]
+    #   verbs: ["get", "list"]
+    # - apiGroups: [""]
+    #   resources: ["configmaps"]
+    #   verbs: ["get", "list", "watch"]
 
 # Pod 安全上下文
 podSecurityContext:
-  # fsGroup: 2000
+  # 以非 root 用户运行
+  runAsNonRoot: false
+  # 运行用户 ID
+  # runAsUser: 10001
+  # 运行组 ID
+  # runAsGroup: 10001
+  # 文件系统组 ID
+  # fsGroup: 10001
+  # Seccomp 配置
+  # seccompProfile:
+  #   type: RuntimeDefault
 
 # 容器安全上下文
 securityContext:
+  # 禁止特权升级
+  # allowPrivilegeEscalation: false
+  # 只读根文件系统
+  # readOnlyRootFilesystem: true
+  # 以非 root 用户运行
+  # runAsNonRoot: true
+  # 运行用户 ID
+  # runAsUser: 10001
+  # Linux 能力配置
   # capabilities:
   #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+  #     - ALL
+  #   add:
+  #     - NET_BIND_SERVICE
+
+# Pod 安全策略（已弃用，使用 Pod Security Standards）
+podSecurityPolicy:
+  # 是否启用 PSP（Kubernetes < 1.25）
+  enabled: false
+  # PSP 名称
+  name: ""
+
+# Pod 安全标准（Kubernetes >= 1.23）
+podSecurityStandards:
+  # 强制级别：privileged, baseline, restricted
+  enforce: ""
+  # 审计级别
+  audit: ""
+  # 警告级别
+  warn: ""
 
 # Pod 注解
 podAnnotations: {}
@@ -388,3 +577,115 @@ fullnameOverride: ""
 
 # 名称覆盖
 nameOverride: ""
+
+# ==========================================
+# NetworkPolicy 配置
+# ==========================================
+networkPolicy:
+  # 是否启用 NetworkPolicy
+  enabled: false
+  
+  # 策略类型
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  # 入站规则
+  ingress:
+    # 允许来自同命名空间的流量
+    allowSameNamespace: true
+    # 允许来自 Ingress Controller 的流量
+    allowIngressController: true
+    # Ingress Controller 命名空间标签
+    ingressControllerNamespace:
+      matchLabels:
+        name: ingress-nginx
+    # 自定义入站规则
+    customRules: []
+    # - from:
+    #     - namespaceSelector:
+    #         matchLabels:
+    #           name: monitoring
+    #     - podSelector:
+    #         matchLabels:
+    #           app: prometheus
+    #   ports:
+    #     - protocol: TCP
+    #       port: 9000
+  
+  # 出站规则
+  egress:
+    # 允许 DNS 查询
+    allowDNS: true
+    # 允许访问数据库
+    allowDatabase: true
+    # 允许访问服务发现
+    allowServiceDiscovery: true
+    # 允许访问外部 HTTPS
+    allowExternalHTTPS: false
+    # 自定义出站规则
+    customRules: []
+    # - to:
+    #     - ipBlock:
+    #         cidr: 10.0.0.0/8
+    #   ports:
+    #     - protocol: TCP
+    #       port: 443
+
+# ==========================================
+# 安全加固配置（生产环境）
+# ==========================================
+securityHardening:
+  # 是否启用安全加固
+  enabled: false
+  
+  # 容器镜像安全
+  image:
+    # 是否验证镜像签名
+    verifySignature: false
+    # 允许的镜像仓库
+    allowedRegistries: []
+    # - docker.io
+    # - gcr.io
+    # - your-registry.com
+    # 禁止使用 latest 标签
+    disallowLatestTag: true
+  
+  # 运行时安全
+  runtime:
+    # 是否启用 AppArmor
+    appArmor:
+      enabled: false
+      profile: "runtime/default"
+    # 是否启用 Seccomp
+    seccomp:
+      enabled: false
+      profile: "RuntimeDefault"
+    # 是否启用 SELinux
+    seLinux:
+      enabled: false
+      level: ""
+      role: ""
+      type: ""
+      user: ""
+  
+  # 资源限制强制
+  resources:
+    # 是否强制设置资源限制
+    enforceResourceLimits: true
+    # 默认 CPU 限制
+    defaultCpuLimit: "500m"
+    # 默认内存限制
+    defaultMemoryLimit: "512Mi"
+  
+  # 敏感数据保护
+  sensitiveData:
+    # 是否在日志中屏蔽敏感数据
+    maskInLogs: true
+    # 敏感字段列表
+    sensitiveFields:
+      - "password"
+      - "secret"
+      - "token"
+      - "key"
+      - "credential"
