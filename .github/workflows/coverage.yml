@@ -100,7 +100,8 @@ jobs:
         echo "$PACKAGES"
         
         # 运行测试并生成覆盖率报告 (排除自动生成的代码)
-        go test -v -race -coverprofile=coverage.out -covermode=atomic $PACKAGES
+        # 使用 -short 跳过长时间运行的负载测试和压力测试
+        go test -v -race -short -coverprofile=coverage.out -covermode=atomic $PACKAGES
         
         # 生成 HTML 报告
         go tool cover -html=coverage.out -o coverage.html
