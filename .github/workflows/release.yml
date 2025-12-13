@@ -272,7 +272,7 @@ jobs:
           cat checksums.txt
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: release-binaries
           path: _output/release/
