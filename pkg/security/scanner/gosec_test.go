@@ -337,3 +337,6 @@ func TestGosecScanner_parseGosecOutputSeverityCounts(t *testing.T) {
 		t.Errorf("TotalFindings = %d, want 7", result.Summary.TotalFindings)
 	}
 }
+
+
+
