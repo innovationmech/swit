@@ -416,7 +416,7 @@ jobs:
             VCS_REF=${{ github.sha }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.34.1
         with:
           image-ref: '${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ needs.validate.outputs.version }}'
           format: 'sarif'
