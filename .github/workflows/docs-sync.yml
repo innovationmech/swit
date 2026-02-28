@@ -408,7 +408,7 @@ jobs:
           echo "📄 Content report generated"
 
       - name: 📤 Upload content report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: content-sync-report
           path: '${{ env.DOCS_DIR }}/content-sync-report.md'

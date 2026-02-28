@@ -70,7 +70,7 @@ jobs:
           ./tools/config-validator --output=json --output-file=config-validation.json || echo "Config validator failed, continuing..."
           
       - name: Upload validation results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: validation-results
@@ -201,7 +201,7 @@ jobs:
           echo "✅ Would stop services with: ./scripts/stop.sh -f"
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: integration-test-results
@@ -270,7 +270,7 @@ jobs:
           echo "✅ Would stop with: docker compose down -v"
 
       - name: Upload performance results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: load-test-results
@@ -332,7 +332,7 @@ jobs:
           echo "✅ Would stop with: docker compose down -v"
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: benchmark-results
@@ -440,7 +440,7 @@ jobs:
           EOF
 
       - name: Upload deployment artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: deployment-checklist
           path: examples/distributed-tracing/deployment-checklist.md
@@ -503,7 +503,7 @@ jobs:
           EOF
 
       - name: Upload CI/CD summary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ci-cd-summary
           path: ci-cd-summary.md
