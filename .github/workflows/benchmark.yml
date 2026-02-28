@@ -217,7 +217,7 @@ jobs:
           fi
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results-${{ github.sha }}
           path: _output/benchmark/
@@ -242,7 +242,7 @@ jobs:
           path: _output/benchmark/
 
       - name: Upload as baseline
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-baseline-master
           path: _output/benchmark/
