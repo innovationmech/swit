@@ -32,7 +32,7 @@ type ServiceConfig struct {
 	Description string            `yaml:"description" json:"description"`
 	Author      string            `yaml:"author" json:"author"`
 	Version     string            `yaml:"version" json:"version" default:"0.1.0"`
-	GoVersion   string            `yaml:"go_version" json:"go_version" default:"1.19"`
+	GoVersion   string            `yaml:"go_version" json:"go_version" default:"1.26.1"`
 	Features    ServiceFeatures   `yaml:"features" json:"features"`
 	Database    DatabaseConfig    `yaml:"database" json:"database"`
 	Auth        AuthConfig        `yaml:"auth" json:"auth"`
@@ -236,7 +236,7 @@ type ProjectConfig struct {
 	Author         string            `yaml:"author" json:"author"`
 	License        string            `yaml:"license" json:"license" default:"MIT"`
 	ModulePath     string            `yaml:"module_path" json:"module_path" validate:"required"`
-	GoVersion      string            `yaml:"go_version" json:"go_version" default:"1.19"`
+	GoVersion      string            `yaml:"go_version" json:"go_version" default:"1.26.1"`
 	Services       []ServiceConfig   `yaml:"services" json:"services"`
 	Infrastructure Infrastructure    `yaml:"infrastructure" json:"infrastructure"`
 	Metadata       map[string]string `yaml:"metadata" json:"metadata"`

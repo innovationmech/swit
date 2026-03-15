@@ -740,7 +740,7 @@ func CreateMockProjectConfig() ProjectConfig {
 		Author:      "Test Author",
 		License:     "MIT",
 		ModulePath:  "github.com/example/test-project",
-		GoVersion:   "1.19",
+		GoVersion:   "1.26.1",
 		Services:    []ServiceConfig{CreateMockServiceConfig()},
 		Infrastructure: Infrastructure{
 			Database: DatabaseConfig{

@@ -112,7 +112,7 @@ func main() {
 	s.Require().NoError(err)
 
 	// Create a simple Dockerfile template
-	dockerTemplate := `FROM golang:1.19-alpine
+	dockerTemplate := `FROM golang:1.26.1-alpine
 WORKDIR /app
 COPY . .
 RUN go build -o {{.Service.Name}}

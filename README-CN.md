@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/innovationmech/swit/branch/master/graph/badge.svg)](https://codecov.io/gh/innovationmech/swit)
 [![Go Report Card](https://goreportcard.com/badge/github.com/innovationmech/swit)](https://goreportcard.com/report/github.com/innovationmech/swit)
 [![Go Reference](https://pkg.go.dev/badge/github.com/innovationmech/swit.svg)](https://pkg.go.dev/github.com/innovationmech/swit)
-![Go Version](https://img.shields.io/badge/go-%3E%3D1.23.12-blue.svg)
+![Go Version](https://img.shields.io/badge/go-%3E%3D1.26.1-blue.svg)
 [![GitHub release](https://img.shields.io/github/release/innovationmech/swit.svg)](https://github.com/innovationmech/swit/releases)
 [![License](https://img.shields.io/github/license/innovationmech/swit.svg)](LICENSE)
 
@@ -44,7 +44,7 @@
 
 ## 环境要求
 
-- **Go 1.23.12+** 支持泛型
+- **Go 1.26.1+** 支持泛型
 - **可选**: MySQL 8.0+、Redis 6.0+、Consul 1.12+（用于示例）
 - **开发工具**: Buf CLI、Docker、Make
 

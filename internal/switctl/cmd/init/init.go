@@ -95,7 +95,7 @@ Examples:
 	cmd.Flags().StringVarP(&author, "author", "a", "", "Project author")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Project description")
 	cmd.Flags().StringVarP(&license, "license", "l", "MIT", "Project license")
-	cmd.Flags().StringVar(&goVersion, "go-version", "1.19", "Go version to use")
+	cmd.Flags().StringVar(&goVersion, "go-version", "1.26.1", "Go version to use")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files without confirmation")
@@ -358,7 +358,7 @@ func collectProjectConfig(terminalUI *ui.TerminalUI) (interfaces.ProjectConfig, 
 	// Set defaults
 	config.GoVersion = goVersion
 	if config.GoVersion == "" {
-		config.GoVersion = "1.19"
+		config.GoVersion = "1.26.1"
 	}
 
 	return config, nil

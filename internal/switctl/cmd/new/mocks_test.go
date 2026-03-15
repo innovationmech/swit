@@ -351,7 +351,7 @@ func CreateTestServiceConfig() interfaces.ServiceConfig {
 		Description: "Test service description",
 		Author:      "Test Author <test@example.com>",
 		Version:     "0.1.0",
-		GoVersion:   "1.19",
+		GoVersion:   "1.26.1",
 		ModulePath:  "github.com/test/test-service",
 		OutputDir:   "test-service",
 		Ports: interfaces.PortConfig{

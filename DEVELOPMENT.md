@@ -147,7 +147,7 @@ Documentation is generated in:
 The Swit framework uses the following key dependencies:
 
 ### Core Framework
-- **Go 1.24+**: Required Go version
+- **Go 1.26.1+**: Required Go version
 - **gin-gonic/gin**: HTTP web framework
 - **grpc/grpc-go**: gRPC framework
 - **uber-go/zap**: Structured logging

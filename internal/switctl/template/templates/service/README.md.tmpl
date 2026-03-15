@@ -32,7 +32,7 @@
 
 ### Prerequisites
 
-- Go {{.Service.GoVersion | default "1.19"}}+ installed
+- Go {{.Service.GoVersion | default "1.26.1"}}+ installed
 {{- if .Service.Features.Database}}
 - {{.Service.Database.Type | titleCase}} database server
 {{- end}}

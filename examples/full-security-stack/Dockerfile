@@ -2,7 +2,7 @@
 # Multi-stage build for optimized image size
 
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -72,4 +72,3 @@ ENV HTTP_PORT=8080 \
 
 # Run the application
 ENTRYPOINT ["/app/full-security-stack"]
-

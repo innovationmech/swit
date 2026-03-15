@@ -1,6 +1,6 @@
 module github.com/innovationmech/swit
 
-go 1.24.8
+go 1.26.1
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2

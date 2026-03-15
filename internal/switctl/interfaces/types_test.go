@@ -565,7 +565,7 @@ func (s *TypesTestSuite) TestProjectInfo_JSONSerialization() {
 		Author:        "Test Author",
 		License:       "MIT",
 		ModulePath:    "github.com/example/test-project",
-		GoVersion:     "1.19",
+		GoVersion:     "1.26.1",
 		CreatedAt:     now,
 		UpdatedAt:     now,
 		ServicesCount: 3,

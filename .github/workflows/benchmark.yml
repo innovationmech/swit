@@ -46,7 +46,7 @@ permissions:
   pull-requests: write
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.26.1'
 
 concurrency:
   group: benchmark-${{ github.workflow }}-${{ github.ref }}
