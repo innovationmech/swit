@@ -47,25 +47,25 @@ import (
 // PaymentService implements the ServiceRegistrar interface
 type PaymentService struct {
 	name string
+	deps server.BusinessDependencyContainer
 }
 
 // NewPaymentService creates a new payment service
-func NewPaymentService(name string) *PaymentService {
+func NewPaymentService(name string, deps server.BusinessDependencyContainer) *PaymentService {
 	return &PaymentService{
 		name: name,
+		deps: deps,
 	}
 }
 
 // RegisterServices registers gRPC services with the server
 func (s *PaymentService) RegisterServices(registry server.BusinessServiceRegistry) error {
-	// Get dependencies from container
-	deps, err := registry.GetDependencyContainer()
-	if err != nil {
-		return fmt.Errorf("failed to get dependency container: %w", err)
+	if s.deps == nil {
+		return fmt.Errorf("dependency container is not configured")
 	}
 
 	// Get business service
-	businessService, err := deps.GetService("business_service")
+	businessService, err := s.deps.GetService("business_service")
 	if err != nil {
 		return fmt.Errorf("failed to get business service: %w", err)
 	}
@@ -257,7 +257,7 @@ func main() {
 	}
 
 	// Create service
-	paymentServiceInstance := NewPaymentService("payment-service")
+	paymentServiceInstance := NewPaymentService("payment-service", deps)
 
 	// Create base server
 	baseServer, err := server.NewBusinessServerCore(serverConfig, paymentServiceInstance, deps)

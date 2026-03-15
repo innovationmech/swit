@@ -48,32 +48,32 @@ import (
 // OrderService implements the ServiceRegistrar interface
 type OrderService struct {
 	name string
+	deps server.BusinessDependencyContainer
 }
 
 // NewOrderService creates a new order service
-func NewOrderService(name string) *OrderService {
+func NewOrderService(name string, deps server.BusinessDependencyContainer) *OrderService {
 	return &OrderService{
 		name: name,
+		deps: deps,
 	}
 }
 
 // RegisterServices registers HTTP and gRPC services with the server
 func (s *OrderService) RegisterServices(registry server.BusinessServiceRegistry) error {
-	// Get dependencies from container
-	deps, err := registry.GetDependencyContainer()
-	if err != nil {
-		return fmt.Errorf("failed to get dependency container: %w", err)
+	if s.deps == nil {
+		return fmt.Errorf("dependency container is not configured")
 	}
 
 	// Get repository
-	repoService, err := deps.GetService("repository")
+	repoService, err := s.deps.GetService("repository")
 	if err != nil {
 		return fmt.Errorf("failed to get repository: %w", err)
 	}
 	repo := repoService.(*repository.OrderRepository)
 
 	// Get business service
-	businessService, err := deps.GetService("business_service")
+	businessService, err := s.deps.GetService("business_service")
 	if err != nil {
 		return fmt.Errorf("failed to get business service: %w", err)
 	}
@@ -294,7 +294,7 @@ func main() {
 	}
 
 	// Create service
-	orderServiceInstance := NewOrderService("order-service")
+	orderServiceInstance := NewOrderService("order-service", deps)
 
 	// Create base server
 	baseServer, err := server.NewBusinessServerCore(serverConfig, orderServiceInstance, deps)

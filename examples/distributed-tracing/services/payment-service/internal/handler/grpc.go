@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	commonpb "github.com/innovationmech/swit/api/gen/go/proto/swit/common/v1"
 	paymentpb "github.com/innovationmech/swit/api/gen/go/proto/swit/payment/v1"
 
 	"github.com/innovationmech/swit/examples/distributed-tracing/services/payment-service/internal/model"
@@ -191,11 +192,11 @@ func (s *PaymentGRPCService) ValidatePayment(ctx context.Context, req *paymentpb
 	}
 
 	// Convert errors to protobuf ErrorDetail
-	var pbErrors []*paymentpb.ErrorDetail
+	var pbErrors []*commonpb.ErrorDetail
 	if !response.IsValid {
 		for _, errMsg := range response.Errors {
-			pbErrors = append(pbErrors, &paymentpb.ErrorDetail{
-				Code:    paymentpb.ErrorCode_ERROR_CODE_INVALID_ARGUMENT,
+			pbErrors = append(pbErrors, &commonpb.ErrorDetail{
+				Code:    commonpb.ErrorCode_ERROR_CODE_INVALID_ARGUMENT,
 				Message: errMsg,
 			})
 		}

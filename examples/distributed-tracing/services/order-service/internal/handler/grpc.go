@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	commonpb "github.com/innovationmech/swit/api/gen/go/proto/swit/common/v1"
 	orderpb "github.com/innovationmech/swit/api/gen/go/proto/swit/order/v1"
 
 	"github.com/innovationmech/swit/examples/distributed-tracing/services/order-service/internal/model"
@@ -239,7 +240,7 @@ func (s *OrderGRPCService) ListOrders(ctx context.Context, req *orderpb.ListOrde
 
 	return &orderpb.ListOrdersResponse{
 		Orders: pbOrders,
-		Pagination: &orderpb.PaginationResponse{
+		Pagination: &commonpb.PaginationResponse{
 			NextPageToken: nextPageToken,
 			TotalCount:    totalCount,
 			PageSize:      int32(pageSize),
