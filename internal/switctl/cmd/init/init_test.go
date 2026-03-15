@@ -99,7 +99,7 @@ func (s *InitCommandTestSuite) resetGlobals() {
 	author = ""
 	description = ""
 	license = "MIT"
-	goVersion = "1.19"
+	goVersion = "1.26.1"
 	verbose = false
 	noColor = false
 	force = false
@@ -138,7 +138,7 @@ func (s *InitCommandTestSuite) TestNewInitCommand_Flags() {
 		{"author", "a", "", true},
 		{"description", "d", "", true},
 		{"license", "l", "MIT", true},
-		{"go-version", "", "1.19", true},
+		{"go-version", "", "1.26.1", true},
 		{"verbose", "v", "false", true},
 		{"no-color", "", "false", true},
 		{"force", "", "false", true},
@@ -344,7 +344,7 @@ func (s *InitCommandTestSuite) TestSimpleProjectManager() {
 	fs.On("MkdirAll", "/test/output/scripts", 0755).Return(nil)
 	fs.On("MkdirAll", "/test/output/docs", 0755).Return(nil)
 	fs.On("MkdirAll", "/test/output/configs", 0755).Return(nil)
-	fs.On("WriteFile", "/test/output/go.mod", []byte("module github.com/test/project\n\ngo 1.19\n"), 0644).Return(nil)
+	fs.On("WriteFile", "/test/output/go.mod", []byte("module github.com/test/project\n\ngo 1.26.1\n"), 0644).Return(nil)
 	fs.On("WriteFile", "/test/output/README.md", []byte("# test-project\n\nTest description\n\n## Author\n\nTest Author\n\n## License\n\nMIT\n"), 0644).Return(nil)
 	fs.On("WriteFile", "/test/output/.gitignore", []byte("# Binaries for programs and plugins\n*.exe\n*.exe~\n*.dll\n*.so\n*.dylib\n\n# Test binary, built with `go test -c`\n*.test\n\n# Output of the go coverage tool, specifically when used with LiteIDE\n*.out\n\n# Go workspace file\ngo.work\n\n# Build directories\n_output/\nbin/\ndist/\n\n# IDE files\n.vscode/\n.idea/\n*.swp\n*.swo\n\n# OS files\n.DS_Store\nThumbs.db\n\n# Config files with secrets\n*.local.yaml\n*.secret.yaml\n"), 0644).Return(nil)
 
@@ -355,7 +355,7 @@ func (s *InitCommandTestSuite) TestSimpleProjectManager() {
 		Name:        "test-project",
 		OutputDir:   "/test/output",
 		ModulePath:  "github.com/test/project",
-		GoVersion:   "1.19",
+		GoVersion:   "1.26.1",
 		Author:      "Test Author",
 		License:     "MIT",
 		Description: "Test description",
@@ -372,7 +372,7 @@ func (s *InitCommandTestSuite) TestSimpleProjectManager() {
 	}
 
 	// Verify basic files were created
-	fs.AssertCalled(s.T(), "WriteFile", filepath.Join(config.OutputDir, "go.mod"), []byte("module github.com/test/project\n\ngo 1.19\n"), 0644)
+	fs.AssertCalled(s.T(), "WriteFile", filepath.Join(config.OutputDir, "go.mod"), []byte("module github.com/test/project\n\ngo 1.26.1\n"), 0644)
 	fs.AssertCalled(s.T(), "WriteFile", filepath.Join(config.OutputDir, "README.md"), []byte("# test-project\n\nTest description\n\n## Author\n\nTest Author\n\n## License\n\nMIT\n"), 0644)
 	fs.AssertCalled(s.T(), "WriteFile", filepath.Join(config.OutputDir, ".gitignore"), []byte("# Binaries for programs and plugins\n*.exe\n*.exe~\n*.dll\n*.so\n*.dylib\n\n# Test binary, built with `go test -c`\n*.test\n\n# Output of the go coverage tool, specifically when used with LiteIDE\n*.out\n\n# Go workspace file\ngo.work\n\n# Build directories\n_output/\nbin/\ndist/\n\n# IDE files\n.vscode/\n.idea/\n*.swp\n*.swo\n\n# OS files\n.DS_Store\nThumbs.db\n\n# Config files with secrets\n*.local.yaml\n*.secret.yaml\n"), 0644)
 }
@@ -888,7 +888,7 @@ func (s *InitCommandTestSuite) TestConfigurationPreview() {
 		Author:      "Test Author",
 		License:     "MIT",
 		ModulePath:  "github.com/test/service",
-		GoVersion:   "1.19",
+		GoVersion:   "1.26.1",
 		OutputDir:   "/test/output",
 		Infrastructure: interfaces.Infrastructure{
 			Database: interfaces.DatabaseConfig{
@@ -960,7 +960,7 @@ func (s *InitCommandTestSuite) TestProjectManagerErrorHandling() {
 		Name:       "test-project",
 		OutputDir:  "/test/output",
 		ModulePath: "github.com/test/project",
-		GoVersion:  "1.19",
+		GoVersion:  "1.26.1",
 	}
 
 	err := pm.InitProject(config)

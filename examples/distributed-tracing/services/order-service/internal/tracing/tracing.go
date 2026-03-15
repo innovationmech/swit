@@ -27,6 +27,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -101,17 +102,12 @@ func AddEvent(span trace.Span, name string, attrs ...attribute.KeyValue) {
 // SetSpanError sets error status on the span
 func SetSpanError(span trace.Span, err error) {
 	span.RecordError(err)
-	span.SetStatus(trace.Status{
-		Code:        trace.StatusCodeError,
-		Description: err.Error(),
-	})
+	span.SetStatus(codes.Error, err.Error())
 }
 
 // SetSpanSuccess sets success status on the span
 func SetSpanSuccess(span trace.Span) {
-	span.SetStatus(trace.Status{
-		Code: trace.StatusCodeOk,
-	})
+	span.SetStatus(codes.Ok, "")
 }
 
 // OrderAttributes contains common order-related tracing attributes

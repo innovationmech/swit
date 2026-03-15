@@ -634,7 +634,7 @@ func (s *ServiceCommandTestSuite) TestBuildServiceConfigFromFlags_Defaults() {
 
 	// Test defaults
 	assert.Equal(s.T(), "0.1.0", config.Version)
-	assert.Equal(s.T(), "1.19", config.GoVersion)
+	assert.Equal(s.T(), "1.26.1", config.GoVersion)
 	assert.Equal(s.T(), "github.com/example/default-service", config.ModulePath)
 	assert.Equal(s.T(), "default-service", config.OutputDir)
 	assert.Equal(s.T(), 9000, config.Ports.HTTP)

@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 
 WORKDIR /build
 
@@ -27,4 +27,3 @@ RUN mkdir -p /app/policies
 EXPOSE 8080 9090
 
 ENTRYPOINT ["/app/opa-example"]
-

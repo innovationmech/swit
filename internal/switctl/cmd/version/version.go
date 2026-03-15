@@ -508,7 +508,7 @@ func showDetailedVersionInfo(ui interfaces.InteractiveUI, manager interfaces.Ver
 		{"Current Version", currentVersion},
 		{"Latest Version", latestVersion},
 		{"CLI Tool", "switctl"},
-		{"Go Version", "1.23.12"}, // This could be detected dynamically
+		{"Go Version", "1.26.1"}, // This could be detected dynamically
 	}
 
 	if err := ui.ShowTable([]string{"Property", "Value"}, basicInfo); err != nil {

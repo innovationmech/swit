@@ -12,7 +12,7 @@
 # =============================================================================
 # Stage 1: Builder - Compile the Go application
 # =============================================================================
-FROM golang:1.23.12-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 
 # Install build dependencies with pinned versions for reproducibility
 # hadolint ignore=DL3018

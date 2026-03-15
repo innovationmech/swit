@@ -274,7 +274,7 @@ func (cm *ConfigManager) setDefaults() {
 	// Project defaults
 	cm.viper.SetDefault("project.author", "")
 	cm.viper.SetDefault("project.license", "MIT")
-	cm.viper.SetDefault("project.go_version", "1.19")
+	cm.viper.SetDefault("project.go_version", "1.26.1")
 	cm.viper.SetDefault("project.module_prefix", "")
 }
 
@@ -428,7 +428,7 @@ dev:
 project:
   author: ""             # Default author name
   license: MIT           # Default license
-  go_version: "1.19"     # Default Go version
+  go_version: "1.26.1"   # Default Go version
   module_prefix: ""      # Default module prefix
 `
 

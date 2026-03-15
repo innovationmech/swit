@@ -44,7 +44,7 @@ permissions:
   actions: read
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.26.1'
 
 concurrency:
   group: security-scan-${{ github.workflow }}-${{ github.ref }}
@@ -346,7 +346,7 @@ jobs:
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0
+          allow-licenses: "MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, LicenseRef-scancode-google-patent-license-golang"
           comment-summary-in-pr: always
 
   # ===========================================================================
@@ -503,4 +503,3 @@ jobs:
             # Don't fail the workflow - security issues are reported but don't block
             exit 0
           fi
-

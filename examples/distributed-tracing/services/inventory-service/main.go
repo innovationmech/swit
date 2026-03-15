@@ -255,7 +255,7 @@ func (s *InventoryService) getInventory(c *gin.Context) {
 	productID := c.Param("product_id")
 
 	tracer := otel.Tracer("inventory-service")
-	ctx, span := tracer.Start(c.Request.Context(), "http.GetInventory")
+	_, span := tracer.Start(c.Request.Context(), "http.GetInventory")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("product.id", productID))
@@ -276,7 +276,7 @@ func (s *InventoryService) checkInventory(c *gin.Context) {
 	productID := c.Param("product_id")
 
 	tracer := otel.Tracer("inventory-service")
-	ctx, span := tracer.Start(c.Request.Context(), "http.CheckInventory")
+	_, span := tracer.Start(c.Request.Context(), "http.CheckInventory")
 	defer span.End()
 
 	s.mutex.RLock()
@@ -310,7 +310,7 @@ func (s *InventoryService) reserveInventory(c *gin.Context) {
 	}
 
 	tracer := otel.Tracer("inventory-service")
-	ctx, span := tracer.Start(c.Request.Context(), "http.ReserveInventory")
+	_, span := tracer.Start(c.Request.Context(), "http.ReserveInventory")
 	defer span.End()
 
 	s.mutex.Lock()

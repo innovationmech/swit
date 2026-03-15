@@ -44,7 +44,7 @@ concurrency:
 
 env:
   NODE_VERSION: '18'
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.26.1'
   DOCS_DIR: './docs/pages'
 
 jobs:

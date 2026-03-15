@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for {{.Service.Name | titleCase}}
 
 # Build stage
-FROM golang:{{.Service.GoVersion | default "1.19"}}-alpine AS builder
+FROM golang:{{.Service.GoVersion | default "1.26.1"}}-alpine AS builder
 
 # Set build arguments
 ARG VERSION={{.Service.Version}}

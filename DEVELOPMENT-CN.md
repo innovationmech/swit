@@ -147,7 +147,7 @@ make swagger-switauth    # 为switauth生成
 Swit 框架使用以下主要依赖项：
 
 ### 核心框架
-- **Go 1.24+**: 要求的 Go 版本
+- **Go 1.26.1+**: 要求的 Go 版本
 - **gin-gonic/gin**: HTTP Web 框架
 - **grpc/grpc-go**: gRPC 框架
 - **uber-go/zap**: 结构化日志

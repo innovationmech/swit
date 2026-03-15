@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git make
@@ -54,4 +54,3 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Run the application
 ENTRYPOINT ["./oauth2-example"]
-
