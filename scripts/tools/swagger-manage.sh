@@ -143,6 +143,25 @@ format_swagger() {
     done
 }
 
+# 函数：确保模块依赖已下载
+# swag init 使用 --parseDependency 时需要全部依赖位于模块缓存中，
+# 否则会报 "cannot find all dependencies"，因此在生成前预下载依赖。
+ensure_dependencies() {
+    log_info "确保Go模块依赖已下载..."
+
+    if [ "$DRY_RUN" = "true" ]; then
+        echo "go mod download"
+        return 0
+    fi
+
+    if go mod download; then
+        log_success "✓ Go模块依赖已就绪"
+    else
+        log_error "Go模块依赖下载失败"
+        exit 1
+    fi
+}
+
 # 函数：生成特定服务的swagger文档
 generate_service_swagger() {
     local service_name=$1
@@ -157,7 +176,10 @@ generate_service_swagger() {
         echo "swag init -g $main_file -o $output_dir --parseDependency --parseInternal --exclude $exclude_dir"
         return 0
     fi
-    
+
+    # 预下载依赖，保证 --parseDependency 能解析全部依赖
+    ensure_dependencies
+
     # 创建输出目录
     mkdir -p "$output_dir"
     
