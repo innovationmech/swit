@@ -93,6 +93,12 @@ jobs:
       if: needs.changes.outputs.code_changed == 'true'
       run: make setup-dev
 
+    # 预下载模块依赖，确保 swag --parseDependency 能解析全部依赖
+    # 否则 swagger 文档生成会报 "cannot find all dependencies"
+    - name: Download Go module dependencies
+      if: needs.changes.outputs.code_changed == 'true'
+      run: go mod download
+
     - name: Generate proto code (dev)
       if: needs.changes.outputs.code_changed == 'true'
       run: make proto-dev
