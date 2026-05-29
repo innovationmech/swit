@@ -236,7 +236,7 @@ jobs:
       github.ref == 'refs/heads/master'
     steps:
       - name: Download benchmark results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: benchmark-results-${{ github.sha }}
           path: _output/benchmark/
