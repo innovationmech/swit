@@ -59,13 +59,6 @@ export default defineConfig({
     
     // 并发配置
     pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: false,
-        minThreads: 1,
-        maxThreads: 4
-      }
-    },
     
     // 测试超时
     testTimeout: 10000,
@@ -77,13 +70,6 @@ export default defineConfig({
       json: './tests/reports/results.json',
       html: './tests/reports/index.html'
     },
-    
-    // 监视模式配置
-    watchExclude: [
-      'node_modules/**',
-      'dist/**',
-      '.vitepress/cache/**'
-    ],
     
     // 模拟配置
     clearMocks: true,
