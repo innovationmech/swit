@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -201,9 +202,9 @@ func TestJWKSCache_Refresh(t *testing.T) {
 }
 
 func TestJWKSCache_AutoRefresh(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		jwks := JWKSet{
 			Keys: []JWK{
 				{
@@ -232,16 +233,16 @@ func TestJWKSCache_AutoRefresh(t *testing.T) {
 	defer cache.Stop()
 
 	// Initial call count should be 1
-	if callCount != 1 {
-		t.Errorf("Expected 1 initial call, got %d", callCount)
+	if got := callCount.Load(); got != 1 {
+		t.Errorf("Expected 1 initial call, got %d", got)
 	}
 
 	// Wait for auto-refresh to happen
 	time.Sleep(300 * time.Millisecond)
 
 	// Should have at least one more refresh
-	if callCount < 2 {
-		t.Errorf("Expected at least 2 calls after auto-refresh, got %d", callCount)
+	if got := callCount.Load(); got < 2 {
+		t.Errorf("Expected at least 2 calls after auto-refresh, got %d", got)
 	}
 }
 
