@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/saga"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
@@ -96,6 +97,15 @@ type OrchestratorCoordinator struct {
 
 	// instances tracks active Saga instances.
 	instances sync.Map
+
+	// definitions tracks Saga definitions by Saga ID. The definition is
+	// required to drive compensation and lifecycle operations (cancel/stop)
+	// for active instances.
+	definitions sync.Map
+
+	// cancelFuncs tracks per-Saga execution cancellation functions, enabling
+	// graceful interruption of in-flight step execution.
+	cancelFuncs sync.Map
 
 	// metrics holds aggregated coordinator metrics.
 	metrics *saga.CoordinatorMetrics
@@ -438,29 +448,45 @@ func (oc *OrchestratorCoordinator) StartSaga(
 		_ = saga.NewEventPublishError(saga.EventSagaStarted, err)
 	}
 
+	// Track the definition and a cancellable execution context so that the
+	// lifecycle APIs (CancelSaga / StopSaga) can interrupt in-flight execution
+	// and trigger compensation when required.
+	oc.definitions.Store(sagaID, definition)
+	execCtx, execCancel := context.WithCancel(context.Background())
+	oc.cancelFuncs.Store(sagaID, execCancel)
+
 	// Acquire concurrency slot before starting execution
 	if err := oc.concurrencyController.AcquireSlot(ctx, sagaID); err != nil {
-		// Failed to acquire slot, mark as failed and clean up
+		// Failed to acquire slot, clean up tracking state and persist instance
+		oc.releaseExecution(sagaID)
 		_ = oc.stateStorage.SaveSaga(ctx, instance)
 		return nil, fmt.Errorf("failed to acquire concurrency slot: %w", err)
 	}
 
 	// Start asynchronous step execution using worker pool
-	execTask := func(execCtx context.Context) error {
+	execTask := func(taskCtx context.Context) error {
 		defer oc.concurrencyController.ReleaseSlot(sagaID)
 
 		// Execute steps
 		executor := newStepExecutor(oc, instance, definition)
-		return executor.executeSteps(execCtx)
+		return executor.executeSteps(taskCtx)
 	}
 
-	// Submit task to worker pool
-	if err := oc.concurrencyController.SubmitTask(context.Background(), execTask); err != nil {
+	// Submit task to worker pool using the cancellable execution context.
+	submitErr := oc.concurrencyController.SubmitTask(execCtx, execTask)
+
+	// SubmitTask blocks until the worker reports completion, so the per-Saga
+	// execution tracking can be released now. Releasing here (rather than in a
+	// deferred cleanup inside the task) avoids cancelling the execution context
+	// before the worker has reported its result.
+	oc.releaseExecution(sagaID)
+
+	if submitErr != nil {
 		// Failed to submit task, release slot and return error
 		oc.concurrencyController.ReleaseSlot(sagaID)
-		span.SetStatus(2, fmt.Sprintf("failed to submit task: %v", err))
-		span.RecordError(err)
-		return nil, fmt.Errorf("failed to submit execution task: %w", err)
+		span.SetStatus(2, fmt.Sprintf("failed to submit task: %v", submitErr))
+		span.RecordError(submitErr)
+		return nil, fmt.Errorf("failed to submit execution task: %w", submitErr)
 	}
 
 	// Mark span as successful
@@ -571,20 +597,28 @@ func copyMetadata(metadata map[string]interface{}) map[string]interface{} {
 //   - An error if the instance does not exist or the coordinator is closed.
 func (oc *OrchestratorCoordinator) GetSagaInstance(sagaID string) (saga.SagaInstance, error) {
 	oc.mu.RLock()
-	defer oc.mu.RUnlock()
+	closed := oc.closed
+	oc.mu.RUnlock()
 
-	if oc.closed {
+	if closed {
 		return nil, ErrCoordinatorClosed
 	}
 
-	// Check in-memory cache first
+	// Check in-memory cache first for the live runtime instance.
 	if instance, ok := oc.instances.Load(sagaID); ok {
 		return instance.(saga.SagaInstance), nil
 	}
 
-	// Query from state storage
-	// TODO: Implementation will be completed in future issues
-	return nil, saga.NewSagaNotFoundError(sagaID)
+	// Fall back to the configured state storage. This allows querying Sagas
+	// that are no longer cached in memory (for example after a restart).
+	instance, err := oc.stateStorage.GetSaga(context.Background(), sagaID)
+	if err != nil {
+		return nil, err
+	}
+	if instance == nil {
+		return nil, saga.NewSagaNotFoundError(sagaID)
+	}
+	return instance, nil
 }
 
 // CancelSaga cancels a running Saga instance with the specified reason.
@@ -605,8 +639,89 @@ func (oc *OrchestratorCoordinator) CancelSaga(ctx context.Context, sagaID string
 	}
 	oc.mu.RUnlock()
 
-	// TODO: Implementation will be completed in future issues
-	return errors.New("not yet implemented: cancellation logic pending")
+	ctx, span := oc.tracingManager.StartSpan(ctx, "saga.cancel")
+	defer span.End()
+	span.SetAttribute("saga.id", sagaID)
+
+	// Resolve the instance. In-memory instances are preferred because they
+	// carry the live runtime state required to drive compensation.
+	instance, inMemory := oc.loadInstance(ctx, sagaID)
+	if instance == nil {
+		err := saga.NewSagaNotFoundError(sagaID)
+		span.RecordError(err)
+		span.SetStatus(2, "saga not found")
+		return err
+	}
+
+	if instance.GetState().IsTerminal() {
+		err := saga.NewInvalidSagaStateError(instance.GetState(), saga.StateCancelled)
+		span.RecordError(err)
+		span.SetStatus(2, "saga already terminal")
+		return err
+	}
+
+	startTime := instance.GetStartTime()
+
+	// Signal any in-flight execution to stop before compensation begins.
+	oc.cancelExecution(sagaID)
+
+	// Trigger compensation for completed steps when the live instance and its
+	// definition are available.
+	if inMemory {
+		if orchInstance, ok := instance.(*OrchestratorSagaInstance); ok {
+			oc.compensateForCancellation(ctx, orchInstance)
+		}
+	}
+
+	// Transition to the Cancelled terminal state and persist it.
+	if orchInstance, ok := instance.(*OrchestratorSagaInstance); ok {
+		now := time.Now()
+		orchInstance.mu.Lock()
+		orchInstance.state = saga.StateCancelled
+		orchInstance.completedAt = &now
+		orchInstance.updatedAt = now
+		if orchInstance.sagaError == nil {
+			orchInstance.sagaError = saga.NewSagaError(
+				saga.ErrCodeInvalidSagaState, reason, saga.ErrorTypeBusiness, false)
+		}
+		orchInstance.mu.Unlock()
+
+		if err := oc.stateStorage.SaveSaga(ctx, orchInstance); err != nil {
+			span.RecordError(err)
+			span.SetStatus(2, "failed to persist cancelled state")
+			return saga.NewStorageError("SaveSaga", err)
+		}
+	} else {
+		// Storage-only instance: update the persisted state directly.
+		metadata := map[string]interface{}{"cancellation_reason": reason}
+		if err := oc.stateStorage.UpdateSagaState(ctx, sagaID, saga.StateCancelled, metadata); err != nil {
+			span.RecordError(err)
+			span.SetStatus(2, "failed to persist cancelled state")
+			return saga.NewStorageError("UpdateSagaState", err)
+		}
+	}
+
+	// Publish the cancellation event for observability.
+	oc.publishCancellationEvent(ctx, instance, reason, time.Since(startTime))
+
+	// Update aggregate metrics.
+	oc.mu.Lock()
+	oc.metrics.CancelledSagas++
+	if oc.metrics.ActiveSagas > 0 {
+		oc.metrics.ActiveSagas--
+	}
+	oc.metrics.LastUpdateTime = time.Now()
+	oc.mu.Unlock()
+
+	oc.metricsCollector.RecordSagaCancelled(instance.GetDefinitionID(), time.Since(startTime))
+
+	// Clean up tracking state.
+	oc.instances.Delete(sagaID)
+	oc.releaseExecution(sagaID)
+
+	span.SetStatus(1, "saga cancelled")
+	span.AddEvent("saga_cancelled")
+	return nil
 }
 
 // GetActiveSagas retrieves all currently active Saga instances based on the filter.
@@ -620,14 +735,43 @@ func (oc *OrchestratorCoordinator) CancelSaga(ctx context.Context, sagaID string
 //   - An error if the query fails or the coordinator is closed.
 func (oc *OrchestratorCoordinator) GetActiveSagas(filter *saga.SagaFilter) ([]saga.SagaInstance, error) {
 	oc.mu.RLock()
-	defer oc.mu.RUnlock()
+	closed := oc.closed
+	oc.mu.RUnlock()
 
-	if oc.closed {
+	if closed {
 		return nil, ErrCoordinatorClosed
 	}
 
-	// TODO: Implementation will query from state storage with filter
-	return []saga.SagaInstance{}, nil
+	// Constrain the query to active states. If the caller supplied explicit
+	// states we respect them, otherwise default to the set of states that are
+	// considered active (Running, StepCompleted, Compensating).
+	effectiveFilter := buildActiveSagaFilter(filter)
+
+	instances, err := oc.stateStorage.GetActiveSagas(context.Background(), effectiveFilter)
+	if err != nil {
+		return nil, saga.NewStorageError("GetActiveSagas", err)
+	}
+	return instances, nil
+}
+
+// buildActiveSagaFilter returns a filter constrained to active Saga states.
+// It never mutates the caller-supplied filter.
+func buildActiveSagaFilter(filter *saga.SagaFilter) *saga.SagaFilter {
+	activeStates := []saga.SagaState{
+		saga.StateRunning,
+		saga.StateStepCompleted,
+		saga.StateCompensating,
+	}
+
+	if filter == nil {
+		return &saga.SagaFilter{States: activeStates}
+	}
+
+	copied := *filter
+	if len(copied.States) == 0 {
+		copied.States = activeStates
+	}
+	return &copied
 }
 
 // GetMetrics returns runtime metrics about the coordinator's performance.
@@ -657,14 +801,58 @@ func (oc *OrchestratorCoordinator) GetMetrics() *saga.CoordinatorMetrics {
 //   - An error describing which component is unhealthy.
 func (oc *OrchestratorCoordinator) HealthCheck(ctx context.Context) error {
 	oc.mu.RLock()
-	defer oc.mu.RUnlock()
+	closed := oc.closed
+	stateStorage := oc.stateStorage
+	eventPublisher := oc.eventPublisher
+	oc.mu.RUnlock()
 
-	if oc.closed {
+	if closed {
 		return ErrCoordinatorClosed
 	}
 
-	// TODO: Implement actual health checks for dependencies
-	// For now, just verify the coordinator is not closed
+	// Respect caller cancellation or deadline.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	// Probe the state storage dependency.
+	if stateStorage == nil {
+		return ErrStateStorageNotConfigured
+	}
+	if err := probeHealth(ctx, stateStorage, func() error {
+		_, err := stateStorage.GetActiveSagas(ctx, &saga.SagaFilter{Limit: 1})
+		return err
+	}); err != nil {
+		return fmt.Errorf("state storage unhealthy: %w", err)
+	}
+
+	// Probe the event publisher dependency.
+	if eventPublisher == nil {
+		return ErrEventPublisherNotConfigured
+	}
+	if err := probeHealth(ctx, eventPublisher, nil); err != nil {
+		return fmt.Errorf("event publisher unhealthy: %w", err)
+	}
+
+	return nil
+}
+
+// healthCheckable is implemented by dependencies that expose an explicit
+// health probe (such as the Redis and Postgres state storage backends).
+type healthCheckable interface {
+	HealthCheck(ctx context.Context) error
+}
+
+// probeHealth checks the health of a dependency. It prefers an explicit
+// HealthCheck method when the dependency implements healthCheckable, otherwise
+// it falls back to the provided lightweight probe (if any).
+func probeHealth(ctx context.Context, dependency interface{}, fallback func() error) error {
+	if hc, ok := dependency.(healthCheckable); ok {
+		return hc.HealthCheck(ctx)
+	}
+	if fallback != nil {
+		return fallback()
+	}
 	return nil
 }
 
@@ -725,8 +913,167 @@ func (oc *OrchestratorCoordinator) StopSaga(ctx context.Context, sagaID string) 
 	}
 	oc.mu.RUnlock()
 
-	// TODO: Implementation will be completed in future issues
-	return errors.New("not yet implemented: stop logic pending")
+	ctx, span := oc.tracingManager.StartSpan(ctx, "saga.stop")
+	defer span.End()
+	span.SetAttribute("saga.id", sagaID)
+
+	instance, _ := oc.loadInstance(ctx, sagaID)
+	if instance == nil {
+		err := saga.NewSagaNotFoundError(sagaID)
+		span.RecordError(err)
+		span.SetStatus(2, "saga not found")
+		return err
+	}
+
+	if instance.GetState().IsTerminal() {
+		err := saga.NewInvalidSagaStateError(instance.GetState(), saga.StateCancelled)
+		span.RecordError(err)
+		span.SetStatus(2, "saga already terminal")
+		return err
+	}
+
+	// Signal in-flight execution to stop gracefully. The currently executing
+	// step is allowed to finish; no new steps will be started once the
+	// execution context is cancelled.
+	oc.cancelExecution(sagaID)
+
+	// Persist the current state so the Saga can be inspected or recovered
+	// after the stop request.
+	if orchInstance, ok := instance.(*OrchestratorSagaInstance); ok {
+		orchInstance.mu.Lock()
+		orchInstance.updatedAt = time.Now()
+		orchInstance.mu.Unlock()
+
+		if err := oc.stateStorage.SaveSaga(ctx, orchInstance); err != nil {
+			span.RecordError(err)
+			span.SetStatus(2, "failed to persist current state")
+			return saga.NewStorageError("SaveSaga", err)
+		}
+	} else {
+		if err := oc.stateStorage.UpdateSagaState(ctx, sagaID, instance.GetState(), nil); err != nil {
+			span.RecordError(err)
+			span.SetStatus(2, "failed to persist current state")
+			return saga.NewStorageError("UpdateSagaState", err)
+		}
+	}
+
+	span.SetStatus(1, "saga stopped")
+	span.AddEvent("saga_stopped")
+	return nil
+}
+
+// loadInstance resolves a Saga instance by ID. It prefers the in-memory cache
+// (which holds the live runtime instance) and falls back to the configured
+// state storage. The boolean return value reports whether the instance was
+// resolved from the in-memory cache.
+func (oc *OrchestratorCoordinator) loadInstance(ctx context.Context, sagaID string) (saga.SagaInstance, bool) {
+	if v, ok := oc.instances.Load(sagaID); ok {
+		return v.(saga.SagaInstance), true
+	}
+
+	instance, err := oc.stateStorage.GetSaga(ctx, sagaID)
+	if err != nil || instance == nil {
+		return nil, false
+	}
+	return instance, false
+}
+
+// cancelExecution signals any in-flight execution for the given Saga to stop
+// by cancelling its execution context. It is a no-op if no execution is
+// currently tracked.
+func (oc *OrchestratorCoordinator) cancelExecution(sagaID string) {
+	if cancel, ok := oc.cancelFuncs.Load(sagaID); ok {
+		cancel.(context.CancelFunc)()
+	}
+}
+
+// releaseExecution releases the per-Saga execution tracking state. It cancels
+// and removes the execution context and removes the cached definition.
+func (oc *OrchestratorCoordinator) releaseExecution(sagaID string) {
+	if cancel, ok := oc.cancelFuncs.LoadAndDelete(sagaID); ok {
+		cancel.(context.CancelFunc)()
+	}
+	oc.definitions.Delete(sagaID)
+}
+
+// compensateForCancellation drives compensation for the steps that have
+// already completed when a Saga is cancelled. It reuses the per-step
+// compensation logic from the compensation executor without performing the
+// terminal state transition, which the caller controls.
+func (oc *OrchestratorCoordinator) compensateForCancellation(ctx context.Context, instance *OrchestratorSagaInstance) {
+	definitionValue, ok := oc.definitions.Load(instance.id)
+	if !ok {
+		return
+	}
+	definition, ok := definitionValue.(saga.SagaDefinition)
+	if !ok {
+		return
+	}
+
+	completedCount := instance.GetCompletedSteps()
+	if completedCount <= 0 {
+		return
+	}
+
+	steps := definition.GetSteps()
+	if completedCount > len(steps) {
+		completedCount = len(steps)
+	}
+	completedSteps := steps[:completedCount]
+
+	strategy := definition.GetCompensationStrategy()
+	if strategy == nil {
+		strategy = saga.NewSequentialCompensationStrategy(30 * time.Second)
+	}
+
+	// Mark the instance as compensating for observability.
+	instance.mu.Lock()
+	instance.state = saga.StateCompensating
+	instance.updatedAt = time.Now()
+	instance.mu.Unlock()
+
+	ce := newCompensationExecutor(oc, instance, definition)
+	ce.publishCompensationStartedEvent(ctx, len(completedSteps))
+
+	for compIndex, step := range strategy.GetCompensationOrder(completedSteps) {
+		originalIndex := ce.findOriginalStepIndex(step, completedSteps)
+		if originalIndex < 0 {
+			continue
+		}
+		if err := ce.compensateStep(ctx, step, originalIndex, compIndex); err != nil {
+			logger.GetSugaredLogger().Warnf(
+				"Cancellation compensation failed for step %d of Saga %s: %v",
+				originalIndex, instance.id, err)
+		}
+	}
+}
+
+// publishCancellationEvent publishes a Saga cancelled event for observability.
+func (oc *OrchestratorCoordinator) publishCancellationEvent(
+	ctx context.Context,
+	instance saga.SagaInstance,
+	reason string,
+	duration time.Duration,
+) {
+	event := &saga.SagaEvent{
+		ID:        generateEventID(),
+		SagaID:    instance.GetID(),
+		Type:      saga.EventSagaCancelled,
+		Version:   "1.0",
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"reason": reason,
+		},
+		NewState: saga.StateCancelled,
+		Duration: duration,
+		TraceID:  instance.GetTraceID(),
+		Source:   "OrchestratorCoordinator",
+		Metadata: instance.GetMetadata(),
+	}
+
+	if err := oc.eventPublisher.PublishEvent(ctx, event); err != nil {
+		logger.GetSugaredLogger().Warnf("Failed to publish saga cancelled event: %v", err)
+	}
 }
 
 // OrchestratorSagaInstance is the concrete implementation of saga.SagaInstance for orchestrator-based Sagas.
