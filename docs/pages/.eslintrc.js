@@ -38,6 +38,7 @@ module.exports = {
     'dist/',
     '.vitepress/cache/',
     '.security-report.*',
+    'tests/reports/',
     'scripts/security-scanner.js', // 安全扫描器有特殊的代码模式
     'tests/**/*.ts' // 忽略TypeScript测试文件，避免解析错误
   ]
