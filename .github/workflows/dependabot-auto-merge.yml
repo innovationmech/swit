@@ -24,6 +24,7 @@ jobs:
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          skip-commit-verification: true
 
       - name: Add labels (semver / security)
         if: steps.metadata.outputs.update-type != ''
