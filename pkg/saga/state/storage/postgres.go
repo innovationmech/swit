@@ -1158,13 +1158,18 @@ func (p *PostgresStateStorage) CleanupExpiredSagasWithCount(ctx context.Context,
 	}
 }
 
-// marshalJSON marshals a value to JSON bytes.
-// Returns nil bytes for nil values.
-func (p *PostgresStateStorage) marshalJSON(v interface{}) ([]byte, error) {
+// marshalJSON marshals a value to JSON for use as a query argument.
+// Returns an untyped nil for nil values so the database driver sends SQL NULL;
+// a typed nil []byte would be encoded as an empty string, which is invalid JSONB.
+func (p *PostgresStateStorage) marshalJSON(v interface{}) (interface{}, error) {
 	if v == nil {
 		return nil, nil
 	}
-	return json.Marshal(v)
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // unmarshalJSON unmarshals JSON bytes to a value.
@@ -1662,6 +1667,9 @@ type SagaTransaction struct {
 
 	// startTime records when the transaction was started
 	startTime time.Time
+
+	// cancel releases the transaction context; called on Commit/Rollback
+	cancel context.CancelFunc
 }
 
 // BeginTransaction starts a new database transaction with the specified timeout.
@@ -1703,9 +1711,10 @@ func (p *PostgresStateStorage) BeginTransaction(ctx context.Context, timeout tim
 		timeout = p.config.QueryTimeout
 	}
 
-	// Create transaction context with timeout
+	// Create transaction context with timeout. The cancel function must not be
+	// called until the transaction completes, because cancelling the context
+	// rolls back the transaction; it is invoked from Commit/Rollback instead.
 	txCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	// Begin SQL transaction
 	tx, err := p.db.BeginTx(txCtx, &sql.TxOptions{
@@ -1713,6 +1722,7 @@ func (p *PostgresStateStorage) BeginTransaction(ctx context.Context, timeout tim
 		ReadOnly:  false,
 	})
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
@@ -1722,6 +1732,7 @@ func (p *PostgresStateStorage) BeginTransaction(ctx context.Context, timeout tim
 		closed:    false,
 		timeout:   timeout,
 		startTime: time.Now(),
+		cancel:    cancel,
 	}, nil
 }
 
@@ -1764,6 +1775,7 @@ func (st *SagaTransaction) Commit(ctx context.Context) error {
 		// Rollback on timeout
 		_ = st.tx.Rollback()
 		st.closed = true
+		st.releaseContext()
 		return err
 	}
 
@@ -1773,7 +1785,16 @@ func (st *SagaTransaction) Commit(ctx context.Context) error {
 	}
 
 	st.closed = true
+	st.releaseContext()
 	return nil
+}
+
+// releaseContext releases the transaction's timeout context, if any.
+func (st *SagaTransaction) releaseContext() {
+	if st.cancel != nil {
+		st.cancel()
+		st.cancel = nil
+	}
 }
 
 // Rollback rolls back the transaction, discarding all changes.
@@ -1799,6 +1820,7 @@ func (st *SagaTransaction) Rollback(ctx context.Context) error {
 	}
 
 	st.closed = true
+	st.releaseContext()
 	return nil
 }
 

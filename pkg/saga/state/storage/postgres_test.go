@@ -245,9 +245,14 @@ func TestPostgresStateStorage_MarshalUnmarshalJSON(t *testing.T) {
 				return
 			}
 
+			dataBytes, ok := data.([]byte)
+			if !ok {
+				t.Fatalf("Expected []byte data, got %T", data)
+			}
+
 			// Unmarshal
 			var result interface{}
-			err = storage.unmarshalJSON(data, &result)
+			err = storage.unmarshalJSON(dataBytes, &result)
 			if err != nil {
 				t.Errorf("unmarshalJSON failed: %v", err)
 			}

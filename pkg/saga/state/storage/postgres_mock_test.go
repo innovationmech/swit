@@ -129,9 +129,13 @@ func (a anyTime) Match(v driver.Value) bool {
 }
 
 // anyJSON matcher for JSON byte arguments in sqlmock.
+// Accepts nil because nil values are stored as SQL NULL in JSONB columns.
 type anyJSON struct{}
 
 func (a anyJSON) Match(v driver.Value) bool {
+	if v == nil {
+		return true
+	}
 	_, ok := v.([]byte)
 	return ok
 }
