@@ -401,10 +401,7 @@ func testCreateBrokerFactoryWithDI(t *testing.T) {
 	}
 
 	broker, err := factory(container, config)
-	if err != nil {
-		t.Skipf("Skipping test as inmemory broker not registered: %v", err)
-		return
-	}
+	require.NoError(t, err)
 	assert.NotNil(t, broker)
 
 	// Verify it's wrapped
