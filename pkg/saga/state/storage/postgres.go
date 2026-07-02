@@ -37,9 +37,6 @@ import (
 )
 
 var (
-	// ErrNotImplemented is returned when a method is not yet implemented.
-	ErrNotImplemented = errors.New("not implemented")
-
 	// ErrTransactionClosed is returned when an operation is attempted on a closed transaction.
 	ErrTransactionClosed = errors.New("transaction is closed")
 
@@ -1092,22 +1089,73 @@ func (p *PostgresStateStorage) GetStepStates(ctx context.Context, sagaID string)
 	return steps, nil
 }
 
+// defaultCleanupBatchSize limits how many saga instances are deleted per
+// statement so that large cleanups do not hold row locks for too long.
+const defaultCleanupBatchSize = 1000
+
 // CleanupExpiredSagas removes Saga instances that are older than the specified time.
-// This method will be implemented in a future task.
+// Only Sagas in terminal states (completed, compensated, failed, cancelled, timed out)
+// are removed; associated steps and events are deleted via ON DELETE CASCADE constraints.
 func (p *PostgresStateStorage) CleanupExpiredSagas(ctx context.Context, olderThan time.Time) error {
+	_, err := p.CleanupExpiredSagasWithCount(ctx, olderThan)
+	return err
+}
+
+// CleanupExpiredSagasWithCount removes expired terminal-state Saga instances in
+// batches and returns the total number of saga instances deleted. Deletion is
+// performed in batches of defaultCleanupBatchSize to avoid long-running
+// statements on large tables.
+func (p *PostgresStateStorage) CleanupExpiredSagasWithCount(ctx context.Context, olderThan time.Time) (int64, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return 0, ctx.Err()
 	}
 
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	if err := p.checkClosed(); err != nil {
-		return err
+		return 0, err
 	}
 
-	// TODO: Implement PostgreSQL cleanup logic for expired sagas
-	return ErrNotImplemented
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE id IN (
+			SELECT id FROM %s
+			WHERE state IN ($1, $2, $3, $4, $5)
+			  AND updated_at < $6
+			LIMIT $7
+		)
+	`, p.instancesTable, p.instancesTable)
+
+	var total int64
+	for {
+		queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+		result, err := p.db.ExecContext(
+			queryCtx,
+			query,
+			int(saga.StateCompleted), int(saga.StateCompensated), int(saga.StateFailed),
+			int(saga.StateCancelled), int(saga.StateTimedOut),
+			olderThan, defaultCleanupBatchSize,
+		)
+		cancel()
+		if err != nil {
+			return total, fmt.Errorf("failed to cleanup expired sagas: %w", err)
+		}
+
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		total += affected
+		if affected < defaultCleanupBatchSize {
+			return total, nil
+		}
+
+		if ctx.Err() != nil {
+			return total, ctx.Err()
+		}
+	}
 }
 
 // marshalJSON marshals a value to JSON bytes.

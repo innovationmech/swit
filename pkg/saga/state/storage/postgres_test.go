@@ -593,11 +593,9 @@ func TestPostgresStateStorage_GetStepStates_NotImplemented(t *testing.T) {
 	t.Skip("Requires PostgreSQL connection - will implement with actual DB")
 }
 
-// TestPostgresStateStorage_CleanupExpiredSagas_NotImplemented tests that CleanupExpiredSagas
-// returns ErrNotImplemented since it's not yet implemented.
-func TestPostgresStateStorage_CleanupExpiredSagas_NotImplemented(t *testing.T) {
-	t.Skip("Requires PostgreSQL connection - will implement with actual DB")
-}
+// TestPostgresStateStorage_CleanupExpiredSagas_Basic is covered by mock-based
+// tests in postgres_mock_test.go and by integration tests in
+// postgres_integration_test.go (enabled via POSTGRES_TEST_DSN).
 
 // TestPostgresStateStorage_ImplementsInterface verifies that PostgresStateStorage
 // implements the saga.StateStorage interface at compile time.

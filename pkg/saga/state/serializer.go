@@ -28,6 +28,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/vmihailenco/msgpack/v5"
+
 	"github.com/innovationmech/swit/pkg/saga"
 )
 
@@ -247,6 +249,161 @@ func (s *JSONSerializer) Format() SerializationFormat {
 
 // compress compresses data using gzip.
 func (s *JSONSerializer) compress(data []byte) ([]byte, error) {
+	return gzipCompress(data)
+}
+
+// decompress decompresses gzip-compressed data.
+func (s *JSONSerializer) decompress(data []byte) ([]byte, error) {
+	return gzipDecompress(data)
+}
+
+// MsgpackSerializer implements the Serializer interface using MessagePack encoding.
+// It produces a compact binary representation that is faster to encode/decode
+// and smaller on the wire than JSON.
+type MsgpackSerializer struct {
+	config *SerializerConfig
+}
+
+// NewMsgpackSerializer creates a new MessagePack serializer with the given configuration.
+// If config is nil, a default configuration is used. The PrettyPrint option is
+// ignored because MessagePack is a binary format.
+func NewMsgpackSerializer(config *SerializerConfig) *MsgpackSerializer {
+	if config == nil {
+		config = DefaultSerializerConfig()
+		config.Format = SerializationFormatMsgpack
+	}
+	return &MsgpackSerializer{
+		config: config,
+	}
+}
+
+// SerializeSaga serializes a SagaInstanceData to MessagePack bytes.
+func (s *MsgpackSerializer) SerializeSaga(saga *saga.SagaInstanceData) ([]byte, error) {
+	if saga == nil {
+		return nil, fmt.Errorf("saga instance is nil")
+	}
+
+	data, err := msgpack.Marshal(saga)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal saga: %w", err)
+	}
+
+	if s.config.EnableCompression {
+		return gzipCompress(data)
+	}
+
+	return data, nil
+}
+
+// DeserializeSaga deserializes MessagePack bytes to a SagaInstanceData.
+func (s *MsgpackSerializer) DeserializeSaga(data []byte) (*saga.SagaInstanceData, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("data is empty")
+	}
+
+	var err error
+	if s.config.EnableCompression {
+		data, err = gzipDecompress(data)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var sagaData saga.SagaInstanceData
+	if err := msgpack.Unmarshal(data, &sagaData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal saga: %w", err)
+	}
+
+	return &sagaData, nil
+}
+
+// SerializeStepState serializes a StepState to MessagePack bytes.
+func (s *MsgpackSerializer) SerializeStepState(step *saga.StepState) ([]byte, error) {
+	if step == nil {
+		return nil, fmt.Errorf("step state is nil")
+	}
+
+	data, err := msgpack.Marshal(step)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal step state: %w", err)
+	}
+
+	if s.config.EnableCompression {
+		return gzipCompress(data)
+	}
+
+	return data, nil
+}
+
+// DeserializeStepState deserializes MessagePack bytes to a StepState.
+func (s *MsgpackSerializer) DeserializeStepState(data []byte) (*saga.StepState, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("data is empty")
+	}
+
+	var err error
+	if s.config.EnableCompression {
+		data, err = gzipDecompress(data)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var stepState saga.StepState
+	if err := msgpack.Unmarshal(data, &stepState); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal step state: %w", err)
+	}
+
+	return &stepState, nil
+}
+
+// SerializeStepStates serializes a slice of StepState to MessagePack bytes.
+func (s *MsgpackSerializer) SerializeStepStates(steps []*saga.StepState) ([]byte, error) {
+	if steps == nil {
+		return nil, fmt.Errorf("step states are nil")
+	}
+
+	data, err := msgpack.Marshal(steps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal step states: %w", err)
+	}
+
+	if s.config.EnableCompression {
+		return gzipCompress(data)
+	}
+
+	return data, nil
+}
+
+// DeserializeStepStates deserializes MessagePack bytes to a slice of StepState.
+func (s *MsgpackSerializer) DeserializeStepStates(data []byte) ([]*saga.StepState, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("data is empty")
+	}
+
+	var err error
+	if s.config.EnableCompression {
+		data, err = gzipDecompress(data)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var stepStates []*saga.StepState
+	if err := msgpack.Unmarshal(data, &stepStates); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal step states: %w", err)
+	}
+
+	return stepStates, nil
+}
+
+// Format returns the serialization format used by this serializer.
+func (s *MsgpackSerializer) Format() SerializationFormat {
+	return SerializationFormatMsgpack
+}
+
+// gzipCompress compresses data using gzip.
+func gzipCompress(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	writer := gzip.NewWriter(&buf)
 
@@ -262,8 +419,8 @@ func (s *JSONSerializer) compress(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// decompress decompresses gzip-compressed data.
-func (s *JSONSerializer) decompress(data []byte) ([]byte, error) {
+// gzipDecompress decompresses gzip-compressed data.
+func gzipDecompress(data []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
@@ -279,7 +436,7 @@ func (s *JSONSerializer) decompress(data []byte) ([]byte, error) {
 }
 
 // NewSerializer creates a serializer based on the provided configuration.
-// Currently, only JSON serialization is supported.
+// Supported formats are JSON (default) and MessagePack.
 func NewSerializer(config *SerializerConfig) (Serializer, error) {
 	if config == nil {
 		config = DefaultSerializerConfig()
@@ -288,10 +445,8 @@ func NewSerializer(config *SerializerConfig) (Serializer, error) {
 	switch config.Format {
 	case SerializationFormatJSON:
 		return NewJSONSerializer(config), nil
-	case SerializationFormatProtobuf:
-		return nil, fmt.Errorf("protobuf serialization is not yet implemented")
 	case SerializationFormatMsgpack:
-		return nil, fmt.Errorf("msgpack serialization is not yet implemented")
+		return NewMsgpackSerializer(config), nil
 	default:
 		return nil, fmt.Errorf("unsupported serialization format: %s", config.Format)
 	}
