@@ -59,14 +59,13 @@ var (
 )
 
 // SerializationFormat represents the format used for serializing Saga state.
+// Only formats listed below are supported; unknown formats are rejected by
+// NewSerializer to avoid silently misconfigured storage backends.
 type SerializationFormat string
 
 const (
 	// SerializationFormatJSON uses JSON serialization.
 	SerializationFormatJSON SerializationFormat = "json"
-
-	// SerializationFormatProtobuf uses Protocol Buffers serialization.
-	SerializationFormatProtobuf SerializationFormat = "protobuf"
 
 	// SerializationFormatMsgpack uses MessagePack serialization.
 	SerializationFormatMsgpack SerializationFormat = "msgpack"

@@ -85,16 +85,16 @@ func TestNewSerializer(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "protobuf format (not implemented)",
-			config: &SerializerConfig{
-				Format: SerializationFormatProtobuf,
-			},
-			wantErr: true,
-		},
-		{
-			name: "msgpack format (not implemented)",
+			name: "msgpack format",
 			config: &SerializerConfig{
 				Format: SerializationFormatMsgpack,
+			},
+			wantErr: false,
+		},
+		{
+			name: "protobuf format (unsupported)",
+			config: &SerializerConfig{
+				Format: "protobuf",
 			},
 			wantErr: true,
 		},

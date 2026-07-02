@@ -37,9 +37,6 @@ import (
 )
 
 var (
-	// ErrNotImplemented is returned when a method is not yet implemented.
-	ErrNotImplemented = errors.New("not implemented")
-
 	// ErrTransactionClosed is returned when an operation is attempted on a closed transaction.
 	ErrTransactionClosed = errors.New("transaction is closed")
 
@@ -1092,31 +1089,87 @@ func (p *PostgresStateStorage) GetStepStates(ctx context.Context, sagaID string)
 	return steps, nil
 }
 
+// defaultCleanupBatchSize limits how many saga instances are deleted per
+// statement so that large cleanups do not hold row locks for too long.
+const defaultCleanupBatchSize = 1000
+
 // CleanupExpiredSagas removes Saga instances that are older than the specified time.
-// This method will be implemented in a future task.
+// Only Sagas in terminal states (completed, compensated, failed, cancelled, timed out)
+// are removed; associated steps and events are deleted via ON DELETE CASCADE constraints.
 func (p *PostgresStateStorage) CleanupExpiredSagas(ctx context.Context, olderThan time.Time) error {
+	_, err := p.CleanupExpiredSagasWithCount(ctx, olderThan)
+	return err
+}
+
+// CleanupExpiredSagasWithCount removes expired terminal-state Saga instances in
+// batches and returns the total number of saga instances deleted. Deletion is
+// performed in batches of defaultCleanupBatchSize to avoid long-running
+// statements on large tables.
+func (p *PostgresStateStorage) CleanupExpiredSagasWithCount(ctx context.Context, olderThan time.Time) (int64, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return 0, ctx.Err()
 	}
 
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	if err := p.checkClosed(); err != nil {
-		return err
+		return 0, err
 	}
 
-	// TODO: Implement PostgreSQL cleanup logic for expired sagas
-	return ErrNotImplemented
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE id IN (
+			SELECT id FROM %s
+			WHERE state IN ($1, $2, $3, $4, $5)
+			  AND updated_at < $6
+			LIMIT $7
+		)
+	`, p.instancesTable, p.instancesTable)
+
+	var total int64
+	for {
+		queryCtx, cancel := context.WithTimeout(ctx, p.config.QueryTimeout)
+		result, err := p.db.ExecContext(
+			queryCtx,
+			query,
+			int(saga.StateCompleted), int(saga.StateCompensated), int(saga.StateFailed),
+			int(saga.StateCancelled), int(saga.StateTimedOut),
+			olderThan, defaultCleanupBatchSize,
+		)
+		cancel()
+		if err != nil {
+			return total, fmt.Errorf("failed to cleanup expired sagas: %w", err)
+		}
+
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		total += affected
+		if affected < defaultCleanupBatchSize {
+			return total, nil
+		}
+
+		if ctx.Err() != nil {
+			return total, ctx.Err()
+		}
+	}
 }
 
-// marshalJSON marshals a value to JSON bytes.
-// Returns nil bytes for nil values.
-func (p *PostgresStateStorage) marshalJSON(v interface{}) ([]byte, error) {
+// marshalJSON marshals a value to JSON for use as a query argument.
+// Returns an untyped nil for nil values so the database driver sends SQL NULL;
+// a typed nil []byte would be encoded as an empty string, which is invalid JSONB.
+func (p *PostgresStateStorage) marshalJSON(v interface{}) (interface{}, error) {
 	if v == nil {
 		return nil, nil
 	}
-	return json.Marshal(v)
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // unmarshalJSON unmarshals JSON bytes to a value.
@@ -1614,6 +1667,9 @@ type SagaTransaction struct {
 
 	// startTime records when the transaction was started
 	startTime time.Time
+
+	// cancel releases the transaction context; called on Commit/Rollback
+	cancel context.CancelFunc
 }
 
 // BeginTransaction starts a new database transaction with the specified timeout.
@@ -1655,9 +1711,10 @@ func (p *PostgresStateStorage) BeginTransaction(ctx context.Context, timeout tim
 		timeout = p.config.QueryTimeout
 	}
 
-	// Create transaction context with timeout
+	// Create transaction context with timeout. The cancel function must not be
+	// called until the transaction completes, because cancelling the context
+	// rolls back the transaction; it is invoked from Commit/Rollback instead.
 	txCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	// Begin SQL transaction
 	tx, err := p.db.BeginTx(txCtx, &sql.TxOptions{
@@ -1665,6 +1722,7 @@ func (p *PostgresStateStorage) BeginTransaction(ctx context.Context, timeout tim
 		ReadOnly:  false,
 	})
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
@@ -1674,6 +1732,7 @@ func (p *PostgresStateStorage) BeginTransaction(ctx context.Context, timeout tim
 		closed:    false,
 		timeout:   timeout,
 		startTime: time.Now(),
+		cancel:    cancel,
 	}, nil
 }
 
@@ -1716,6 +1775,7 @@ func (st *SagaTransaction) Commit(ctx context.Context) error {
 		// Rollback on timeout
 		_ = st.tx.Rollback()
 		st.closed = true
+		st.releaseContext()
 		return err
 	}
 
@@ -1725,7 +1785,16 @@ func (st *SagaTransaction) Commit(ctx context.Context) error {
 	}
 
 	st.closed = true
+	st.releaseContext()
 	return nil
+}
+
+// releaseContext releases the transaction's timeout context, if any.
+func (st *SagaTransaction) releaseContext() {
+	if st.cancel != nil {
+		st.cancel()
+		st.cancel = nil
+	}
 }
 
 // Rollback rolls back the transaction, discarding all changes.
@@ -1751,6 +1820,7 @@ func (st *SagaTransaction) Rollback(ctx context.Context) error {
 	}
 
 	st.closed = true
+	st.releaseContext()
 	return nil
 }
 

@@ -129,9 +129,13 @@ func (a anyTime) Match(v driver.Value) bool {
 }
 
 // anyJSON matcher for JSON byte arguments in sqlmock.
+// Accepts nil because nil values are stored as SQL NULL in JSONB columns.
 type anyJSON struct{}
 
 func (a anyJSON) Match(v driver.Value) bool {
+	if v == nil {
+		return true
+	}
 	_, ok := v.([]byte)
 	return ok
 }
@@ -422,6 +426,115 @@ func TestPostgresStateStorage_DeleteSaga_Mock(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPostgresStateStorage_CleanupExpiredSagas_Mock tests CleanupExpiredSagas
+// with a mock database.
+func TestPostgresStateStorage_CleanupExpiredSagas_Mock(t *testing.T) {
+	olderThan := time.Now().Add(-24 * time.Hour)
+	terminalStateArgs := []driver.Value{
+		int(saga.StateCompleted), int(saga.StateCompensated), int(saga.StateFailed),
+		int(saga.StateCancelled), int(saga.StateTimedOut),
+	}
+
+	cleanupArgs := func() []driver.Value {
+		args := append([]driver.Value{}, terminalStateArgs...)
+		return append(args, olderThan, defaultCleanupBatchSize)
+	}
+
+	t.Run("single batch cleanup", func(t *testing.T) {
+		storage, mock, cleanup := newMockStorage(t)
+		defer cleanup()
+
+		mock.ExpectExec(`DELETE FROM saga_instances`).
+			WithArgs(cleanupArgs()...).
+			WillReturnResult(sqlmock.NewResult(0, 3))
+
+		count, err := storage.CleanupExpiredSagasWithCount(context.Background(), olderThan)
+		if err != nil {
+			t.Fatalf("CleanupExpiredSagasWithCount() error = %v", err)
+		}
+		if count != 3 {
+			t.Errorf("count = %d, want 3", count)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet expectations: %v", err)
+		}
+	})
+
+	t.Run("multiple batches cleanup", func(t *testing.T) {
+		storage, mock, cleanup := newMockStorage(t)
+		defer cleanup()
+
+		mock.ExpectExec(`DELETE FROM saga_instances`).
+			WithArgs(cleanupArgs()...).
+			WillReturnResult(sqlmock.NewResult(0, defaultCleanupBatchSize))
+		mock.ExpectExec(`DELETE FROM saga_instances`).
+			WithArgs(cleanupArgs()...).
+			WillReturnResult(sqlmock.NewResult(0, 5))
+
+		count, err := storage.CleanupExpiredSagasWithCount(context.Background(), olderThan)
+		if err != nil {
+			t.Fatalf("CleanupExpiredSagasWithCount() error = %v", err)
+		}
+		if want := int64(defaultCleanupBatchSize + 5); count != want {
+			t.Errorf("count = %d, want %d", count, want)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet expectations: %v", err)
+		}
+	})
+
+	t.Run("nothing to cleanup", func(t *testing.T) {
+		storage, mock, cleanup := newMockStorage(t)
+		defer cleanup()
+
+		mock.ExpectExec(`DELETE FROM saga_instances`).
+			WithArgs(cleanupArgs()...).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+
+		count, err := storage.CleanupExpiredSagasWithCount(context.Background(), olderThan)
+		if err != nil {
+			t.Fatalf("CleanupExpiredSagasWithCount() error = %v", err)
+		}
+		if count != 0 {
+			t.Errorf("count = %d, want 0", count)
+		}
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		storage, mock, cleanup := newMockStorage(t)
+		defer cleanup()
+
+		mock.ExpectExec(`DELETE FROM saga_instances`).
+			WithArgs(cleanupArgs()...).
+			WillReturnError(errors.New("database error"))
+
+		if err := storage.CleanupExpiredSagas(context.Background(), olderThan); err == nil {
+			t.Error("CleanupExpiredSagas() error = nil, want error")
+		}
+	})
+
+	t.Run("cancelled context", func(t *testing.T) {
+		storage, _, cleanup := newMockStorage(t)
+		defer cleanup()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		if err := storage.CleanupExpiredSagas(ctx, olderThan); err != context.Canceled {
+			t.Errorf("CleanupExpiredSagas() error = %v, want context.Canceled", err)
+		}
+	})
+
+	t.Run("closed storage", func(t *testing.T) {
+		storage, _, cleanup := newMockStorage(t)
+		cleanup()
+
+		if err := storage.CleanupExpiredSagas(context.Background(), olderThan); err != state.ErrStorageClosed {
+			t.Errorf("CleanupExpiredSagas() error = %v, want ErrStorageClosed", err)
+		}
+	})
 }
 
 // TestPostgresStateStorage_SaveStepState_Mock tests SaveStepState with mock database.

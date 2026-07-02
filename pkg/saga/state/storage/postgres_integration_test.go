@@ -751,6 +751,105 @@ func TestPostgresIntegration_TimeoutDetection(t *testing.T) {
 }
 
 // ==========================
+// Expired Saga Cleanup Tests
+// ==========================
+
+// TestPostgresIntegration_CleanupExpiredSagas tests cleanup of expired
+// terminal-state sagas, including cascade deletion of step states.
+func TestPostgresIntegration_CleanupExpiredSagas(t *testing.T) {
+	if !testPostgresAvailable(t) {
+		return
+	}
+
+	config := getTestPostgresConfig()
+	storage, err := NewPostgresStateStorage(config)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+	defer cleanupTestPostgresData(t, storage)
+
+	ctx := context.Background()
+	now := time.Now()
+	oldTime := now.Add(-48 * time.Hour)
+
+	// Expired terminal saga: should be cleaned up.
+	expired := createTestSagaInstance("saga-cleanup-expired", "def-cleanup", saga.StateCompleted)
+	expired.updatedAt = oldTime
+	if err := storage.SaveSaga(ctx, expired); err != nil {
+		t.Fatalf("Failed to save expired saga: %v", err)
+	}
+
+	// Step state attached to the expired saga: should be removed via CASCADE.
+	step := &saga.StepState{
+		ID:          "step-cleanup-1",
+		SagaID:      "saga-cleanup-expired",
+		StepIndex:   0,
+		Name:        "Step1",
+		State:       saga.StepStateCompleted,
+		Attempts:    1,
+		MaxAttempts: 3,
+		CreatedAt:   oldTime,
+	}
+	if err := storage.SaveStepState(ctx, "saga-cleanup-expired", step); err != nil {
+		t.Fatalf("Failed to save step state: %v", err)
+	}
+
+	// Recent terminal saga: should be kept.
+	recent := createTestSagaInstance("saga-cleanup-recent", "def-cleanup", saga.StateCompleted)
+	if err := storage.SaveSaga(ctx, recent); err != nil {
+		t.Fatalf("Failed to save recent saga: %v", err)
+	}
+
+	// Old but still active saga: should be kept.
+	active := createTestSagaInstance("saga-cleanup-active", "def-cleanup", saga.StateRunning)
+	active.updatedAt = oldTime
+	if err := storage.SaveSaga(ctx, active); err != nil {
+		t.Fatalf("Failed to save active saga: %v", err)
+	}
+
+	// Run cleanup for sagas older than 24 hours.
+	count, err := storage.CleanupExpiredSagasWithCount(ctx, now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("CleanupExpiredSagasWithCount() error = %v", err)
+	}
+	if count != 1 {
+		t.Errorf("cleanup count = %d, want 1", count)
+	}
+
+	// Expired terminal saga should be gone.
+	if _, err := storage.GetSaga(ctx, "saga-cleanup-expired"); err != state.ErrSagaNotFound {
+		t.Errorf("GetSaga(expired) error = %v, want ErrSagaNotFound", err)
+	}
+
+	// Its step states should be gone as well (CASCADE).
+	steps, err := storage.GetStepStates(ctx, "saga-cleanup-expired")
+	if err != nil {
+		t.Fatalf("Failed to get step states: %v", err)
+	}
+	if len(steps) != 0 {
+		t.Errorf("Expected 0 steps after cleanup, got %d", len(steps))
+	}
+
+	// Recent terminal saga and old active saga should remain.
+	if _, err := storage.GetSaga(ctx, "saga-cleanup-recent"); err != nil {
+		t.Errorf("GetSaga(recent) error = %v, want nil", err)
+	}
+	if _, err := storage.GetSaga(ctx, "saga-cleanup-active"); err != nil {
+		t.Errorf("GetSaga(active) error = %v, want nil", err)
+	}
+
+	// Idempotency: a second cleanup should remove nothing.
+	count, err = storage.CleanupExpiredSagasWithCount(ctx, now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("CleanupExpiredSagasWithCount() second run error = %v", err)
+	}
+	if count != 0 {
+		t.Errorf("second cleanup count = %d, want 0", count)
+	}
+}
+
+// ==========================
 // Health Check and Monitoring Tests
 // ==========================
 
