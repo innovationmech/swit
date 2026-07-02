@@ -24,16 +24,21 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/middleware"
+	secjwt "github.com/innovationmech/swit/pkg/security/jwt"
 	"github.com/innovationmech/swit/pkg/security/oauth2"
 	"github.com/innovationmech/swit/pkg/security/opa"
 	"github.com/innovationmech/swit/pkg/types"
@@ -46,6 +51,23 @@ type MiddlewareManager struct {
 	grpcUnaryInterceptors  []grpc.UnaryServerInterceptor
 	grpcStreamInterceptors []grpc.StreamServerInterceptor
 	config                 *ServerConfig
+
+	// Shared Prometheus collector so HTTP middleware and gRPC interceptors
+	// report into the same registry exposed on the metrics endpoint
+	prometheusCollectorOnce sync.Once
+	prometheusCollector     *types.PrometheusMetricsCollector
+
+	// Shared gRPC metrics interceptor (unary and stream reuse the same instance)
+	grpcMetricsOnce        sync.Once
+	grpcMetricsInterceptor *middleware.PrometheusGRPCInterceptor
+
+	// Shared gRPC auth interceptor configuration (JWT validator is built once)
+	grpcAuthOnce   sync.Once
+	grpcAuthConfig *middleware.GRPCAuthConfig
+
+	// Shared gRPC rate limiter (unary and stream reuse the same buckets)
+	grpcRateLimitOnce sync.Once
+	grpcRateLimiter   *middleware.TokenBucketLimiter
 }
 
 // HTTPMiddlewareFunc represents an HTTP middleware function
@@ -360,6 +382,16 @@ func (m *MiddlewareManager) createCustomHeadersMiddleware(headers map[string]str
 	}
 }
 
+// getPrometheusCollector lazily creates the shared Prometheus metrics collector.
+// All HTTP middleware and gRPC interceptors report into this single collector so
+// their metrics are exposed on the same registry/endpoint.
+func (m *MiddlewareManager) getPrometheusCollector() *types.PrometheusMetricsCollector {
+	m.prometheusCollectorOnce.Do(func() {
+		m.prometheusCollector = types.NewPrometheusMetricsCollector(&m.config.Prometheus)
+	})
+	return m.prometheusCollector
+}
+
 // createPrometheusHTTPMiddleware creates Prometheus HTTP middleware
 func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc {
 	return func(router *gin.Engine) error {
@@ -368,8 +400,8 @@ func (m *MiddlewareManager) createPrometheusHTTPMiddleware() HTTPMiddlewareFunc 
 			return fmt.Errorf("invalid prometheus configuration: %w", err)
 		}
 
-		// Create Prometheus metrics collector with error handling
-		prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
+		// Use the shared Prometheus metrics collector
+		prometheusCollector := m.getPrometheusCollector()
 		if prometheusCollector == nil {
 			return fmt.Errorf("failed to create Prometheus metrics collector")
 		}
@@ -544,56 +576,130 @@ func (m *MiddlewareManager) createGRPCLoggingStreamInterceptor() grpc.StreamServ
 	}
 }
 
+// getGRPCMetricsInterceptor lazily creates the shared Prometheus-backed gRPC
+// metrics interceptor so unary and stream interceptors report into the same collector
+func (m *MiddlewareManager) getGRPCMetricsInterceptor() *middleware.PrometheusGRPCInterceptor {
+	m.grpcMetricsOnce.Do(func() {
+		grpcConfig := middleware.DefaultPrometheusGRPCConfig()
+		grpcConfig.ServiceName = m.config.ServiceName
+		m.grpcMetricsInterceptor = middleware.NewPrometheusGRPCInterceptor(m.getPrometheusCollector(), grpcConfig)
+	})
+	return m.grpcMetricsInterceptor
+}
+
 // createGRPCMetricsUnaryInterceptor creates a gRPC metrics unary interceptor
 func (m *MiddlewareManager) createGRPCMetricsUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// TODO: Implement metrics collection
-		// This would typically integrate with a metrics system like Prometheus
-		return handler(ctx, req)
-	}
+	return m.getGRPCMetricsInterceptor().UnaryServerInterceptor()
 }
 
 // createGRPCMetricsStreamInterceptor creates a gRPC metrics stream interceptor
 func (m *MiddlewareManager) createGRPCMetricsStreamInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// TODO: Implement metrics collection
-		// This would typically integrate with a metrics system like Prometheus
-		return handler(srv, stream)
-	}
+	return m.getGRPCMetricsInterceptor().StreamServerInterceptor()
+}
+
+// getGRPCAuthConfig lazily builds the shared gRPC auth interceptor configuration,
+// including the JWT validator created from the server configuration.
+// Returns nil when the validator cannot be constructed (e.g. missing key material).
+func (m *MiddlewareManager) getGRPCAuthConfig() *middleware.GRPCAuthConfig {
+	m.grpcAuthOnce.Do(func() {
+		authConfig := m.config.GRPC.Interceptors.Auth
+
+		jwtConfig := &secjwt.Config{
+			Secret:            authConfig.JWTSecret,
+			Issuer:            authConfig.JWTIssuer,
+			Audience:          authConfig.JWTAudience,
+			AllowedAlgorithms: authConfig.AllowedAlgorithms,
+		}
+		if authConfig.JWKSURL != "" {
+			jwtConfig.JWKSConfig = &secjwt.JWKSCacheConfig{URL: authConfig.JWKSURL}
+		}
+
+		validator, err := secjwt.NewValidator(jwtConfig)
+		if err != nil {
+			logger.Logger.Error("Failed to create JWT validator for gRPC auth interceptor; all authenticated requests will be rejected",
+				zap.String("service", m.config.ServiceName),
+				zap.Error(err))
+			return
+		}
+
+		m.grpcAuthConfig = &middleware.GRPCAuthConfig{
+			JWTValidator: validator,
+			SkipMethods:  authConfig.SkipMethods,
+		}
+	})
+	return m.grpcAuthConfig
 }
 
 // createGRPCAuthUnaryInterceptor creates a gRPC authentication unary interceptor
 func (m *MiddlewareManager) createGRPCAuthUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// TODO: Implement gRPC authentication
-		// This would typically validate JWT tokens or other auth mechanisms
-		return handler(ctx, req)
+	authConfig := m.getGRPCAuthConfig()
+	if authConfig == nil {
+		// Fail closed: auth is enabled but misconfigured
+		return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+			return nil, status.Error(codes.Internal, "grpc-auth: authentication is enabled but not configured")
+		}
 	}
+	return middleware.UnaryAuthInterceptorWithConfig(authConfig)
 }
 
 // createGRPCAuthStreamInterceptor creates a gRPC authentication stream interceptor
 func (m *MiddlewareManager) createGRPCAuthStreamInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// TODO: Implement gRPC authentication
-		// This would typically validate JWT tokens or other auth mechanisms
-		return handler(srv, stream)
+	authConfig := m.getGRPCAuthConfig()
+	if authConfig == nil {
+		// Fail closed: auth is enabled but misconfigured
+		return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			return status.Error(codes.Internal, "grpc-auth: authentication is enabled but not configured")
+		}
+	}
+	return middleware.StreamAuthInterceptorWithConfig(authConfig)
+}
+
+// getGRPCRateLimiter lazily creates the shared token bucket limiter used by
+// both unary and stream rate limiting interceptors
+func (m *MiddlewareManager) getGRPCRateLimiter() *middleware.TokenBucketLimiter {
+	m.grpcRateLimitOnce.Do(func() {
+		rateLimitConfig := m.config.GRPC.Interceptors.RateLimit
+		m.grpcRateLimiter = middleware.NewTokenBucketLimiter(rateLimitConfig.BurstSize, rateLimitConfig.RequestsPerSecond)
+	})
+	return m.grpcRateLimiter
+}
+
+// grpcRateLimitKey derives the bucket key for a gRPC request based on the configured key function
+func (m *MiddlewareManager) grpcRateLimitKey(ctx context.Context, fullMethod string) string {
+	switch m.config.GRPC.Interceptors.RateLimit.KeyFunc {
+	case "method":
+		return fullMethod
+	case "global":
+		return "global"
+	default: // "ip"
+		if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
+			if host, _, err := net.SplitHostPort(p.Addr.String()); err == nil {
+				return host
+			}
+			return p.Addr.String()
+		}
+		return "unknown"
 	}
 }
 
 // createGRPCRateLimitUnaryInterceptor creates a gRPC rate limiting unary interceptor
 func (m *MiddlewareManager) createGRPCRateLimitUnaryInterceptor() grpc.UnaryServerInterceptor {
+	limiter := m.getGRPCRateLimiter()
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// TODO: Implement gRPC rate limiting
-		// This would typically use a rate limiter similar to HTTP middleware
+		if !limiter.Allow(m.grpcRateLimitKey(ctx, info.FullMethod)) {
+			return nil, status.Errorf(codes.ResourceExhausted, "grpc-ratelimit: rate limit exceeded for %s", info.FullMethod)
+		}
 		return handler(ctx, req)
 	}
 }
 
 // createGRPCRateLimitStreamInterceptor creates a gRPC rate limiting stream interceptor
 func (m *MiddlewareManager) createGRPCRateLimitStreamInterceptor() grpc.StreamServerInterceptor {
+	limiter := m.getGRPCRateLimiter()
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		// TODO: Implement gRPC rate limiting
-		// This would typically use a rate limiter similar to HTTP middleware
+		if !limiter.Allow(m.grpcRateLimitKey(stream.Context(), info.FullMethod)) {
+			return status.Errorf(codes.ResourceExhausted, "grpc-ratelimit: rate limit exceeded for %s", info.FullMethod)
+		}
 		return handler(srv, stream)
 	}
 }
@@ -611,8 +717,8 @@ func (m *MiddlewareManager) createPrometheusGRPCInterceptorsWithError() (grpc.Un
 		return nil, nil, fmt.Errorf("invalid prometheus configuration: %w", err)
 	}
 
-	// Create Prometheus metrics collector with error handling
-	prometheusCollector := types.NewPrometheusMetricsCollector(&m.config.Prometheus)
+	// Use the shared Prometheus metrics collector
+	prometheusCollector := m.getPrometheusCollector()
 	if prometheusCollector == nil {
 		return nil, nil, fmt.Errorf("failed to create Prometheus metrics collector")
 	}

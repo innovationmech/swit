@@ -183,6 +183,18 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 						EnableMetrics:   false,
 						EnableRecovery:  true,
 						EnableRateLimit: false,
+						Auth: GRPCAuthInterceptorConfig{
+							SkipMethods: []string{
+								"/grpc.health.v1.Health/*",
+								"/grpc.reflection.v1.ServerReflection/*",
+								"/grpc.reflection.v1alpha.ServerReflection/*",
+							},
+						},
+						RateLimit: GRPCRateLimitInterceptorConfig{
+							RequestsPerSecond: 100,
+							BurstSize:         200,
+							KeyFunc:           "ip",
+						},
 					},
 					TLS: nil, // TLS disabled
 				},
@@ -414,6 +426,18 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 						EnableMetrics:   false,
 						EnableRecovery:  true,
 						EnableRateLimit: false,
+						Auth: GRPCAuthInterceptorConfig{
+							SkipMethods: []string{
+								"/grpc.health.v1.Health/*",
+								"/grpc.reflection.v1.ServerReflection/*",
+								"/grpc.reflection.v1alpha.ServerReflection/*",
+							},
+						},
+						RateLimit: GRPCRateLimitInterceptorConfig{
+							RequestsPerSecond: 100,
+							BurstSize:         200,
+							KeyFunc:           "ip",
+						},
 					},
 					TLS: nil, // TLS disabled
 				},

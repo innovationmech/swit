@@ -141,11 +141,41 @@ type GRPCKeepalivePolicy struct {
 
 // GRPCInterceptorConfig holds gRPC interceptor configuration
 type GRPCInterceptorConfig struct {
-	EnableAuth      bool `yaml:"enable_auth" json:"enable_auth"`
-	EnableLogging   bool `yaml:"enable_logging" json:"enable_logging"`
-	EnableMetrics   bool `yaml:"enable_metrics" json:"enable_metrics"`
-	EnableRecovery  bool `yaml:"enable_recovery" json:"enable_recovery"`
-	EnableRateLimit bool `yaml:"enable_rate_limit" json:"enable_rate_limit"`
+	EnableAuth      bool                           `yaml:"enable_auth" json:"enable_auth"`
+	EnableLogging   bool                           `yaml:"enable_logging" json:"enable_logging"`
+	EnableMetrics   bool                           `yaml:"enable_metrics" json:"enable_metrics"`
+	EnableRecovery  bool                           `yaml:"enable_recovery" json:"enable_recovery"`
+	EnableRateLimit bool                           `yaml:"enable_rate_limit" json:"enable_rate_limit"`
+	Auth            GRPCAuthInterceptorConfig      `yaml:"auth" json:"auth"`
+	RateLimit       GRPCRateLimitInterceptorConfig `yaml:"rate_limit" json:"rate_limit"`
+}
+
+// GRPCAuthInterceptorConfig holds JWT validation settings for the gRPC auth interceptor.
+// At least one of JWTSecret or JWKSURL must be configured when EnableAuth is true.
+type GRPCAuthInterceptorConfig struct {
+	// JWTSecret is the HMAC secret used to validate JWT signatures
+	JWTSecret string `yaml:"jwt_secret" json:"-"`
+	// JWTIssuer is the expected token issuer (optional)
+	JWTIssuer string `yaml:"jwt_issuer" json:"jwt_issuer"`
+	// JWTAudience is the expected token audience (optional)
+	JWTAudience string `yaml:"jwt_audience" json:"jwt_audience"`
+	// JWKSURL is the JWKS endpoint URL for dynamic key discovery (optional)
+	JWKSURL string `yaml:"jwks_url" json:"jwks_url"`
+	// AllowedAlgorithms restricts the accepted JWT signing algorithms (optional)
+	AllowedAlgorithms []string `yaml:"allowed_algorithms" json:"allowed_algorithms"`
+	// SkipMethods lists full gRPC method names that bypass authentication.
+	// Supports trailing "*" wildcard, e.g. "/grpc.health.v1.Health/*"
+	SkipMethods []string `yaml:"skip_methods" json:"skip_methods"`
+}
+
+// GRPCRateLimitInterceptorConfig holds settings for the gRPC rate limiting interceptor
+type GRPCRateLimitInterceptorConfig struct {
+	// RequestsPerSecond is the sustained refill rate of the token bucket
+	RequestsPerSecond float64 `yaml:"requests_per_second" json:"requests_per_second"`
+	// BurstSize is the token bucket capacity (maximum burst)
+	BurstSize int64 `yaml:"burst_size" json:"burst_size"`
+	// KeyFunc selects how requests are bucketed: "ip", "method" or "global"
+	KeyFunc string `yaml:"key_func" json:"key_func"`
 }
 
 // Note: GRPCTLSConfig has been replaced by tlsconfig.TLSConfig for unified TLS/mTLS configuration
@@ -614,6 +644,26 @@ func (c *ServerConfig) SetDefaults() {
 	c.GRPC.Interceptors.EnableRecovery = true
 	c.GRPC.Interceptors.EnableRateLimit = false
 
+	// gRPC auth interceptor defaults - skip health and reflection methods
+	if len(c.GRPC.Interceptors.Auth.SkipMethods) == 0 {
+		c.GRPC.Interceptors.Auth.SkipMethods = []string{
+			"/grpc.health.v1.Health/*",
+			"/grpc.reflection.v1.ServerReflection/*",
+			"/grpc.reflection.v1alpha.ServerReflection/*",
+		}
+	}
+
+	// gRPC rate limit interceptor defaults
+	if c.GRPC.Interceptors.RateLimit.RequestsPerSecond == 0 {
+		c.GRPC.Interceptors.RateLimit.RequestsPerSecond = 100
+	}
+	if c.GRPC.Interceptors.RateLimit.BurstSize == 0 {
+		c.GRPC.Interceptors.RateLimit.BurstSize = 200
+	}
+	if c.GRPC.Interceptors.RateLimit.KeyFunc == "" {
+		c.GRPC.Interceptors.RateLimit.KeyFunc = "ip"
+	}
+
 	// gRPC TLS defaults - TLS is disabled by default (nil)
 
 	// Discovery defaults
@@ -921,6 +971,24 @@ func (c *ServerConfig) Validate() error {
 			}
 			if c.GRPC.TLS.KeyFile == "" {
 				return fmt.Errorf("grpc.tls.key_file is required when TLS is enabled")
+			}
+		}
+
+		// Note: auth interceptor key material (jwt_secret/jwks_url) is not validated here
+		// to keep backward compatibility with configs that enable auth via ConfigBuilder.
+		// When auth is enabled but not configured, the interceptor fails closed at runtime.
+
+		// Validate rate limit interceptor configuration
+		if c.GRPC.Interceptors.EnableRateLimit {
+			if c.GRPC.Interceptors.RateLimit.RequestsPerSecond <= 0 {
+				return fmt.Errorf("grpc.interceptors.rate_limit.requests_per_second must be positive")
+			}
+			if c.GRPC.Interceptors.RateLimit.BurstSize <= 0 {
+				return fmt.Errorf("grpc.interceptors.rate_limit.burst_size must be positive")
+			}
+			validGRPCKeyFuncs := map[string]bool{"ip": true, "method": true, "global": true}
+			if !validGRPCKeyFuncs[c.GRPC.Interceptors.RateLimit.KeyFunc] {
+				return fmt.Errorf("grpc.interceptors.rate_limit.key_func must be one of: ip, method, global")
 			}
 		}
 	}

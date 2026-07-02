@@ -23,16 +23,25 @@ package server
 
 import (
 	"context"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/innovationmech/swit/pkg/middleware"
 	"github.com/innovationmech/swit/pkg/security/audit"
+	"github.com/innovationmech/swit/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 func TestNewMiddlewareManager(t *testing.T) {
@@ -538,12 +547,13 @@ func TestMiddlewareManager_GRPCStreamInterceptors(t *testing.T) {
 	err = metricsInterceptor(nil, mockStream, info, normalHandler)
 	assert.NoError(t, err)
 
-	// Test auth stream interceptor
+	// Test auth stream interceptor - fails closed without JWT configuration
 	authInterceptor := manager.createGRPCAuthStreamInterceptor()
 	err = authInterceptor(nil, mockStream, info, normalHandler)
-	assert.NoError(t, err)
+	assert.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
 
-	// Test rate limit stream interceptor
+	// Test rate limit stream interceptor - allowed under default limits
 	rateLimitInterceptor := manager.createGRPCRateLimitStreamInterceptor()
 	err = rateLimitInterceptor(nil, mockStream, info, normalHandler)
 	assert.NoError(t, err)
@@ -566,13 +576,14 @@ func TestMiddlewareManager_GRPCUnaryInterceptors_Extended(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "response", resp)
 
-	// Test auth unary interceptor
+	// Test auth unary interceptor - fails closed without JWT configuration
 	authInterceptor := manager.createGRPCAuthUnaryInterceptor()
 	resp, err = authInterceptor(context.Background(), nil, info, normalHandler)
-	assert.NoError(t, err)
-	assert.Equal(t, "response", resp)
+	assert.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Nil(t, resp)
 
-	// Test rate limit unary interceptor
+	// Test rate limit unary interceptor - allowed under default limits
 	rateLimitInterceptor := manager.createGRPCRateLimitUnaryInterceptor()
 	resp, err = rateLimitInterceptor(context.Background(), nil, info, normalHandler)
 	assert.NoError(t, err)
@@ -586,6 +597,416 @@ type mockServerStream struct {
 
 func (m *mockServerStream) Context() context.Context {
 	return context.Background()
+}
+
+// ctxServerStream is a ServerStream with a configurable context
+type ctxServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *ctxServerStream) Context() context.Context {
+	return s.ctx
+}
+
+// signGRPCTestToken creates an HS256-signed JWT for interceptor tests
+func signGRPCTestToken(t *testing.T, secret string, claims jwt.MapClaims) string {
+	t.Helper()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(secret))
+	require.NoError(t, err)
+	return tokenString
+}
+
+// newGRPCAuthTestConfig returns a server config with the gRPC auth interceptor configured
+func newGRPCAuthTestConfig(secret string) *ServerConfig {
+	config := NewServerConfig()
+	config.GRPC.Enabled = true
+	config.GRPC.Interceptors.EnableAuth = true
+	config.GRPC.Interceptors.Auth = GRPCAuthInterceptorConfig{
+		JWTSecret:         secret,
+		AllowedAlgorithms: []string{"HS256"},
+		SkipMethods:       []string{"/grpc.health.v1.Health/*"},
+	}
+	return config
+}
+
+// Tests for the gRPC metrics interceptors
+
+func TestMiddlewareManager_GRPCMetricsInterceptor_CollectsMetrics(t *testing.T) {
+	config := NewServerConfig()
+	config.ServiceName = "metrics-test-service"
+	manager := NewMiddlewareManager(config)
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	normalHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "response", nil
+	}
+	errorHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return nil, status.Error(codes.NotFound, "not found")
+	}
+
+	unaryInterceptor := manager.createGRPCMetricsUnaryInterceptor()
+
+	// Successful call passes through
+	resp, err := unaryInterceptor(context.Background(), nil, info, normalHandler)
+	assert.NoError(t, err)
+	assert.Equal(t, "response", resp)
+
+	// Failed call propagates the error
+	_, err = unaryInterceptor(context.Background(), nil, info, errorHandler)
+	assert.Equal(t, codes.NotFound, status.Code(err))
+
+	// Stream call passes through
+	streamInterceptor := manager.createGRPCMetricsStreamInterceptor()
+	streamInfo := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+	err = streamInterceptor(nil, &mockServerStream{}, streamInfo, func(srv interface{}, stream grpc.ServerStream) error {
+		return nil
+	})
+	assert.NoError(t, err)
+
+	// Excluded methods (health checks) are not recorded
+	healthInfo := &grpc.UnaryServerInfo{FullMethod: "/grpc.health.v1.Health/Check"}
+	_, err = unaryInterceptor(context.Background(), nil, healthInfo, normalHandler)
+	assert.NoError(t, err)
+
+	// Verify metrics were recorded in the shared Prometheus registry
+	collector, ok := manager.getGRPCMetricsInterceptor().GetMetricsCollector().(*types.PrometheusMetricsCollector)
+	require.True(t, ok)
+
+	metricsReq := httptest.NewRequest("GET", "/metrics", nil)
+	metricsResp := httptest.NewRecorder()
+	collector.GetHandler().ServeHTTP(metricsResp, metricsReq)
+
+	body, err := io.ReadAll(metricsResp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "grpc_server_started_total")
+	assert.Contains(t, string(body), "grpc_server_handled_total")
+	assert.Contains(t, string(body), "grpc_server_handling_seconds")
+	assert.Contains(t, string(body), "/test.Service/Method")
+	assert.Contains(t, string(body), "/test.Service/StreamMethod")
+	assert.NotContains(t, string(body), "/grpc.health.v1.Health/Check")
+}
+
+func TestMiddlewareManager_GRPCMetricsInterceptor_SharedCollector(t *testing.T) {
+	config := NewServerConfig()
+	manager := NewMiddlewareManager(config)
+
+	// Unary and stream interceptors must share the same interceptor instance,
+	// and the collector must be the shared manager-level Prometheus collector
+	interceptor := manager.getGRPCMetricsInterceptor()
+	assert.Same(t, interceptor, manager.getGRPCMetricsInterceptor())
+	assert.Same(t, manager.getPrometheusCollector(), interceptor.GetMetricsCollector())
+}
+
+// Tests for the gRPC auth interceptors
+
+func TestMiddlewareManager_GRPCAuthUnaryInterceptor(t *testing.T) {
+	const secret = "test-secret-key-for-grpc-auth"
+	manager := NewMiddlewareManager(newGRPCAuthTestConfig(secret))
+	interceptor := manager.createGRPCAuthUnaryInterceptor()
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	handlerCalled := false
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		handlerCalled = true
+		// Authenticated user info must be available in the handler context
+		userInfo, err := middleware.GetGRPCUserInfo(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "user-123", userInfo.Subject)
+		return "response", nil
+	}
+
+	t.Run("valid token passes", func(t *testing.T) {
+		handlerCalled = false
+		token := signGRPCTestToken(t, secret, jwt.MapClaims{
+			"sub": "user-123",
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		ctx := metadata.NewIncomingContext(context.Background(),
+			metadata.Pairs("authorization", "Bearer "+token))
+
+		resp, err := interceptor(ctx, nil, info, handler)
+		assert.NoError(t, err)
+		assert.Equal(t, "response", resp)
+		assert.True(t, handlerCalled)
+	})
+
+	t.Run("missing metadata rejected", func(t *testing.T) {
+		handlerCalled = false
+		_, err := interceptor(context.Background(), nil, info, handler)
+		assert.Equal(t, codes.Unauthenticated, status.Code(err))
+		assert.False(t, handlerCalled)
+	})
+
+	t.Run("invalid token rejected", func(t *testing.T) {
+		handlerCalled = false
+		ctx := metadata.NewIncomingContext(context.Background(),
+			metadata.Pairs("authorization", "Bearer invalid-token"))
+		_, err := interceptor(ctx, nil, info, handler)
+		assert.Equal(t, codes.Unauthenticated, status.Code(err))
+		assert.False(t, handlerCalled)
+	})
+
+	t.Run("expired token rejected", func(t *testing.T) {
+		handlerCalled = false
+		token := signGRPCTestToken(t, secret, jwt.MapClaims{
+			"sub": "user-123",
+			"exp": time.Now().Add(-time.Hour).Unix(),
+		})
+		ctx := metadata.NewIncomingContext(context.Background(),
+			metadata.Pairs("authorization", "Bearer "+token))
+		_, err := interceptor(ctx, nil, info, handler)
+		assert.Equal(t, codes.Unauthenticated, status.Code(err))
+		assert.False(t, handlerCalled)
+	})
+
+	t.Run("skip method bypasses auth", func(t *testing.T) {
+		healthInfo := &grpc.UnaryServerInfo{FullMethod: "/grpc.health.v1.Health/Check"}
+		resp, err := interceptor(context.Background(), nil, healthInfo, func(ctx context.Context, req interface{}) (interface{}, error) {
+			return "healthy", nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, "healthy", resp)
+	})
+}
+
+func TestMiddlewareManager_GRPCAuthStreamInterceptor(t *testing.T) {
+	const secret = "test-secret-key-for-grpc-auth"
+	manager := NewMiddlewareManager(newGRPCAuthTestConfig(secret))
+	interceptor := manager.createGRPCAuthStreamInterceptor()
+
+	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+
+	t.Run("valid token passes with authenticated stream context", func(t *testing.T) {
+		token := signGRPCTestToken(t, secret, jwt.MapClaims{
+			"sub": "user-456",
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		ctx := metadata.NewIncomingContext(context.Background(),
+			metadata.Pairs("authorization", "Bearer "+token))
+		stream := &ctxServerStream{ctx: ctx}
+
+		err := interceptor(nil, stream, info, func(srv interface{}, ss grpc.ServerStream) error {
+			userInfo, err := middleware.GetGRPCUserInfo(ss.Context())
+			require.NoError(t, err)
+			assert.Equal(t, "user-456", userInfo.Subject)
+			return nil
+		})
+		assert.NoError(t, err)
+	})
+
+	t.Run("missing token rejected", func(t *testing.T) {
+		stream := &ctxServerStream{ctx: context.Background()}
+		err := interceptor(nil, stream, info, func(srv interface{}, ss grpc.ServerStream) error {
+			return nil
+		})
+		assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	})
+}
+
+func TestMiddlewareManager_GRPCAuthInterceptor_NotConfigured(t *testing.T) {
+	// Auth enabled without any JWT key material must fail closed
+	config := NewServerConfig()
+	config.GRPC.Enabled = true
+	config.GRPC.Interceptors.EnableAuth = true
+	manager := NewMiddlewareManager(config)
+
+	unaryInterceptor := manager.createGRPCAuthUnaryInterceptor()
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	_, err := unaryInterceptor(context.Background(), nil, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "response", nil
+	})
+	assert.Equal(t, codes.Internal, status.Code(err))
+
+	streamInterceptor := manager.createGRPCAuthStreamInterceptor()
+	streamInfo := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+	err = streamInterceptor(nil, &mockServerStream{}, streamInfo, func(srv interface{}, ss grpc.ServerStream) error {
+		return nil
+	})
+	assert.Equal(t, codes.Internal, status.Code(err))
+}
+
+func TestMiddlewareManager_GRPCAuthConfigValidation(t *testing.T) {
+	// Enabling auth without key material stays valid at config level for
+	// backward compatibility; the interceptor fails closed at runtime instead
+	config := NewServerConfig()
+	config.GRPC.Enabled = true
+	config.GRPC.Interceptors.EnableAuth = true
+	assert.NoError(t, config.Validate())
+
+	// Providing a secret also passes validation
+	config.GRPC.Interceptors.Auth.JWTSecret = "some-secret"
+	assert.NoError(t, config.Validate())
+}
+
+// Tests for the gRPC rate limiting interceptors
+
+func newGRPCRateLimitTestConfig(rps float64, burst int64, keyFunc string) *ServerConfig {
+	config := NewServerConfig()
+	config.GRPC.Enabled = true
+	config.GRPC.Interceptors.EnableRateLimit = true
+	config.GRPC.Interceptors.RateLimit = GRPCRateLimitInterceptorConfig{
+		RequestsPerSecond: rps,
+		BurstSize:         burst,
+		KeyFunc:           keyFunc,
+	}
+	return config
+}
+
+func peerContext(ip string) context.Context {
+	return peer.NewContext(context.Background(), &peer.Peer{
+		Addr: &net.TCPAddr{IP: net.ParseIP(ip), Port: 12345},
+	})
+}
+
+func TestMiddlewareManager_GRPCRateLimitUnaryInterceptor(t *testing.T) {
+	// Burst of 2 with a negligible refill rate: first two calls pass, third is limited
+	manager := NewMiddlewareManager(newGRPCRateLimitTestConfig(0.001, 2, "global"))
+	interceptor := manager.createGRPCRateLimitUnaryInterceptor()
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "response", nil
+	}
+
+	for i := 0; i < 2; i++ {
+		resp, err := interceptor(context.Background(), nil, info, handler)
+		assert.NoError(t, err)
+		assert.Equal(t, "response", resp)
+	}
+
+	resp, err := interceptor(context.Background(), nil, info, handler)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+	assert.Nil(t, resp)
+}
+
+func TestMiddlewareManager_GRPCRateLimitStreamInterceptor(t *testing.T) {
+	manager := NewMiddlewareManager(newGRPCRateLimitTestConfig(0.001, 1, "global"))
+	interceptor := manager.createGRPCRateLimitStreamInterceptor()
+
+	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+	handler := func(srv interface{}, ss grpc.ServerStream) error {
+		return nil
+	}
+
+	assert.NoError(t, interceptor(nil, &mockServerStream{}, info, handler))
+	err := interceptor(nil, &mockServerStream{}, info, handler)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+}
+
+func TestMiddlewareManager_GRPCRateLimit_SharedBetweenUnaryAndStream(t *testing.T) {
+	// Unary and stream interceptors must consume from the same bucket
+	manager := NewMiddlewareManager(newGRPCRateLimitTestConfig(0.001, 1, "global"))
+
+	unaryInterceptor := manager.createGRPCRateLimitUnaryInterceptor()
+	streamInterceptor := manager.createGRPCRateLimitStreamInterceptor()
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	_, err := unaryInterceptor(context.Background(), nil, info, func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "response", nil
+	})
+	assert.NoError(t, err)
+
+	streamInfo := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamMethod"}
+	err = streamInterceptor(nil, &mockServerStream{}, streamInfo, func(srv interface{}, ss grpc.ServerStream) error {
+		return nil
+	})
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+}
+
+func TestMiddlewareManager_GRPCRateLimitKeyFunc(t *testing.T) {
+	tests := []struct {
+		name     string
+		keyFunc  string
+		ctx      context.Context
+		method   string
+		expected string
+	}{
+		{
+			name:     "ip key with peer address",
+			keyFunc:  "ip",
+			ctx:      peerContext("192.0.2.10"),
+			method:   "/test.Service/Method",
+			expected: "192.0.2.10",
+		},
+		{
+			name:     "ip key without peer falls back to unknown",
+			keyFunc:  "ip",
+			ctx:      context.Background(),
+			method:   "/test.Service/Method",
+			expected: "unknown",
+		},
+		{
+			name:     "method key",
+			keyFunc:  "method",
+			ctx:      context.Background(),
+			method:   "/test.Service/Method",
+			expected: "/test.Service/Method",
+		},
+		{
+			name:     "global key",
+			keyFunc:  "global",
+			ctx:      peerContext("192.0.2.10"),
+			method:   "/test.Service/Method",
+			expected: "global",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := NewMiddlewareManager(newGRPCRateLimitTestConfig(100, 200, tt.keyFunc))
+			assert.Equal(t, tt.expected, manager.grpcRateLimitKey(tt.ctx, tt.method))
+		})
+	}
+}
+
+func TestMiddlewareManager_GRPCRateLimit_PerClientIsolation(t *testing.T) {
+	// With "ip" keying, exhausting one client's bucket must not affect another client
+	manager := NewMiddlewareManager(newGRPCRateLimitTestConfig(0.001, 1, "ip"))
+	interceptor := manager.createGRPCRateLimitUnaryInterceptor()
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "response", nil
+	}
+
+	client1 := peerContext("192.0.2.1")
+	client2 := peerContext("192.0.2.2")
+
+	_, err := interceptor(client1, nil, info, handler)
+	assert.NoError(t, err)
+
+	// Client 1 is now rate limited
+	_, err = interceptor(client1, nil, info, handler)
+	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+
+	// Client 2 still has its own budget
+	_, err = interceptor(client2, nil, info, handler)
+	assert.NoError(t, err)
+}
+
+func TestMiddlewareManager_GRPCRateLimitConfigValidation(t *testing.T) {
+	config := newGRPCRateLimitTestConfig(0, 0, "bogus")
+	config.GRPC.Interceptors.RateLimit.RequestsPerSecond = -1
+	err := config.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requests_per_second")
+
+	config.GRPC.Interceptors.RateLimit.RequestsPerSecond = 100
+	config.GRPC.Interceptors.RateLimit.BurstSize = -1
+	err = config.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "burst_size")
+
+	config.GRPC.Interceptors.RateLimit.BurstSize = 200
+	config.GRPC.Interceptors.RateLimit.KeyFunc = "bogus"
+	err = config.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key_func")
+
+	config.GRPC.Interceptors.RateLimit.KeyFunc = "ip"
+	assert.NoError(t, config.Validate())
 }
 
 // Tests for ConfigureSecurityMiddleware
