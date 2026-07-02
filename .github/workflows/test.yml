@@ -327,6 +327,9 @@ jobs:
             echo "✅ Coverage ${COVERAGE}% meets minimum threshold ${MIN_COVERAGE}%"
           fi
 
+      - name: Check core package coverage thresholds
+        run: make test-coverage-check
+
       - name: Generate package-level coverage report
         id: package-coverage
         run: |

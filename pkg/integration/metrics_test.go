@@ -1,9 +1,3 @@
-//go:build ignore
-// +build ignore
-
-// This file is temporarily disabled due to import cycle issues
-// TODO: Fix import cycles and re-enable tests
-
 // Copyright © 2025 jackelyj <dreamerlyj@gmail.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -28,30 +22,48 @@
 package integration
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/innovationmech/swit/pkg/messaging"
 	"github.com/innovationmech/swit/pkg/server"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
-// mockMessagingCoordinator is a mock implementation for testing
-type mockMessagingCoordinator struct {
-	mock.Mock
+// stubMessagingCoordinator is a lightweight stub implementing messaging.MessagingCoordinator
+// for metrics integration tests.
+type stubMessagingCoordinator struct {
+	metrics *messaging.MessagingCoordinatorMetrics
 }
 
-func (m *mockMessagingCoordinator) GetMetrics() *messaging.MessagingCoordinatorMetrics {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(*messaging.MessagingCoordinatorMetrics)
-}
+var _ messaging.MessagingCoordinator = (*stubMessagingCoordinator)(nil)
 
-// Add other required methods for MessagingCoordinator interface as needed
-// (simplified for testing purposes)
+func (s *stubMessagingCoordinator) Start(ctx context.Context) error { return nil }
+func (s *stubMessagingCoordinator) Stop(ctx context.Context) error  { return nil }
+func (s *stubMessagingCoordinator) GracefulShutdown(ctx context.Context, config *messaging.ShutdownConfig) (*messaging.GracefulShutdownManager, error) {
+	return nil, nil
+}
+func (s *stubMessagingCoordinator) RegisterBroker(name string, broker messaging.MessageBroker) error {
+	return nil
+}
+func (s *stubMessagingCoordinator) GetBroker(name string) (messaging.MessageBroker, error) {
+	return nil, nil
+}
+func (s *stubMessagingCoordinator) GetRegisteredBrokers() []string { return nil }
+func (s *stubMessagingCoordinator) RegisterEventHandler(handler messaging.EventHandler) error {
+	return nil
+}
+func (s *stubMessagingCoordinator) UnregisterEventHandler(handlerID string) error { return nil }
+func (s *stubMessagingCoordinator) GetRegisteredHandlers() []string               { return nil }
+func (s *stubMessagingCoordinator) IsStarted() bool                               { return false }
+func (s *stubMessagingCoordinator) GetMetrics() *messaging.MessagingCoordinatorMetrics {
+	return s.metrics
+}
+func (s *stubMessagingCoordinator) HealthCheck(ctx context.Context) (*messaging.MessagingHealthStatus, error) {
+	return nil, nil
+}
 
 func TestMessagingMetricsIntegration(t *testing.T) {
 	tests := []struct {
@@ -73,7 +85,7 @@ func TestMessagingMetricsIntegration(t *testing.T) {
 
 func testMessagingPerformanceMonitorCreation(t *testing.T) {
 	serverMonitor := server.NewPerformanceMonitor()
-	coordinator := &mockMessagingCoordinator{}
+	coordinator := &stubMessagingCoordinator{}
 
 	messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
 
@@ -84,7 +96,7 @@ func testMessagingPerformanceMonitorCreation(t *testing.T) {
 
 func testMessagingMetricsRecording(t *testing.T) {
 	serverMonitor := server.NewPerformanceMonitor()
-	coordinator := &mockMessagingCoordinator{}
+	coordinator := &stubMessagingCoordinator{}
 
 	messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
 
@@ -114,7 +126,7 @@ func testMessagingMetricsRecording(t *testing.T) {
 
 func testMessagingThresholds(t *testing.T) {
 	serverMonitor := server.NewPerformanceMonitor()
-	coordinator := &mockMessagingCoordinator{}
+	coordinator := &stubMessagingCoordinator{}
 
 	messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
 
@@ -142,7 +154,7 @@ func testMessagingThresholds(t *testing.T) {
 
 func testPerformanceMonitorIntegration(t *testing.T) {
 	serverMonitor := server.NewPerformanceMonitor()
-	coordinator := &mockMessagingCoordinator{}
+	coordinator := &stubMessagingCoordinator{}
 
 	messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
 
@@ -162,7 +174,7 @@ func testPerformanceMonitorIntegration(t *testing.T) {
 
 func TestMessagingPerformanceHook(t *testing.T) {
 	serverMonitor := server.NewPerformanceMonitor()
-	coordinator := &mockMessagingCoordinator{}
+	coordinator := &stubMessagingCoordinator{}
 
 	messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
 
@@ -193,7 +205,7 @@ func TestDefaultMessagingPerformanceThresholds(t *testing.T) {
 
 func TestThresholdViolationDetection(t *testing.T) {
 	serverMonitor := server.NewPerformanceMonitor()
-	coordinator := &mockMessagingCoordinator{}
+	coordinator := &stubMessagingCoordinator{}
 
 	messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
 
@@ -225,4 +237,55 @@ func TestThresholdViolationDetection(t *testing.T) {
 
 	assert.Contains(t, violationStr, "latency", "Expected latency threshold violation")
 	assert.Contains(t, violationStr, "memory", "Expected memory threshold violation")
+}
+
+func TestCollectMetrics(t *testing.T) {
+	t.Run("nil coordinator is a no-op", func(t *testing.T) {
+		serverMonitor := server.NewPerformanceMonitor()
+		messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, nil)
+
+		assert.NotPanics(t, func() { messagingMonitor.CollectMetrics() })
+	})
+
+	t.Run("nil coordinator metrics is a no-op", func(t *testing.T) {
+		serverMonitor := server.NewPerformanceMonitor()
+		coordinator := &stubMessagingCoordinator{metrics: nil}
+		messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
+
+		assert.NotPanics(t, func() { messagingMonitor.CollectMetrics() })
+	})
+
+	t.Run("aggregates broker metrics", func(t *testing.T) {
+		serverMonitor := server.NewPerformanceMonitor()
+		coordinator := &stubMessagingCoordinator{
+			metrics: &messaging.MessagingCoordinatorMetrics{
+				BrokerCount: 2,
+				BrokerMetrics: map[string]*messaging.BrokerMetrics{
+					"healthy": {
+						ConnectionStatus:  "connected",
+						MessagesPublished: 100,
+						MessagesConsumed:  80,
+						PublishErrors:     5,
+						ConsumeErrors:     3,
+						MemoryUsage:       2048,
+					},
+					"unhealthy": {
+						ConnectionStatus:  "disconnected",
+						MessagesPublished: 10,
+						MemoryUsage:       1024,
+					},
+				},
+			},
+		}
+		messagingMonitor := NewMessagingPerformanceMonitor(serverMonitor, coordinator)
+
+		messagingMonitor.CollectMetrics()
+
+		metrics := messagingMonitor.GetMetrics()
+		assert.Equal(t, int64(2), metrics.ActiveBrokers)
+		assert.Equal(t, int64(1), metrics.UnhealthyBrokers)
+		assert.Equal(t, uint64(3072), metrics.MessagingMemoryUsage)
+		assert.InDelta(t, float64(8)/float64(110), metrics.PublishErrorRate, 1e-9)
+		assert.False(t, metrics.LastUpdated.IsZero())
+	})
 }
