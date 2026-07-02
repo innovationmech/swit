@@ -24,10 +24,14 @@ package coordinator
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/innovationmech/swit/pkg/saga"
+	"github.com/innovationmech/swit/pkg/saga/state/storage"
 )
 
 // mockStateStorage is a mock implementation of saga.StateStorage for testing.
@@ -41,17 +45,38 @@ type mockStateStorage struct {
 	saveStepStateErr       error
 	getStepStatesErr       error
 	cleanupExpiredSagasErr error
+
+	// sagas allows GetSaga to return a configured instance by ID.
+	sagas map[string]saga.SagaInstance
+
+	// activeSagas allows GetActiveSagas to return a configured slice.
+	activeSagas []saga.SagaInstance
+
+	// saveSagaCount tracks the number of SaveSaga invocations.
+	saveSagaCount int
+	// lastUpdatedState records the most recent state passed to UpdateSagaState.
+	lastUpdatedState saga.SagaState
 }
 
 func (m *mockStateStorage) SaveSaga(ctx context.Context, saga saga.SagaInstance) error {
+	m.saveSagaCount++
 	return m.saveSagaErr
 }
 
 func (m *mockStateStorage) GetSaga(ctx context.Context, sagaID string) (saga.SagaInstance, error) {
-	return nil, m.getSagaErr
+	if m.getSagaErr != nil {
+		return nil, m.getSagaErr
+	}
+	if m.sagas != nil {
+		if instance, ok := m.sagas[sagaID]; ok {
+			return instance, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *mockStateStorage) UpdateSagaState(ctx context.Context, sagaID string, state saga.SagaState, metadata map[string]interface{}) error {
+	m.lastUpdatedState = state
 	return m.updateSagaStateErr
 }
 
@@ -62,6 +87,9 @@ func (m *mockStateStorage) DeleteSaga(ctx context.Context, sagaID string) error 
 func (m *mockStateStorage) GetActiveSagas(ctx context.Context, filter *saga.SagaFilter) ([]saga.SagaInstance, error) {
 	if m.getActiveSagasErr != nil {
 		return nil, m.getActiveSagasErr
+	}
+	if m.activeSagas != nil {
+		return m.activeSagas, nil
 	}
 	return []saga.SagaInstance{}, nil
 }
@@ -734,13 +762,65 @@ func TestCopyMetadata(t *testing.T) {
 	}
 }
 
+// fakeSagaInstance is a minimal saga.SagaInstance implementation that is NOT
+// an *OrchestratorSagaInstance. It is used to exercise the storage-only
+// lifecycle code paths (where the live runtime instance is unavailable).
+type fakeSagaInstance struct {
+	id           string
+	definitionID string
+	state        saga.SagaState
+	startTime    time.Time
+}
+
+func (f *fakeSagaInstance) GetID() string                       { return f.id }
+func (f *fakeSagaInstance) GetDefinitionID() string             { return f.definitionID }
+func (f *fakeSagaInstance) GetState() saga.SagaState            { return f.state }
+func (f *fakeSagaInstance) GetCurrentStep() int                 { return 0 }
+func (f *fakeSagaInstance) GetStartTime() time.Time             { return f.startTime }
+func (f *fakeSagaInstance) GetEndTime() time.Time               { return time.Time{} }
+func (f *fakeSagaInstance) GetResult() interface{}              { return nil }
+func (f *fakeSagaInstance) GetError() *saga.SagaError           { return nil }
+func (f *fakeSagaInstance) GetTotalSteps() int                  { return 0 }
+func (f *fakeSagaInstance) GetCompletedSteps() int              { return 0 }
+func (f *fakeSagaInstance) GetCreatedAt() time.Time             { return f.startTime }
+func (f *fakeSagaInstance) GetUpdatedAt() time.Time             { return f.startTime }
+func (f *fakeSagaInstance) GetTimeout() time.Duration           { return 0 }
+func (f *fakeSagaInstance) GetMetadata() map[string]interface{} { return nil }
+func (f *fakeSagaInstance) GetTraceID() string                  { return "" }
+func (f *fakeSagaInstance) IsTerminal() bool                    { return f.state.IsTerminal() }
+func (f *fakeSagaInstance) IsActive() bool                      { return f.state.IsActive() }
+
+// newRunningInstance creates an in-memory OrchestratorSagaInstance in the
+// running state with the supplied number of completed steps, useful for
+// exercising the lifecycle APIs deterministically.
+func newRunningInstance(id string, totalSteps, completedSteps int) *OrchestratorSagaInstance {
+	now := time.Now()
+	started := now.Add(-time.Minute)
+	return &OrchestratorSagaInstance{
+		id:             id,
+		definitionID:   "test-def",
+		name:           "Test Saga",
+		state:          saga.StateRunning,
+		currentStep:    completedSteps,
+		completedSteps: completedSteps,
+		totalSteps:     totalSteps,
+		createdAt:      started,
+		updatedAt:      now,
+		startedAt:      &started,
+		metadata:       map[string]interface{}{"env": "test"},
+	}
+}
+
 func TestOrchestratorCoordinatorGetSagaInstance(t *testing.T) {
+	cachedInstance := newRunningInstance("cached-saga", 2, 1)
+	storedInstance := newRunningInstance("stored-saga", 3, 2)
+
 	tests := []struct {
-		name        string
-		setupCoord  func() *OrchestratorCoordinator
-		sagaID      string
-		wantErr     bool
-		expectedErr error
+		name       string
+		setupCoord func() *OrchestratorCoordinator
+		sagaID     string
+		wantErr    bool
+		wantID     string
 	}{
 		{
 			name: "closed coordinator",
@@ -750,9 +830,8 @@ func TestOrchestratorCoordinatorGetSagaInstance(t *testing.T) {
 				coord.closed = true
 				return coord
 			},
-			sagaID:      "test-saga-id",
-			wantErr:     true,
-			expectedErr: ErrCoordinatorClosed,
+			sagaID:  "test-saga-id",
+			wantErr: true,
 		},
 		{
 			name: "saga not found",
@@ -764,13 +843,54 @@ func TestOrchestratorCoordinatorGetSagaInstance(t *testing.T) {
 			sagaID:  "non-existent-saga",
 			wantErr: true,
 		},
+		{
+			name: "found in memory cache",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				coord, _ := NewOrchestratorCoordinator(config)
+				coord.instances.Store(cachedInstance.id, cachedInstance)
+				return coord
+			},
+			sagaID:  "cached-saga",
+			wantErr: false,
+			wantID:  "cached-saga",
+		},
+		{
+			name: "found in storage fallback",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				config.StateStorage = &mockStateStorage{
+					sagas: map[string]saga.SagaInstance{
+						storedInstance.id: storedInstance,
+					},
+				}
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			sagaID:  "stored-saga",
+			wantErr: false,
+			wantID:  "stored-saga",
+		},
+		{
+			name: "storage error",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				config.StateStorage = &mockStateStorage{
+					getSagaErr: errors.New("storage failure"),
+				}
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			sagaID:  "any-saga",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			coord := tt.setupCoord()
 
-			_, err := coord.GetSagaInstance(tt.sagaID)
+			instance, err := coord.GetSagaInstance(tt.sagaID)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("GetSagaInstance() expected error but got nil")
@@ -780,64 +900,173 @@ func TestOrchestratorCoordinatorGetSagaInstance(t *testing.T) {
 
 			if err != nil {
 				t.Errorf("GetSagaInstance() unexpected error = %v", err)
+				return
+			}
+			if instance == nil {
+				t.Fatal("GetSagaInstance() returned nil instance")
+			}
+			if instance.GetID() != tt.wantID {
+				t.Errorf("GetSagaInstance() ID = %s, expected %s", instance.GetID(), tt.wantID)
 			}
 		})
 	}
 }
 
 func TestOrchestratorCoordinatorCancelSaga(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupCoord  func() *OrchestratorCoordinator
-		sagaID      string
-		reason      string
-		wantErr     bool
-		expectedErr error
-	}{
-		{
-			name: "closed coordinator",
-			setupCoord: func() *OrchestratorCoordinator {
-				config := newTestConfig()
-				coord, _ := NewOrchestratorCoordinator(config)
-				coord.closed = true
-				return coord
+	t.Run("closed coordinator", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		coord.closed = true
+		if err := coord.CancelSaga(context.Background(), "id", "reason"); err == nil {
+			t.Error("CancelSaga() expected error for closed coordinator")
+		}
+	})
+
+	t.Run("saga not found", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		if err := coord.CancelSaga(context.Background(), "missing", "reason"); err == nil {
+			t.Error("CancelSaga() expected error for missing saga")
+		}
+	})
+
+	t.Run("terminal saga rejected", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		instance := newRunningInstance("done-saga", 1, 1)
+		instance.state = saga.StateCompleted
+		coord.instances.Store(instance.id, instance)
+		if err := coord.CancelSaga(context.Background(), instance.id, "reason"); err == nil {
+			t.Error("CancelSaga() expected error for terminal saga")
+		}
+	})
+
+	t.Run("successful cancel triggers compensation", func(t *testing.T) {
+		metrics := &mockMetricsCollector{}
+		config := newTestConfig()
+		config.MetricsCollector = metrics
+		coord, _ := NewOrchestratorCoordinator(config)
+
+		var compensated1, compensated2 int32
+		step1 := &mockSagaStep{
+			id:   "step-1",
+			name: "Step 1",
+			compensate: func(ctx context.Context, data interface{}) error {
+				atomic.AddInt32(&compensated1, 1)
+				return nil
 			},
-			sagaID:      "test-saga-id",
-			reason:      "test cancellation",
-			wantErr:     true,
-			expectedErr: ErrCoordinatorClosed,
-		},
-		{
-			name: "not implemented yet",
-			setupCoord: func() *OrchestratorCoordinator {
-				config := newTestConfig()
-				coord, _ := NewOrchestratorCoordinator(config)
-				return coord
+		}
+		step2 := &mockSagaStep{
+			id:   "step-2",
+			name: "Step 2",
+			compensate: func(ctx context.Context, data interface{}) error {
+				atomic.AddInt32(&compensated2, 1)
+				return nil
 			},
-			sagaID:  "test-saga-id",
-			reason:  "test cancellation",
-			wantErr: true,
-		},
-	}
+		}
+		definition := &mockSagaDefinition{
+			id:    "test-def",
+			name:  "Test Saga",
+			steps: []saga.SagaStep{step1, step2},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			coord := tt.setupCoord()
-			ctx := context.Background()
+		instance := newRunningInstance("active-saga", 2, 2)
+		coord.instances.Store(instance.id, instance)
+		coord.definitions.Store(instance.id, definition)
+		coord.mu.Lock()
+		coord.metrics.ActiveSagas = 1
+		coord.mu.Unlock()
 
-			err := coord.CancelSaga(ctx, tt.sagaID, tt.reason)
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("CancelSaga() expected error but got nil")
-				}
-				return
-			}
+		err := coord.CancelSaga(context.Background(), instance.id, "user requested")
+		if err != nil {
+			t.Fatalf("CancelSaga() unexpected error = %v", err)
+		}
 
-			if err != nil {
-				t.Errorf("CancelSaga() unexpected error = %v", err)
-			}
-		})
-	}
+		if instance.GetState() != saga.StateCancelled {
+			t.Errorf("instance state = %v, expected Cancelled", instance.GetState())
+		}
+		if atomic.LoadInt32(&compensated1) != 1 {
+			t.Errorf("step1 compensation called %d times, expected 1", compensated1)
+		}
+		if atomic.LoadInt32(&compensated2) != 1 {
+			t.Errorf("step2 compensation called %d times, expected 1", compensated2)
+		}
+		if metrics.sagaCancelledCount != 1 {
+			t.Errorf("RecordSagaCancelled called %d times, expected 1", metrics.sagaCancelledCount)
+		}
+
+		m := coord.GetMetrics()
+		if m.CancelledSagas != 1 {
+			t.Errorf("CancelledSagas = %d, expected 1", m.CancelledSagas)
+		}
+		if m.ActiveSagas != 0 {
+			t.Errorf("ActiveSagas = %d, expected 0", m.ActiveSagas)
+		}
+
+		// The instance should be removed from the active cache after cancel.
+		if _, ok := coord.instances.Load(instance.id); ok {
+			t.Error("instance should be removed from cache after cancellation")
+		}
+	})
+
+	t.Run("cancel without completed steps skips compensation", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		step := &mockSagaStep{
+			id:   "step-1",
+			name: "Step 1",
+			compensate: func(ctx context.Context, data interface{}) error {
+				t.Error("compensation should not be called when no steps completed")
+				return nil
+			},
+		}
+		definition := &mockSagaDefinition{
+			id:    "test-def",
+			steps: []saga.SagaStep{step},
+		}
+		instance := newRunningInstance("pending-saga", 1, 0)
+		instance.state = saga.StatePending
+		coord.instances.Store(instance.id, instance)
+		coord.definitions.Store(instance.id, definition)
+
+		if err := coord.CancelSaga(context.Background(), instance.id, "reason"); err != nil {
+			t.Fatalf("CancelSaga() unexpected error = %v", err)
+		}
+		if instance.GetState() != saga.StateCancelled {
+			t.Errorf("instance state = %v, expected Cancelled", instance.GetState())
+		}
+	})
+
+	t.Run("storage failure on persist", func(t *testing.T) {
+		config := newTestConfig()
+		config.StateStorage = &mockStateStorage{saveSagaErr: errors.New("save failed")}
+		coord, _ := NewOrchestratorCoordinator(config)
+		instance := newRunningInstance("active-saga", 1, 0)
+		coord.instances.Store(instance.id, instance)
+
+		if err := coord.CancelSaga(context.Background(), instance.id, "reason"); err == nil {
+			t.Error("CancelSaga() expected storage error")
+		}
+	})
+
+	t.Run("storage-only instance updates state", func(t *testing.T) {
+		storage := &mockStateStorage{
+			sagas: map[string]saga.SagaInstance{
+				"stored-saga": &fakeSagaInstance{
+					id:           "stored-saga",
+					definitionID: "test-def",
+					state:        saga.StateRunning,
+					startTime:    time.Now().Add(-time.Minute),
+				},
+			},
+		}
+		config := newTestConfig()
+		config.StateStorage = storage
+		coord, _ := NewOrchestratorCoordinator(config)
+
+		if err := coord.CancelSaga(context.Background(), "stored-saga", "reason"); err != nil {
+			t.Fatalf("CancelSaga() unexpected error = %v", err)
+		}
+		if storage.lastUpdatedState != saga.StateCancelled {
+			t.Errorf("UpdateSagaState state = %v, expected Cancelled", storage.lastUpdatedState)
+		}
+	})
 }
 
 func TestOrchestratorCoordinatorGetActiveSagas(t *testing.T) {
@@ -870,6 +1099,36 @@ func TestOrchestratorCoordinatorGetActiveSagas(t *testing.T) {
 			wantErr: false,
 			wantLen: 0,
 		},
+		{
+			name: "returns active sagas from storage",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				config.StateStorage = &mockStateStorage{
+					activeSagas: []saga.SagaInstance{
+						newRunningInstance("saga-1", 2, 1),
+						newRunningInstance("saga-2", 3, 0),
+					},
+				}
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			filter:  nil,
+			wantErr: false,
+			wantLen: 2,
+		},
+		{
+			name: "storage error is wrapped",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				config.StateStorage = &mockStateStorage{
+					getActiveSagasErr: errors.New("query failed"),
+				}
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			filter:  nil,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -894,6 +1153,85 @@ func TestOrchestratorCoordinatorGetActiveSagas(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("stale storage state is overridden by live terminal instance", func(t *testing.T) {
+		// Storage still reports the Saga as running (e.g. the final persist
+		// failed during a network partition), but the live in-memory
+		// instance already completed. The stale entry must be filtered out.
+		staleStored := newRunningInstance("saga-live", 2, 2)
+		config := newTestConfig()
+		config.StateStorage = &mockStateStorage{
+			activeSagas: []saga.SagaInstance{staleStored},
+		}
+		coord, _ := NewOrchestratorCoordinator(config)
+
+		liveInstance := newRunningInstance("saga-live", 2, 2)
+		liveInstance.state = saga.StateCompleted
+		coord.instances.Store(liveInstance.id, liveInstance)
+
+		sagas, err := coord.GetActiveSagas(nil)
+		if err != nil {
+			t.Fatalf("GetActiveSagas() unexpected error = %v", err)
+		}
+		if len(sagas) != 0 {
+			t.Errorf("GetActiveSagas() returned %d sagas, expected 0 (live instance is terminal)", len(sagas))
+		}
+	})
+
+	t.Run("live active instance is preferred over storage copy", func(t *testing.T) {
+		staleStored := newRunningInstance("saga-live", 2, 0)
+		config := newTestConfig()
+		config.StateStorage = &mockStateStorage{
+			activeSagas: []saga.SagaInstance{staleStored},
+		}
+		coord, _ := NewOrchestratorCoordinator(config)
+
+		liveInstance := newRunningInstance("saga-live", 2, 1)
+		liveInstance.state = saga.StateCompensating
+		coord.instances.Store(liveInstance.id, liveInstance)
+
+		sagas, err := coord.GetActiveSagas(nil)
+		if err != nil {
+			t.Fatalf("GetActiveSagas() unexpected error = %v", err)
+		}
+		if len(sagas) != 1 {
+			t.Fatalf("GetActiveSagas() returned %d sagas, expected 1", len(sagas))
+		}
+		if sagas[0] != saga.SagaInstance(liveInstance) {
+			t.Error("GetActiveSagas() should return the live in-memory instance")
+		}
+		if sagas[0].GetState() != saga.StateCompensating {
+			t.Errorf("GetActiveSagas() state = %v, expected Compensating", sagas[0].GetState())
+		}
+	})
+}
+
+func TestBuildActiveSagaFilter(t *testing.T) {
+	t.Run("nil filter defaults to active states", func(t *testing.T) {
+		f := buildActiveSagaFilter(nil)
+		if len(f.States) != 3 {
+			t.Fatalf("expected 3 default active states, got %d", len(f.States))
+		}
+	})
+
+	t.Run("explicit states are preserved and original not mutated", func(t *testing.T) {
+		original := &saga.SagaFilter{States: []saga.SagaState{saga.StateCompleted}}
+		f := buildActiveSagaFilter(original)
+		if len(f.States) != 1 || f.States[0] != saga.StateCompleted {
+			t.Errorf("explicit states should be preserved, got %v", f.States)
+		}
+	})
+
+	t.Run("empty states are populated with defaults without mutating caller", func(t *testing.T) {
+		original := &saga.SagaFilter{Limit: 5}
+		f := buildActiveSagaFilter(original)
+		if len(f.States) != 3 {
+			t.Errorf("expected default active states, got %v", f.States)
+		}
+		if len(original.States) != 0 {
+			t.Error("buildActiveSagaFilter must not mutate the caller filter")
+		}
+	})
 }
 
 func TestOrchestratorCoordinatorGetMetrics(t *testing.T) {
@@ -956,6 +1294,18 @@ func TestOrchestratorCoordinatorHealthCheck(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "state storage probe failure",
+			setupCoord: func() *OrchestratorCoordinator {
+				config := newTestConfig()
+				config.StateStorage = &mockStateStorage{
+					getActiveSagasErr: errors.New("storage down"),
+				}
+				coord, _ := NewOrchestratorCoordinator(config)
+				return coord
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -975,6 +1325,49 @@ func TestOrchestratorCoordinatorHealthCheck(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOrchestratorCoordinatorHealthCheckExplicitProbe(t *testing.T) {
+	t.Run("healthy explicit probe", func(t *testing.T) {
+		config := newTestConfig()
+		config.StateStorage = &healthCheckStateStorage{mockStateStorage: &mockStateStorage{}}
+		coord, _ := NewOrchestratorCoordinator(config)
+		if err := coord.HealthCheck(context.Background()); err != nil {
+			t.Errorf("HealthCheck() unexpected error = %v", err)
+		}
+	})
+
+	t.Run("unhealthy explicit probe", func(t *testing.T) {
+		config := newTestConfig()
+		config.StateStorage = &healthCheckStateStorage{
+			mockStateStorage: &mockStateStorage{},
+			healthErr:        errors.New("ping failed"),
+		}
+		coord, _ := NewOrchestratorCoordinator(config)
+		if err := coord.HealthCheck(context.Background()); err == nil {
+			t.Error("HealthCheck() expected error from explicit probe")
+		}
+	})
+
+	t.Run("cancelled context", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := coord.HealthCheck(ctx); err == nil {
+			t.Error("HealthCheck() expected error for cancelled context")
+		}
+	})
+}
+
+// healthCheckStateStorage wraps mockStateStorage and adds an explicit
+// HealthCheck method, exercising the healthCheckable code path.
+type healthCheckStateStorage struct {
+	*mockStateStorage
+	healthErr error
+}
+
+func (h *healthCheckStateStorage) HealthCheck(ctx context.Context) error {
+	return h.healthErr
 }
 
 func TestOrchestratorCoordinatorClose(t *testing.T) {
@@ -1026,51 +1419,123 @@ func TestOrchestratorCoordinatorClose(t *testing.T) {
 }
 
 func TestOrchestratorCoordinatorStopSaga(t *testing.T) {
-	tests := []struct {
-		name       string
-		setupCoord func() *OrchestratorCoordinator
-		sagaID     string
-		wantErr    bool
-	}{
-		{
-			name: "closed coordinator",
-			setupCoord: func() *OrchestratorCoordinator {
-				config := newTestConfig()
-				coord, _ := NewOrchestratorCoordinator(config)
-				coord.closed = true
-				return coord
-			},
-			sagaID:  "test-saga-id",
-			wantErr: true,
-		},
-		{
-			name: "not implemented yet",
-			setupCoord: func() *OrchestratorCoordinator {
-				config := newTestConfig()
-				coord, _ := NewOrchestratorCoordinator(config)
-				return coord
-			},
-			sagaID:  "test-saga-id",
-			wantErr: true,
-		},
+	t.Run("closed coordinator", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		coord.closed = true
+		if err := coord.StopSaga(context.Background(), "id"); err == nil {
+			t.Error("StopSaga() expected error for closed coordinator")
+		}
+	})
+
+	t.Run("saga not found", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		if err := coord.StopSaga(context.Background(), "missing"); err == nil {
+			t.Error("StopSaga() expected error for missing saga")
+		}
+	})
+
+	t.Run("terminal saga rejected", func(t *testing.T) {
+		coord, _ := NewOrchestratorCoordinator(newTestConfig())
+		instance := newRunningInstance("done-saga", 1, 1)
+		instance.state = saga.StateCompleted
+		coord.instances.Store(instance.id, instance)
+		if err := coord.StopSaga(context.Background(), instance.id); err == nil {
+			t.Error("StopSaga() expected error for terminal saga")
+		}
+	})
+
+	t.Run("successful stop persists state and cancels execution", func(t *testing.T) {
+		storage := &mockStateStorage{}
+		config := newTestConfig()
+		config.StateStorage = storage
+		coord, _ := NewOrchestratorCoordinator(config)
+
+		instance := newRunningInstance("active-saga", 2, 1)
+		coord.instances.Store(instance.id, instance)
+
+		// Track a cancellation function to verify it is invoked.
+		var cancelled int32
+		coord.cancelFuncs.Store(instance.id, context.CancelFunc(func() {
+			atomic.AddInt32(&cancelled, 1)
+		}))
+
+		before := storage.saveSagaCount
+		if err := coord.StopSaga(context.Background(), instance.id); err != nil {
+			t.Fatalf("StopSaga() unexpected error = %v", err)
+		}
+		if storage.saveSagaCount <= before {
+			t.Error("StopSaga() should persist current state via SaveSaga")
+		}
+		if atomic.LoadInt32(&cancelled) != 1 {
+			t.Errorf("StopSaga() should cancel in-flight execution, calls = %d", cancelled)
+		}
+	})
+
+	t.Run("storage failure on persist", func(t *testing.T) {
+		config := newTestConfig()
+		config.StateStorage = &mockStateStorage{saveSagaErr: errors.New("save failed")}
+		coord, _ := NewOrchestratorCoordinator(config)
+		instance := newRunningInstance("active-saga", 1, 0)
+		coord.instances.Store(instance.id, instance)
+
+		if err := coord.StopSaga(context.Background(), instance.id); err == nil {
+			t.Error("StopSaga() expected storage error")
+		}
+	})
+}
+
+// TestOrchestratorCoordinatorLifecycleConcurrent exercises the lifecycle APIs
+// under concurrent access to surface data races in the coordinator (run with
+// -race). It uses the thread-safe in-memory storage and the stateless no-op
+// metrics collector so that any race surfaced originates from the coordinator
+// itself rather than from test doubles.
+func TestOrchestratorCoordinatorLifecycleConcurrent(t *testing.T) {
+	config := &OrchestratorConfig{
+		StateStorage:     storage.NewMemoryStateStorage(),
+		EventPublisher:   &mockEventPublisher{},
+		MetricsCollector: &noOpMetricsCollector{},
+	}
+	coord, err := NewOrchestratorCoordinator(config)
+	if err != nil {
+		t.Fatalf("failed to create coordinator: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			coord := tt.setupCoord()
-			ctx := context.Background()
+	const numSagas = 20
+	ids := make([]string, 0, numSagas)
+	for i := 0; i < numSagas; i++ {
+		id := fmt.Sprintf("saga-%02d", i)
+		ids = append(ids, id)
+		instance := newRunningInstance(id, 1, 0)
+		coord.instances.Store(id, instance)
+		coord.mu.Lock()
+		coord.metrics.ActiveSagas++
+		coord.mu.Unlock()
+	}
 
-			err := coord.StopSaga(ctx, tt.sagaID)
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("StopSaga() expected error but got nil")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("StopSaga() unexpected error = %v", err)
-				}
-			}
-		})
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		id := id
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			_ = coord.CancelSaga(context.Background(), id, "concurrent cancel")
+		}()
+		go func() {
+			defer wg.Done()
+			_, _ = coord.GetSagaInstance(id)
+		}()
+		go func() {
+			defer wg.Done()
+			_, _ = coord.GetActiveSagas(nil)
+		}()
+	}
+
+	wg.Wait()
+
+	// After cancellation, cancelled count should not exceed the number created.
+	m := coord.GetMetrics()
+	if m.CancelledSagas > numSagas {
+		t.Errorf("CancelledSagas = %d, expected <= %d", m.CancelledSagas, numSagas)
 	}
 }
 

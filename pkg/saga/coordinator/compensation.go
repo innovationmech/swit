@@ -71,11 +71,13 @@ func (ce *compensationExecutor) executeCompensation(ctx context.Context, complet
 		return ce.handleCompensationCompletion(ctx)
 	}
 
-	// Update state to Compensating
+	// Update state to Compensating. Persistence failures are logged but do
+	// not abort compensation: aborting would leave the Saga stuck in a
+	// non-terminal state, and storage may be temporarily unavailable (for
+	// example during a network partition). The in-memory instance carries
+	// the authoritative runtime state.
 	if err := ce.updateSagaState(ctx, saga.StateCompensating); err != nil {
-		span.SetStatus(2, fmt.Sprintf("failed to update state: %v", err))
-		span.RecordError(err)
-		return fmt.Errorf("failed to update Saga state to Compensating: %w", err)
+		logger.GetSugaredLogger().Warnf("Failed to persist Compensating state for Saga %s: %v", ce.instance.id, err)
 	}
 
 	// Get compensation strategy
