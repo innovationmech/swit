@@ -199,6 +199,7 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					TLS: nil, // TLS disabled
 				},
 				Discovery: DiscoveryConfig{
+					Type:                "consul",
 					Address:             "127.0.0.1:8500",
 					ServiceName:         "swit-service",
 					Tags:                []string{"v1"},
@@ -442,6 +443,7 @@ func TestServerConfig_SetDefaults(t *testing.T) {
 					TLS: nil, // TLS disabled
 				},
 				Discovery: DiscoveryConfig{
+					Type:                "consul",
 					Address:             "127.0.0.1:8500",
 					ServiceName:         "custom-service",
 					Tags:                []string{"v1"},

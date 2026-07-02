@@ -30,6 +30,7 @@ import (
 
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/innovationmech/swit/pkg/discovery"
 	tlsconfig "github.com/innovationmech/swit/pkg/security/tls"
 	"github.com/innovationmech/swit/pkg/tracing"
 	"github.com/innovationmech/swit/pkg/types"
@@ -207,13 +208,42 @@ const (
 
 // DiscoveryConfig holds service discovery configuration
 type DiscoveryConfig struct {
-	Address             string               `yaml:"address" json:"address"`
-	ServiceName         string               `yaml:"service_name" json:"service_name"`
-	Tags                []string             `yaml:"tags" json:"tags"`
-	Enabled             bool                 `yaml:"enabled" json:"enabled"`
-	FailureMode         DiscoveryFailureMode `yaml:"failure_mode" json:"failure_mode"`
-	HealthCheckRequired bool                 `yaml:"health_check_required" json:"health_check_required"`
-	RegistrationTimeout time.Duration        `yaml:"registration_timeout" json:"registration_timeout"`
+	// Type selects the discovery backend: "consul" (default), "etcd" or "kubernetes"
+	Type                string                     `yaml:"type" json:"type"`
+	Address             string                     `yaml:"address" json:"address"`
+	ServiceName         string                     `yaml:"service_name" json:"service_name"`
+	Tags                []string                   `yaml:"tags" json:"tags"`
+	Enabled             bool                       `yaml:"enabled" json:"enabled"`
+	FailureMode         DiscoveryFailureMode       `yaml:"failure_mode" json:"failure_mode"`
+	HealthCheckRequired bool                       `yaml:"health_check_required" json:"health_check_required"`
+	RegistrationTimeout time.Duration              `yaml:"registration_timeout" json:"registration_timeout"`
+	Etcd                discovery.EtcdConfig       `yaml:"etcd" json:"etcd"`
+	Kubernetes          discovery.KubernetesConfig `yaml:"kubernetes" json:"kubernetes"`
+}
+
+// GetProviderType returns the effective discovery backend type, defaulting to Consul.
+func (c *DiscoveryConfig) GetProviderType() discovery.ProviderType {
+	t := discovery.ProviderType(strings.ToLower(strings.TrimSpace(c.Type)))
+	if t == "" {
+		return discovery.ProviderTypeConsul
+	}
+	return t
+}
+
+// ToProviderConfig converts the server discovery configuration into the
+// backend-agnostic provider configuration consumed by pkg/discovery.
+func (c *DiscoveryConfig) ToProviderConfig() *discovery.ProviderConfig {
+	providerConfig := &discovery.ProviderConfig{
+		Type:       c.GetProviderType(),
+		Etcd:       c.Etcd,
+		Kubernetes: c.Kubernetes,
+	}
+	// Address is Consul-specific; etcd endpoints and Kubernetes settings come
+	// from their dedicated sections.
+	if providerConfig.Type == discovery.ProviderTypeConsul {
+		providerConfig.Address = c.Address
+	}
+	return providerConfig
 }
 
 // MiddlewareConfig holds middleware configuration flags
@@ -667,6 +697,9 @@ func (c *ServerConfig) SetDefaults() {
 	// gRPC TLS defaults - TLS is disabled by default (nil)
 
 	// Discovery defaults
+	if c.Discovery.Type == "" {
+		c.Discovery.Type = string(discovery.ProviderTypeConsul)
+	}
 	if c.Discovery.Address == "" {
 		c.Discovery.Address = "127.0.0.1:8500"
 	}
@@ -1006,8 +1039,23 @@ func (c *ServerConfig) Validate() error {
 
 	// Validate discovery configuration
 	if c.Discovery.Enabled {
-		if c.Discovery.Address == "" {
-			return fmt.Errorf("discovery.address is required when discovery is enabled")
+		// Validate backend type
+		switch c.Discovery.GetProviderType() {
+		case discovery.ProviderTypeConsul:
+			if c.Discovery.Address == "" {
+				return fmt.Errorf("discovery.address is required when discovery is enabled")
+			}
+		case discovery.ProviderTypeEtcd:
+			if len(c.Discovery.Etcd.Endpoints) == 0 {
+				return fmt.Errorf("discovery.etcd.endpoints is required when discovery type is etcd")
+			}
+		case discovery.ProviderTypeKubernetes:
+			if mode := c.Discovery.Kubernetes.Mode; mode != "" &&
+				mode != discovery.KubernetesModeEndpoints && mode != discovery.KubernetesModeDNS {
+				return fmt.Errorf("discovery.kubernetes.mode must be one of: endpoints, dns")
+			}
+		default:
+			return fmt.Errorf("discovery.type must be one of: consul, etcd, kubernetes")
 		}
 		if c.Discovery.ServiceName == "" {
 			return fmt.Errorf("discovery.service_name is required when discovery is enabled")

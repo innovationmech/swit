@@ -29,6 +29,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/innovationmech/swit/pkg/discovery"
 )
 
 func TestNewDiscoveryManager(t *testing.T) {
@@ -56,6 +58,39 @@ func TestNewDiscoveryManager(t *testing.T) {
 				ServiceName: "test-service",
 			},
 			expectNoOp: false,
+		},
+		{
+			name: "etcd backend creates real manager",
+			config: &DiscoveryConfig{
+				Enabled:     true,
+				Type:        "etcd",
+				ServiceName: "test-service",
+				Etcd: discovery.EtcdConfig{
+					Endpoints: []string{"127.0.0.1:2379"},
+				},
+			},
+			expectNoOp: false,
+		},
+		{
+			name: "kubernetes backend creates real manager",
+			config: &DiscoveryConfig{
+				Enabled:     true,
+				Type:        "kubernetes",
+				ServiceName: "test-service",
+				Kubernetes: discovery.KubernetesConfig{
+					Mode: discovery.KubernetesModeDNS,
+				},
+			},
+			expectNoOp: false,
+		},
+		{
+			name: "unsupported backend returns error",
+			config: &DiscoveryConfig{
+				Enabled:     true,
+				Type:        "zookeeper",
+				ServiceName: "test-service",
+			},
+			expectError: true,
 		},
 	}
 
@@ -832,6 +867,130 @@ func TestNoOpDiscoveryManager_ExtendedInterface(t *testing.T) {
 	// Test health check
 	ctx := context.Background()
 	assert.True(t, manager.IsHealthy(ctx))
+}
+
+func TestDiscoveryConfig_GetProviderType(t *testing.T) {
+	tests := []struct {
+		name     string
+		typ      string
+		expected discovery.ProviderType
+	}{
+		{name: "empty defaults to consul", typ: "", expected: discovery.ProviderTypeConsul},
+		{name: "consul", typ: "consul", expected: discovery.ProviderTypeConsul},
+		{name: "etcd", typ: "etcd", expected: discovery.ProviderTypeEtcd},
+		{name: "kubernetes", typ: "kubernetes", expected: discovery.ProviderTypeKubernetes},
+		{name: "case insensitive", typ: "Etcd", expected: discovery.ProviderTypeEtcd},
+		{name: "whitespace trimmed", typ: " consul ", expected: discovery.ProviderTypeConsul},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &DiscoveryConfig{Type: tt.typ}
+			assert.Equal(t, tt.expected, config.GetProviderType())
+		})
+	}
+}
+
+func TestDiscoveryConfig_ToProviderConfig(t *testing.T) {
+	t.Run("consul keeps address", func(t *testing.T) {
+		config := &DiscoveryConfig{Type: "consul", Address: "127.0.0.1:8500"}
+		providerConfig := config.ToProviderConfig()
+		assert.Equal(t, discovery.ProviderTypeConsul, providerConfig.Type)
+		assert.Equal(t, "127.0.0.1:8500", providerConfig.Address)
+	})
+
+	t.Run("etcd drops consul address and keeps endpoints", func(t *testing.T) {
+		config := &DiscoveryConfig{
+			Type:    "etcd",
+			Address: "127.0.0.1:8500", // Consul default should not leak into etcd
+			Etcd:    discovery.EtcdConfig{Endpoints: []string{"127.0.0.1:2379"}},
+		}
+		providerConfig := config.ToProviderConfig()
+		assert.Equal(t, discovery.ProviderTypeEtcd, providerConfig.Type)
+		assert.Empty(t, providerConfig.Address)
+		assert.Equal(t, []string{"127.0.0.1:2379"}, providerConfig.Etcd.Endpoints)
+	})
+
+	t.Run("kubernetes keeps kubernetes settings", func(t *testing.T) {
+		config := &DiscoveryConfig{
+			Type: "kubernetes",
+			Kubernetes: discovery.KubernetesConfig{
+				Mode:      discovery.KubernetesModeDNS,
+				Namespace: "prod",
+			},
+		}
+		providerConfig := config.ToProviderConfig()
+		assert.Equal(t, discovery.ProviderTypeKubernetes, providerConfig.Type)
+		assert.Equal(t, discovery.KubernetesModeDNS, providerConfig.Kubernetes.Mode)
+		assert.Equal(t, "prod", providerConfig.Kubernetes.Namespace)
+	})
+}
+
+func TestServerConfig_ValidateDiscoveryBackends(t *testing.T) {
+	baseConfig := func() *ServerConfig {
+		config := NewServerConfig()
+		config.ServiceName = "test-service"
+		config.Discovery.ServiceName = "test-service"
+		return config
+	}
+
+	t.Run("etcd without endpoints fails validation", func(t *testing.T) {
+		config := baseConfig()
+		config.Discovery.Type = "etcd"
+		err := config.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "discovery.etcd.endpoints is required")
+	})
+
+	t.Run("etcd with endpoints passes validation", func(t *testing.T) {
+		config := baseConfig()
+		config.Discovery.Type = "etcd"
+		config.Discovery.Etcd.Endpoints = []string{"127.0.0.1:2379"}
+		assert.NoError(t, config.Validate())
+	})
+
+	t.Run("kubernetes with invalid mode fails validation", func(t *testing.T) {
+		config := baseConfig()
+		config.Discovery.Type = "kubernetes"
+		config.Discovery.Kubernetes.Mode = "watch"
+		err := config.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "discovery.kubernetes.mode")
+	})
+
+	t.Run("kubernetes with dns mode passes validation", func(t *testing.T) {
+		config := baseConfig()
+		config.Discovery.Type = "kubernetes"
+		config.Discovery.Kubernetes.Mode = discovery.KubernetesModeDNS
+		assert.NoError(t, config.Validate())
+	})
+
+	t.Run("unsupported type fails validation", func(t *testing.T) {
+		config := baseConfig()
+		config.Discovery.Type = "zookeeper"
+		err := config.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "discovery.type must be one of")
+	})
+}
+
+func TestServiceInstanceFromRegistration(t *testing.T) {
+	registration := &ServiceRegistration{
+		ServiceName: "test-service",
+		ServiceID:   "test-service-1",
+		Address:     "10.0.0.1",
+		Port:        8080,
+		Tags:        []string{"v1", "http"},
+		Meta:        map[string]string{"protocol": "http"},
+	}
+
+	instance := serviceInstanceFromRegistration(registration)
+	assert.Equal(t, "test-service-1", instance.ID)
+	assert.Equal(t, "test-service", instance.Name)
+	assert.Equal(t, "10.0.0.1", instance.Address)
+	assert.Equal(t, 8080, instance.Port)
+	assert.Equal(t, []string{"v1", "http"}, instance.Tags)
+	assert.Equal(t, map[string]string{"protocol": "http"}, instance.Meta)
 }
 
 func TestDiscoveryFailureScenarios(t *testing.T) {

@@ -22,6 +22,7 @@
 package discovery
 
 import (
+	"fmt"
 	"sync"
 
 	"go.uber.org/zap"
@@ -33,6 +34,7 @@ import (
 // 提供统一的服务发现实例管理，支持配置化和单例模式
 type Manager struct {
 	instances map[string]*ServiceDiscovery
+	providers map[string]Provider
 	mu        sync.RWMutex
 }
 
@@ -46,10 +48,49 @@ func GetManager() *Manager {
 	managerOnce.Do(func() {
 		manager = &Manager{
 			instances: make(map[string]*ServiceDiscovery),
+			providers: make(map[string]Provider),
 		}
 		logger.GetLogger().Info("Service discovery manager initialized")
 	})
 	return manager
+}
+
+// GetProvider 根据配置获取（或创建并缓存）对应后端的服务发现 Provider
+func (m *Manager) GetProvider(config *ProviderConfig) (Provider, error) {
+	if config == nil {
+		return nil, fmt.Errorf("discovery provider config cannot be nil")
+	}
+
+	key := config.cacheKey()
+
+	m.mu.RLock()
+	if provider, exists := m.providers[key]; exists {
+		m.mu.RUnlock()
+		return provider, nil
+	}
+	m.mu.RUnlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 双重检查，避免并发创建
+	if provider, exists := m.providers[key]; exists {
+		return provider, nil
+	}
+
+	provider, err := NewProvider(config)
+	if err != nil {
+		logger.GetLogger().Error("Failed to create discovery provider",
+			zap.String("type", string(config.normalizedType())),
+			zap.Error(err))
+		return nil, err
+	}
+
+	m.providers[key] = provider
+	logger.GetLogger().Info("Discovery provider created",
+		zap.String("type", provider.Name()),
+		zap.String("cache_key", key))
+	return provider, nil
 }
 
 // GetServiceDiscovery 获取指定地址的服务发现实例
@@ -117,6 +158,16 @@ func (m *Manager) Close() {
 		delete(m.instances, address)
 	}
 
+	// 关闭所有 Provider
+	for key, provider := range m.providers {
+		if err := provider.Close(); err != nil {
+			logger.GetLogger().Warn("Failed to close discovery provider",
+				zap.String("cache_key", key),
+				zap.Error(err))
+		}
+		delete(m.providers, key)
+	}
+
 	if instanceCount > 0 {
 		logger.GetLogger().Info("All service discovery instances closed")
 	}
@@ -132,4 +183,9 @@ func GetServiceDiscoveryByAddress(address string) (*ServiceDiscovery, error) {
 // GetDefaultServiceDiscovery 获取默认的服务发现实例
 func GetDefaultServiceDiscovery() (*ServiceDiscovery, error) {
 	return GetManager().GetDefaultServiceDiscovery()
+}
+
+// GetProviderByConfig 根据配置获取服务发现 Provider（带缓存）
+func GetProviderByConfig(config *ProviderConfig) (Provider, error) {
+	return GetManager().GetProvider(config)
 }

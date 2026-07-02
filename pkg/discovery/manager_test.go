@@ -317,3 +317,92 @@ func resetManagerSingleton() {
 	manager = nil
 	managerOnce = sync.Once{}
 }
+
+func TestManager_GetProvider(t *testing.T) {
+	resetManagerSingleton()
+	m := GetManager()
+
+	t.Run("nil config returns error", func(t *testing.T) {
+		provider, err := m.GetProvider(nil)
+		assert.Error(t, err)
+		assert.Nil(t, provider)
+	})
+
+	t.Run("consul provider is created and cached", func(t *testing.T) {
+		config := &ProviderConfig{Address: "127.0.0.1:8500"}
+
+		p1, err := m.GetProvider(config)
+		require.NoError(t, err)
+		require.NotNil(t, p1)
+		assert.Equal(t, "consul", p1.Name())
+
+		p2, err := m.GetProvider(config)
+		require.NoError(t, err)
+		assert.Same(t, p1, p2, "同一配置应返回缓存的 Provider")
+	})
+
+	t.Run("different backends are cached separately", func(t *testing.T) {
+		consul, err := m.GetProvider(&ProviderConfig{Address: "127.0.0.1:8500"})
+		require.NoError(t, err)
+
+		etcd, err := m.GetProvider(&ProviderConfig{
+			Type: ProviderTypeEtcd,
+			Etcd: EtcdConfig{Endpoints: []string{"127.0.0.1:2379"}},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "etcd", etcd.Name())
+		assert.NotSame(t, consul, etcd)
+
+		k8s, err := m.GetProvider(&ProviderConfig{
+			Type:       ProviderTypeKubernetes,
+			Kubernetes: KubernetesConfig{Mode: KubernetesModeDNS},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "kubernetes", k8s.Name())
+	})
+
+	t.Run("unsupported type returns error", func(t *testing.T) {
+		provider, err := m.GetProvider(&ProviderConfig{Type: "zookeeper"})
+		assert.Error(t, err)
+		assert.Nil(t, provider)
+	})
+
+	t.Run("concurrent access returns same instance", func(t *testing.T) {
+		resetManagerSingleton()
+		cm := GetManager()
+		config := &ProviderConfig{Address: "127.0.0.1:8500"}
+
+		var wg sync.WaitGroup
+		providers := make([]Provider, 50)
+		for i := 0; i < 50; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				p, err := cm.GetProvider(config)
+				require.NoError(t, err)
+				providers[idx] = p
+			}(i)
+		}
+		wg.Wait()
+
+		for i := 1; i < 50; i++ {
+			assert.Same(t, providers[0], providers[i])
+		}
+	})
+
+	// Close should clear cached providers
+	GetManager().Close()
+
+	resetManagerSingleton()
+	m2 := GetManager()
+	assert.Empty(t, m2.providers)
+}
+
+func TestGetProviderByConfig(t *testing.T) {
+	resetManagerSingleton()
+
+	provider, err := GetProviderByConfig(&ProviderConfig{Address: "127.0.0.1:8500"})
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+	assert.Equal(t, "consul", provider.Name())
+}
