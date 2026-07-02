@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/pkg/messaging"
-	msgtest "github.com/innovationmech/swit/pkg/messaging/testutil"
+	"github.com/innovationmech/swit/pkg/testing/msgtest"
 	"github.com/stretchr/testify/mock"
 )
 

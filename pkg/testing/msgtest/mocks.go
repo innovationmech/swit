@@ -19,16 +19,7 @@
 // THE SOFTWARE.
 //
 
-// Package testutil provides comprehensive test utilities and mock implementations
-// for the messaging system, enabling effective unit testing and integration testing
-// of messaging components within the SWIT framework.
-//
-// Deprecated: the mock and helper portions of this package have been superseded
-// by github.com/innovationmech/swit/pkg/testing/msgtest, which provides
-// interface-compliant mocks verified with compile-time assertions. New tests
-// should use pkg/testing/msgtest instead. The compose sub-package (Docker-based
-// integration harness) remains supported.
-package testutil
+package msgtest
 
 import (
 	"context"
@@ -39,12 +30,24 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockMessageBroker provides a comprehensive mock implementation of the MessageBroker interface
-// for testing messaging system components.
+// Compile-time interface compliance checks. These guarantee the mocks cannot
+// drift from the messaging interfaces they simulate.
+var (
+	_ messaging.MessageBroker        = (*MockMessageBroker)(nil)
+	_ messaging.MessageBrokerFactory = (*MockBrokerFactory)(nil)
+	_ messaging.EventPublisher       = (*MockEventPublisher)(nil)
+	_ messaging.EventSubscriber      = (*MockEventSubscriber)(nil)
+	_ messaging.MessageHandler       = (*MockMessageHandler)(nil)
+	_ messaging.Middleware           = (*MockMiddleware)(nil)
+	_ messaging.Transaction          = (*MockTransaction)(nil)
+)
+
+// MockMessageBroker provides a testify/mock based implementation of the
+// messaging.MessageBroker interface with additional state tracking helpers.
 type MockMessageBroker struct {
 	mock.Mock
-	connected    bool
 	mu           sync.RWMutex
+	connected    bool
 	publishers   []messaging.EventPublisher
 	subscribers  []messaging.EventSubscriber
 	metrics      *messaging.BrokerMetrics
@@ -54,7 +57,6 @@ type MockMessageBroker struct {
 // NewMockMessageBroker creates a new mock message broker instance.
 func NewMockMessageBroker() *MockMessageBroker {
 	return &MockMessageBroker{
-		connected:   false,
 		publishers:  make([]messaging.EventPublisher, 0),
 		subscribers: make([]messaging.EventSubscriber, 0),
 		metrics: &messaging.BrokerMetrics{
@@ -76,9 +78,7 @@ func NewMockMessageBroker() *MockMessageBroker {
 func (m *MockMessageBroker) Connect(ctx context.Context) error {
 	args := m.Called(ctx)
 	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.connected = true
-		m.mu.Unlock()
+		m.SetConnected(true)
 	}
 	return args.Error(0)
 }
@@ -87,9 +87,7 @@ func (m *MockMessageBroker) Connect(ctx context.Context) error {
 func (m *MockMessageBroker) Disconnect(ctx context.Context) error {
 	args := m.Called(ctx)
 	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.connected = false
-		m.mu.Unlock()
+		m.SetConnected(false)
 	}
 	return args.Error(0)
 }
@@ -98,9 +96,7 @@ func (m *MockMessageBroker) Disconnect(ctx context.Context) error {
 func (m *MockMessageBroker) Close() error {
 	args := m.Called()
 	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.connected = false
-		m.mu.Unlock()
+		m.SetConnected(false)
 	}
 	return args.Error(0)
 }
@@ -147,14 +143,14 @@ func (m *MockMessageBroker) HealthCheck(ctx context.Context) (*messaging.HealthS
 	return nil, args.Error(1)
 }
 
-// GetMetrics returns mock broker metrics.
+// GetMetrics returns mock broker metrics without requiring an expectation.
 func (m *MockMessageBroker) GetMetrics() *messaging.BrokerMetrics {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.metrics
 }
 
-// GetCapabilities returns mock broker capabilities.
+// GetCapabilities returns mock broker capabilities without requiring an expectation.
 func (m *MockMessageBroker) GetCapabilities() *messaging.BrokerCapabilities {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -186,319 +182,12 @@ func (m *MockMessageBroker) GetSubscribers() []messaging.EventSubscriber {
 	return result
 }
 
-// MockEventPublisher provides a mock implementation of the EventPublisher interface.
-type MockEventPublisher struct {
-	mock.Mock
-	publishedMessages []messaging.Message
-	mu                sync.RWMutex
-}
-
-// NewMockEventPublisher creates a new mock event publisher.
-func NewMockEventPublisher() *MockEventPublisher {
-	return &MockEventPublisher{
-		publishedMessages: make([]messaging.Message, 0),
-	}
-}
-
-// Publish mocks message publishing.
-func (m *MockEventPublisher) Publish(ctx context.Context, message messaging.Message) error {
-	args := m.Called(ctx, message)
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.publishedMessages = append(m.publishedMessages, message)
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// PublishBatch mocks batch message publishing.
-func (m *MockEventPublisher) PublishBatch(ctx context.Context, messages []messaging.Message) error {
-	args := m.Called(ctx, messages)
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.publishedMessages = append(m.publishedMessages, messages...)
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// PublishAsync mocks asynchronous message publishing.
-func (m *MockEventPublisher) PublishAsync(ctx context.Context, message messaging.Message) (<-chan error, error) {
-	args := m.Called(ctx, message)
-	if args.Error(1) == nil {
-		m.mu.Lock()
-		m.publishedMessages = append(m.publishedMessages, message)
-		m.mu.Unlock()
-	}
-
-	if ch := args.Get(0); ch != nil {
-		return ch.(<-chan error), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-// Close mocks publisher close operation.
-func (m *MockEventPublisher) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-// GetPublishedMessages returns all messages published through this mock.
-func (m *MockEventPublisher) GetPublishedMessages() []messaging.Message {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	result := make([]messaging.Message, len(m.publishedMessages))
-	copy(result, m.publishedMessages)
-	return result
-}
-
-// ClearPublishedMessages clears the published messages list for testing.
-func (m *MockEventPublisher) ClearPublishedMessages() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.publishedMessages = m.publishedMessages[:0]
-}
-
-// MockEventSubscriber provides a mock implementation of the EventSubscriber interface.
-type MockEventSubscriber struct {
-	mock.Mock
-	handlers     []messaging.MessageHandler
-	mu           sync.RWMutex
-	subscribing  bool
-	messageCount int64
-}
-
-// NewMockEventSubscriber creates a new mock event subscriber.
-func NewMockEventSubscriber() *MockEventSubscriber {
-	return &MockEventSubscriber{
-		handlers:    make([]messaging.MessageHandler, 0),
-		subscribing: false,
-	}
-}
-
-// Subscribe mocks subscription to messages.
-func (m *MockEventSubscriber) Subscribe(ctx context.Context, handler messaging.MessageHandler) error {
-	args := m.Called(ctx, handler)
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.handlers = append(m.handlers, handler)
-		m.subscribing = true
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// Unsubscribe mocks unsubscription from messages.
-func (m *MockEventSubscriber) Unsubscribe(ctx context.Context) error {
-	args := m.Called(ctx)
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.subscribing = false
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// Close mocks subscriber close operation.
-func (m *MockEventSubscriber) Close() error {
-	args := m.Called()
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.subscribing = false
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// IsSubscribed returns the mock subscription status.
-func (m *MockEventSubscriber) IsSubscribed() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.subscribing
-}
-
-// SimulateMessage simulates receiving a message for testing.
-func (m *MockEventSubscriber) SimulateMessage(ctx context.Context, message messaging.Message) error {
-	m.mu.RLock()
-	handlers := make([]messaging.MessageHandler, len(m.handlers))
-	copy(handlers, m.handlers)
-	m.mu.RUnlock()
-
-	for _, handler := range handlers {
-		if err := handler.Handle(ctx, &message); err != nil {
-			return fmt.Errorf("handler failed: %w", err)
-		}
-	}
-
-	m.mu.Lock()
-	m.messageCount++
-	m.mu.Unlock()
-
-	return nil
-}
-
-// GetHandlers returns all registered message handlers.
-func (m *MockEventSubscriber) GetHandlers() []messaging.MessageHandler {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	result := make([]messaging.MessageHandler, len(m.handlers))
-	copy(result, m.handlers)
-	return result
-}
-
-// GetMessageCount returns the number of messages processed.
-func (m *MockEventSubscriber) GetMessageCount() int64 {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.messageCount
-}
-
-// MockMessageHandler provides a mock implementation of the MessageHandler interface.
-type MockMessageHandler struct {
-	mock.Mock
-	handledMessages []messaging.Message
-	mu              sync.RWMutex
-}
-
-// NewMockMessageHandler creates a new mock message handler.
-func NewMockMessageHandler() *MockMessageHandler {
-	return &MockMessageHandler{
-		handledMessages: make([]messaging.Message, 0),
-	}
-}
-
-// Handle mocks message handling.
-func (m *MockMessageHandler) Handle(ctx context.Context, message *messaging.Message) error {
-	args := m.Called(ctx, message)
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.handledMessages = append(m.handledMessages, *message)
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// OnError mocks error handling.
-func (m *MockMessageHandler) OnError(ctx context.Context, message *messaging.Message, err error) messaging.ErrorAction {
-	args := m.Called(ctx, message, err)
-	if action := args.Get(0); action != nil {
-		return action.(messaging.ErrorAction)
-	}
-	return messaging.ErrorActionRetry
-}
-
-// GetHandledMessages returns all messages handled by this mock.
-func (m *MockMessageHandler) GetHandledMessages() []messaging.Message {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	result := make([]messaging.Message, len(m.handledMessages))
-	copy(result, m.handledMessages)
-	return result
-}
-
-// ClearHandledMessages clears the handled messages list for testing.
-func (m *MockMessageHandler) ClearHandledMessages() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.handledMessages = m.handledMessages[:0]
-}
-
-// MockMiddleware provides a mock implementation of middleware for testing.
-type MockMiddleware struct {
-	mock.Mock
-	name string
-}
-
-// NewMockMiddleware creates a new mock middleware.
-func NewMockMiddleware() *MockMiddleware {
-	return &MockMiddleware{
-		name: "mock-middleware",
-	}
-}
-
-// Name returns the middleware name.
-func (m *MockMiddleware) Name() string {
-	args := m.Called()
-	if name := args.String(0); name != "" {
-		return name
-	}
-	return m.name
-}
-
-// Wrap wraps a handler with middleware logic.
-func (m *MockMiddleware) Wrap(next messaging.MessageHandler) messaging.MessageHandler {
-	args := m.Called(next)
-	if handler := args.Get(0); handler != nil {
-		return handler.(messaging.MessageHandler)
-	}
-	return next
-}
-
-// SetName sets the middleware name for testing.
-func (m *MockMiddleware) SetName(name string) {
-	m.name = name
-}
-
-// MockTransaction provides a mock implementation of the Transaction interface.
-type MockTransaction struct {
-	mock.Mock
-	committed bool
-	aborted   bool
-	mu        sync.RWMutex
-}
-
-// NewMockTransaction creates a new mock transaction.
-func NewMockTransaction() *MockTransaction {
-	return &MockTransaction{}
-}
-
-// Publish mocks transaction publish.
-func (m *MockTransaction) Publish(ctx context.Context, message *messaging.Message) error {
-	args := m.Called(ctx, message)
-	return args.Error(0)
-}
-
-// Commit mocks transaction commit.
-func (m *MockTransaction) Commit(ctx context.Context) error {
-	args := m.Called(ctx)
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.committed = true
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// Rollback mocks transaction rollback.
-func (m *MockTransaction) Rollback(ctx context.Context) error {
-	args := m.Called(ctx)
-	if args.Error(0) == nil {
-		m.mu.Lock()
-		m.aborted = true
-		m.mu.Unlock()
-	}
-	return args.Error(0)
-}
-
-// IsCommitted returns whether the transaction was committed.
-func (m *MockTransaction) IsCommitted() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.committed
-}
-
-// IsAborted returns whether the transaction was aborted.
-func (m *MockTransaction) IsAborted() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.aborted
-}
-
-// MockBrokerFactory provides a mock implementation of the MessageBrokerFactory interface.
+// MockBrokerFactory provides a mock implementation of the
+// messaging.MessageBrokerFactory interface.
 type MockBrokerFactory struct {
 	mock.Mock
-	createdBrokers []messaging.MessageBroker
 	mu             sync.RWMutex
+	createdBrokers []messaging.MessageBroker
 }
 
 // NewMockBrokerFactory creates a new mock broker factory.
@@ -543,4 +232,439 @@ func (m *MockBrokerFactory) GetCreatedBrokers() []messaging.MessageBroker {
 	result := make([]messaging.MessageBroker, len(m.createdBrokers))
 	copy(result, m.createdBrokers)
 	return result
+}
+
+// MockEventPublisher provides a mock implementation of the
+// messaging.EventPublisher interface that records published messages.
+type MockEventPublisher struct {
+	mock.Mock
+	mu                sync.RWMutex
+	publishedMessages []*messaging.Message
+	metrics           *messaging.PublisherMetrics
+}
+
+// NewMockEventPublisher creates a new mock event publisher.
+func NewMockEventPublisher() *MockEventPublisher {
+	return &MockEventPublisher{
+		publishedMessages: make([]*messaging.Message, 0),
+		metrics:           &messaging.PublisherMetrics{},
+	}
+}
+
+// Publish mocks synchronous message publishing.
+func (m *MockEventPublisher) Publish(ctx context.Context, message *messaging.Message) error {
+	args := m.Called(ctx, message)
+	if args.Error(0) == nil {
+		m.recordMessages(message)
+	}
+	return args.Error(0)
+}
+
+// PublishBatch mocks batch message publishing.
+func (m *MockEventPublisher) PublishBatch(ctx context.Context, messages []*messaging.Message) error {
+	args := m.Called(ctx, messages)
+	if args.Error(0) == nil {
+		m.recordMessages(messages...)
+	}
+	return args.Error(0)
+}
+
+// PublishWithConfirm mocks confirmed publishing.
+func (m *MockEventPublisher) PublishWithConfirm(ctx context.Context, message *messaging.Message) (*messaging.PublishConfirmation, error) {
+	args := m.Called(ctx, message)
+	if args.Error(1) == nil {
+		m.recordMessages(message)
+	}
+	if confirmation := args.Get(0); confirmation != nil {
+		return confirmation.(*messaging.PublishConfirmation), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+// PublishAsync mocks asynchronous publishing with callback notification.
+// When the configured expectation returns nil, the callback is invoked
+// synchronously with a successful confirmation for the message.
+func (m *MockEventPublisher) PublishAsync(ctx context.Context, message *messaging.Message, callback messaging.PublishCallback) error {
+	args := m.Called(ctx, message, callback)
+	if args.Error(0) == nil {
+		m.recordMessages(message)
+		if callback != nil {
+			callback(&messaging.PublishConfirmation{MessageID: message.ID}, nil)
+		}
+	}
+	return args.Error(0)
+}
+
+// BeginTransaction mocks transaction creation.
+func (m *MockEventPublisher) BeginTransaction(ctx context.Context) (messaging.Transaction, error) {
+	args := m.Called(ctx)
+	if tx := args.Get(0); tx != nil {
+		return tx.(messaging.Transaction), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+// Flush mocks flushing of pending messages.
+func (m *MockEventPublisher) Flush(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+// Close mocks publisher close operation.
+func (m *MockEventPublisher) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// GetMetrics returns mock publisher metrics without requiring an expectation.
+func (m *MockEventPublisher) GetMetrics() *messaging.PublisherMetrics {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.metrics
+}
+
+// GetPublishedMessages returns all messages published through this mock.
+func (m *MockEventPublisher) GetPublishedMessages() []*messaging.Message {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]*messaging.Message, len(m.publishedMessages))
+	copy(result, m.publishedMessages)
+	return result
+}
+
+// ClearPublishedMessages clears the published messages list for testing.
+func (m *MockEventPublisher) ClearPublishedMessages() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.publishedMessages = m.publishedMessages[:0]
+}
+
+func (m *MockEventPublisher) recordMessages(messages ...*messaging.Message) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.publishedMessages = append(m.publishedMessages, messages...)
+}
+
+// MockEventSubscriber provides a mock implementation of the
+// messaging.EventSubscriber interface with message simulation support.
+type MockEventSubscriber struct {
+	mock.Mock
+	mu           sync.RWMutex
+	handlers     []messaging.MessageHandler
+	subscribing  bool
+	paused       bool
+	messageCount int64
+	metrics      *messaging.SubscriberMetrics
+}
+
+// NewMockEventSubscriber creates a new mock event subscriber.
+func NewMockEventSubscriber() *MockEventSubscriber {
+	return &MockEventSubscriber{
+		handlers: make([]messaging.MessageHandler, 0),
+		metrics:  &messaging.SubscriberMetrics{},
+	}
+}
+
+// Subscribe mocks subscription to messages.
+func (m *MockEventSubscriber) Subscribe(ctx context.Context, handler messaging.MessageHandler) error {
+	args := m.Called(ctx, handler)
+	if args.Error(0) == nil {
+		m.registerHandler(handler)
+	}
+	return args.Error(0)
+}
+
+// SubscribeWithMiddleware mocks subscription with a middleware chain.
+// The middleware chain is applied to the handler before registration so
+// simulated messages flow through the full pipeline.
+func (m *MockEventSubscriber) SubscribeWithMiddleware(ctx context.Context, handler messaging.MessageHandler, middleware ...messaging.Middleware) error {
+	args := m.Called(ctx, handler, middleware)
+	if args.Error(0) == nil {
+		wrapped := handler
+		for i := len(middleware) - 1; i >= 0; i-- {
+			wrapped = middleware[i].Wrap(wrapped)
+		}
+		m.registerHandler(wrapped)
+	}
+	return args.Error(0)
+}
+
+// Unsubscribe mocks unsubscription from messages.
+func (m *MockEventSubscriber) Unsubscribe(ctx context.Context) error {
+	args := m.Called(ctx)
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.subscribing = false
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// Pause mocks pausing message consumption.
+func (m *MockEventSubscriber) Pause(ctx context.Context) error {
+	args := m.Called(ctx)
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.paused = true
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// Resume mocks resuming message consumption.
+func (m *MockEventSubscriber) Resume(ctx context.Context) error {
+	args := m.Called(ctx)
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.paused = false
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// Seek mocks seeking to a stream position.
+func (m *MockEventSubscriber) Seek(ctx context.Context, position messaging.SeekPosition) error {
+	args := m.Called(ctx, position)
+	return args.Error(0)
+}
+
+// GetLag mocks consumer lag retrieval.
+func (m *MockEventSubscriber) GetLag(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+// Close mocks subscriber close operation.
+func (m *MockEventSubscriber) Close() error {
+	args := m.Called()
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.subscribing = false
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// GetMetrics returns mock subscriber metrics without requiring an expectation.
+func (m *MockEventSubscriber) GetMetrics() *messaging.SubscriberMetrics {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.metrics
+}
+
+// IsSubscribed returns the mock subscription status.
+func (m *MockEventSubscriber) IsSubscribed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.subscribing
+}
+
+// IsPaused returns the mock pause status.
+func (m *MockEventSubscriber) IsPaused() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.paused
+}
+
+// SimulateMessage simulates receiving a message, dispatching it to all
+// registered handlers. It returns the first handler error, if any.
+func (m *MockEventSubscriber) SimulateMessage(ctx context.Context, message *messaging.Message) error {
+	m.mu.RLock()
+	handlers := make([]messaging.MessageHandler, len(m.handlers))
+	copy(handlers, m.handlers)
+	m.mu.RUnlock()
+
+	for _, handler := range handlers {
+		if err := handler.Handle(ctx, message); err != nil {
+			return fmt.Errorf("handler failed: %w", err)
+		}
+	}
+
+	m.mu.Lock()
+	m.messageCount++
+	m.mu.Unlock()
+
+	return nil
+}
+
+// GetHandlers returns all registered message handlers.
+func (m *MockEventSubscriber) GetHandlers() []messaging.MessageHandler {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]messaging.MessageHandler, len(m.handlers))
+	copy(result, m.handlers)
+	return result
+}
+
+// GetMessageCount returns the number of simulated messages processed.
+func (m *MockEventSubscriber) GetMessageCount() int64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.messageCount
+}
+
+func (m *MockEventSubscriber) registerHandler(handler messaging.MessageHandler) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.handlers = append(m.handlers, handler)
+	m.subscribing = true
+}
+
+// MockMessageHandler provides a mock implementation of the
+// messaging.MessageHandler interface that records handled messages.
+type MockMessageHandler struct {
+	mock.Mock
+	mu              sync.RWMutex
+	handledMessages []*messaging.Message
+}
+
+// NewMockMessageHandler creates a new mock message handler.
+func NewMockMessageHandler() *MockMessageHandler {
+	return &MockMessageHandler{
+		handledMessages: make([]*messaging.Message, 0),
+	}
+}
+
+// Handle mocks message handling.
+func (m *MockMessageHandler) Handle(ctx context.Context, message *messaging.Message) error {
+	args := m.Called(ctx, message)
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.handledMessages = append(m.handledMessages, message)
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// OnError mocks error handling.
+func (m *MockMessageHandler) OnError(ctx context.Context, message *messaging.Message, err error) messaging.ErrorAction {
+	args := m.Called(ctx, message, err)
+	if action := args.Get(0); action != nil {
+		return action.(messaging.ErrorAction)
+	}
+	return messaging.ErrorActionRetry
+}
+
+// GetHandledMessages returns all messages handled by this mock.
+func (m *MockMessageHandler) GetHandledMessages() []*messaging.Message {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]*messaging.Message, len(m.handledMessages))
+	copy(result, m.handledMessages)
+	return result
+}
+
+// ClearHandledMessages clears the handled messages list for testing.
+func (m *MockMessageHandler) ClearHandledMessages() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.handledMessages = m.handledMessages[:0]
+}
+
+// MockMiddleware provides a mock implementation of the messaging.Middleware
+// interface.
+type MockMiddleware struct {
+	mock.Mock
+	name string
+}
+
+// NewMockMiddleware creates a new mock middleware.
+func NewMockMiddleware() *MockMiddleware {
+	return &MockMiddleware{
+		name: "mock-middleware",
+	}
+}
+
+// Name returns the middleware name.
+func (m *MockMiddleware) Name() string {
+	args := m.Called()
+	if name := args.String(0); name != "" {
+		return name
+	}
+	return m.name
+}
+
+// Wrap wraps a handler with middleware logic.
+func (m *MockMiddleware) Wrap(next messaging.MessageHandler) messaging.MessageHandler {
+	args := m.Called(next)
+	if handler := args.Get(0); handler != nil {
+		return handler.(messaging.MessageHandler)
+	}
+	return next
+}
+
+// SetName sets the middleware name for testing.
+func (m *MockMiddleware) SetName(name string) {
+	m.name = name
+}
+
+// MockTransaction provides a mock implementation of the
+// messaging.Transaction interface.
+type MockTransaction struct {
+	mock.Mock
+	mu        sync.RWMutex
+	id        string
+	committed bool
+	aborted   bool
+}
+
+// NewMockTransaction creates a new mock transaction.
+func NewMockTransaction() *MockTransaction {
+	return &MockTransaction{id: "mock-transaction"}
+}
+
+// Publish mocks transaction publish.
+func (m *MockTransaction) Publish(ctx context.Context, message *messaging.Message) error {
+	args := m.Called(ctx, message)
+	return args.Error(0)
+}
+
+// Commit mocks transaction commit.
+func (m *MockTransaction) Commit(ctx context.Context) error {
+	args := m.Called(ctx)
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.committed = true
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// Rollback mocks transaction rollback.
+func (m *MockTransaction) Rollback(ctx context.Context) error {
+	args := m.Called(ctx)
+	if args.Error(0) == nil {
+		m.mu.Lock()
+		m.aborted = true
+		m.mu.Unlock()
+	}
+	return args.Error(0)
+}
+
+// GetID returns the mock transaction identifier without requiring an expectation.
+func (m *MockTransaction) GetID() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.id
+}
+
+// SetID sets the transaction identifier for testing.
+func (m *MockTransaction) SetID(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.id = id
+}
+
+// IsCommitted returns whether the transaction was committed.
+func (m *MockTransaction) IsCommitted() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.committed
+}
+
+// IsAborted returns whether the transaction was rolled back.
+func (m *MockTransaction) IsAborted() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.aborted
 }
