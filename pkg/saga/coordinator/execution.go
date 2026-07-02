@@ -88,9 +88,12 @@ func (se *stepExecutor) executeSteps(ctx context.Context) error {
 		defer sagaTimeoutCancel()
 	}
 
-	// Update state to Running
+	// Update state to Running. Persistence failures are logged but do not
+	// abort execution: the in-memory instance carries the authoritative
+	// runtime state and storage may be temporarily unavailable (for example
+	// during a network partition).
 	if err := se.updateSagaState(ctx, saga.StateRunning); err != nil {
-		return fmt.Errorf("failed to update Saga state to Running: %w", err)
+		logger.GetSugaredLogger().Warnf("Failed to update state to Running: %v", err)
 	}
 
 	// Track step states for this execution

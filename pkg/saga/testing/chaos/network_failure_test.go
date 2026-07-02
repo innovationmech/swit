@@ -302,6 +302,9 @@ func TestNetworkPartition_ConcurrentSagas(t *testing.T) {
 		}
 	}
 
+	// 禁用故障注入模拟网络恢复，验证阶段的存储查询不应再受故障影响
+	injector.Disable()
+
 	// 等待所有 Saga 完成
 	time.Sleep(1 * time.Second)
 

@@ -1153,6 +1153,57 @@ func TestOrchestratorCoordinatorGetActiveSagas(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("stale storage state is overridden by live terminal instance", func(t *testing.T) {
+		// Storage still reports the Saga as running (e.g. the final persist
+		// failed during a network partition), but the live in-memory
+		// instance already completed. The stale entry must be filtered out.
+		staleStored := newRunningInstance("saga-live", 2, 2)
+		config := newTestConfig()
+		config.StateStorage = &mockStateStorage{
+			activeSagas: []saga.SagaInstance{staleStored},
+		}
+		coord, _ := NewOrchestratorCoordinator(config)
+
+		liveInstance := newRunningInstance("saga-live", 2, 2)
+		liveInstance.state = saga.StateCompleted
+		coord.instances.Store(liveInstance.id, liveInstance)
+
+		sagas, err := coord.GetActiveSagas(nil)
+		if err != nil {
+			t.Fatalf("GetActiveSagas() unexpected error = %v", err)
+		}
+		if len(sagas) != 0 {
+			t.Errorf("GetActiveSagas() returned %d sagas, expected 0 (live instance is terminal)", len(sagas))
+		}
+	})
+
+	t.Run("live active instance is preferred over storage copy", func(t *testing.T) {
+		staleStored := newRunningInstance("saga-live", 2, 0)
+		config := newTestConfig()
+		config.StateStorage = &mockStateStorage{
+			activeSagas: []saga.SagaInstance{staleStored},
+		}
+		coord, _ := NewOrchestratorCoordinator(config)
+
+		liveInstance := newRunningInstance("saga-live", 2, 1)
+		liveInstance.state = saga.StateCompensating
+		coord.instances.Store(liveInstance.id, liveInstance)
+
+		sagas, err := coord.GetActiveSagas(nil)
+		if err != nil {
+			t.Fatalf("GetActiveSagas() unexpected error = %v", err)
+		}
+		if len(sagas) != 1 {
+			t.Fatalf("GetActiveSagas() returned %d sagas, expected 1", len(sagas))
+		}
+		if sagas[0] != saga.SagaInstance(liveInstance) {
+			t.Error("GetActiveSagas() should return the live in-memory instance")
+		}
+		if sagas[0].GetState() != saga.StateCompensating {
+			t.Errorf("GetActiveSagas() state = %v, expected Compensating", sagas[0].GetState())
+		}
+	})
 }
 
 func TestBuildActiveSagaFilter(t *testing.T) {

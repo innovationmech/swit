@@ -353,6 +353,67 @@ func TestCompensationExecutor_ExecuteCompensation_Success(t *testing.T) {
 	}
 }
 
+// TestCompensationExecutor_StatePersistFailureDoesNotAbort verifies that a
+// failure to persist the Compensating state (for example during a network
+// partition) does not abort compensation: the steps must still be compensated
+// and the Saga must reach a terminal state.
+func TestCompensationExecutor_StatePersistFailureDoesNotAbort(t *testing.T) {
+	storage := newMockStateStorage()
+	storage.updateSagaStateErr = errors.New("storage unavailable")
+	publisher := newMockEventPublisher()
+	collector := &noOpMetricsCollector{}
+
+	coordinator := &OrchestratorCoordinator{
+		stateStorage:     storage,
+		eventPublisher:   publisher,
+		retryPolicy:      saga.NewExponentialBackoffRetryPolicy(3, time.Second, 10*time.Second),
+		metricsCollector: collector,
+		tracingManager:   &noOpTracingManager{},
+		metrics:          &saga.CoordinatorMetrics{},
+	}
+
+	step1 := &mockCompensationStep{id: "step1", name: "Step 1"}
+	step2 := &mockCompensationStep{id: "step2", name: "Step 2"}
+	completedSteps := []saga.SagaStep{step1, step2}
+
+	definition := &mockCompensationDefinition{
+		id:                   "test-saga",
+		name:                 "Test Saga",
+		steps:                completedSteps,
+		compensationStrategy: saga.NewSequentialCompensationStrategy(30 * time.Second),
+	}
+
+	now := time.Now()
+	instance := &OrchestratorSagaInstance{
+		id:           "saga-persist-fail",
+		definitionID: "test-saga",
+		state:        saga.StateFailed,
+		startedAt:    &now,
+		sagaError: &saga.SagaError{
+			Code:    "TEST_ERROR",
+			Message: "test error",
+			Type:    saga.ErrorTypeService,
+		},
+	}
+
+	executor := newCompensationExecutor(coordinator, instance, definition)
+
+	if err := executor.executeCompensation(context.Background(), completedSteps); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if !step1.WasCompensationCalled() || !step2.WasCompensationCalled() {
+		t.Error("All steps should be compensated despite state persist failure")
+	}
+
+	if !instance.state.IsTerminal() {
+		t.Errorf("Expected terminal state after compensation, got: %v", instance.state)
+	}
+	if instance.state != saga.StateCompensated {
+		t.Errorf("Expected state Compensated, got: %v", instance.state)
+	}
+}
+
 // TestCompensationExecutor_CompensationFailure tests compensation failure handling
 func TestCompensationExecutor_CompensationFailure(t *testing.T) {
 	storage := newMockStateStorage()

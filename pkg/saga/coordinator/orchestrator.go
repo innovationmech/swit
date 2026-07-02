@@ -751,7 +751,34 @@ func (oc *OrchestratorCoordinator) GetActiveSagas(filter *saga.SagaFilter) ([]sa
 	if err != nil {
 		return nil, saga.NewStorageError("GetActiveSagas", err)
 	}
-	return instances, nil
+
+	// Storage may lag behind the live runtime state when persistence fails
+	// (for example during a network partition). Prefer the in-memory
+	// instance when available and re-check it against the active state
+	// filter so callers observe the authoritative state.
+	result := make([]saga.SagaInstance, 0, len(instances))
+	for _, instance := range instances {
+		live, ok := oc.instances.Load(instance.GetID())
+		if !ok {
+			result = append(result, instance)
+			continue
+		}
+		liveInstance := live.(saga.SagaInstance)
+		if stateInSet(liveInstance.GetState(), effectiveFilter.States) {
+			result = append(result, liveInstance)
+		}
+	}
+	return result, nil
+}
+
+// stateInSet reports whether the given state is contained in the set of states.
+func stateInSet(state saga.SagaState, states []saga.SagaState) bool {
+	for _, s := range states {
+		if s == state {
+			return true
+		}
+	}
+	return false
 }
 
 // buildActiveSagaFilter returns a filter constrained to active Saga states.
