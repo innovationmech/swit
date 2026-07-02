@@ -69,8 +69,6 @@ allow = true if {
 }
 
 // TestEmbeddedClientEvaluate tests embedded client evaluation
-// Note: This test is simplified to validate basic client functionality
-// Full policy evaluation testing will be added in future iterations
 func TestEmbeddedClientEvaluate(t *testing.T) {
 	// 创建临时目录
 	tempDir := t.TempDir()
@@ -108,20 +106,35 @@ allow = true if {
 	}
 	defer client.Close(ctx)
 
-	// 简单验证客户端已创建并可评估（即使结果未完全匹配）
-	_, err = client.Evaluate(ctx, "", map[string]interface{}{
+	// 满足所有条件的输入应被允许
+	result, err := client.Evaluate(ctx, "", map[string]interface{}{
 		"user":   "alice",
 		"action": "read",
 	})
-
-	// TODO: 修复 OPA 查询变量绑定问题后启用完整断言
 	if err != nil {
-		t.Logf("Policy evaluation returned error (expected during initial implementation): %v", err)
+		t.Fatalf("Failed to evaluate policy: %v", err)
+	}
+	if !result.Allowed {
+		t.Errorf("Expected policy to allow alice/read, got decision: %+v", result.Decision)
+	}
+	if allowed, ok := result.Decision.(bool); !ok || !allowed {
+		t.Errorf("Expected decision to be true, got: %+v", result.Decision)
+	}
+
+	// 不满足条件的输入应被拒绝（命中 default allow = false）
+	result, err = client.Evaluate(ctx, "", map[string]interface{}{
+		"user":   "bob",
+		"action": "read",
+	})
+	if err != nil {
+		t.Fatalf("Failed to evaluate policy: %v", err)
+	}
+	if result.Allowed {
+		t.Errorf("Expected policy to deny bob/read, got decision: %+v", result.Decision)
 	}
 }
 
 // TestEmbeddedClientLoadPolicy tests dynamic policy loading
-// Note: Simplified to validate API functionality
 func TestEmbeddedClientLoadPolicy(t *testing.T) {
 	config := &Config{
 		Mode: ModeEmbedded,
@@ -154,14 +167,26 @@ allow = true if {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
 
-	// 验证策略已加载（即使评估可能失败）
-	_, err = client.Evaluate(ctx, "dynamic/allow", map[string]interface{}{
+	// 验证策略已加载：admin 角色应被允许
+	result, err := client.Evaluate(ctx, "dynamic/allow", map[string]interface{}{
 		"role": "admin",
 	})
-
-	// TODO: 修复 OPA 查询变量绑定问题后启用完整断言
 	if err != nil {
-		t.Logf("Policy evaluation returned error (expected during initial implementation): %v", err)
+		t.Fatalf("Failed to evaluate dynamically loaded policy: %v", err)
+	}
+	if !result.Allowed {
+		t.Errorf("Expected policy to allow role=admin, got decision: %+v", result.Decision)
+	}
+
+	// 非 admin 角色应被拒绝
+	result, err = client.Evaluate(ctx, "dynamic/allow", map[string]interface{}{
+		"role": "guest",
+	})
+	if err != nil {
+		t.Fatalf("Failed to evaluate dynamically loaded policy: %v", err)
+	}
+	if result.Allowed {
+		t.Errorf("Expected policy to deny role=guest, got decision: %+v", result.Decision)
 	}
 }
 
@@ -258,14 +283,16 @@ allow = true if {
 		t.Fatalf("Failed to load policy from file: %v", err)
 	}
 
-	// 验证策略已加载
-	_, err = client.Evaluate(ctx, "filepolicy/allow", map[string]interface{}{
+	// 验证策略已加载且评估结果正确
+	result, err := client.Evaluate(ctx, "filepolicy/allow", map[string]interface{}{
 		"action": "write",
 		"user":   "admin",
 	})
-
 	if err != nil {
-		t.Logf("Policy evaluation returned error: %v", err)
+		t.Fatalf("Failed to evaluate policy loaded from file: %v", err)
+	}
+	if !result.Allowed {
+		t.Errorf("Expected policy to allow admin/write, got decision: %+v", result.Decision)
 	}
 }
 
@@ -315,15 +342,26 @@ allow = true if {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
 
-	// 评估策略
+	// 评估策略：alice 是 admin，应被允许
 	result, err := client.Evaluate(ctx, "datatest/allow", map[string]interface{}{
 		"username": "alice",
 	})
-
 	if err != nil {
-		t.Logf("Policy evaluation returned error: %v", err)
-	} else {
-		t.Logf("Policy evaluation result: %+v", result)
+		t.Fatalf("Failed to evaluate policy with data: %v", err)
+	}
+	if !result.Allowed {
+		t.Errorf("Expected policy to allow alice (admin), got decision: %+v", result.Decision)
+	}
+
+	// bob 不是 admin，应被拒绝
+	result, err = client.Evaluate(ctx, "datatest/allow", map[string]interface{}{
+		"username": "bob",
+	})
+	if err != nil {
+		t.Fatalf("Failed to evaluate policy with data: %v", err)
+	}
+	if result.Allowed {
+		t.Errorf("Expected policy to deny bob (user), got decision: %+v", result.Decision)
 	}
 }
 
@@ -384,11 +422,11 @@ allow = true if {
 	result, err := client.Evaluate(ctx, "pathtest/allow", map[string]interface{}{
 		"user": "alice",
 	})
-
 	if err != nil {
-		t.Logf("Policy evaluation returned error: %v", err)
-	} else if result.Allowed {
-		t.Log("Data loaded successfully and policy evaluation passed")
+		t.Fatalf("Failed to evaluate policy: %v", err)
+	}
+	if !result.Allowed {
+		t.Errorf("Expected policy to allow alice (admin role), got decision: %+v", result.Decision)
 	}
 }
 
@@ -436,9 +474,21 @@ result = {"allowed": false, "reason": "too small"} if {
 	}
 
 	if len(rs) == 0 {
-		t.Logf("Query returned empty result (expected during development)")
-	} else {
-		t.Logf("Query result: %+v", rs)
+		t.Fatal("Expected query to return a non-empty result set")
+	}
+	if len(rs[0].Expressions) == 0 {
+		t.Fatal("Expected query result to contain expressions")
+	}
+
+	value, ok := rs[0].Expressions[0].Value.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected query result to be a map, got: %T", rs[0].Expressions[0].Value)
+	}
+	if allowed, _ := value["allowed"].(bool); !allowed {
+		t.Errorf("Expected allowed=true for value=15, got: %+v", value)
+	}
+	if reason, _ := value["reason"].(string); reason != "test" {
+		t.Errorf("Expected reason=test, got: %+v", value["reason"])
 	}
 }
 
@@ -487,15 +537,21 @@ allow = true if {
 	}
 
 	// 第一次评估（缓存未命中）
-	_, err = client.Evaluate(ctx, "", input)
+	first, err := client.Evaluate(ctx, "", input)
 	if err != nil {
-		t.Logf("First evaluation returned error: %v", err)
+		t.Fatalf("First evaluation failed: %v", err)
+	}
+	if !first.Allowed {
+		t.Errorf("Expected first evaluation to allow alice, got decision: %+v", first.Decision)
 	}
 
-	// 第二次评估（应该命中缓存）
-	_, err = client.Evaluate(ctx, "", input)
+	// 第二次评估（应该命中缓存且结果一致）
+	second, err := client.Evaluate(ctx, "", input)
 	if err != nil {
-		t.Logf("Second evaluation returned error: %v", err)
+		t.Fatalf("Second evaluation failed: %v", err)
+	}
+	if second.Allowed != first.Allowed {
+		t.Errorf("Expected cached result to match: first=%v, second=%v", first.Allowed, second.Allowed)
 	}
 }
 
