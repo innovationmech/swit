@@ -119,7 +119,7 @@ result2, err := processor.ProcessWithResult(ctx, msg)
 
 ## 架构
 
-```
+```bash
 ┌─────────────────┐
 │  Message        │
 │  Broker         │
@@ -215,22 +215,66 @@ type MessageHandlerWithResult interface {
 storage := inbox.NewInMemoryStorage()
 ```
 
-### SQL 数据库存储
+### PostgreSQL 存储（生产首选）
 
-生产环境建议使用 SQL 数据库存储。需要创建如下表结构：
+`PostgresStorage` 与业务数据共用同一个 `*sql.DB` 连接池，通过 `BeginTx` 可以在同一个数据库事务中原子地保存业务数据与幂等性记录。幂等性由 `(message_id, handler_name)` 复合主键与 `ON CONFLICT DO NOTHING` 保证：
+
+```go
+import (
+    "database/sql"
+
+    _ "github.com/lib/pq"
+    "github.com/innovationmech/swit/pkg/patterns/inbox"
+)
+
+db, err := sql.Open("postgres", dsn)
+if err != nil {
+    return err
+}
+
+// 默认表名为 inbox_entries，可通过 WithPostgresTableName 自定义
+storage, err := inbox.NewPostgresStorage(db)
+if err != nil {
+    return err
+}
+
+// 开发/测试环境可自动建表；生产环境建议使用独立迁移工具
+if err := storage.EnsureSchema(ctx); err != nil {
+    return err
+}
+```
+
+`EnsureSchema` 创建的表结构：
 
 ```sql
-CREATE TABLE inbox (
-    message_id VARCHAR(255) NOT NULL,
-    handler_name VARCHAR(255) NOT NULL,
-    topic VARCHAR(255) NOT NULL,
-    processed_at TIMESTAMP NOT NULL,
-    result BLOB,
-    metadata TEXT,
-    PRIMARY KEY (message_id, handler_name),
-    INDEX idx_processed_at (processed_at)
+CREATE TABLE IF NOT EXISTS inbox_entries (
+    message_id   VARCHAR(255) NOT NULL,
+    handler_name VARCHAR(255) NOT NULL DEFAULT '',
+    topic        VARCHAR(255) NOT NULL DEFAULT '',
+    processed_at TIMESTAMPTZ  NOT NULL,
+    result       BYTEA,
+    metadata     JSONB,
+    PRIMARY KEY (message_id, handler_name)
 );
 ```
+
+### Redis 存储
+
+`RedisStorage` 基于 `go-redis/v9`，幂等性通过 `SETNX` 保证（同一 `(message_id, handler_name)` 的重复记录不会覆盖已有结果）：
+
+```go
+import (
+    "github.com/redis/go-redis/v9"
+    "github.com/innovationmech/swit/pkg/patterns/inbox"
+)
+
+client := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+
+// 默认键前缀为 inbox，可通过 WithRedisKeyPrefix 自定义
+storage, err := inbox.NewRedisStorage(client)
+```
+
+注意：Redis 无法与关系型数据库的业务数据共享 ACID 事务（`Transaction.Exec` 不受支持）。需要与数据库业务数据保持严格原子性时请使用 `PostgresStorage`。
 
 ## 使用场景
 
