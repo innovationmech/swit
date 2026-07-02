@@ -68,9 +68,10 @@ type HealthCheckInfo struct {
 	DeregisterCriticalServiceAfter time.Duration `json:"deregister_critical_service_after"`
 }
 
-// DiscoveryManagerImpl implements ServiceDiscoveryManager using Consul
+// DiscoveryManagerImpl implements ServiceDiscoveryManager on top of a
+// backend-agnostic discovery.Provider (Consul, etcd or Kubernetes)
 type DiscoveryManagerImpl struct {
-	client        *discovery.ServiceDiscovery
+	provider      discovery.Provider
 	config        *DiscoveryConfig
 	retryConfig   *RetryConfig
 	registrations map[string]*ServiceRegistration // Track registered services
@@ -104,9 +105,9 @@ func NewDiscoveryManager(config *DiscoveryConfig) (ServiceDiscoveryManager, erro
 		return &NoOpDiscoveryManager{}, nil
 	}
 
-	client, err := discovery.GetServiceDiscoveryByAddress(config.Address)
+	provider, err := discovery.GetProviderByConfig(config.ToProviderConfig())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create discovery client: %w", err)
+		return nil, fmt.Errorf("failed to create discovery provider: %w", err)
 	}
 
 	retryConfig := &RetryConfig{
@@ -125,7 +126,7 @@ func NewDiscoveryManager(config *DiscoveryConfig) (ServiceDiscoveryManager, erro
 	}
 
 	return &DiscoveryManagerImpl{
-		client:        client,
+		provider:      provider,
 		config:        config,
 		retryConfig:   retryConfig,
 		registrations: make(map[string]*ServiceRegistration),
@@ -148,7 +149,7 @@ func (d *DiscoveryManagerImpl) RegisterService(ctx context.Context, registration
 
 	// Perform registration with retry and graceful failure handling
 	err := d.retryOperationWithGracefulFailure(ctx, func() error {
-		return d.client.RegisterService(registration.ServiceName, registration.Address, registration.Port)
+		return d.provider.Register(ctx, serviceInstanceFromRegistration(registration))
 	}, fmt.Sprintf("register_service_%s", registration.ServiceName))
 
 	if err != nil {
@@ -183,7 +184,7 @@ func (d *DiscoveryManagerImpl) DeregisterService(ctx context.Context, registrati
 
 	// Perform deregistration with retry and graceful failure handling
 	err := d.retryOperationWithGracefulFailure(ctx, func() error {
-		return d.client.DeregisterService(registration.ServiceName, registration.Address, registration.Port)
+		return d.provider.Deregister(ctx, serviceInstanceFromRegistration(registration))
 	}, fmt.Sprintf("deregister_service_%s", registration.ServiceName))
 
 	if err != nil {
@@ -279,18 +280,15 @@ func (d *DiscoveryManagerImpl) IsHealthy(ctx context.Context) bool {
 	d.healthStatus.LastCheck = time.Now()
 	d.healthStatus.Uptime = time.Since(d.startTime)
 
-	// Simple health check - try to get service list
-	// This is a lightweight operation that tests connectivity
-	_, err := d.client.GetInstanceRandom("consul") // Try to get consul service itself
-
-	if err != nil {
+	// Lightweight backend connectivity check delegated to the provider
+	if !d.provider.IsHealthy(ctx) {
 		d.healthStatus.Available = false
-		d.healthStatus.LastError = err.Error()
+		d.healthStatus.LastError = fmt.Sprintf("discovery backend %s is not reachable", d.provider.Name())
 		d.healthStatus.ConsecutiveErrors++
 		d.healthStatus.TotalErrors++
 
 		logger.Logger.Warn("Discovery service health check failed",
-			zap.Error(err),
+			zap.String("provider", d.provider.Name()),
 			zap.Int("consecutive_errors", d.healthStatus.ConsecutiveErrors),
 			zap.Int("total_errors", d.healthStatus.TotalErrors))
 
@@ -473,6 +471,19 @@ func (n *NoOpDiscoveryManager) GetHealthStatus() *DiscoveryHealthStatus {
 // IsDiscoveryAvailable always returns true for no-op manager
 func (n *NoOpDiscoveryManager) IsDiscoveryAvailable() bool {
 	return true
+}
+
+// serviceInstanceFromRegistration converts a server-level ServiceRegistration
+// into the backend-agnostic discovery.ServiceInstance.
+func serviceInstanceFromRegistration(registration *ServiceRegistration) *discovery.ServiceInstance {
+	return &discovery.ServiceInstance{
+		ID:      registration.ServiceID,
+		Name:    registration.ServiceName,
+		Address: registration.Address,
+		Port:    registration.Port,
+		Tags:    registration.Tags,
+		Meta:    registration.Meta,
+	}
 }
 
 // Helper functions for creating service registrations

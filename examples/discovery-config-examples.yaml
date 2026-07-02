@@ -87,6 +87,72 @@ kubernetes:
 
 ---
 
+# Example 6: etcd backend
+# Registrations are stored in etcd with a keep-alive lease so crashed
+# instances expire automatically
+etcd_backend:
+  service_name: swit-serve-etcd
+  http:
+    enabled: true
+    port: "9000"
+  grpc:
+    enabled: true
+    port: "9001"
+  discovery:
+    enabled: true
+    type: etcd                          # Select the etcd backend
+    service_name: swit-serve-etcd
+    failure_mode: graceful
+    etcd:
+      endpoints:                        # Required for the etcd backend
+        - "127.0.0.1:2379"
+      key_prefix: "/swit/discovery"     # Optional, default: /swit/discovery
+      lease_ttl: 30s                    # Optional, default: 30s
+      dial_timeout: 5s                  # Optional, default: 5s
+    tags:
+      - "v1"
+
+---
+
+# Example 7: Kubernetes backend (Endpoints API)
+# Register/Deregister are no-ops; resolution queries the Endpoints API using
+# in-cluster service account credentials by default
+kubernetes_endpoints:
+  service_name: swit-serve-k8s-endpoints
+  http:
+    enabled: true
+    port: "9000"
+  discovery:
+    enabled: true
+    type: kubernetes                    # Select the Kubernetes backend
+    service_name: swit-serve-k8s-endpoints
+    kubernetes:
+      mode: endpoints                   # Default: query the Endpoints API
+      namespace: default                # Optional, default: default
+      # api_server / token_file / ca_cert_file default to in-cluster values
+
+---
+
+# Example 8: Kubernetes backend (DNS)
+# Resolution uses cluster DNS (<service>.<namespace>.svc.<domain>);
+# SRV records are preferred, falling back to A records + configured port
+kubernetes_dns:
+  service_name: swit-serve-k8s-dns
+  http:
+    enabled: true
+    port: "9000"
+  discovery:
+    enabled: true
+    type: kubernetes
+    service_name: swit-serve-k8s-dns
+    kubernetes:
+      mode: dns
+      namespace: default
+      dns_domain: cluster.local         # Optional, default: cluster.local
+      port: 9000                        # Fallback port when SRV records are unavailable
+
+---
+
 # Example 5: Hybrid environment with custom configuration
 # Mix of settings for specific deployment scenarios
 hybrid:
