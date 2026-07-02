@@ -26,6 +26,7 @@ package messaging_test
 
 import (
 	_ "github.com/innovationmech/swit/pkg/messaging/adapters"
+	_ "github.com/innovationmech/swit/pkg/messaging/inmemory"
 	_ "github.com/innovationmech/swit/pkg/messaging/kafka"
 	_ "github.com/innovationmech/swit/pkg/messaging/nats"
 	_ "github.com/innovationmech/swit/pkg/messaging/rabbitmq"
