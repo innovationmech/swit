@@ -32,9 +32,9 @@ import (
 func TestNewLeakyBucket(t *testing.T) {
 	lb := NewLeakyBucket(10, 5.0)
 	assert.NotNil(t, lb)
-	assert.Equal(t, int64(10), lb.capacity)
-	assert.Equal(t, 5.0, lb.leakRate)
-	assert.Equal(t, float64(0), lb.water) // 初始时桶是空的
+	assert.Equal(t, int64(10), lb.Capacity())
+	assert.Equal(t, 5.0, lb.LeakRate())
+	assert.Equal(t, float64(0), lb.Water()) // 初始时桶是空的
 }
 
 func TestLeakyBucket_Allow(t *testing.T) {
@@ -139,9 +139,7 @@ func TestLeakyBucket_ConcurrentAccess(t *testing.T) {
 func TestNewLeakyBucketLimiter(t *testing.T) {
 	limiter := NewLeakyBucketLimiter(10, 5.0)
 	assert.NotNil(t, limiter)
-	assert.Equal(t, int64(10), limiter.capacity)
-	assert.Equal(t, 5.0, limiter.leakRate)
-	assert.NotNil(t, limiter.buckets)
+	assert.Equal(t, 0, limiter.Len())
 }
 
 func TestLeakyBucketLimiter_Allow(t *testing.T) {
@@ -168,13 +166,13 @@ func TestLeakyBucketLimiter_Cleanup(t *testing.T) {
 	limiter.Allow("client-b")
 	limiter.Allow("client-c")
 
-	assert.Equal(t, 3, len(limiter.buckets))
+	assert.Equal(t, 3, limiter.Len())
 
 	// 清理空闲时间超过 0 的桶（立即清理）
 	limiter.Cleanup(0)
 
 	// 所有桶应该被清理
-	assert.Equal(t, 0, len(limiter.buckets))
+	assert.Equal(t, 0, limiter.Len())
 }
 
 func TestLeakyBucketLimiter_ConcurrentAccess(t *testing.T) {
@@ -194,7 +192,7 @@ func TestLeakyBucketLimiter_ConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 	// 应该有 10 个不同的客户端桶
-	assert.Equal(t, 10, len(limiter.buckets))
+	assert.Equal(t, 10, limiter.Len())
 }
 
 func BenchmarkLeakyBucket_Allow(b *testing.B) {

@@ -22,146 +22,52 @@
 package middleware
 
 import (
-	"sync"
 	"time"
+
+	"github.com/innovationmech/swit/pkg/resilience"
 )
 
-// LeakyBucket 实现漏桶算法
-// Leaky bucket 以恒定速率处理请求，平滑流量
-type LeakyBucket struct {
-	capacity     int64      // 桶的最大容量（队列大小）
-	leakRate     float64    // 每秒漏出的请求数
-	water        float64    // 当前桶中的水量
-	lastLeakTime time.Time  // 上次漏水的时间
-	mutex        sync.Mutex // 保护并发访问
-}
+// LeakyBucket 是 resilience 包中漏桶实现的别名。
+// 限流核心算法统一维护在 pkg/resilience，服务端中间件与
+// 客户端调用限流共用同一实现。
+type LeakyBucket = resilience.LeakyBucket
 
-// NewLeakyBucket 创建一个新的漏桶
+// NewLeakyBucket 创建一个新的漏桶。
 // capacity: 桶的最大容量（最大队列大小）
 // leakRate: 每秒漏出的请求数（处理速率）
 func NewLeakyBucket(capacity int64, leakRate float64) *LeakyBucket {
-	return &LeakyBucket{
-		capacity:     capacity,
-		leakRate:     leakRate,
-		water:        0,
-		lastLeakTime: time.Now(),
-	}
+	return resilience.NewLeakyBucket(capacity, leakRate)
 }
 
-// Allow 尝试向桶中加入一个请求
-// 如果桶未满返回 true，否则返回 false
-func (lb *LeakyBucket) Allow() bool {
-	return lb.AllowN(1)
-}
-
-// AllowN 尝试向桶中加入 n 个请求
-func (lb *LeakyBucket) AllowN(n int64) bool {
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
-
-	// 先漏出已处理的请求
-	lb.leak()
-
-	// 检查是否有足够的空间
-	if lb.water+float64(n) <= float64(lb.capacity) {
-		lb.water += float64(n)
-		return true
-	}
-
-	return false
-}
-
-// leak 根据时间流逝漏出请求
-func (lb *LeakyBucket) leak() {
-	now := time.Now()
-	elapsed := now.Sub(lb.lastLeakTime).Seconds()
-
-	// 计算漏出的请求数
-	leaked := elapsed * lb.leakRate
-	lb.water -= leaked
-
-	// 确保不会小于0
-	if lb.water < 0 {
-		lb.water = 0
-	}
-
-	lb.lastLeakTime = now
-}
-
-// Water 返回当前桶中的水量
-func (lb *LeakyBucket) Water() float64 {
-	lb.mutex.Lock()
-	defer lb.mutex.Unlock()
-
-	lb.leak()
-	return lb.water
-}
-
-// LeakyBucketLimiter 为多个客户端（如IP地址）提供漏桶速率限制
+// LeakyBucketLimiter 为多个客户端（如 IP 地址）提供漏桶速率限制。
+// 底层复用 resilience.KeyedRateLimiter。
 type LeakyBucketLimiter struct {
-	capacity int64
-	leakRate float64
-	buckets  map[string]*LeakyBucket
-	mutex    sync.RWMutex
+	keyed *resilience.KeyedRateLimiter
 }
 
 // NewLeakyBucketLimiter 创建一个新的漏桶限制器
 func NewLeakyBucketLimiter(capacity int64, leakRate float64) *LeakyBucketLimiter {
 	return &LeakyBucketLimiter{
-		capacity: capacity,
-		leakRate: leakRate,
-		buckets:  make(map[string]*LeakyBucket),
+		keyed: resilience.NewKeyedLeakyBucketLimiter(capacity, leakRate),
 	}
 }
 
 // Allow 检查指定客户端是否允许发送请求
 func (lbl *LeakyBucketLimiter) Allow(clientID string) bool {
-	return lbl.AllowN(clientID, 1)
+	return lbl.keyed.Allow(clientID)
 }
 
 // AllowN 检查指定客户端是否允许发送 n 个请求
 func (lbl *LeakyBucketLimiter) AllowN(clientID string, n int64) bool {
-	bucket := lbl.getOrCreateBucket(clientID)
-	return bucket.AllowN(n)
-}
-
-// getOrCreateBucket 获取或创建指定客户端的漏桶
-func (lbl *LeakyBucketLimiter) getOrCreateBucket(clientID string) *LeakyBucket {
-	// 先尝试只读锁
-	lbl.mutex.RLock()
-	bucket, exists := lbl.buckets[clientID]
-	lbl.mutex.RUnlock()
-
-	if exists {
-		return bucket
-	}
-
-	// 需要创建新桶，使用写锁
-	lbl.mutex.Lock()
-	defer lbl.mutex.Unlock()
-
-	// 双重检查，防止并发创建
-	bucket, exists = lbl.buckets[clientID]
-	if exists {
-		return bucket
-	}
-
-	bucket = NewLeakyBucket(lbl.capacity, lbl.leakRate)
-	lbl.buckets[clientID] = bucket
-	return bucket
+	return lbl.keyed.AllowN(clientID, n)
 }
 
 // Cleanup 清理长时间未使用的桶以防止内存泄漏
 func (lbl *LeakyBucketLimiter) Cleanup(maxIdleTime time.Duration) {
-	lbl.mutex.Lock()
-	defer lbl.mutex.Unlock()
+	lbl.keyed.Cleanup(maxIdleTime)
+}
 
-	now := time.Now()
-	for clientID, bucket := range lbl.buckets {
-		bucket.mutex.Lock()
-		if now.Sub(bucket.lastLeakTime) > maxIdleTime {
-			delete(lbl.buckets, clientID)
-		}
-		bucket.mutex.Unlock()
-	}
+// Len 返回当前活跃的客户端桶数量
+func (lbl *LeakyBucketLimiter) Len() int {
+	return lbl.keyed.Len()
 }

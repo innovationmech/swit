@@ -277,6 +277,13 @@ type defaultDeadLetterQueueHandler struct {
 	// errorClassifier classifies errors for DLQ processing.
 	errorClassifier DLQErrorClassifier
 
+	// storage stores DLQ messages for cleanup and recovery.
+	storage DLQStorage
+
+	// reprocessor reprocesses recovered DLQ messages. When nil, the original
+	// event is republished through eventPublisher.
+	reprocessor DLQReprocessor
+
 	// metrics tracks DLQ performance metrics.
 	metrics *DLQMetrics
 
@@ -332,6 +339,10 @@ type DLQRetryPolicy interface {
 	GetMaxRecoveryAttempts() int
 }
 
+// DLQReprocessor reprocesses a DLQ message during recovery. Implementations
+// typically re-deliver the original event to the failed handler or pipeline.
+type DLQReprocessor func(ctx context.Context, msg *DLQMessage) error
+
 // DLQErrorClassifier classifies errors for DLQ processing.
 type DLQErrorClassifier interface {
 	// ClassifyError classifies an error into an ErrorType.
@@ -374,6 +385,7 @@ func NewDeadLetterQueueHandler(config *DeadLetterConfig, eventPublisher saga.Eve
 		messageSerializer: NewDefaultDLQMessageSerializer(),
 		retryPolicy:       NewDefaultDLQRetryPolicy(),
 		errorClassifier:   NewDefaultDLQErrorClassifier(),
+		storage:           NewInMemoryDLQStorage(0),
 		metrics: &DLQMetrics{
 			MessagesByErrorType: make(map[ErrorType]int64),
 			MessagesByEventType: make(map[SagaEventType]int64),
@@ -429,6 +441,29 @@ func WithDLQErrorClassifier(classifier DLQErrorClassifier) DLQOption {
 			return fmt.Errorf("DLQ error classifier cannot be nil")
 		}
 		h.errorClassifier = classifier
+		return nil
+	}
+}
+
+// WithDLQStorage sets a custom DLQ message storage backend.
+func WithDLQStorage(storage DLQStorage) DLQOption {
+	return func(h *defaultDeadLetterQueueHandler) error {
+		if storage == nil {
+			return fmt.Errorf("DLQ storage cannot be nil")
+		}
+		h.storage = storage
+		return nil
+	}
+}
+
+// WithDLQReprocessor sets a custom reprocessor invoked during message recovery.
+// When not set, recovery republishes the original event through the event publisher.
+func WithDLQReprocessor(reprocessor DLQReprocessor) DLQOption {
+	return func(h *defaultDeadLetterQueueHandler) error {
+		if reprocessor == nil {
+			return fmt.Errorf("DLQ reprocessor cannot be nil")
+		}
+		h.reprocessor = reprocessor
 		return nil
 	}
 }
@@ -526,6 +561,12 @@ func (h *defaultDeadLetterQueueHandler) SendToDeadLetterQueue(ctx context.Contex
 		return fmt.Errorf("failed to publish to DLQ topic %s: %w", h.config.Topic, err)
 	}
 
+	// Persist the message so cleanup and recovery can operate on it.
+	if err := h.storage.Store(ctx, dlqMessage); err != nil {
+		h.updateMetricsError(fmt.Errorf("failed to store DLQ message: %w", err))
+		return fmt.Errorf("failed to store DLQ message: %w", err)
+	}
+
 	// Update metrics
 	h.updateMetricsSent(dlqMessage)
 
@@ -574,6 +615,8 @@ func (h *defaultDeadLetterQueueHandler) RecoverFromDeadLetterQueue(ctx context.C
 			zap.Time("expires_at", *dlqMessage.ExpiresAt),
 		)
 		h.updateMetricsExpired()
+		// Drop the expired message from storage; a missing entry is fine.
+		_ = h.storage.Remove(ctx, dlqMessage.ID)
 		return fmt.Errorf("message has expired: %s", dlqMessage.FailureReason)
 	}
 
@@ -588,9 +631,8 @@ func (h *defaultDeadLetterQueueHandler) RecoverFromDeadLetterQueue(ctx context.C
 
 	startTime := time.Now()
 
-	// Attempt to reprocess the original event
-	// In a real implementation, this would involve sending the event back to the original handler
-	// For now, we'll simulate the recovery process
+	// Attempt to reprocess the original event via the configured reprocessor,
+	// or by republishing it through the event publisher.
 	err := h.reprocessEvent(ctx, dlqMessage)
 	recoveryTime := time.Since(startTime)
 
@@ -618,6 +660,9 @@ func (h *defaultDeadLetterQueueHandler) RecoverFromDeadLetterQueue(ctx context.C
 		zap.Int("recovery_attempt", dlqMessage.RecoveryAttempts),
 		zap.Duration("recovery_time", recoveryTime),
 	)
+
+	// Recovered messages no longer belong to the DLQ; a missing entry is fine.
+	_ = h.storage.Remove(ctx, dlqMessage.ID)
 
 	h.updateMetricsRecovered(dlqMessage, recoveryTime)
 
@@ -727,20 +772,58 @@ func (h *defaultDeadLetterQueueHandler) StopDLQRecovery() {
 }
 
 // CleanupExpiredMessages implements DeadLetterQueueHandler interface.
+// It scans the DLQ storage, removes messages whose retention expired, and
+// updates metrics accordingly.
 func (h *defaultDeadLetterQueueHandler) CleanupExpiredMessages(ctx context.Context) (int, error) {
-	// In a real implementation, this would query the DLQ storage and remove expired messages
-	// For now, we'll simulate the cleanup process
-	h.logger.Info("cleaning up expired DLQ messages")
+	h.mu.Lock()
+	if h.shutdown {
+		h.mu.Unlock()
+		return 0, ErrHandlerShutdown
+	}
+	if !h.started {
+		h.mu.Unlock()
+		return 0, ErrHandlerNotInitialized
+	}
+	h.mu.Unlock()
 
-	// This would involve:
-	// 1. Querying DLQ for expired messages
-	// 2. Removing them from storage
-	// 3. Updating metrics
+	messages, err := h.storage.List(ctx)
+	if err != nil {
+		h.mu.Lock()
+		h.updateMetricsError(fmt.Errorf("failed to list DLQ messages for cleanup: %w", err))
+		h.mu.Unlock()
+		return 0, fmt.Errorf("failed to list DLQ messages for cleanup: %w", err)
+	}
 
-	cleanedUp := 0 // Placeholder
+	cleanedUp := 0
+	for _, msg := range messages {
+		select {
+		case <-ctx.Done():
+			return cleanedUp, ctx.Err()
+		default:
+		}
+
+		if !h.retryPolicy.IsExpired(msg) {
+			continue
+		}
+
+		if err := h.storage.Remove(ctx, msg.ID); err != nil {
+			h.logger.Warn("failed to remove expired DLQ message",
+				zap.String("dlq_message_id", msg.ID),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		cleanedUp++
+		h.mu.Lock()
+		h.updateMetricsExpired()
+		h.metrics.TotalMessagesCleanedUp++
+		h.mu.Unlock()
+	}
 
 	h.logger.Info("expired DLQ messages cleaned up",
 		zap.Int("cleaned_up", cleanedUp),
+		zap.Int("scanned", len(messages)),
 	)
 
 	return cleanedUp, nil
@@ -830,15 +913,22 @@ func (h *defaultDeadLetterQueueHandler) getHandlerID(handlerCtx *EventHandlerCon
 	return "unknown"
 }
 
+// reprocessEvent re-delivers the original event of a DLQ message. It uses the
+// configured reprocessor when available, otherwise it republishes the original
+// event through the event publisher so it re-enters the processing pipeline.
 func (h *defaultDeadLetterQueueHandler) reprocessEvent(ctx context.Context, dlqMessage *DLQMessage) error {
-	// In a real implementation, this would:
-	// 1. Deserialize the original event
-	// 2. Send it back to the appropriate handler
-	// 3. Wait for processing to complete
-	// 4. Return the result
+	if h.reprocessor != nil {
+		return h.reprocessor(ctx, dlqMessage)
+	}
 
-	// For now, we'll simulate successful reprocessing
-	time.Sleep(100 * time.Millisecond) // Simulate processing time
+	if dlqMessage.OriginalEvent == nil {
+		return fmt.Errorf("cannot reprocess DLQ message %s: original event is missing", dlqMessage.ID)
+	}
+
+	if err := h.eventPublisher.PublishEvent(ctx, dlqMessage.OriginalEvent); err != nil {
+		return fmt.Errorf("failed to republish original event %s: %w", dlqMessage.OriginalEvent.ID, err)
+	}
+
 	return nil
 }
 
@@ -918,17 +1008,47 @@ func (h *defaultDeadLetterQueueHandler) recoveryWorker(ctx context.Context, reco
 	}
 }
 
+// performRecoveryCycle runs one background recovery pass: it drops expired
+// messages, then attempts to recover every message the retry policy allows.
 func (h *defaultDeadLetterQueueHandler) performRecoveryCycle(ctx context.Context) {
-	// In a real implementation, this would:
-	// 1. Query for messages ready for recovery
-	// 2. Attempt to recover them
-	// 3. Update metrics
-	// 4. Handle failures appropriately
-
 	h.logger.Debug("performing DLQ recovery cycle")
 
-	// This is a placeholder for the actual recovery logic
-	// In a real implementation, you would query the DLQ storage and process messages
+	// Drop expired messages first so they are not considered for recovery.
+	if _, err := h.CleanupExpiredMessages(ctx); err != nil {
+		h.logger.Warn("DLQ cleanup during recovery cycle failed", zap.Error(err))
+	}
+
+	messages, err := h.storage.List(ctx)
+	if err != nil {
+		h.logger.Warn("failed to list DLQ messages for recovery", zap.Error(err))
+		return
+	}
+
+	for _, msg := range messages {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if !h.retryPolicy.ShouldRetry(msg) {
+			continue
+		}
+
+		if err := h.RecoverFromDeadLetterQueue(ctx, msg); err != nil {
+			h.logger.Debug("DLQ recovery attempt failed",
+				zap.String("dlq_message_id", msg.ID),
+				zap.Error(err),
+			)
+			// Persist the updated retry bookkeeping (attempts, next retry time).
+			if storeErr := h.storage.Store(ctx, msg); storeErr != nil {
+				h.logger.Warn("failed to persist DLQ message retry state",
+					zap.String("dlq_message_id", msg.ID),
+					zap.Error(storeErr),
+				)
+			}
+		}
+	}
 }
 
 // Helper functions

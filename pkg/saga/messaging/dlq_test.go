@@ -1477,19 +1477,53 @@ func TestDLQHandlerEdgeCases(t *testing.T) {
 	// Cast to access internal methods
 	defaultHandler := handler.(*defaultDeadLetterQueueHandler)
 
-	t.Run("reprocessEvent simulated success", func(t *testing.T) {
+	t.Run("reprocessEvent republishes original event", func(t *testing.T) {
+		publisher.Clear()
+		originalEvent := &saga.SagaEvent{
+			ID:     "reprocess-event-1",
+			SagaID: "reprocess-saga-1",
+			Type:   saga.EventSagaStepFailed,
+		}
 		testMessage := &DLQMessage{
-			ID:        "test-reprocess",
+			ID:            "test-reprocess",
+			ErrorType:     ErrorTypeRetryable,
+			OriginalEvent: originalEvent,
+		}
+
+		err := defaultHandler.reprocessEvent(ctx, testMessage)
+		assert.NoError(t, err)
+
+		published := publisher.GetEvents()
+		assert.Len(t, published, 1)
+		assert.Equal(t, originalEvent.ID, published[0].ID)
+	})
+
+	t.Run("reprocessEvent fails without original event", func(t *testing.T) {
+		testMessage := &DLQMessage{
+			ID:        "test-reprocess-missing",
 			ErrorType: ErrorTypeRetryable,
 		}
 
-		start := time.Now()
 		err := defaultHandler.reprocessEvent(ctx, testMessage)
-		duration := time.Since(start)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "original event is missing")
+	})
 
+	t.Run("reprocessEvent uses custom reprocessor", func(t *testing.T) {
+		reprocessed := false
+		customHandler, err := NewDeadLetterQueueHandler(
+			config,
+			publisher,
+			WithDLQReprocessor(func(ctx context.Context, msg *DLQMessage) error {
+				reprocessed = true
+				return nil
+			}),
+		)
+		require.NoError(t, err)
+
+		err = customHandler.(*defaultDeadLetterQueueHandler).reprocessEvent(ctx, &DLQMessage{ID: "custom"})
 		assert.NoError(t, err)
-		assert.True(t, duration >= 100*time.Millisecond) // Should simulate processing time
-		assert.True(t, duration < 200*time.Millisecond)  // But not too long
+		assert.True(t, reprocessed)
 	})
 
 	t.Run("sendToDeadLetterQueue with nil error", func(t *testing.T) {
@@ -1643,6 +1677,11 @@ func TestDLQRecoveryScenarios(t *testing.T) {
 			RecoveryAttempts: 0,
 			RetryCount:       1,
 			MaxRetries:       3,
+			OriginalEvent: &saga.SagaEvent{
+				ID:     "custom-policy-event",
+				SagaID: "custom-policy-saga",
+				Type:   saga.EventSagaStepFailed,
+			},
 		}
 
 		// First recovery should succeed

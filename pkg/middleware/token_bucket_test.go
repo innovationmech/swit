@@ -32,9 +32,9 @@ import (
 func TestNewTokenBucket(t *testing.T) {
 	tb := NewTokenBucket(10, 5.0)
 	assert.NotNil(t, tb)
-	assert.Equal(t, int64(10), tb.capacity)
-	assert.Equal(t, 5.0, tb.refillRate)
-	assert.Equal(t, float64(10), tb.tokens) // 初始时桶是满的
+	assert.Equal(t, int64(10), tb.Capacity())
+	assert.Equal(t, 5.0, tb.RefillRate())
+	assert.InDelta(t, float64(10), tb.Tokens(), 0.1) // 初始时桶是满的
 }
 
 func TestTokenBucket_Allow(t *testing.T) {
@@ -139,9 +139,7 @@ func TestTokenBucket_ConcurrentAccess(t *testing.T) {
 func TestNewTokenBucketLimiter(t *testing.T) {
 	limiter := NewTokenBucketLimiter(10, 5.0)
 	assert.NotNil(t, limiter)
-	assert.Equal(t, int64(10), limiter.capacity)
-	assert.Equal(t, 5.0, limiter.refillRate)
-	assert.NotNil(t, limiter.buckets)
+	assert.Equal(t, 0, limiter.Len())
 }
 
 func TestTokenBucketLimiter_Allow(t *testing.T) {
@@ -168,13 +166,13 @@ func TestTokenBucketLimiter_Cleanup(t *testing.T) {
 	limiter.Allow("client-b")
 	limiter.Allow("client-c")
 
-	assert.Equal(t, 3, len(limiter.buckets))
+	assert.Equal(t, 3, limiter.Len())
 
 	// 清理空闲时间超过 0 的桶（立即清理）
 	limiter.Cleanup(0)
 
 	// 所有桶应该被清理
-	assert.Equal(t, 0, len(limiter.buckets))
+	assert.Equal(t, 0, limiter.Len())
 }
 
 func TestTokenBucketLimiter_ConcurrentAccess(t *testing.T) {
@@ -194,7 +192,7 @@ func TestTokenBucketLimiter_ConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 	// 应该有 10 个不同的客户端桶
-	assert.Equal(t, 10, len(limiter.buckets))
+	assert.Equal(t, 10, limiter.Len())
 }
 
 func BenchmarkTokenBucket_Allow(b *testing.B) {
