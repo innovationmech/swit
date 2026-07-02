@@ -237,6 +237,174 @@ func TestNATSIntegration_QueueGroup_LoadBalancing(t *testing.T) {
 	}
 }
 
+func TestNATSIntegration_HealthCheck_ReflectsConnectionState(t *testing.T) {
+	h := compose.NewHarness(
+		compose.WithServices("nats"),
+		compose.WithProjectName("swit-nats-it-health"),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	if err := h.Start(ctx); err != nil {
+		t.Fatalf("failed to start compose harness: %v", err)
+	}
+	defer h.Stop(context.Background())
+
+	endpoints := h.Endpoints()
+	brokerCfg := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeNATS,
+		Endpoints: []string{endpoints.NATS},
+	}
+
+	broker, err := messaging.NewMessageBroker(brokerCfg)
+	if err != nil {
+		t.Fatalf("NewMessageBroker: %v", err)
+	}
+	if err := broker.Connect(ctx); err != nil {
+		t.Fatalf("broker.Connect: %v", err)
+	}
+
+	status, err := broker.HealthCheck(ctx)
+	if err != nil {
+		t.Fatalf("HealthCheck: %v", err)
+	}
+	if status.Status != messaging.HealthStatusHealthy {
+		t.Fatalf("expected healthy status while connected, got %s (%s)", status.Status, status.Message)
+	}
+	if status.ResponseTime <= 0 {
+		t.Fatalf("expected positive response time from live probe, got %v", status.ResponseTime)
+	}
+
+	if err := broker.Disconnect(context.Background()); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	status, err = broker.HealthCheck(context.Background())
+	if err != nil {
+		t.Fatalf("HealthCheck after disconnect: %v", err)
+	}
+	if status.Status == messaging.HealthStatusHealthy {
+		t.Fatalf("expected non-healthy status after disconnect, got %s", status.Status)
+	}
+}
+
+func TestNATSIntegration_JetStream_SeekReplay(t *testing.T) {
+	h := compose.NewHarness(
+		compose.WithServices("nats"),
+		compose.WithProjectName("swit-nats-it-seek"),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	if err := h.Start(ctx); err != nil {
+		t.Fatalf("failed to start compose harness: %v", err)
+	}
+	defer h.Stop(context.Background())
+
+	endpoints := h.Endpoints()
+	brokerCfg := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeNATS,
+		Endpoints: []string{endpoints.NATS},
+		Extra: map[string]any{
+			"nats": map[string]any{
+				"jetstream": map[string]any{
+					"enabled": true,
+					"streams": []map[string]any{
+						{
+							"name":      "SEEKIT",
+							"subjects":  []string{"it.seek.>"},
+							"retention": "limits",
+							"storage":   "file",
+							"replicas":  1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	broker, err := messaging.NewMessageBroker(brokerCfg)
+	if err != nil {
+		t.Fatalf("NewMessageBroker: %v", err)
+	}
+	if err := broker.Connect(ctx); err != nil {
+		t.Fatalf("broker.Connect: %v", err)
+	}
+	defer broker.Disconnect(context.Background())
+
+	// Capability declares seek support; verify the implementation honors it.
+	if caps := broker.GetCapabilities(); caps == nil || !caps.SupportsSeek {
+		t.Fatal("expected NATS capabilities to declare seek support")
+	}
+
+	subject := "it.seek.orders"
+	publisher, err := broker.CreatePublisher(messaging.PublisherConfig{Topic: subject})
+	if err != nil {
+		t.Fatalf("CreatePublisher: %v", err)
+	}
+	defer publisher.Close()
+
+	const total = 5
+	for i := 1; i <= total; i++ {
+		payload := []byte{byte('0' + i)}
+		if err := publisher.Publish(ctx, &messaging.Message{Topic: subject, Payload: payload}); err != nil {
+			t.Fatalf("Publish %d: %v", i, err)
+		}
+	}
+
+	subscriber, err := broker.CreateSubscriber(messaging.SubscriberConfig{
+		Topics:        []string{subject},
+		ConsumerGroup: "cg-seek",
+	})
+	if err != nil {
+		t.Fatalf("CreateSubscriber: %v", err)
+	}
+	defer subscriber.Close()
+
+	received := make(chan string, 64)
+	if err := subscriber.Subscribe(ctx, messaging.MessageHandlerFunc(func(ctx context.Context, m *messaging.Message) error {
+		received <- string(m.Payload)
+		return nil
+	})); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	drain := func(want int, phase string) []string {
+		got := make([]string, 0, want)
+		deadline := time.After(20 * time.Second)
+		for len(got) < want {
+			select {
+			case p := <-received:
+				got = append(got, p)
+			case <-deadline:
+				t.Fatalf("%s: timeout, received %d/%d messages: %v", phase, len(got), want, got)
+			}
+		}
+		return got
+	}
+
+	drain(total, "initial consumption")
+
+	// Seek back to the beginning: all messages must be redelivered even
+	// though they were already acknowledged.
+	if err := subscriber.Seek(ctx, messaging.SeekPosition{Type: messaging.SeekTypeBeginning}); err != nil {
+		t.Fatalf("Seek to beginning: %v", err)
+	}
+	replay := drain(total, "replay after seek to beginning")
+	if replay[0] != "1" {
+		t.Fatalf("expected replay to restart from first message, got %v", replay)
+	}
+
+	// Seek to a specific stream sequence: only messages from that sequence
+	// onwards are redelivered.
+	if err := subscriber.Seek(ctx, messaging.SeekPosition{Type: messaging.SeekTypeOffset, Offset: 4}); err != nil {
+		t.Fatalf("Seek to offset: %v", err)
+	}
+	tail := drain(2, "replay after seek to offset 4")
+	if tail[0] != "4" || tail[1] != "5" {
+		t.Fatalf("expected messages 4 and 5 after offset seek, got %v", tail)
+	}
+}
+
 func TestNATSIntegration_RequestReply_SuccessAndTimeout(t *testing.T) {
 	h := compose.NewHarness(
 		compose.WithServices("nats"),

@@ -293,3 +293,47 @@ func TestRabbitMQIntegration_Consumer_ManualAck_RetryThenDLQ(t *testing.T) {
 		t.Fatal("timeout waiting for message to arrive on DLQ")
 	}
 }
+
+func TestRabbitMQIntegration_HealthCheck_ReflectsConnectionState(t *testing.T) {
+	h := compose.NewHarness(
+		compose.WithServices("rabbitmq"),
+		compose.WithProjectName("swit-rabbit-it-health"),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	if err := h.Start(ctx); err != nil {
+		t.Fatalf("failed to start compose harness: %v", err)
+	}
+	defer h.Stop(context.Background())
+
+	endpoints := h.Endpoints()
+	brokerCfg := newRabbitBrokerConfig(endpoints.Rabbit, "swit-rabbit-it-health-q")
+
+	broker, err := messaging.NewMessageBroker(brokerCfg)
+	if err != nil {
+		t.Fatalf("NewMessageBroker: %v", err)
+	}
+	if err := broker.Connect(ctx); err != nil {
+		t.Fatalf("broker.Connect: %v", err)
+	}
+
+	status, err := broker.HealthCheck(ctx)
+	if err != nil {
+		t.Fatalf("HealthCheck: %v", err)
+	}
+	if status.Status != messaging.HealthStatusHealthy {
+		t.Fatalf("expected healthy status while connected, got %s (%s)", status.Status, status.Message)
+	}
+
+	if err := broker.Disconnect(context.Background()); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	status, err = broker.HealthCheck(context.Background())
+	if err != nil {
+		t.Fatalf("HealthCheck after disconnect: %v", err)
+	}
+	if status.Status == messaging.HealthStatusHealthy {
+		t.Fatalf("expected non-healthy status after disconnect, got %s", status.Status)
+	}
+}

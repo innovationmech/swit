@@ -216,6 +216,56 @@ func TestKafkaIntegration_Transactional_PublishCommit(t *testing.T) {
 	t.Fatal("timeout waiting for tx message")
 }
 
+func TestKafkaIntegration_HealthCheck_ReflectsConnectionState(t *testing.T) {
+	h := compose.NewHarness(
+		compose.WithServices("kafka"),
+		compose.WithProjectName("swit-kafka-it-health"),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	if err := h.Start(ctx); err != nil {
+		t.Fatalf("failed to start compose harness: %v", err)
+	}
+	defer h.Stop(context.Background())
+
+	endpoints := h.Endpoints()
+	brokerCfg := &messaging.BrokerConfig{
+		Type:      messaging.BrokerTypeKafka,
+		Endpoints: []string{endpoints.Kafka},
+	}
+
+	broker, err := messaging.NewMessageBroker(brokerCfg)
+	if err != nil {
+		t.Fatalf("NewMessageBroker: %v", err)
+	}
+	if err := broker.Connect(ctx); err != nil {
+		t.Fatalf("broker.Connect: %v", err)
+	}
+
+	status, err := broker.HealthCheck(ctx)
+	if err != nil {
+		t.Fatalf("HealthCheck: %v", err)
+	}
+	if status.Status != messaging.HealthStatusHealthy {
+		t.Fatalf("expected healthy status while connected, got %s (%s)", status.Status, status.Message)
+	}
+	if status.ResponseTime <= 0 {
+		t.Fatalf("expected positive response time from live probe, got %v", status.ResponseTime)
+	}
+
+	if err := broker.Disconnect(context.Background()); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	status, err = broker.HealthCheck(context.Background())
+	if err != nil {
+		t.Fatalf("HealthCheck after disconnect: %v", err)
+	}
+	if status.Status == messaging.HealthStatusHealthy {
+		t.Fatalf("expected non-healthy status after disconnect, got %s", status.Status)
+	}
+}
+
 func createKafkaTopic(ctx context.Context, bootstrap, topic string, partitions int) error {
 	// Connect to cluster
 	conn, err := kafka.DialContext(ctx, "tcp", bootstrap)
