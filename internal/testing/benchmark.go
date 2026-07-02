@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/pkg/messaging"
-	msgtest "github.com/innovationmech/swit/pkg/messaging/testutil"
+	"github.com/innovationmech/swit/pkg/testing/msgtest"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -90,6 +90,9 @@ func NewMessagingBenchmarkHarness() *MessagingBenchmarkHarness {
 	broker.On("Close").Return(nil).Maybe()
 	broker.On("IsConnected").Return(true).Maybe()
 	broker.On("CreateSubscriber", mock.AnythingOfType("messaging.SubscriberConfig")).Return(subscriber, nil).Maybe()
+	subscriber.On("Subscribe", mock.Anything, mock.Anything).Return(nil).Maybe()
+	subscriber.On("Unsubscribe", mock.Anything).Return(nil).Maybe()
+	subscriber.On("Close").Return(nil).Maybe()
 
 	return &MessagingBenchmarkHarness{
 		Coordinator: coord,
