@@ -1,6 +1,8 @@
 services:
   kafka:
-    image: bitnami/kafka:3.7.1
+    # Bitnami moved versioned images to the bitnamilegacy namespace in 2025;
+    # bitnami/kafka:3.7.1 is no longer resolvable from Docker Hub.
+    image: bitnamilegacy/kafka:3.7.1
     restart: unless-stopped
     ports:
       - "19092:9092"

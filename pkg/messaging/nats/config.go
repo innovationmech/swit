@@ -29,7 +29,7 @@ import (
 )
 
 // Config represents NATS-specific adapter configuration derived from BrokerConfig.Extra.
-// This focuses on core connection/reconnect/TLS toggles for the initial scaffold.
+// It covers connection/reconnect/TLS toggles plus JetStream topology management.
 type Config struct {
 	// Reconnect controls automatic reconnection behavior
 	Reconnect ReconnectConfig `json:"reconnect" yaml:"reconnect"`

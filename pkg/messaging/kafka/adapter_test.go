@@ -28,7 +28,19 @@ import (
 	"github.com/innovationmech/swit/pkg/messaging"
 )
 
+// stubConnectivityProber replaces the real connectivity probe so unit tests
+// do not require a running Kafka broker. Restored via t.Cleanup.
+func stubConnectivityProber(t *testing.T, err error) {
+	t.Helper()
+	original := connectivityProber
+	connectivityProber = func(ctx context.Context, cfg *messaging.BrokerConfig) error {
+		return err
+	}
+	t.Cleanup(func() { connectivityProber = original })
+}
+
 func TestKafkaAdapter_CreateBroker_And_Lifecycle(t *testing.T) {
+	stubConnectivityProber(t, nil)
 	a := newAdapter()
 
 	cfg := &messaging.BrokerConfig{
@@ -104,6 +116,7 @@ func TestKafkaAdapter_ValidateConfiguration_ExtraParsing(t *testing.T) {
 }
 
 func TestKafkaBroker_CreatePublisher_UsesPool(t *testing.T) {
+	stubConnectivityProber(t, nil)
 	a := newAdapter()
 	cfg := &messaging.BrokerConfig{Type: messaging.BrokerTypeKafka, Endpoints: []string{"localhost:9092"}}
 	brokerAny, err := a.CreateBroker(cfg)

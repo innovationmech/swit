@@ -27,10 +27,75 @@ import (
 	"time"
 
 	"github.com/innovationmech/swit/pkg/messaging"
+	"github.com/segmentio/kafka-go"
 )
 
-// kafkaBroker is a minimal broker that satisfies messaging.MessageBroker with
-// stubbed publisher/subscriber. Connectivity check is a no-op in this scaffold.
+// defaultProbeTimeout bounds connectivity probes when neither the caller
+// context nor the broker configuration provides a deadline.
+const defaultProbeTimeout = 10 * time.Second
+
+// connectivityProber verifies that at least one configured Kafka endpoint
+// accepts metadata requests. It is a package-level variable so tests can
+// substitute a fake probe, mirroring writerFactory/readerFactory.
+var connectivityProber = probeKafkaConnectivity
+
+// probeKafkaConnectivity dials each configured endpoint (honoring TLS/SASL
+// settings) and issues a metadata request until one endpoint responds.
+func probeKafkaConnectivity(ctx context.Context, cfg *messaging.BrokerConfig) error {
+	if cfg == nil || len(cfg.Endpoints) == 0 {
+		return messaging.NewConfigError("no kafka endpoints configured", nil)
+	}
+
+	tlsConf, err := messaging.BuildTLSConfig(cfg.TLS)
+	if err != nil {
+		return messaging.NewConfigError("failed to build TLS config for kafka", err)
+	}
+	mech, err := buildSASLMechanism(cfg.Authentication)
+	if err != nil {
+		return err
+	}
+
+	dialTimeout := cfg.Connection.Timeout
+	if dialTimeout <= 0 {
+		dialTimeout = defaultProbeTimeout
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, dialTimeout)
+		defer cancel()
+	}
+
+	dialer := &kafka.Dialer{
+		Timeout:       dialTimeout,
+		DualStack:     true,
+		TLS:           tlsConf,
+		SASLMechanism: mech,
+	}
+
+	var lastErr error
+	for _, endpoint := range cfg.Endpoints {
+		conn, dErr := dialer.DialContext(ctx, "tcp", endpoint)
+		if dErr != nil {
+			lastErr = dErr
+			continue
+		}
+		if deadline, ok := ctx.Deadline(); ok {
+			_ = conn.SetDeadline(deadline)
+		}
+		// A successful metadata request proves the broker speaks the Kafka
+		// protocol, even when no partitions exist yet.
+		_, rErr := conn.ReadPartitions()
+		_ = conn.Close()
+		if rErr == nil {
+			return nil
+		}
+		lastErr = rErr
+	}
+	return lastErr
+}
+
+// kafkaBroker implements messaging.MessageBroker backed by segmentio/kafka-go
+// writers (via producerPool) and readers (via readerFactory).
 type kafkaBroker struct {
 	config  *messaging.BrokerConfig
 	metrics messaging.BrokerMetrics
@@ -53,6 +118,15 @@ func (b *kafkaBroker) Connect(ctx context.Context) error {
 	if b.started {
 		return nil
 	}
+
+	b.metrics.ConnectionAttempts++
+	if err := connectivityProber(ctx, b.config); err != nil {
+		b.metrics.ConnectionFailures++
+		b.metrics.LastConnectionError = err.Error()
+		b.metrics.ConnectionStatus = "disconnected"
+		return messaging.NewConnectionError("failed to connect to kafka", err)
+	}
+
 	b.started = true
 	b.metrics.ConnectionStatus = "connected"
 	b.metrics.LastConnectionTime = time.Now()
@@ -134,14 +208,30 @@ func (b *kafkaBroker) CreateSubscriber(config messaging.SubscriberConfig) (messa
 
 func (b *kafkaBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus, error) {
 	status := &messaging.HealthStatus{
-		Status:       messaging.HealthStatusHealthy,
-		Message:      "kafka broker scaffold healthy",
-		LastChecked:  time.Now(),
-		ResponseTime: 0,
+		Status:      messaging.HealthStatusHealthy,
+		Message:     "kafka broker healthy",
+		LastChecked: time.Now(),
 		Details: map[string]any{
 			"connected": b.IsConnected(),
+			"endpoints": append([]string{}, b.config.Endpoints...),
 		},
 	}
+
+	if !b.IsConnected() {
+		status.Status = messaging.HealthStatusDegraded
+		status.Message = "kafka broker not connected"
+		return status, nil
+	}
+
+	start := time.Now()
+	if err := connectivityProber(ctx, b.config); err != nil {
+		status.Status = messaging.HealthStatusUnhealthy
+		status.Message = "kafka broker connectivity probe failed"
+		status.ResponseTime = time.Since(start)
+		status.Details["probe_error"] = err.Error()
+		return status, nil
+	}
+	status.ResponseTime = time.Since(start)
 	return status, nil
 }
 

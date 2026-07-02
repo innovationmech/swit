@@ -31,8 +31,8 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-// natsBroker is a minimal broker implementing messaging.MessageBroker for NATS.
-// It provides Connect/Disconnect/IsConnected and stub publisher/subscriber factories.
+// natsBroker implements messaging.MessageBroker for NATS, including optional
+// JetStream topology management (streams, consumers, KV and object stores).
 type natsBroker struct {
 	config  *messaging.BrokerConfig
 	cfg     *Config
@@ -277,10 +277,9 @@ func (b *natsBroker) CreateSubscriber(config messaging.SubscriberConfig) (messag
 
 func (b *natsBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus, error) {
 	status := &messaging.HealthStatus{
-		Status:       messaging.HealthStatusHealthy,
-		Message:      "nats broker scaffold healthy",
-		LastChecked:  time.Now(),
-		ResponseTime: 0,
+		Status:      messaging.HealthStatusHealthy,
+		Message:     "nats broker healthy",
+		LastChecked: time.Now(),
 		Details: map[string]any{
 			"connected":         b.IsConnected(),
 			"reconnect_enabled": b.cfg.Reconnect.Enabled,
@@ -297,6 +296,32 @@ func (b *natsBroker) HealthCheck(ctx context.Context) (*messaging.HealthStatus, 
 	}
 	status.Details["seed_servers"] = append([]string{}, b.config.Endpoints...)
 	b.mu.RUnlock()
+
+	if conn == nil || !conn.IsConnected() {
+		status.Status = messaging.HealthStatusDegraded
+		status.Message = "nats broker not connected"
+		return status, nil
+	}
+
+	// Round-trip to the server proves the connection is actually usable.
+	flushTimeout := b.cfg.Timeouts.RequestTimeout()
+	if flushTimeout <= 0 {
+		flushTimeout = 5 * time.Second
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < flushTimeout {
+			flushTimeout = remaining
+		}
+	}
+	start := time.Now()
+	if err := conn.FlushTimeout(flushTimeout); err != nil {
+		status.Status = messaging.HealthStatusUnhealthy
+		status.Message = "nats broker flush probe failed"
+		status.ResponseTime = time.Since(start)
+		status.Details["probe_error"] = err.Error()
+		return status, nil
+	}
+	status.ResponseTime = time.Since(start)
 	return status, nil
 }
 
