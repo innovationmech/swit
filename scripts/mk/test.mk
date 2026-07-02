@@ -37,6 +37,12 @@ test-coverage:
 	@echo "📊 覆盖率测试 - 生成详细的覆盖率报告"
 	@$(TEST_SCRIPT) --coverage
 
+# 覆盖率阈值检查 - 校验核心包（server/transport/messaging/saga）覆盖率
+.PHONY: test-coverage-check
+test-coverage-check:
+	@echo "📏 覆盖率阈值检查 - 核心包覆盖率校验"
+	@scripts/tools/check-coverage.sh coverage.out
+
 # 高级测试 - 精确控制测试类型和包范围
 .PHONY: test-advanced
 test-advanced:
