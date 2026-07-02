@@ -99,7 +99,7 @@ defer processor.Stop(ctx)
 
 ## 架构
 
-```
+```text
 ┌─────────────────┐
 │  Application    │
 │   Logic         │
@@ -187,26 +187,99 @@ type TransactionalStorage interface {
 storage := outbox.NewInMemoryStorage()
 ```
 
-### SQL 数据库存储
+### PostgreSQL 存储（生产首选）
 
-生产环境建议使用 SQL 数据库存储。需要创建如下表结构：
+`PostgresStorage` 与业务数据共用同一个 `*sql.DB` 连接池，通过 `BeginTx` 可以在同一个数据库事务中原子地保存业务数据与 outbox 条目：
+
+```go
+import (
+    "database/sql"
+
+    _ "github.com/lib/pq"
+    "github.com/innovationmech/swit/pkg/patterns/outbox"
+)
+
+db, err := sql.Open("postgres", dsn)
+if err != nil {
+    return err
+}
+
+// 默认表名为 outbox_entries，可通过 WithPostgresTableName 自定义
+storage, err := outbox.NewPostgresStorage(db)
+if err != nil {
+    return err
+}
+
+// 开发/测试环境可自动建表；生产环境建议使用独立迁移工具
+if err := storage.EnsureSchema(ctx); err != nil {
+    return err
+}
+```
+
+`EnsureSchema` 创建的表结构：
 
 ```sql
-CREATE TABLE outbox (
-    id VARCHAR(255) PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS outbox_entries (
+    id           VARCHAR(255) PRIMARY KEY,
     aggregate_id VARCHAR(255) NOT NULL,
-    event_type VARCHAR(255) NOT NULL,
-    topic VARCHAR(255) NOT NULL,
-    payload BLOB NOT NULL,
-    headers TEXT,
-    created_at TIMESTAMP NOT NULL,
-    processed_at TIMESTAMP NULL,
-    retry_count INT DEFAULT 0,
-    last_error TEXT,
-    INDEX idx_processed_at (processed_at),
-    INDEX idx_created_at (created_at)
+    event_type   VARCHAR(255) NOT NULL,
+    topic        VARCHAR(255) NOT NULL,
+    payload      BYTEA        NOT NULL,
+    headers      JSONB,
+    created_at   TIMESTAMPTZ  NOT NULL,
+    processed_at TIMESTAMPTZ,
+    retry_count  INT          NOT NULL DEFAULT 0,
+    last_error   TEXT         NOT NULL DEFAULT ''
 );
 ```
+
+### Redis 存储
+
+`RedisStorage` 基于 `go-redis/v9`，使用 ZSET 维护未处理/已处理索引，批量写入通过 `TxPipeline` 保证原子性：
+
+```go
+import (
+    "github.com/redis/go-redis/v9"
+    "github.com/innovationmech/swit/pkg/patterns/outbox"
+)
+
+client := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+
+// 默认键前缀为 outbox，可通过 WithRedisKeyPrefix 自定义
+storage, err := outbox.NewRedisStorage(client)
+```
+
+注意：Redis 无法与关系型数据库的业务数据共享 ACID 事务（`Transaction.Exec` 不受支持）。需要与数据库业务数据保持严格原子性时请使用 `PostgresStorage`。
+
+## 端到端：打通真实消息发布
+
+Outbox processor 通过 `pkg/messaging.EventPublisher` 接口发布消息，可无缝接入任意 broker 适配器（RabbitMQ、NATS、Kafka 或进程内 `pkg/messaging/inmemory`）：
+
+```go
+import (
+    "github.com/innovationmech/swit/pkg/messaging"
+    "github.com/innovationmech/swit/pkg/messaging/inmemory"
+    "github.com/innovationmech/swit/pkg/patterns/outbox"
+)
+
+// 1. 创建 broker 与真实的 EventPublisher（此处以 inmemory 为例）
+broker := inmemory.New(nil)
+_ = broker.Connect(ctx)
+brokerPublisher, _ := broker.CreatePublisher(messaging.PublisherConfig{Topic: "orders.events"})
+
+// 2. 业务事务中保存 outbox 条目（DB 落盘）
+tx, _ := storage.BeginTx(ctx)
+tx.Exec(ctx, "INSERT INTO orders ...")                          // 业务数据
+outbox.NewPublisher(storage).SaveWithTransaction(ctx, tx, entry) // outbox 条目
+tx.Commit(ctx)                                                   // 原子提交
+
+// 3. 后台 processor 轮询 outbox 并可靠发布到 broker
+processor := outbox.NewProcessor(storage, brokerPublisher, outbox.DefaultProcessorConfig())
+_ = processor.Start(ctx)
+defer processor.Stop(ctx)
+```
+
+完整可运行的端到端示例见 [e2e_test.go](e2e_test.go)（含内存、Redis 与 PostgreSQL 三种存储的链路验证；PostgreSQL 用例需设置 `POSTGRES_TEST_DSN` 环境变量）。
 
 ## 最佳实践
 
