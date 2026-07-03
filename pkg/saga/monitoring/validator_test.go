@@ -308,7 +308,7 @@ func TestValidatePermission(t *testing.T) {
 	validator := NewOperationValidator(coordinator)
 	ctx := context.Background()
 
-	// Currently this is a placeholder that always succeeds
+	// Without a configured PermissionChecker, all operations are allowed by design
 	err := validator.ValidatePermission(ctx, "cancel", "test-saga")
 	if err != nil {
 		t.Errorf("ValidatePermission() unexpected error: %v", err)
@@ -320,15 +320,93 @@ func TestValidatePermission(t *testing.T) {
 	}
 }
 
+func TestValidatePermissionWithChecker(t *testing.T) {
+	coordinator := newMockCoordinator()
+	validator := NewOperationValidator(coordinator)
+	ctx := context.Background()
+
+	// Checker that only allows "cancel" operations
+	validator.SetPermissionChecker(PermissionCheckerFunc(func(ctx context.Context, operation string, sagaID string) error {
+		if operation == "cancel" {
+			return nil
+		}
+		return errors.New("operation not allowed")
+	}))
+
+	if err := validator.ValidatePermission(ctx, "cancel", "test-saga"); err != nil {
+		t.Errorf("ValidatePermission() unexpected error for allowed operation: %v", err)
+	}
+
+	err := validator.ValidatePermission(ctx, "retry", "test-saga")
+	if err == nil {
+		t.Fatal("ValidatePermission() expected error for denied operation")
+	}
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("ValidatePermission() error = %v, want ErrUnauthorized", err)
+	}
+
+	// Resetting the checker restores allow-all behavior
+	validator.SetPermissionChecker(nil)
+	if err := validator.ValidatePermission(ctx, "retry", "test-saga"); err != nil {
+		t.Errorf("ValidatePermission() unexpected error after resetting checker: %v", err)
+	}
+}
+
 func TestCheckConcurrentOperation(t *testing.T) {
 	coordinator := newMockCoordinator()
 	validator := NewOperationValidator(coordinator)
 	ctx := context.Background()
 
-	// Currently this is a placeholder that always succeeds
+	// No operation in flight: check succeeds
 	err := validator.CheckConcurrentOperation(ctx, "test-saga")
 	if err != nil {
 		t.Errorf("CheckConcurrentOperation() unexpected error: %v", err)
+	}
+
+	// Begin an operation and verify concurrent detection
+	release, err := validator.BeginOperation(ctx, "test-saga")
+	if err != nil {
+		t.Fatalf("BeginOperation() unexpected error: %v", err)
+	}
+
+	err = validator.CheckConcurrentOperation(ctx, "test-saga")
+	if !errors.Is(err, ErrConcurrentOperation) {
+		t.Errorf("CheckConcurrentOperation() error = %v, want ErrConcurrentOperation", err)
+	}
+
+	// Other Sagas are unaffected
+	if err := validator.CheckConcurrentOperation(ctx, "other-saga"); err != nil {
+		t.Errorf("CheckConcurrentOperation() unexpected error for other saga: %v", err)
+	}
+
+	// After release, the Saga can be operated on again
+	release()
+	if err := validator.CheckConcurrentOperation(ctx, "test-saga"); err != nil {
+		t.Errorf("CheckConcurrentOperation() unexpected error after release: %v", err)
+	}
+}
+
+func TestBeginOperationConcurrent(t *testing.T) {
+	coordinator := newMockCoordinator()
+	validator := NewOperationValidator(coordinator)
+	ctx := context.Background()
+
+	release, err := validator.BeginOperation(ctx, "test-saga")
+	if err != nil {
+		t.Fatalf("BeginOperation() unexpected error: %v", err)
+	}
+
+	// Second BeginOperation on the same Saga must fail
+	if _, err := validator.BeginOperation(ctx, "test-saga"); !errors.Is(err, ErrConcurrentOperation) {
+		t.Errorf("BeginOperation() error = %v, want ErrConcurrentOperation", err)
+	}
+
+	// Release is idempotent
+	release()
+	release()
+
+	if _, err := validator.BeginOperation(ctx, "test-saga"); err != nil {
+		t.Errorf("BeginOperation() unexpected error after release: %v", err)
 	}
 }
 

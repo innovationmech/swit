@@ -158,6 +158,87 @@ func TestMetricsAPI_GetMetrics(t *testing.T) {
 	}
 }
 
+// TestMetricsAPI_GetAggregatedMetrics tests aggregation grouping by state and definition.
+func TestMetricsAPI_GetAggregatedMetrics(t *testing.T) {
+	newCollector := func(t *testing.T) *SagaMetricsCollector {
+		registry := prometheus.NewRegistry()
+		collector, err := NewSagaMetricsCollector(&Config{Registry: registry})
+		require.NoError(t, err)
+		return collector
+	}
+
+	t.Run("group by state with active and terminal sagas", func(t *testing.T) {
+		collector := newCollector(t)
+		collector.RecordSagaStarted("saga-1")
+		collector.RecordSagaStarted("saga-2")
+		collector.RecordSagaStarted("saga-3")
+		collector.RecordSagaCompleted("saga-1", 500*time.Millisecond)
+		collector.RecordSagaFailed("saga-2", "timeout")
+
+		// Mock coordinator reports two active Sagas in Running state
+		api := NewMetricsAPI(collector, newMockCoordinator())
+
+		aggregations, err := api.getAggregatedMetrics("state")
+		require.NoError(t, err)
+
+		running, ok := aggregations["running"]
+		require.True(t, ok, "expected running group from active sagas")
+		assert.Equal(t, int64(2), running.Total)
+		assert.Equal(t, int64(2), running.Active)
+
+		completed, ok := aggregations["completed"]
+		require.True(t, ok, "expected completed group from collector counters")
+		assert.Equal(t, int64(1), completed.Total)
+		assert.Equal(t, int64(1), completed.Completed)
+
+		failed, ok := aggregations["failed"]
+		require.True(t, ok, "expected failed group from collector counters")
+		assert.Equal(t, int64(1), failed.Total)
+		assert.Equal(t, int64(1), failed.Failed)
+		assert.Contains(t, failed.FailureReasons, "timeout")
+	})
+
+	t.Run("group by definition", func(t *testing.T) {
+		collector := newCollector(t)
+		api := NewMetricsAPI(collector, newMockCoordinator())
+
+		aggregations, err := api.getAggregatedMetrics("definition")
+		require.NoError(t, err)
+
+		// Mock instances all report definition "test-definition"
+		group, ok := aggregations["test-definition"]
+		require.True(t, ok, "expected group keyed by definition ID")
+		assert.Equal(t, int64(2), group.Total)
+		assert.Equal(t, int64(2), group.Active)
+	})
+
+	t.Run("nil coordinator still aggregates collector counters", func(t *testing.T) {
+		collector := newCollector(t)
+		collector.RecordSagaStarted("saga-1")
+		collector.RecordSagaCompleted("saga-1", 100*time.Millisecond)
+
+		api := NewMetricsAPI(collector, nil)
+
+		aggregations, err := api.getAggregatedMetrics("state")
+		require.NoError(t, err)
+
+		completed, ok := aggregations["completed"]
+		require.True(t, ok)
+		assert.Equal(t, int64(1), completed.Total)
+	})
+
+	t.Run("coordinator error is propagated", func(t *testing.T) {
+		collector := newCollector(t)
+		coordinator := newMockCoordinator()
+		coordinator.getActiveSagasErr = assert.AnError
+
+		api := NewMetricsAPI(collector, coordinator)
+
+		_, err := api.getAggregatedMetrics("state")
+		assert.Error(t, err)
+	})
+}
+
 // TestMetricsAPI_GetRealtimeMetrics tests the GetRealtimeMetrics endpoint.
 func TestMetricsAPI_GetRealtimeMetrics(t *testing.T) {
 	tests := []struct {

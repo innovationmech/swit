@@ -22,6 +22,7 @@
 package monitoring
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -265,28 +266,62 @@ func calculateMetricsSummary(metrics *Metrics) MetricsSummary {
 }
 
 // getAggregatedMetrics retrieves metrics grouped by the specified dimension.
+//
+// Grouping is based on the data available to the monitoring layer: active
+// Saga instances are queried from the coordinator and grouped individually,
+// while terminal Sagas (completed/failed) are reported from the collector's
+// aggregate counters since terminated instances are no longer enumerable.
 func (api *MetricsAPI) getAggregatedMetrics(groupBy string) (map[string]MetricsSummary, error) {
 	aggregations := make(map[string]MetricsSummary)
 
 	switch groupBy {
 	case "state":
-		// Group metrics by Saga state
-		// This requires accessing the coordinator to get all Sagas and group them
-		// For now, we return a simplified version
-		states := []string{"Running", "Completed", "Failed", "Compensated"}
-		for _, state := range states {
-			// In a real implementation, we'd query the coordinator for Sagas in each state
-			// and calculate metrics for each group
-			aggregations[state] = MetricsSummary{
-				Total: 0, // Placeholder
+		// Group active Sagas by their current state.
+		instances, err := api.listActiveSagas()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, instance := range instances {
+			stateName := instance.GetState().String()
+			summary := aggregations[stateName]
+			summary.Total++
+			summary.Active++
+			aggregations[stateName] = summary
+		}
+
+		// Terminal states come from the collector's aggregate counters. Keys
+		// follow saga.SagaState.String() naming.
+		metrics := api.collector.GetMetrics()
+		if metrics.SagasCompleted > 0 {
+			aggregations[saga.StateCompleted.String()] = MetricsSummary{
+				Total:     metrics.SagasCompleted,
+				Completed: metrics.SagasCompleted,
+			}
+		}
+		if metrics.SagasFailed > 0 {
+			aggregations[saga.StateFailed.String()] = MetricsSummary{
+				Total:          metrics.SagasFailed,
+				Failed:         metrics.SagasFailed,
+				FailureReasons: metrics.FailureReasons,
 			}
 		}
 
 	case "definition":
-		// Group metrics by Saga definition
-		// This would require tracking per-definition metrics in the collector
-		aggregations["placeholder"] = MetricsSummary{
-			Total: 0,
+		// Group active Sagas by their definition ID. Terminal Sagas are not
+		// included because the collector tracks aggregate counters only, not
+		// per-definition history.
+		instances, err := api.listActiveSagas()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, instance := range instances {
+			definitionID := instance.GetDefinitionID()
+			summary := aggregations[definitionID]
+			summary.Total++
+			summary.Active++
+			aggregations[definitionID] = summary
 		}
 
 	default:
@@ -294,4 +329,19 @@ func (api *MetricsAPI) getAggregatedMetrics(groupBy string) (map[string]MetricsS
 	}
 
 	return aggregations, nil
+}
+
+// listActiveSagas returns the currently active Saga instances, treating a
+// missing coordinator as "no active Sagas" so that aggregations based purely
+// on collector counters still work.
+func (api *MetricsAPI) listActiveSagas() ([]saga.SagaInstance, error) {
+	if api.coordinator == nil {
+		return nil, nil
+	}
+
+	instances, err := api.coordinator.GetActiveSagas(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active sagas: %w", err)
+	}
+	return instances, nil
 }

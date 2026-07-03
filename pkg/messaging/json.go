@@ -424,11 +424,15 @@ func (j *JSONSerializer) ValidateMessage(ctx context.Context, message interface{
 }
 
 // GetSchema implements MessageSerializer interface.
+//
+// Design boundary: the JSON serializer manages schemas per message type
+// (registered via SetSchema and resolved via getSchemaForMessage), so there is
+// no single serializer-level schema to return. This method intentionally
+// returns a SchemaError; callers that need schema validation should register
+// per-type schemas with SetSchema instead.
 func (j *JSONSerializer) GetSchema(ctx context.Context) (Schema, error) {
-	// For JSON, we don't have a predefined schema unless explicitly set
-	// This is a placeholder implementation
 	return nil, &SchemaError{
-		Message: "JSON serializer does not have a predefined schema",
+		Message: "JSON serializer manages schemas per message type; register schemas via SetSchema",
 	}
 }
 

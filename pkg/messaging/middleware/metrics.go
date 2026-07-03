@@ -24,8 +24,11 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/innovationmech/swit/pkg/messaging"
 )
@@ -447,19 +450,162 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-// PrometheusMetricsCollector provides a Prometheus-compatible metrics collector interface.
+// PrometheusMetricsCollector implements MetricsCollector backed by
+// prometheus/client_golang. Metric vectors are created lazily on first use
+// with the label names observed at creation time; subsequent observations are
+// normalized to that label set (missing labels become empty values, unknown
+// labels are dropped) since Prometheus requires a fixed label schema per
+// metric name.
 type PrometheusMetricsCollector struct {
-	// This would be implemented using prometheus/client_golang in a real implementation
-	// For now, we'll use the in-memory collector as a placeholder
-	*InMemoryMetricsCollector
+	registry   *prometheus.Registry
+	counters   map[string]*prometheusCounterEntry
+	gauges     map[string]*prometheusGaugeEntry
+	histograms map[string]*prometheusHistogramEntry
+	mutex      sync.Mutex
 }
 
-// NewPrometheusMetricsCollector creates a new Prometheus metrics collector.
-// In a real implementation, this would use the prometheus/client_golang library.
+type prometheusCounterEntry struct {
+	vec        *prometheus.CounterVec
+	labelNames []string
+}
+
+type prometheusGaugeEntry struct {
+	vec        *prometheus.GaugeVec
+	labelNames []string
+}
+
+type prometheusHistogramEntry struct {
+	vec        *prometheus.HistogramVec
+	labelNames []string
+}
+
+// NewPrometheusMetricsCollector creates a new Prometheus metrics collector
+// with its own registry. Use GetRegistry to expose the metrics, e.g. via
+// promhttp.HandlerFor.
 func NewPrometheusMetricsCollector() *PrometheusMetricsCollector {
 	return &PrometheusMetricsCollector{
-		InMemoryMetricsCollector: NewInMemoryMetricsCollector(),
+		registry:   prometheus.NewRegistry(),
+		counters:   make(map[string]*prometheusCounterEntry),
+		gauges:     make(map[string]*prometheusGaugeEntry),
+		histograms: make(map[string]*prometheusHistogramEntry),
 	}
+}
+
+// GetRegistry returns the Prometheus registry holding all metrics collected
+// by this collector.
+func (pmc *PrometheusMetricsCollector) GetRegistry() *prometheus.Registry {
+	return pmc.registry
+}
+
+// IncrementCounter implements MetricsCollector.
+func (pmc *PrometheusMetricsCollector) IncrementCounter(name string, labels map[string]string, value float64) {
+	pmc.AddToCounter(name, labels, value)
+}
+
+// AddToCounter implements MetricsCollector.
+func (pmc *PrometheusMetricsCollector) AddToCounter(name string, labels map[string]string, value float64) {
+	if value < 0 {
+		return // Prometheus counters must not decrease
+	}
+
+	pmc.mutex.Lock()
+	entry, exists := pmc.counters[name]
+	if !exists {
+		labelNames := sortedLabelNames(labels)
+		vec := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: sanitizePrometheusName(name),
+			Help: fmt.Sprintf("Messaging middleware counter metric %s", name),
+		}, labelNames)
+		if err := pmc.registry.Register(vec); err != nil {
+			pmc.mutex.Unlock()
+			return
+		}
+		entry = &prometheusCounterEntry{vec: vec, labelNames: labelNames}
+		pmc.counters[name] = entry
+	}
+	pmc.mutex.Unlock()
+
+	entry.vec.With(normalizeLabels(entry.labelNames, labels)).Add(value)
+}
+
+// SetGauge implements MetricsCollector.
+func (pmc *PrometheusMetricsCollector) SetGauge(name string, labels map[string]string, value float64) {
+	pmc.mutex.Lock()
+	entry, exists := pmc.gauges[name]
+	if !exists {
+		labelNames := sortedLabelNames(labels)
+		vec := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: sanitizePrometheusName(name),
+			Help: fmt.Sprintf("Messaging middleware gauge metric %s", name),
+		}, labelNames)
+		if err := pmc.registry.Register(vec); err != nil {
+			pmc.mutex.Unlock()
+			return
+		}
+		entry = &prometheusGaugeEntry{vec: vec, labelNames: labelNames}
+		pmc.gauges[name] = entry
+	}
+	pmc.mutex.Unlock()
+
+	entry.vec.With(normalizeLabels(entry.labelNames, labels)).Set(value)
+}
+
+// ObserveHistogram implements MetricsCollector.
+func (pmc *PrometheusMetricsCollector) ObserveHistogram(name string, labels map[string]string, value float64) {
+	pmc.mutex.Lock()
+	entry, exists := pmc.histograms[name]
+	if !exists {
+		labelNames := sortedLabelNames(labels)
+		vec := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    sanitizePrometheusName(name),
+			Help:    fmt.Sprintf("Messaging middleware histogram metric %s", name),
+			Buckets: prometheus.DefBuckets,
+		}, labelNames)
+		if err := pmc.registry.Register(vec); err != nil {
+			pmc.mutex.Unlock()
+			return
+		}
+		entry = &prometheusHistogramEntry{vec: vec, labelNames: labelNames}
+		pmc.histograms[name] = entry
+	}
+	pmc.mutex.Unlock()
+
+	entry.vec.With(normalizeLabels(entry.labelNames, labels)).Observe(value)
+}
+
+// sortedLabelNames returns the label names from the map in sorted order.
+func sortedLabelNames(labels map[string]string) []string {
+	names := make([]string, 0, len(labels))
+	for name := range labels {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// normalizeLabels maps the provided labels onto the fixed label schema of a
+// metric vector: missing labels get empty values and extra labels are dropped.
+func normalizeLabels(labelNames []string, labels map[string]string) prometheus.Labels {
+	normalized := make(prometheus.Labels, len(labelNames))
+	for _, name := range labelNames {
+		normalized[name] = labels[name]
+	}
+	return normalized
+}
+
+// sanitizePrometheusName replaces characters that are invalid in Prometheus
+// metric names with underscores.
+func sanitizePrometheusName(name string) string {
+	sanitized := []rune(name)
+	for i, r := range sanitized {
+		valid := r == '_' || r == ':' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(i > 0 && r >= '0' && r <= '9')
+		if !valid {
+			sanitized[i] = '_'
+		}
+	}
+	return string(sanitized)
 }
 
 // CustomMetricsMiddleware provides customizable metrics collection with user-defined metrics.

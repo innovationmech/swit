@@ -387,11 +387,15 @@ func (p *ProtobufSerializer) ValidateMessage(ctx context.Context, message interf
 }
 
 // GetSchema implements MessageSerializer interface.
+//
+// Design boundary: protobuf schema information is derived from per-message
+// descriptors (registered via SetSchema and resolved via getSchemaForMessage),
+// so there is no single serializer-level schema to return. This method
+// intentionally returns a SchemaError; callers that need schema validation
+// should register per-message schemas with SetSchema instead.
 func (p *ProtobufSerializer) GetSchema(ctx context.Context) (Schema, error) {
-	// For protobuf, schema information comes from message descriptors
-	// This is a placeholder implementation
 	return nil, &SchemaError{
-		Message: "protobuf serializer requires message-specific schema lookup",
+		Message: "protobuf serializer manages schemas per message type; register schemas via SetSchema",
 	}
 }
 
@@ -573,15 +577,44 @@ func (b *ProtobufSchemaBuilder) Build() *ProtobufSchema {
 }
 
 // RegisterProtobufType registers a protobuf message type with the global registry.
+// Registration is idempotent: if the message type is already registered
+// (which is the case for all generated protobuf code, since generated init
+// functions self-register), this function returns nil without re-registering.
 func RegisterProtobufType(messageType proto.Message) error {
-	// This would register the message type with the global protobuf registry
-	// In a real implementation, this would use protoregistry.GlobalTypes.RegisterMessage
+	if messageType == nil {
+		return &SerializationError{
+			Format:  FormatProtobuf,
+			Message: "message type cannot be nil",
+		}
+	}
+
+	mt := messageType.ProtoReflect().Type()
+	fullName := mt.Descriptor().FullName()
+
+	// Generated protobuf code registers itself with the global registry, so
+	// treat an existing registration as success.
+	if _, err := protoregistry.GlobalTypes.FindMessageByName(fullName); err == nil {
+		return nil
+	}
+
+	if err := protoregistry.GlobalTypes.RegisterMessage(mt); err != nil {
+		return &SerializationError{
+			Format:  FormatProtobuf,
+			Message: fmt.Sprintf("failed to register message type '%s'", fullName),
+			Cause:   err,
+		}
+	}
+
 	return nil
 }
 
-// GetRegisteredProtobufTypes returns all registered protobuf message types.
+// GetRegisteredProtobufTypes returns the full names of all protobuf message
+// types registered with the global registry.
 func GetRegisteredProtobufTypes() []string {
-	// This would return all registered message types from the registry
-	// This is a placeholder implementation
-	return []string{}
+	types := make([]string, 0, protoregistry.GlobalTypes.NumMessages())
+	protoregistry.GlobalTypes.RangeMessages(func(mt protoreflect.MessageType) bool {
+		types = append(types, string(mt.Descriptor().FullName()))
+		return true
+	})
+	return types
 }

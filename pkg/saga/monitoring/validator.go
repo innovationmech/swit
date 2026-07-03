@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/innovationmech/swit/pkg/logger"
 	"github.com/innovationmech/swit/pkg/saga"
@@ -48,9 +49,36 @@ var (
 	ErrConcurrentOperation = errors.New("concurrent operation detected")
 )
 
+// PermissionChecker decides whether the caller identified by the context is
+// allowed to perform a control operation on a Saga. Implementations typically
+// extract the caller identity from the context (e.g. from authentication
+// middleware) and evaluate it against the operation and resource.
+type PermissionChecker interface {
+	// CheckPermission returns nil if the operation is allowed, or an error
+	// describing why it is denied.
+	CheckPermission(ctx context.Context, operation string, sagaID string) error
+}
+
+// PermissionCheckerFunc adapts a function to the PermissionChecker interface.
+type PermissionCheckerFunc func(ctx context.Context, operation string, sagaID string) error
+
+// CheckPermission implements PermissionChecker.
+func (f PermissionCheckerFunc) CheckPermission(ctx context.Context, operation string, sagaID string) error {
+	return f(ctx, operation, sagaID)
+}
+
 // OperationValidator validates Saga control operations before execution.
 type OperationValidator struct {
 	coordinator saga.SagaCoordinator
+
+	// permissionChecker is the pluggable authorization hook. When nil, all
+	// operations are allowed (see ValidatePermission for the design boundary).
+	permissionChecker PermissionChecker
+
+	// inFlightOps tracks Saga IDs with an operation currently in progress,
+	// used by BeginOperation/CheckConcurrentOperation to detect concurrent
+	// control operations within this process.
+	inFlightOps sync.Map
 }
 
 // NewOperationValidator creates a new operation validator.
@@ -58,6 +86,12 @@ func NewOperationValidator(coordinator saga.SagaCoordinator) *OperationValidator
 	return &OperationValidator{
 		coordinator: coordinator,
 	}
+}
+
+// SetPermissionChecker configures the authorization hook used by
+// ValidatePermission. Passing nil restores the default allow-all behavior.
+func (v *OperationValidator) SetPermissionChecker(checker PermissionChecker) {
+	v.permissionChecker = checker
 }
 
 // ValidateCancelOperation validates if a Saga can be cancelled.
@@ -267,56 +301,87 @@ func (v *OperationValidator) ValidateStateTransition(from, to saga.SagaState) er
 	return fmt.Errorf("%w: transition from %s to %s is not allowed", ErrInvalidSagaState, from.String(), to.String())
 }
 
-// ValidatePermission validates if the user has permission to perform the operation.
-// This is a placeholder for future authentication/authorization integration.
+// ValidatePermission validates if the caller has permission to perform the operation.
+//
+// Design boundary: the monitoring package does not ship an authentication or
+// authorization system. Authorization is delegated to the PermissionChecker
+// configured via SetPermissionChecker; when no checker is configured, all
+// operations are allowed and the request is logged for audit purposes.
 //
 // Parameters:
-//   - ctx: Context containing user information.
+//   - ctx: Context containing caller information (as understood by the configured checker).
 //   - operation: The operation being performed (e.g., "cancel", "retry").
 //   - sagaID: The ID of the Saga being operated on.
 //
 // Returns:
-//   - An error if the user is not authorized.
+//   - An error wrapping ErrUnauthorized if the caller is not authorized.
 func (v *OperationValidator) ValidatePermission(ctx context.Context, operation string, sagaID string) error {
-	// TODO: Implement actual permission checking when authentication/authorization is added
-	// For now, we'll just log the operation for audit purposes
-
 	if logger.Logger != nil {
 		logger.Logger.Info("Permission check requested",
 			zap.String("operation", operation),
 			zap.String("saga_id", sagaID))
 	}
 
-	// In a real implementation, this would:
-	// 1. Extract user identity from context
-	// 2. Check user permissions against operation and resource
-	// 3. Return ErrUnauthorized if permission is denied
+	if v.permissionChecker == nil {
+		// No authorization configured: allow by design (see doc comment).
+		return nil
+	}
+
+	if err := v.permissionChecker.CheckPermission(ctx, operation, sagaID); err != nil {
+		return fmt.Errorf("%w: %s on saga %s: %v", ErrUnauthorized, operation, sagaID, err)
+	}
 
 	return nil
 }
 
+// BeginOperation marks the start of a control operation on the given Saga and
+// returns a release function that must be called when the operation finishes
+// (typically via defer). If another operation started through BeginOperation
+// is still in progress for the same Saga, ErrConcurrentOperation is returned.
+//
+// Design boundary: detection is process-local (in-memory). Deployments running
+// multiple control-plane replicas need an external coordination mechanism
+// (e.g. distributed locks) layered on top.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeout control.
+//   - sagaID: The ID of the Saga being operated on.
+//
+// Returns:
+//   - A release function and nil on success, or nil and an error if a
+//     concurrent operation is detected.
+func (v *OperationValidator) BeginOperation(ctx context.Context, sagaID string) (func(), error) {
+	if _, loaded := v.inFlightOps.LoadOrStore(sagaID, struct{}{}); loaded {
+		return nil, fmt.Errorf("%w: saga %s", ErrConcurrentOperation, sagaID)
+	}
+
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			v.inFlightOps.Delete(sagaID)
+		})
+	}
+	return release, nil
+}
+
 // CheckConcurrentOperation checks if there's a concurrent operation on the same Saga.
-// This helps prevent race conditions when multiple control operations are attempted simultaneously.
+// It reports operations tracked via BeginOperation within this process.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout control.
 //   - sagaID: The ID of the Saga to check.
 //
 // Returns:
-//   - An error if a concurrent operation is detected.
+//   - An error wrapping ErrConcurrentOperation if a concurrent operation is detected.
 func (v *OperationValidator) CheckConcurrentOperation(ctx context.Context, sagaID string) error {
-	// TODO: Implement actual concurrent operation detection
-	// This would typically use:
-	// 1. Distributed locks (Redis, etcd)
-	// 2. Database-level locks
-	// 3. In-memory lock tracking
-
 	if logger.Logger != nil {
 		logger.Logger.Debug("Checking for concurrent operations",
 			zap.String("saga_id", sagaID))
 	}
 
-	// For now, we'll just log and return success
-	// In a production system, this would implement proper locking
+	if _, inFlight := v.inFlightOps.Load(sagaID); inFlight {
+		return fmt.Errorf("%w: saga %s", ErrConcurrentOperation, sagaID)
+	}
+
 	return nil
 }
