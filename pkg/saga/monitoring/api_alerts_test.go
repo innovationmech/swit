@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -393,6 +394,137 @@ func TestAlertsAPI_AcknowledgeAlert(t *testing.T) {
 
 	assert.True(t, resp["success"].(bool))
 	assert.NotEmpty(t, resp["message"])
+	assert.NotNil(t, resp["acknowledgment"])
+}
+
+func TestAlertsAPI_AcknowledgeAlert_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	alertsAPI, _ := createTestAlertsAPI()
+
+	router.POST("/api/alerts/:id/acknowledge", alertsAPI.AcknowledgeAlert)
+
+	req, err := http.NewRequest(http.MethodPost, "/api/alerts/nonexistent/acknowledge", nil)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAlertsAPI_AcknowledgeAlert_WithBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	alertsAPI, _ := createTestAlertsAPI()
+
+	router.POST("/api/alerts/:id/acknowledge", alertsAPI.AcknowledgeAlert)
+
+	body := strings.NewReader(`{"acknowledgedBy":"operator@example.com","comment":"investigating"}`)
+	req, err := http.NewRequest(http.MethodPost, "/api/alerts/alert-2/acknowledge", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Success        bool                 `json:"success"`
+		Acknowledgment *AlertAcknowledgment `json:"acknowledgment"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.True(t, resp.Success)
+	require.NotNil(t, resp.Acknowledgment)
+	assert.Equal(t, "alert-2", resp.Acknowledgment.AlertID)
+	assert.Equal(t, "operator@example.com", resp.Acknowledgment.AcknowledgedBy)
+	assert.Equal(t, "investigating", resp.Acknowledgment.Comment)
+}
+
+func TestAlertsAPI_AcknowledgeAlert_Idempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	alertsAPI, _ := createTestAlertsAPI()
+
+	router.POST("/api/alerts/:id/acknowledge", alertsAPI.AcknowledgeAlert)
+
+	// First acknowledgment
+	req1, err := http.NewRequest(http.MethodPost, "/api/alerts/alert-1/acknowledge", nil)
+	require.NoError(t, err)
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, req1)
+	assert.Equal(t, http.StatusOK, w1.Code)
+
+	var resp1 struct {
+		Acknowledgment *AlertAcknowledgment `json:"acknowledgment"`
+	}
+	require.NoError(t, json.Unmarshal(w1.Body.Bytes(), &resp1))
+	require.NotNil(t, resp1.Acknowledgment)
+	firstAckTime := resp1.Acknowledgment.AcknowledgedAt
+
+	// Second acknowledgment returns the existing record
+	req2, err := http.NewRequest(http.MethodPost, "/api/alerts/alert-1/acknowledge", nil)
+	require.NoError(t, err)
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusOK, w2.Code)
+
+	var resp2 struct {
+		Message        string               `json:"message"`
+		Acknowledgment *AlertAcknowledgment `json:"acknowledgment"`
+	}
+	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &resp2))
+	assert.Equal(t, "Alert was already acknowledged", resp2.Message)
+	require.NotNil(t, resp2.Acknowledgment)
+	assert.True(t, resp2.Acknowledgment.AcknowledgedAt.Equal(firstAckTime))
+}
+
+func TestAlertsAPI_AcknowledgmentReflectedInQueries(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	alertsAPI, _ := createTestAlertsAPI()
+
+	router.POST("/api/alerts/:id/acknowledge", alertsAPI.AcknowledgeAlert)
+	router.GET("/api/alerts/:id", alertsAPI.GetAlert)
+	router.GET("/api/alerts", alertsAPI.GetAlerts)
+
+	// Acknowledge alert-1
+	ackReq, err := http.NewRequest(http.MethodPost, "/api/alerts/alert-1/acknowledge", nil)
+	require.NoError(t, err)
+	ackW := httptest.NewRecorder()
+	router.ServeHTTP(ackW, ackReq)
+	require.Equal(t, http.StatusOK, ackW.Code)
+
+	// GetAlert reflects the acknowledgment
+	getReq, err := http.NewRequest(http.MethodGet, "/api/alerts/alert-1", nil)
+	require.NoError(t, err)
+	getW := httptest.NewRecorder()
+	router.ServeHTTP(getW, getReq)
+	require.Equal(t, http.StatusOK, getW.Code)
+
+	var alertDTO AlertDTO
+	require.NoError(t, json.Unmarshal(getW.Body.Bytes(), &alertDTO))
+	assert.True(t, alertDTO.Acknowledged)
+	require.NotNil(t, alertDTO.Acknowledgment)
+	assert.Equal(t, "alert-1", alertDTO.Acknowledgment.AlertID)
+
+	// GetAlerts list reflects the acknowledgment only for alert-1
+	listReq, err := http.NewRequest(http.MethodGet, "/api/alerts", nil)
+	require.NoError(t, err)
+	listW := httptest.NewRecorder()
+	router.ServeHTTP(listW, listReq)
+	require.Equal(t, http.StatusOK, listW.Code)
+
+	var listResp AlertListResponse
+	require.NoError(t, json.Unmarshal(listW.Body.Bytes(), &listResp))
+	for _, alert := range listResp.Alerts {
+		if alert.ID == "alert-1" {
+			assert.True(t, alert.Acknowledged)
+		} else {
+			assert.False(t, alert.Acknowledged)
+		}
+	}
 }
 
 func TestFilterAlerts(t *testing.T) {

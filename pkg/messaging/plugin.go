@@ -197,9 +197,12 @@ func (bp *BasePlugin) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// CreateMiddleware is a placeholder that should be overridden by concrete plugins.
+// CreateMiddleware returns an error by design: BasePlugin only provides
+// lifecycle and state management, and cannot know what middleware a concrete
+// plugin produces. Concrete plugin implementations that embed BasePlugin must
+// override this method to return their middleware.
 func (bp *BasePlugin) CreateMiddleware() (Middleware, error) {
-	return nil, fmt.Errorf("CreateMiddleware not implemented for plugin %s", bp.metadata.Name)
+	return nil, fmt.Errorf("plugin %s does not override CreateMiddleware; embed BasePlugin and implement CreateMiddleware in the concrete plugin", bp.metadata.Name)
 }
 
 // State returns the current state of the plugin.
