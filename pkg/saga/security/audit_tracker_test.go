@@ -26,8 +26,56 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
+
+func TestAuditTracker_UniqueTraceIDsWithFrozenClock(t *testing.T) {
+	for _, child := range []bool{false, true} {
+		name := "root"
+		if child {
+			name = "child"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				tracker := createTestTracker(t)
+				defer tracker.Close()
+				ctx := context.Background()
+				parent, err := tracker.StartTrace(ctx, "parent", CategorySaga, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				seen := map[string]bool{parent.TraceID: true}
+				for range 3 {
+					var trace *OperationTrace
+					if child {
+						trace, err = tracker.StartChildTrace(ctx, parent.TraceID, "operation", CategorySaga, nil)
+					} else {
+						trace, err = tracker.StartTrace(ctx, "operation", CategorySaga, nil)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if seen[trace.TraceID] {
+						t.Fatalf("trace ID reused without clock advancement: %s", trace.TraceID)
+					}
+					seen[trace.TraceID] = true
+				}
+				traces, err := tracker.GetTracesByCategory(ctx, CategorySaga)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(traces) != len(seen) {
+					t.Fatalf("stored %d traces, want %d", len(traces), len(seen))
+				}
+				storedParent, err := tracker.GetTrace(ctx, parent.TraceID)
+				if err != nil || storedParent.Operation != "parent" {
+					t.Fatalf("parent trace was overwritten: %v", err)
+				}
+			})
+		})
+	}
+}
 
 func TestNewAuditTracker(t *testing.T) {
 	tests := []struct {
