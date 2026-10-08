@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/innovationmech/swit/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -240,7 +241,7 @@ func (t *DefaultAuditTracker) StartTrace(ctx context.Context, operation string, 
 	}
 
 	// Generate trace ID
-	traceID := fmt.Sprintf("trace-%d", time.Now().UnixNano())
+	traceID := "trace-" + uuid.NewString()
 
 	// Extract user ID from context if available
 	userID := ""
@@ -300,7 +301,7 @@ func (t *DefaultAuditTracker) StartChildTrace(ctx context.Context, parentTraceID
 	}
 
 	// Generate trace ID
-	traceID := fmt.Sprintf("trace-%d", time.Now().UnixNano())
+	traceID := "trace-" + uuid.NewString()
 
 	// Extract user ID from context if available
 	userID := ""

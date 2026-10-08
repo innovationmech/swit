@@ -138,7 +138,7 @@ func (s *InitCommandTestSuite) TestNewInitCommand_Flags() {
 		{"author", "a", "", true},
 		{"description", "d", "", true},
 		{"license", "l", "MIT", true},
-		{"go-version", "", "1.26.1", true},
+		{"go-version", "", "1.26.8", true},
 		{"verbose", "v", "false", true},
 		{"no-color", "", "false", true},
 		{"force", "", "false", true},

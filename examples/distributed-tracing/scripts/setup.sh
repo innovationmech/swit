@@ -198,7 +198,7 @@ pull_docker_images() {
     
     local images=(
         "jaegertracing/all-in-one:1.42"
-        "golang:1.26.1-alpine"
+        "golang:1.26.8-alpine"
         "alpine:latest"
     )
     
