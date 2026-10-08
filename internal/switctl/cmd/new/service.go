@@ -558,7 +558,7 @@ func buildServiceConfigFromFlags(parentConfig *NewCommandConfig, serviceConfig *
 
 	// Set Go version if not provided
 	if config.GoVersion == "" {
-		config.GoVersion = "1.26.1"
+		config.GoVersion = "1.26.8"
 	}
 
 	// Set database defaults if enabled
