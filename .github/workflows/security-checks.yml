@@ -81,7 +81,7 @@ jobs:
         check-latest: true
 
     - name: Cache Go modules
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -93,7 +93,7 @@ jobs:
 
     # 尝试恢复 CI 工作流生成的代码缓存
     - name: Restore generated code cache
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: |
           api/gen/
