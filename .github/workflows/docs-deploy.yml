@@ -373,7 +373,7 @@ jobs:
           EOF
 
       - name: 📤 Upload build artifacts
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ${{ env.DOCS_DIR }}/dist
   # 部署到 GitHub Pages
@@ -393,7 +393,7 @@ jobs:
     steps:
       - name: 🚀 Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: 🎉 Deployment success notification
         run: |
