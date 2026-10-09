@@ -34,7 +34,7 @@ docs/pages/
 
 ### 环境要求
 
-- Node.js 18+
+- Node.js 20.19+ (LTS)
 - npm 或 yarn
 - Git
 

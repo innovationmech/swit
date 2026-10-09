@@ -34,7 +34,7 @@ docs/pages/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20.19+ (LTS)
 - npm or yarn
 - Git
 
