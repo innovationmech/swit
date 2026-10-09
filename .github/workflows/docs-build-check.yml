@@ -80,6 +80,10 @@ jobs:
             echo "⚠️ No tsconfig.json found, skipping TypeScript check"
           fi
 
+      - name: 🧪 PostCSS configuration tests
+        working-directory: ${{ env.DOCS_DIR }}
+        run: npm run test:build-config
+
   # 构建测试
   build-check:
     runs-on: ubuntu-latest

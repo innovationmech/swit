@@ -1,6 +1,7 @@
 module.exports = {
   plugins: {
-    tailwindcss: {},
+    '@tailwindcss/postcss': {},
+    // The existing theme uses plain CSS without Tailwind imports.
     autoprefixer: {},
   },
 }
