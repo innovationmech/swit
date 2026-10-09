@@ -34,7 +34,7 @@ docs/pages/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20.19+ (LTS)
 - npm or yarn
 - Git
 
@@ -135,7 +135,9 @@ Example component structure:
 
 ### Styling Guidelines
 
-- Use Tailwind CSS classes for consistency
+The build pipeline uses Tailwind CSS 4 through `@tailwindcss/postcss`. The current theme uses plain CSS and does not import Tailwind's utilities or global reset. Keep `autoprefixer` for these styles. If adding a Tailwind stylesheet, import `tailwindcss` and load `tailwind.config.js` explicitly with `@config` (relative to the stylesheet) to retain Swit colors, fonts, animations, and class-based dark mode. Run `npm run test:build-config` when changing this integration.
+
+- Use the existing theme variables for consistency
 - Follow responsive design principles
 - Support both light and dark themes
 - Maintain accessibility standards

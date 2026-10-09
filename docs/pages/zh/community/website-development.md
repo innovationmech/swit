@@ -34,7 +34,7 @@ docs/pages/
 
 ### 环境要求
 
-- Node.js 18+
+- Node.js 20.19+ (LTS)
 - npm 或 yarn
 - Git
 
@@ -135,7 +135,9 @@ npm run type-check
 
 ### 样式指南
 
-- 使用Tailwind CSS类保持一致性
+构建链通过 `@tailwindcss/postcss` 使用 Tailwind CSS 4。当前主题使用普通 CSS，没有引入 Tailwind 工具类或全局重置样式；这些样式仍需保留 `autoprefixer`。新增 Tailwind 样式表时，应导入 `tailwindcss`，并用 `@config` 显式加载 `tailwind.config.js`（路径相对于样式表），以保留 Swit 颜色、字体、动画和基于类名的深色模式。修改此集成后运行 `npm run test:build-config`。
+
+- 使用现有主题变量保持一致性
 - 遵循响应式设计原则
 - 支持浅色和深色主题
 - 维护无障碍访问标准
