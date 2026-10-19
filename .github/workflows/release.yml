@@ -331,7 +331,7 @@ jobs:
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> _output/changelog.md
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Release ${{ needs.validate.outputs.version }}
           tag_name: ${{ needs.validate.outputs.version }}
